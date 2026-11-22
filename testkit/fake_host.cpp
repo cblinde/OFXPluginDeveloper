@@ -120,6 +120,7 @@ struct Impl {
   int imgH = 48;
   bool padded = true;
   bool negativePitch = false;
+  ImageOrigin origin = ImageOrigin::Bottom;
   bool byteDst = false;
   std::vector<float> srcRGBA; // tight, top-down
   ImageObj* srcImage = nullptr;
@@ -628,13 +629,16 @@ void buildSourceImage(ImageObj* img) {
   img->w = g->imgW;
   img->h = g->imgH;
   const int pitchPixels = g->padded ? img->w + kPadPixels : img->w;
-  img->rowBytes = static_cast<long long>(pitchPixels) * 16;
+  const long long bytesPerRow = static_cast<long long>(pitchPixels) * 16;
+  const bool negative = g->negativePitch;
+  // Image row y sits at memory row (h-1-y) when exactly one of the two axes -
+  // where the pointer starts and which way the stride runs - is "from the end".
+  const bool reversed = (g->origin == ImageOrigin::Top) != negative;
   img->isByte = false;
   img->floats.assign(static_cast<size_t>(pitchPixels) * img->h * 4, 0.0f);
   float* base = img->floats.data();
   for (int y = 0; y < img->h; ++y) {
-    // Image row y sits at memory row (h-1-y) when rowBytes is negative.
-    const int memRow = g->negativePitch ? (img->h - 1 - y) : y;
+    const int memRow = reversed ? (img->h - 1 - y) : y;
     float* row = base + static_cast<size_t>(memRow) * pitchPixels * 4;
     for (int x = 0; x < img->w; ++x) {
       for (int c = 0; c < 4; ++c) {
@@ -648,13 +652,15 @@ void buildSourceImage(ImageObj* img) {
       for (int c = 0; c < 4; ++c) row[x * 4 + c] = -12345.0f;
     }
   }
-  img->floatData = g->negativePitch ? base + static_cast<size_t>(img->h - 1) * pitchPixels * 4 : base;
-  img->pitchFloats = static_cast<long long>(pitchPixels) * 4;
-  img->data = const_cast<float*>(img->floatData);
-  if (g->negativePitch) {
-    img->rowBytes = -img->rowBytes;
-    img->pitchFloats = -img->pitchFloats;
-  }
+  // Read-back walks image rows, not the way the plug-in's pointer happens to.
+  const int readRow = reversed ? (img->h - 1) : 0;
+  img->floatData = base + static_cast<size_t>(readRow) * pitchPixels * 4;
+  img->pitchFloats = static_cast<long long>(pitchPixels) * 4 * (reversed ? -1 : 1);
+  // The pointer a plug-in sees: its row follows the pitch sign only, so the Top
+  // origin hands out the last row while bounds still starts at y1.
+  const int dataRow = negative ? (img->h - 1) : 0;
+  img->data = base + static_cast<size_t>(dataRow) * pitchPixels * 4;
+  img->rowBytes = negative ? -bytesPerRow : bytesPerRow;
 }
 
 void buildDstImage(ImageObj* img) {
@@ -663,28 +669,27 @@ void buildDstImage(ImageObj* img) {
   img->isByte = g->byteDst;
   const int pitchPixels = g->padded ? img->w + kPadPixels : img->w;
   const long long bytesPerPixel = img->isByte ? 4 : 16;
-  img->rowBytes = static_cast<long long>(pitchPixels) * bytesPerPixel;
+  const long long bytesPerRow = static_cast<long long>(pitchPixels) * bytesPerPixel;
+  const bool negative = g->negativePitch;
+  const bool reversed = (g->origin == ImageOrigin::Top) != negative;
   img->floatData = nullptr;
   img->pitchFloats = 0;
+  char* base = nullptr;
   if (img->isByte) {
     img->bytes.assign(static_cast<size_t>(pitchPixels) * img->h * 4, 0);
-    img->data = img->bytes.data();
+    base = reinterpret_cast<char*>(img->bytes.data());
   } else {
     img->floats.assign(static_cast<size_t>(pitchPixels) * img->h * 4, 0.0f);
-    img->floatData = img->floats.data();
-    img->pitchFloats = static_cast<long long>(pitchPixels) * 4;
-    img->data = img->floats.data();
+    base = reinterpret_cast<char*>(img->floats.data());
   }
-  if (g->negativePitch) {
-    const long long stride = img->rowBytes;
-    if (img->isByte) {
-      img->data = static_cast<char*>(img->data) + static_cast<size_t>(img->h - 1) * stride;
-    } else {
-      img->floatData += static_cast<size_t>(img->h - 1) * static_cast<size_t>(img->pitchFloats);
-      img->data = const_cast<float*>(img->floatData);
-      img->pitchFloats = -img->pitchFloats;
-    }
-    img->rowBytes = -stride;
+  const int dataRow = negative ? (img->h - 1) : 0;
+  img->data = base + static_cast<size_t>(dataRow) * bytesPerRow;
+  img->rowBytes = negative ? -bytesPerRow : bytesPerRow;
+  if (!img->isByte) {
+    const int readRow = reversed ? (img->h - 1) : 0;
+    img->floatData =
+        reinterpret_cast<const float*>(base + static_cast<size_t>(readRow) * bytesPerRow);
+    img->pitchFloats = static_cast<long long>(pitchPixels) * 4 * (reversed ? -1 : 1);
   }
 }
 
@@ -1126,6 +1131,7 @@ void Impl::reset() {
   parallel = false;
   padded = true;
   negativePitch = false;
+  origin = ImageOrigin::Bottom;
   byteDst = false;
   imgW = 64;
   imgH = 48;
@@ -1349,6 +1355,11 @@ void FakeHost::setNegativePitch(bool on) {
   invalidateImages();
 }
 
+void FakeHost::setImageOrigin(ImageOrigin o) {
+  impl_->origin = o;
+  invalidateImages();
+}
+
 void FakeHost::setDestinationByteImage(bool on) {
   impl_->byteDst = on;
   // The host announces the output format on the clip before the render action,
@@ -1451,6 +1462,25 @@ bool FakeHost::setParam(const std::string& name, const std::string& value) {
     return false;
   }
   return true;
+}
+
+std::vector<std::string> FakeHost::paramOptions(const std::string& name) const {
+  std::vector<std::string> out;
+  const ParamObj* p = nullptr;
+  auto tmpl = impl_->pluginDesc.params.find(name);
+  if (tmpl != impl_->pluginDesc.params.end()) {
+    p = tmpl->second;
+  } else if (impl_->current) {
+    auto it = impl_->current->params.find(name);
+    if (it != impl_->current->params.end()) p = it->second;
+  }
+  if (!p) return out;
+  for (int i = 0;; ++i) {
+    const Value* v = slotConst(const_cast<PropSet*>(&p->props), kOfxParamPropChoiceOption, i);
+    if (!v || v->kind != kString) break;
+    out.push_back(v->s);
+  }
+  return out;
 }
 
 bool FakeHost::setParamForInstance(int index, const std::string& name, const std::string& value) {

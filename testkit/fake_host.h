@@ -34,6 +34,13 @@ namespace testkit {
 
 struct Impl; // defined in fake_host.cpp
 
+// Which row `kOfxImagePropData` addresses. This is a separate axis from the
+// stride's sign: a host may hand out a top-down framebuffer while `bounds`
+// still starts at y1 (what a plug-in that assumes top-down gets wrong, and a
+// plug-in that trusts the pointer gets right), so the two have to be settable
+// independently to build that layout at all.
+enum class ImageOrigin { Bottom, Top };
+
 class FakeHost {
 public:
   FakeHost();
@@ -98,6 +105,7 @@ public:
   void setSourceConstant(float r, float g, float b, float a);
   void setPaddedRows(bool on);           // rowBytes > width*16, poisoned margin
   void setNegativePitch(bool on);        // rowBytes < 0
+  void setImageOrigin(ImageOrigin o);    // which row kOfxImagePropData addresses
   void setDestinationByteImage(bool on); // hand the plug-in a byte image
 
   // Destination read back tightly packed, top-down, RGBA float.
@@ -109,6 +117,10 @@ public:
   // Sets a parameter's value from its declared type (numeric or string), the
   // same call a host makes through paramSetValueAtTime.
   bool setParam(const std::string& name, const std::string& value);
+
+  // The kOfxParamPropChoiceOption strings a parameter was declared with, in
+  // order; empty when the name is unknown or the parameter is not a choice.
+  std::vector<std::string> paramOptions(const std::string& name) const;
 
   std::vector<std::string> messages() const;
   std::string messageText() const;

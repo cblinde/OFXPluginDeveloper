@@ -45,12 +45,32 @@ Flags: `--param name:type` (repeatable; `type` is one of `double`, `int`
 `r,g,b,a`), `--identity` (expect `kOfxStatOK` and the
 source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
 answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
+`--image-origin top|bottom`,
 `--src`/`--golden`/`--size WxH` for a golden-image render comparison.
 
 A parameter type the harness cannot model is never silent: the fake host records
 `fake host: read of parameter 'boxColor' (OfxParamTypeRGB) is not modelled` in
 its messages, so a failed action names the parameter instead of looking like a
-plug-in defect.
+plug-in defect. A choice parameter's declared list is readable through
+`FakeHost::paramOptions(name)`, so a test can assert that a dropdown offers the
+options it claims.
+
+Image layout is two separate axes. `--negative-pitch` chooses the stride sign;
+`--image-origin top|bottom` chooses which row `kOfxImagePropData` addresses
+(`FakeHost::setImageOrigin`/`setNegativePitch` set them independently). All four
+combinations are buildable and in-buffer:
+
+| Layout | memory | `img->data` | stride | a real host? |
+| --- | --- | --- | --- | --- |
+| Bottom + positive (**default**) | bottom-first | row of `y1` | + | yes — Resolve |
+| Bottom + negative | top-first | row of `y1` | − | yes |
+| Top + positive | top-first | row of `y2-1` | + | no: the pointer is the frame's top, `bounds` says `y1` |
+| Top + negative | bottom-first | row of `y2-1` | − | no, same lie |
+
+The two `Top` layouts are negative controls. A copy through the pointer passes
+all four, and should: a pass-through is orientation-agnostic, so only a plug-in
+that draws at chosen image positions exposes the difference. Assert where a mark
+landed and which way up it is — comparing bytes will not catch a mirror.
 
 The fake host serves message suite **v1 and v2**. `setPersistentMessage(...)` is
 recorded as `[persistent:<type>] text (id)` and `clearPersistentMessage` as

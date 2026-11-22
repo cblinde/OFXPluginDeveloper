@@ -172,6 +172,7 @@ struct Spec {
   bool expectNotIdentityAfterSet = false;
   bool byteDstRejected = false;
   bool negativePitch = false;
+  bool topOrigin = false;
   // Multi-instance and thread-safety checks. `concurrencyThreads == 0` turns
   // them off; `scaleParam` names a numeric parameter that is given a different
   // value on each instance (e.g. "gain").
@@ -462,6 +463,8 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   host.setImageSize(spec.width, spec.height);
   host.setPaddedRows(true);
   host.setNegativePitch(spec.negativePitch);
+  host.setImageOrigin(spec.topOrigin ? testkit::ImageOrigin::Top
+                                     : testkit::ImageOrigin::Bottom);
 
   std::vector<float> srcRGBA(static_cast<size_t>(spec.width) * spec.height * 4, 0.0f);
   if (!spec.srcFile.empty()) {
@@ -668,7 +671,8 @@ int main(int argc, char** argv) {
                  "usage: contract_test <plugin.ofx> --id <identifier> [--param name:type]...\n"
                  "       [--clip name]... [--set name=value]... [--context <context>]\n"
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
-                 "       [--negative-pitch] [--src file --golden file --size WxH]\n"
+                 "       [--negative-pitch] [--image-origin top|bottom]\n"
+                 "       [--src file --golden file --size WxH]\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n");
     return 2;
@@ -735,6 +739,13 @@ int main(int argc, char** argv) {
       spec.byteDstRejected = true;
     } else if (a == "--negative-pitch") {
       spec.negativePitch = true;
+    } else if (a == "--image-origin") {
+      const std::string origin = next("--image-origin");
+      if (origin != "top" && origin != "bottom") {
+        std::fprintf(stderr, "error: --image-origin wants top or bottom\n");
+        return 2;
+      }
+      spec.topOrigin = origin == "top";
     } else if (a == "--concurrency-threads") {
       spec.concurrencyThreads = std::atoi(next("--concurrency-threads").c_str());
     } else if (a == "--concurrency-iterations") {
