@@ -90,16 +90,26 @@ class DeviceGuard
 public:
     explicit DeviceGuard(int device)
         : _previous(0)
+        , _active(false)
     {
-        cudaGetDevice(&_previous);
-        if (device != _previous) {
-            cudaSetDevice(device);
+        // No previous device means nothing to restore. Clear the sticky error
+        // so the launch below reports the real failure, not this one twice.
+        if (cudaGetDevice(&_previous) != cudaSuccess) {
+            cudaGetLastError();
+            return;
+        }
+        _active = true;
+        if (device != _previous && cudaSetDevice(device) != cudaSuccess) {
+            // The switch failed, so the previous device is still current and
+            // the destructor must not "restore" anything.
+            cudaGetLastError();
+            _active = false;
         }
     }
 
     ~DeviceGuard()
     {
-        if (_previous != _current()) {
+        if (_active && _previous != _current()) {
             cudaSetDevice(_previous);
         }
     }
@@ -116,6 +126,7 @@ private:
     }
 
     int _previous;
+    bool _active;
 };
 
 } // namespace

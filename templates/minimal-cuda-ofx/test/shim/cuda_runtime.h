@@ -54,5 +54,8 @@ constexpr int cudaErrorInvalidValue = 1;
 
 inline cudaError_t cudaGetDevice(int* d) { *d = 0; return cudaSuccess; }
 inline cudaError_t cudaSetDevice(int) { return cudaSuccess; }
+// Clears the sticky error the real runtime keeps; the guard in Kernel.cu calls
+// it after a failed query so the launch reports its own failure.
+inline cudaError_t cudaGetLastError() { return cudaSuccess; }
 
 #endif // MCOFX_TEST_CUDA_RUNTIME_SHIM_H
