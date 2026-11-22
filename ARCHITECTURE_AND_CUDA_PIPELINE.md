@@ -63,7 +63,7 @@ actions (one node in a comp).
 | `kOfxImageEffectActionGetRegionsOfInterest` | `getRegionsOfInterest()` | Ask for a bigger input region |
 | `kOfxImageEffectActionGetClipPreferences` | `getClipPreferences()` | Force output depth/components |
 | `kOfxImageEffectActionGetFramesNeeded` | `getFramesNeeded()` | Temporal access |
-| `kOfxImageEffectActionInstanceChanged` | `changedParam()` / `changedClip()` | React to UI changes |
+| `kOfxActionInstanceChanged` | `changedParam()` / `changedClip()` | React to UI changes |
 | `kOfxActionPurgeCaches` | `purgeCaches()` | Free what you can live without |
 | `kOfxActionSyncPrivateData` | `syncPrivateData()` | Push internal state into params |
 | `kOfxActionDestroyInstance` | destructor | Free your GPU resources |

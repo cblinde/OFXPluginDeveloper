@@ -70,6 +70,7 @@ host crash with no stack trace. None of them is stylistic.
 SKILL.md                              this file
 ARCHITECTURE_AND_CUDA_PIPELINE.md      the deep dive
 HOST_COMPATIBILITY_MATRIX.md           per-host behaviour and workarounds
+BEST_PRACTICES_AND_PERFORMANCE.md      performance rules, reference-project lessons, graded evidence
 templates/minimal-cuda-ofx/
   CMakeLists.txt                       bundle-producing build
   src/Plugin.h                         host wrapper declarations
@@ -82,6 +83,11 @@ templates/minimal-cuda-ofx/
 The template is the reference implementation for this skill. When generating a
 new plugin, copy its structure rather than re-deriving it; the file layout is
 what makes the `OFXPLUGIN_WITH_CUDA` split possible.
+
+For performance rules, the header quirks found by the verification pass (property
+types that differ from their neighbours, names whose string values disagree) and
+the anti-patterns indexed by symptom, see
+[`BEST_PRACTICES_AND_PERFORMANCE.md`](BEST_PRACTICES_AND_PERFORMANCE.md).
 
 ---
 

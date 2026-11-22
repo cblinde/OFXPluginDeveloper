@@ -38,6 +38,7 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | [`SKILL.md`](SKILL.md) | Master reference: ground rules, generation workflow, verified constants, build standards, anti-patterns, checklists, mandatory git workflow |
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, the stream contract, pitch arithmetic, RoD/RoI, colour/alpha, TensorRT/ONNX zero-copy, toolchain, profiling |
 | [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | Resolve/Nuke/SCRATCH/Natron behaviour and workarounds, every claim graded A/B/C by evidence source |
+| [`BEST_PRACTICES_AND_PERFORMANCE.md`](BEST_PRACTICES_AND_PERFORMANCE.md) | Review-level synthesis: what the reference projects teach, verified header quirks, host- and kernel-side performance rules with measured PTX evidence, anti-patterns by symptom |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | The buildable template: CMake + OFX host wrapper + CUDA kernel + CPU fallback |
 
 ---
