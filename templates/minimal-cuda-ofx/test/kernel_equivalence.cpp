@@ -11,16 +11,31 @@
 //   2. GainKernelRGBA32FVec4 vs GainKernelRGBA32FScalar, byte for byte, over
 //      widths 0-63 (all four width % 4 classes), odd sizes and odd origins.
 //   3. The hoisted row-pointer CPU loop vs the original per-pixel form.
+//   4. Both kernels run concurrently from several threads on disjoint buffers,
+//      which is what "the kernel is reentrant" means: it reads only its
+//      arguments and its own (thread-local) indices. This test is also the one
+//      that gives ThreadSanitizer something real to look at.
 //
 // Exit status is 0 only if every case matches.
+//
+// Deliberately not tested here: anything that needs a device (stream ordering,
+// multi-GPU selection, real launch configuration) or a host (action dispatch,
+// clip preferences, the OpenGL/Metal/OpenCL paths).
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
+#include <vector>
 
 #include "kernels.inc" // GainKernelRGBA32FVec4 / GainKernelRGBA32FScalar, verbatim
 
-dim3 blockIdx, blockDim, threadIdx;
+// The shim's stand-ins for the CUDA built-ins are thread_local: a kernel gets
+// its indices from the launch, never from global state, so several host threads
+// can emulate launches at the same time without touching each other.
+thread_local dim3 blockIdx;
+thread_local dim3 blockDim;
+thread_local dim3 threadIdx;
 
 namespace {
 
@@ -47,12 +62,25 @@ float nextFloat()
     return (f - 1.0f) * 4.0f;
 }
 
-void referenceScale(const float* src, float* dst, int w, int h,
+/// OFX hands a plug-in `void*` plus a row stride (`kOfxImagePropRowBytes`), so
+/// image planes are byte-addressed and only then read as float. That is exactly
+/// what the plug-in does, and it is what this harness has to reproduce: the
+/// alternative - assuming a packed float buffer - would test a different
+/// program. Every fixture below is 16-byte aligned or deliberately offset by 4,
+/// and the offset cases never take the vector path.
+///
+// cppcheck-suppress invalidPointerCast
+inline float* asFloat(unsigned char* p) { return reinterpret_cast<float*>(p); }
+
+// cppcheck-suppress invalidPointerCast
+inline const float* asFloat(const unsigned char* p) { return reinterpret_cast<const float*>(p); }
+
+void referenceScale(const unsigned char* src, unsigned char* dst, int w, int h,
                     long long sp, long long dp, const float g[4])
 {
     for (int y = 0; y < h; ++y) {
-        const float* s = reinterpret_cast<const float*>(reinterpret_cast<const char*>(src) + y * sp);
-        float* d = reinterpret_cast<float*>(reinterpret_cast<char*>(dst) + y * dp);
+        const float* s = asFloat(src + y * sp);
+        float* d = asFloat(dst + y * dp);
         for (int x = 0; x < w; ++x) {
             for (int c = 0; c < 4; ++c) {
                 d[4LL * x + c] = s[4LL * x + c] * g[c];
@@ -61,9 +89,14 @@ void referenceScale(const float* src, float* dst, int w, int h,
     }
 }
 
+/// Runs the kernel over a grid the way the CUDA runtime would, with one thread
+/// per pixel position. Returns the number of launches performed.
 template <typename F>
-void emulate(int w, int h, F launch)
+long emulate(int w, int h, F launch)
 {
+    if (w <= 0 || h <= 0) {
+        return 0; // an empty grid launches nothing
+    }
     const dim3 block(16, 16, 1);
     const unsigned gx = static_cast<unsigned>((w + 15) / 16);
     const unsigned gy = static_cast<unsigned>((h + 15) / 16);
@@ -79,6 +112,7 @@ void emulate(int w, int h, F launch)
             }
         }
     }
+    return 1;
 }
 
 // ---------------------------------------------------------------- 1. predicate
@@ -94,19 +128,19 @@ struct PredicateCase {
 
 void testPredicate()
 {
-    std::printf("[1/3] IsVec4Addressable decisions\n");
+    std::printf("[1/4] IsVec4Addressable decisions\n");
 
     alignas(16) static unsigned char a[4096];
     alignas(16) static unsigned char b[4096];
 
     const PredicateCase cases[] = {
-        { "aligned base, aligned pitch",   0, 0,  256,  256, true  },
-        { "src base + 4",                  4, 0,  256,  256, false },
-        { "dst base + 8",                  0, 8,  256,  256, false },
-        { "src pitch 256 + 8",             0, 0,  264,  256, false },
-        { "negative pitch, multiple of 16",0, 0, -256, -256, true  },
-        { "negative pitch, not multiple",  0, 0, -264,  256, false },
-        { "pitch 0 (single row)",          0, 0,    0,    0, true  },
+        { "aligned base, aligned pitch",    0, 0,  256,  256, true  },
+        { "src base + 4",                   4, 0,  256,  256, false },
+        { "dst base + 8",                   0, 8,  256,  256, false },
+        { "src pitch 256 + 8",              0, 0,  264,  256, false },
+        { "negative pitch, multiple of 16", 0, 0, -256, -256, true  },
+        { "negative pitch, not multiple",   0, 0, -264,  256, false },
+        { "pitch 0 (single row)",           0, 0,    0,    0, true  },
     };
 
     for (const PredicateCase& c : cases) {
@@ -124,7 +158,7 @@ void testPredicate()
 
 void testKernels()
 {
-    std::printf("[2/3] vec4 kernel vs scalar kernel vs reference\n");
+    std::printf("[2/4] vec4 kernel vs scalar kernel vs reference\n");
 
     const float g[4] = { 1.75f, 0.5f, 2.25f, 1.0f };
     const float4 gain4 = make_float4(g[0], g[1], g[2], g[3]);
@@ -137,7 +171,7 @@ void testKernels()
     const int oxs[]     = { 0, 5, 17 };
     const int oys[]     = { 0, 3, 9 };
 
-    long compared = 0, vecRuns = 0, scalarRuns = 0;
+    long launches = 0, vecRuns = 0, scalarRuns = 0;
 
     for (int w : widths) {
         for (int h : heights) {
@@ -171,31 +205,30 @@ void testKernels()
 
                             for (int y = 0; y < boundsH; ++y) {
                                 for (int x = 0; x < boundsW; ++x) {
-                                    float* p = reinterpret_cast<float*>(
-                                        srcBase + static_cast<long long>(y) * sp +
-                                        static_cast<long long>(x) * 16);
+                                    float* p = asFloat(srcBase +
+                                                       static_cast<long long>(y) * sp +
+                                                       static_cast<long long>(x) * 16);
                                     for (int c = 0; c < 4; ++c) {
                                         p[c] = nextFloat();
                                     }
                                 }
                             }
 
-                            const char* srcOrigin = reinterpret_cast<const char*>(srcBase) +
-                                                    static_cast<long long>(oy) * sp +
-                                                    static_cast<long long>(ox) * 16;
-                            char* dstOrigin = reinterpret_cast<char*>(dstBase) +
-                                              static_cast<long long>(oy) * dp +
-                                              static_cast<long long>(ox) * 16;
+                            const unsigned char* srcOrigin = srcBase +
+                                                             static_cast<long long>(oy) * sp +
+                                                             static_cast<long long>(ox) * 16;
+                            unsigned char* dstOrigin = dstBase +
+                                                       static_cast<long long>(oy) * dp +
+                                                       static_cast<long long>(ox) * 16;
 
                             std::memset(dstBase, 0x7f, static_cast<size_t>(dp) * boundsH);
-                            referenceScale(reinterpret_cast<const float*>(srcOrigin),
-                                           reinterpret_cast<float*>(dstOrigin), w, h, sp, dp, g);
+                            referenceScale(srcOrigin, dstOrigin, w, h, sp, dp, g);
 
                             const size_t rowBytes = static_cast<size_t>(w) * 16;
                             unsigned char* expected = static_cast<unsigned char*>(
-                                std::malloc(rowBytes * (h > 0 ? h : 1) + 1));
+                                std::malloc(rowBytes * static_cast<size_t>(h > 0 ? h : 1) + 1));
                             for (int y = 0; y < h; ++y) {
-                                std::memcpy(expected + rowBytes * y,
+                                std::memcpy(expected + rowBytes * static_cast<size_t>(y),
                                             dstOrigin + static_cast<long long>(y) * dp, rowBytes);
                             }
 
@@ -208,24 +241,23 @@ void testKernels()
                                 }
                                 std::memset(dstBase, 0x5a, static_cast<size_t>(dp) * boundsH);
                                 if (pass == 0) {
-                                    emulate(w, h, [&] {
+                                    launches += emulate(w, h, [&] {
                                         GainKernelRGBA32FVec4(
-                                            reinterpret_cast<const float*>(srcOrigin),
-                                            reinterpret_cast<float*>(dstOrigin), w, h, sp, dp, gain4);
+                                            asFloat(srcOrigin),
+                                            asFloat(dstOrigin), w, h, sp, dp, gain4);
                                     });
                                     ++vecRuns;
                                 } else {
-                                    emulate(w, h, [&] {
+                                    launches += emulate(w, h, [&] {
                                         GainKernelRGBA32FScalar(
-                                            reinterpret_cast<const float*>(srcOrigin),
-                                            reinterpret_cast<float*>(dstOrigin), w, h, sp, dp, gain4);
+                                            asFloat(srcOrigin),
+                                            asFloat(dstOrigin), w, h, sp, dp, gain4);
                                     });
                                     ++scalarRuns;
                                 }
-                                ++compared;
 
                                 for (int y = 0; y < h; ++y) {
-                                    if (std::memcmp(expected + rowBytes * y,
+                                    if (std::memcmp(expected + rowBytes * static_cast<size_t>(y),
                                                     dstOrigin + static_cast<long long>(y) * dp,
                                                     rowBytes) != 0) {
                                         fail(pass == 0 ? "vec4" : "scalar", w, h, pad, shift, ox, oy,
@@ -266,15 +298,15 @@ void testKernels()
         }
     }
 
-    std::printf("  %ld kernel runs (vec4=%ld scalar=%ld), failures=%d\n",
-                compared, vecRuns, scalarRuns, g_failures);
+    std::printf("  %ld grid launches (vec4=%ld scalar=%ld), failures=%d\n",
+                launches, vecRuns, scalarRuns, g_failures);
 }
 
 // ------------------------------------------- 3. CPU loop hoist, byte for byte
 
 void testCpuLoop()
 {
-    std::printf("[3/3] hoisted row pointers vs per-pixel addressing (CPU path)\n");
+    std::printf("[3/4] hoisted row pointers vs per-pixel addressing (CPU path)\n");
 
     const float gain[4] = { 1.5f, 0.25f, 3.0f, 1.0f };
     const int widths[] = { 1, 2, 3, 5, 17, 33 };
@@ -289,20 +321,23 @@ void testCpuLoop()
         const int ox = 3;
         const int oy = 2;
 
-        unsigned char* src = static_cast<unsigned char*>(std::calloc(static_cast<size_t>(pitch) * boundsH, 1));
-        unsigned char* oldWay = static_cast<unsigned char*>(std::calloc(static_cast<size_t>(pitch) * boundsH, 1));
-        unsigned char* newWay = static_cast<unsigned char*>(std::calloc(static_cast<size_t>(pitch) * boundsH, 1));
+        unsigned char* src = static_cast<unsigned char*>(
+            std::calloc(static_cast<size_t>(pitch) * boundsH, 1));
+        unsigned char* oldWay = static_cast<unsigned char*>(
+            std::calloc(static_cast<size_t>(pitch) * boundsH, 1));
+        unsigned char* newWay = static_cast<unsigned char*>(
+            std::calloc(static_cast<size_t>(pitch) * boundsH, 1));
         for (size_t i = 0; i < static_cast<size_t>(pitch) * boundsH; ++i) {
             src[i] = static_cast<unsigned char>(i * 31 + 7);
         }
 
         // Previous shape: one address computation per pixel.
         for (int y = oy; y < oy + h; ++y) {
-            float* dst = reinterpret_cast<float*>(oldWay + static_cast<long long>(y) * pitch +
-                                                 static_cast<long long>(ox) * 16);
+            float* dst = asFloat(oldWay + static_cast<long long>(y) * pitch +
+                                 static_cast<long long>(ox) * 16);
             for (int x = ox; x < ox + w; ++x) {
-                const float* s = reinterpret_cast<const float*>(
-                    src + static_cast<long long>(y) * pitch + static_cast<long long>(x) * 16);
+                const float* s = asFloat(src + static_cast<long long>(y) * pitch +
+                                         static_cast<long long>(x) * 16);
                 for (int c = 0; c < 4; ++c) {
                     dst[c] = s[c] * gain[c];
                 }
@@ -312,10 +347,10 @@ void testCpuLoop()
 
         // Shipped shape: row pointers hoisted, pointers advanced in the loop.
         for (int y = oy; y < oy + h; ++y) {
-            float* dstRow = reinterpret_cast<float*>(newWay + static_cast<long long>(y) * pitch +
-                                                    static_cast<long long>(ox) * 16);
-            const float* srcRow = reinterpret_cast<const float*>(
-                src + static_cast<long long>(y) * pitch + static_cast<long long>(ox) * 16);
+            float* dstRow = asFloat(newWay + static_cast<long long>(y) * pitch +
+                                    static_cast<long long>(ox) * 16);
+            const float* srcRow = asFloat(src + static_cast<long long>(y) * pitch +
+                                          static_cast<long long>(ox) * 16);
             for (int x = ox; x < ox + w; ++x, dstRow += 4, srcRow += 4) {
                 for (int c = 0; c < 4; ++c) {
                     dstRow[c] = srcRow[c] * gain[c];
@@ -335,6 +370,138 @@ void testCpuLoop()
     std::printf("  %ld components compared, failures=%d\n", components, g_failures - before);
 }
 
+// --------------------------------------- 4. concurrent runs (reentrancy, TSan)
+
+struct ConcCase {
+    int w;
+    int h;
+    int pad;
+    int shift;
+};
+
+/// Runs one fixture on buffers owned by this call and returns its failure count.
+/// No shared state is touched: that is the property under test.
+int runConcurrentCase(const ConcCase& c, const float4& gain4, const float g[4], bool& usedVec4)
+{
+    const int boundsW = c.w + 2;
+    const int boundsH = c.h + 2;
+    const int pitch = boundsW * 16 + c.pad;
+    const size_t bytes = static_cast<size_t>(pitch) * boundsH + 64;
+
+    unsigned char* srcAlloc = nullptr;
+    unsigned char* dstAlloc = nullptr;
+    if (posix_memalign(reinterpret_cast<void**>(&srcAlloc), 16, bytes) != 0) {
+        return 1;
+    }
+    if (posix_memalign(reinterpret_cast<void**>(&dstAlloc), 16, bytes) != 0) {
+        std::free(srcAlloc);
+        return 1;
+    }
+
+    unsigned char* srcBase = srcAlloc + c.shift;
+    unsigned char* dstBase = dstAlloc + c.shift;
+
+    // Local generator: the shared one would be a data race, and a race is not
+    // what this test is meant to find.
+    unsigned int seed = 999u + static_cast<unsigned int>(c.w * 31 + c.h * 7);
+    for (int y = 0; y < boundsH; ++y) {
+        for (int x = 0; x < boundsW; ++x) {
+            float* p = asFloat(srcBase + static_cast<long long>(y) * pitch +
+                               static_cast<long long>(x) * 16);
+            for (int k = 0; k < 4; ++k) {
+                seed = seed * 1664525u + 1013904223u;
+                const unsigned int bits = (seed >> 9) | 0x3f000000u;
+                float f;
+                std::memcpy(&f, &bits, 4);
+                p[k] = (f - 1.0f) * 4.0f;
+            }
+        }
+    }
+
+    const unsigned char* srcOrigin = srcBase + static_cast<long long>(pitch) +
+                                     static_cast<long long>(16);
+    unsigned char* dstOrigin = dstBase + static_cast<long long>(pitch) +
+                               static_cast<long long>(16);
+
+    std::vector<unsigned char> ref(static_cast<size_t>(c.w) * static_cast<size_t>(c.h) * 16);
+    referenceScale(srcOrigin, ref.data(), c.w, c.h, pitch,
+                   static_cast<long long>(c.w) * 16, g);
+
+    int failures = 0;
+    usedVec4 = mcofx::IsVec4Addressable(srcOrigin, dstOrigin, pitch, pitch);
+    if (usedVec4) {
+        emulate(c.w, c.h, [&] {
+            GainKernelRGBA32FVec4(asFloat(srcOrigin), asFloat(dstOrigin), c.w, c.h, pitch, pitch,
+                                  gain4);
+        });
+    } else {
+        emulate(c.w, c.h, [&] {
+            GainKernelRGBA32FScalar(asFloat(srcOrigin), asFloat(dstOrigin), c.w, c.h, pitch, pitch,
+                                    gain4);
+        });
+    }
+
+    for (int y = 0; y < c.h; ++y) {
+        if (std::memcmp(ref.data() + static_cast<size_t>(y) * static_cast<size_t>(c.w) * 16,
+                        dstOrigin + static_cast<long long>(y) * pitch,
+                        static_cast<size_t>(c.w) * 16) != 0) {
+            ++failures;
+            break;
+        }
+    }
+
+    std::free(srcAlloc);
+    std::free(dstAlloc);
+    return failures;
+}
+
+void testConcurrent()
+{
+    std::printf("[4/4] concurrent kernel runs on disjoint buffers (reentrancy)\n");
+
+    const ConcCase cases[] = {
+        { 17, 5, 0, 0 },  // vec4
+        { 32, 3, 16, 0 }, // vec4
+        { 9, 7, 8, 4 },   // scalar: base 4 bytes off
+        { 64, 2, 0, 0 },  // vec4
+        { 5, 9, 8, 4 },   // scalar
+        { 40, 4, 16, 0 }, // vec4
+    };
+    const int kThreads = static_cast<int>(sizeof(cases) / sizeof(cases[0]));
+    const float g[4] = { 1.25f, 0.5f, 2.0f, 1.0f };
+    const float4 gain4 = make_float4(g[0], g[1], g[2], g[3]);
+
+    std::vector<int> failures(static_cast<size_t>(kThreads), 0);
+    std::vector<char> vecUsed(static_cast<size_t>(kThreads), 0);
+
+    std::vector<std::thread> threads;
+    threads.reserve(static_cast<size_t>(kThreads));
+    for (int i = 0; i < kThreads; ++i) {
+        threads.emplace_back([&, i] {
+            bool vec = false;
+            failures[static_cast<size_t>(i)] =
+                runConcurrentCase(cases[i], gain4, g, vec);
+            vecUsed[static_cast<size_t>(i)] = vec ? 1 : 0;
+        });
+    }
+    for (std::thread& t : threads) {
+        t.join();
+    }
+
+    long total = 0;
+    long vec4 = 0;
+    for (int i = 0; i < kThreads; ++i) {
+        total += failures[static_cast<size_t>(i)];
+        vec4 += vecUsed[static_cast<size_t>(i)] ? 1 : 0;
+    }
+
+    std::printf("  %d threads, %ld vec4 + %ld scalar, failures=%ld\n",
+                kThreads, vec4, kThreads - vec4, total);
+    if (total != 0) {
+        ++g_failures;
+    }
+}
+
 } // namespace
 
 int main()
@@ -342,6 +509,7 @@ int main()
     testPredicate();
     testKernels();
     testCpuLoop();
+    testConcurrent();
 
     if (g_failures == 0) {
         std::printf("\nPASS: all cases match\n");

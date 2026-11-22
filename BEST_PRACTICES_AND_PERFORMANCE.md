@@ -30,14 +30,14 @@ The review ran a mechanical check of the repo against the official sources.
 | --- | --- |
 | Every `kOfx*` identifier cited in the documents, sources and tests exists in OFX 1.5.1 | Checked mechanically by extracting every `kOfx*` token and resolving it against the 1.5.1 tree. Of the 2 that did not resolve, **1 was a real error, now fixed** — `ARCHITECTURE_AND_CUDA_PIPELINE.md` cited `kOfxImageEffectActionInstanceChanged`; the real action is `kOfxActionInstanceChanged` (`ofxCore.h:447`). The other, `kOfxImageEffectPropUnmappedComponents` in `SKILL.md`, is a deliberate negative example ("there is no such constant"), so it stays. |
 | The GPU property table in `SKILL.md` §5 against the headers | 12/12 exist; three descriptions were wrong and are fixed (wrong header for `...OpenCLRenderSupported`, OpenGL declared `C string` not `string`, and the OpenCL Buffers/Images distinction now quoted from the header) |
-| A committed GPU-free test suite (`templates/minimal-cuda-ofx/test/run-tests.sh`) | predicate table + 3,456-launch kernel comparison + CPU-loop comparison + PTX counts, exit-code gated |
+| A committed GPU-free test suite (`templates/minimal-cuda-ofx/test/run-tests.sh`) | predicate table + 3,240-launch kernel comparison + CPU-loop comparison + 6-thread concurrency + PTX counts + memcheck, exit-code gated; clean under ASan+UBSan, TSan and valgrind |
 | Every CUDA runtime symbol the template calls (9) is declared in the toolkit headers | all present |
 | The quoted stream-contract text exists verbatim in `ofxGPURender.h` | present at lines 608–617 |
 | Property types and defaults used by the template | confirmed, see §3 |
 | `ImageProcessor` dispatches the GPU path once per render, not per thread | confirmed, see §5.2 |
 | The CPU path is already threaded by the Support library | confirmed, see §5.4 |
 | Kernel memory instructions, after vectorizing | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** per pixel, 14 registers, 0 spills, 0 stack — measured, see §6.1 |
-| Vec4 path versus scalar path, executing the real kernel source on the host | **3,456 kernel runs, 0 mismatches**: widths 0–63 covering every `width % 4`, heights 1/2/3/5, origins (0,0)/(5,3)/(17,9), aligned and padded and misaligned pitches — see §6.1 |
+| Vec4 path versus scalar path, executing the real kernel source on the host | **3,240 grid launches, 0 mismatches**: widths 0–63 covering every `width % 4`, heights 1/2/3/5, origins (0,0)/(5,3)/(17,9), aligned and padded and misaligned pitches — see §6.1 |
 | CPU path: hoisted row pointers versus the previous per-pixel addressing | bit-identical over 1,464 pixel components — see §5.4 |
 
 ---
@@ -289,7 +289,7 @@ produced by calling the shipped predicate:
 | pitch 0 (single row) | yes | `GainKernelRGBA32FVec4` |
 
 The two paths were then run against each other on the host, executing the real
-kernel source (thread mapping emulated): **3,456 kernel executions, 0 mismatches**
+kernel source (thread mapping emulated): **3,240 grid launches, 0 mismatches**
 — **1,152** through the vec4 path and **2,304** through the scalar fallback, with
 widths 0–63 spanning all four `width % 4` classes, heights 1/2/3/5, odd origins,
 padded pitches and 4-byte-misaligned bases. The harness also verified that no

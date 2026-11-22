@@ -41,8 +41,10 @@ struct dim3 {
         : x(a), y(b), z(c) {}
 };
 
-// Set by the harness before each emulated thread invocation.
-extern dim3 blockIdx, blockDim, threadIdx;
+// Set by the harness before each emulated thread invocation. thread_local, like
+// the real built-ins: two host threads emulating launches must not share these,
+// otherwise the harness itself would be the data race.
+extern thread_local dim3 blockIdx, blockDim, threadIdx;
 
 // Device-management calls used by DeviceGuard. Compiling the guard proves it is
 // exception-safe; the harness never constructs one.

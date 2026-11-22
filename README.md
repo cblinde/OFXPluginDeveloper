@@ -21,7 +21,7 @@ This repository exists so that work is done once:
 - **`templates/minimal-cuda-ofx/`** is a complete, compiling plugin with a
   zero-copy CUDA path *and* a CPU fallback, correct bundle packaging, and a build
   that proves what it produced.
-- **The two reference documents** cover the parts you only learn from a bug
+- **The reference documents** cover the parts you only learn from a bug
   report: the GPU/stream contract, pitch arithmetic, RoD/RoI, colour and alpha,
   and per-host differences graded by evidence quality.
 
@@ -39,6 +39,7 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, the stream contract, pitch arithmetic, RoD/RoI, colour/alpha, TensorRT/ONNX zero-copy, toolchain, profiling |
 | [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | Resolve/Nuke/SCRATCH/Natron behaviour and workarounds, every claim graded A/B/C by evidence source |
 | [`BEST_PRACTICES_AND_PERFORMANCE.md`](BEST_PRACTICES_AND_PERFORMANCE.md) | Review-level synthesis: what the reference projects teach, verified header quirks, host- and kernel-side performance rules with measured PTX evidence, anti-patterns by symptom |
+| [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | The questions to answer before shipping, each one settled by a header line or a spec sentence, plus the automated gates that answer half of them |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | The buildable template: CMake + OFX host wrapper + CUDA kernel + CPU fallback |
 
 ---
@@ -283,9 +284,23 @@ The repository also ships a host test suite that needs no GPU:
 ```
 
 It compiles the real `Kernel.cu` with a shim, checks the alignment predicate,
-compares both kernels over 3,456 emulated launches, compares the hoisted CPU loop
-against the per-pixel form, and — when `nvcc` is on `PATH` — asserts the PTX
-instruction counts. Exit status is non-zero on any mismatch.
+compares both kernels over 3,240 emulated grid launches, compares the hoisted CPU
+loop against the per-pixel form, runs both kernels concurrently from six threads
+on disjoint buffers, and — when `nvcc` is on `PATH` — asserts the PTX instruction
+counts. Exit status is non-zero on any mismatch.
+
+The same suite runs under the checkers that need no GPU:
+
+```bash
+SANITIZE=address,undefined ./test/run-tests.sh   # memory + UB
+SANITIZE=thread            ./test/run-tests.sh   # races, in the concurrent test
+RUN_VALGRIND=1             ./test/run-tests.sh   # memcheck, full leak check
+./test/run-analysis.sh                           # cppcheck + shellcheck
+```
+
+Each stage prints why it skipped if a tool is missing, so a run with no sanitizer
+installed cannot look like a clean run. What these checks can and cannot prove is
+tabulated in [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) §1.
 
 If the plugin stops loading after a crash, the host has blacklisted it: clear
 Resolve's `OFXPluginCacheV2.xml` and re-enable it under Preferences → Video
@@ -319,12 +334,20 @@ OpenFX `OFX_Release_1.5.1`:
 - The vectorized kernel emits one 16-byte load and one 16-byte store per pixel
   at PTX level (`-arch=sm_89`), with 14 registers, no spills and no stack, the
   same register count as the scalar fallback.
-- Both kernels produce byte-identical output to a scalar reference across 3,456
-  host-emulated launches covering widths 0–63, all four `width % 4` classes, odd
-  origins, padded pitches and 4-byte-misaligned bases.
-- `./test/run-tests.sh` passes end to end (predicate table, 3,456 launches, CPU-loop
-  comparison, PTX instruction counts, bundle hygiene). Those checks are committed,
-  not just run once.
+- Both kernels produce byte-identical output to a scalar reference across 3,240
+  host-emulated grid launches covering widths 0–63, all four `width % 4` classes,
+  odd origins, padded pitches and 4-byte-misaligned bases, and neither writes
+  outside the render window.
+- `./test/run-tests.sh` passes end to end (predicate table, 3,240 launches, CPU-loop
+  comparison, six concurrent kernel runs, PTX instruction counts, bundle hygiene).
+  Those checks are committed, not just run once.
+- The same harness is clean under AddressSanitizer + UndefinedBehaviorSanitizer,
+  under ThreadSanitizer (which is given real threads by the concurrent test), and
+  under valgrind memcheck (`0 errors from 0 contexts`, every heap block freed).
+- `test/run-analysis.sh` reports nothing unresolved from cppcheck or shellcheck;
+  the two intentional cppcheck suppressions are the byte↔float accessors that
+  reproduce OFX's `void*` + row-bytes image contract, and are documented in the
+  checklist.
 - `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` builds and links: `libcudart.so.12` disappears
   from `NEEDED` and there are zero undefined `cuda*` symbols.
 - `CPU_ONLY=1`, and "CUDA requested but no compiler", both still build and pass
@@ -341,11 +364,13 @@ compiled; and no performance numbers exist. See `SKILL.md` §12.
 SKILL.md                            master reference and workflow
 ARCHITECTURE_AND_CUDA_PIPELINE.md    deep dive
 HOST_COMPATIBILITY_MATRIX.md         per-host differences
+PREFLIGHT_REVIEW_CHECKLIST.md        pre-ship questions, each with the line that settles it
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp        OFX host wrapper: params, dispatch, isIdentity
   src/Kernel.cuh src/Kernel.cu        CUDA interface + vec4/scalar kernels + launcher
-  test/run-tests.sh                    GPU-free test suite (equivalence, PTX, bundle)
+  test/run-tests.sh                    GPU-free suite: equivalence, concurrency, PTX, bundle, memcheck
+  test/run-analysis.sh                 cppcheck + shellcheck over sources and scripts
   test/kernel_equivalence.cpp          host harness for kernels and CPU loop
   test/shim/                           minimal <cuda_runtime.h> for host builds
   build.sh  build.bat                 toolkit discovery, bootstrap, build

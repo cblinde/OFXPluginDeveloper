@@ -125,7 +125,11 @@ bootstrap_cuda() {
     curl -fsSL -o "${debs}/${base}" "${cuda_repo}/${filename#./}" || die "download failed: ${base}"
 
     ( cd "$debs" && ar x "$base" ) || die "cannot unpack ${base} (is binutils installed?)"
-    local data; data="$(ls "${debs}"/data.tar.* 2>/dev/null | head -1)"
+    local data=""
+    local candidate
+    for candidate in "${debs}"/data.tar.*; do
+      [[ -e "${candidate}" ]] && { data="${candidate}"; break; }
+    done
     [[ -n "$data" ]] || die "${base} has no data.tar payload"
     tar -xf "$data" -C "$stage" || die "cannot extract ${data}"
     rm -f "${debs}"/data.tar.*

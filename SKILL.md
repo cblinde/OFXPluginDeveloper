@@ -16,6 +16,7 @@ touches their subject:
 | --- | --- |
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, streams, memory layout, RoD/RoI, colour/alpha, TensorRT/ORT, profiling |
 | [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | A behaviour differs between hosts, or a host-specific workaround is needed |
+| [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | Before shipping: the questions to answer, each with the header line or spec sentence that settles it |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | Starting a new plugin, or needing a known-good reference |
 
 ---
@@ -71,6 +72,7 @@ SKILL.md                              this file
 ARCHITECTURE_AND_CUDA_PIPELINE.md      the deep dive
 HOST_COMPATIBILITY_MATRIX.md           per-host behaviour and workarounds
 BEST_PRACTICES_AND_PERFORMANCE.md      performance rules, reference-project lessons, graded evidence
+PREFLIGHT_REVIEW_CHECKLIST.md          pre-ship questions, each citing the line that settles it
 templates/minimal-cuda-ofx/
   CMakeLists.txt                       bundle-producing build
   src/Plugin.h                         host wrapper declarations
@@ -452,8 +454,12 @@ kernel.
 - [ ] `isEnabledCudaRender` false path tested (force the host to OpenCL/CPU).
 - [ ] No `cudaDeviceSynchronize` anywhere: `grep -rn cudaDeviceSynchronize src/`.
 - [ ] Every error path logs and throws.
-- [ ] `./test/run-tests.sh` passes: predicate, kernel equivalence, CPU loop, PTX
-      counts, bundle hygiene.
+- [ ] `./test/run-tests.sh` passes: predicate, kernel equivalence, CPU loop,
+      concurrency, PTX counts, bundle hygiene.
+- [ ] It is also clean under `SANITIZE=address,undefined`, `SANITIZE=thread` and
+      `RUN_VALGRIND=1`, and `./test/run-analysis.sh` reports nothing.
+- [ ] Every `kOfx*` property you read is read with its declared type, and every
+      pre-ship question in `PREFLIGHT_REVIEW_CHECKLIST.md` has an answer.
 - [ ] Verification status written down honestly (see §12).
 
 ---
@@ -510,7 +516,7 @@ OpenFX `OFX_Release_1.5.1`):
 - Kernel PTX measured (`-arch=sm_89`): the vectorized kernel emits one 16-byte
   load and one 16-byte store per pixel with 14 registers, 0 spills, 0 stack; the
   scalar fallback is unchanged. Both kernels were executed on the host over
-  3,456 emulated launches (widths 0–63 covering every `width % 4`, odd origins,
+  3,240 emulated grid launches (widths 0–63 covering every `width % 4`, odd origins,
   padded and misaligned pitches) with 0 mismatches.
 - `dlopen` + `OfxGetNumberOfPlugins`/`OfxGetPlugin` returns one plugin:
   `OfxImageEffectPluginAPI v1`, id `com.ofxplugindeveloper.minimalcudagain`,
@@ -519,9 +525,19 @@ OpenFX `OFX_Release_1.5.1`):
 - `CPU_ONLY=1 ./build.sh` builds, exports 2 symbols, and has no launcher symbol.
 - `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` builds: the bundle drops `libcudart.so.12`
   from `NEEDED` and has zero undefined `cuda*` symbols.
-- `./test/run-tests.sh` passes: the alignment predicate, 3,456 emulated kernel
-  launches, the CPU loop comparison, and (with `nvcc` on `PATH`) the PTX
-  instruction-count assertions.
+- `./test/run-tests.sh` passes: the alignment predicate, 3,240 emulated grid
+  launches, the CPU loop comparison, six concurrent kernel runs on disjoint
+  buffers, and (with `nvcc` on `PATH`) the PTX instruction-count assertions.
+- The same harness is clean under `SANITIZE=address,undefined`,
+  `SANITIZE=thread` (the concurrent test gives TSan real threads; a deliberately
+  racy control program is caught, so the check has teeth) and
+  `RUN_VALGRIND=1` (`0 errors from 0 contexts`, all heap blocks freed).
+- `test/run-analysis.sh` is clean: cppcheck over `src/Plugin.cpp` + `test/` and
+  shellcheck over every script, with two justified `invalidPointerCast`
+  suppressions in the harness (the byte↔float accessors that reproduce OFX's
+  `void*` + row-bytes contract). clang-tidy is not used here: the verification
+  machine has no clang toolchain, and no finding is expected to need a
+  suppression under it.
 - `build.sh` with no toolkit and no `--bootstrap-cuda` exits 2 with actionable
   instructions; the CMake target still degrades with a warning when CUDA is
   requested without a compiler.
