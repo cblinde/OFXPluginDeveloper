@@ -14,8 +14,9 @@ rem
 rem Environment:
 rem   ONNXRUNTIME_ROOT  required. The Windows release zip (onnxruntime-win-x64-*)
 rem                     holds include\onnxruntime_cxx_api.h, lib\onnxruntime.lib
-rem                     and bin\onnxruntime.dll. The DLL is what goes into the
-rem                     bundle; the .lib is only the import library. No release
+rem                     and bin\onnxruntime.dll. The DLL is copied into the
+rem                     bundle as onnxruntime-ofx.dll and loaded by that name;
+rem                     the .lib is NOT linked on Windows. No release
 rem                     zip at hand? The NuGet package carries the same files:
 rem                       https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/<version>
 rem                     (a .nupkg is a zip) with build\native\include,
@@ -172,15 +173,16 @@ if not exist "%PLUGIN_OFX%" (
   exit /b 1
 )
 echo   %PLUGIN_OFX%
-if not exist "%BUNDLE%\Contents\Win64\onnxruntime.dll" (
+if not exist "%BUNDLE%\Contents\Win64\onnxruntime-ofx.dll" (
   echo.
-  echo BUILD FAILED: the bundle has no onnxruntime.dll
-  echo   the plug-in imports it; a host that loads this .ofx fails at load time.
+  echo BUILD FAILED: the bundle has no onnxruntime-ofx.dll
+  echo   the plug-in loads that private name at first use, so a missing copy is
+  echo   a render error with a message, not a crash - but the bundle is incomplete.
   echo   Expected OFXPLUGIN_BUNDLE_ONNX_RUNTIME=ON with bin\onnxruntime.dll under
   echo   %ONNXRUNTIME_ROOT%.
   exit /b 1
 )
-echo   %BUNDLE%\Contents\Win64\onnxruntime.dll
+echo   %BUNDLE%\Contents\Win64\onnxruntime-ofx.dll
 echo.
 echo Exports and load-time imports:
 rem --strict: the Visual Studio generator branch never runs vcvars64, so dumpbin

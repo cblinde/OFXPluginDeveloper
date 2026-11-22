@@ -104,7 +104,18 @@ if(MSVC)
 else()
   target_compile_options(${PLUGIN_TARGET} PRIVATE -Wall -Wextra)
 endif()
-target_link_libraries(${PLUGIN_TARGET} PRIVATE "${ONNXRUNTIME_LIBRARY}")
+# Windows must NOT link the import library. An import is resolved by module
+# base name, and the loader searches the executable's directory first: in a host
+# that ships its own onnxruntime.dll (Resolve 21 ships 1.13 next to
+# Resolve.exe) the bundled 1.20 is never opened, GetApi(ORT_API_VERSION) returns
+# null and the first ORT call access-violates. ModelRunner loads a private copy
+# (onnxruntime-ofx.dll) at first use instead; ORT_API_MANUAL_INIT stops the C++
+# wrapper from calling GetApi before that.
+if(WIN32)
+  target_compile_definitions(${PLUGIN_TARGET} PRIVATE ORT_API_MANUAL_INIT)
+else()
+  target_link_libraries(${PLUGIN_TARGET} PRIVATE "${ONNXRUNTIME_LIBRARY}")
+endif()
 target_link_libraries(${PLUGIN_TARGET} PRIVATE ${CMAKE_DL_LIBS})
 
 set_target_properties(${PLUGIN_TARGET} PROPERTIES
@@ -181,7 +192,11 @@ if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
         "ONNXRUNTIME_ROOT='${ONNXRUNTIME_ROOT}' (looked in bin/ and lib/).")
     endif()
     set(_onnx_copy "${ONNXRUNTIME_DLL}")
-    set(_onnx_bundled_name "onnxruntime.dll")
+    # A private name, not "onnxruntime.dll": LoadLibrary matches an already
+    # loaded module by base name, so even a full path to the bundled copy would
+    # return the host's runtime. ModelRunner.cpp loads this exact name from the
+    # module directory; keep the two in sync.
+    set(_onnx_bundled_name "onnxruntime-ofx.dll")
   elseif(APPLE)
     # dyld records an install name of @rpath/libonnxruntime.<version>.dylib and
     # @loader_path resolves it only if the file keeps that name. find_library()
@@ -221,19 +236,22 @@ if(MSVC)
 else()
   target_compile_options(ai_pipeline_test PRIVATE -Wall -Wextra)
 endif()
-target_link_libraries(ai_pipeline_test PRIVATE "${ONNXRUNTIME_LIBRARY}" ${CMAKE_DL_LIBS})
+if(WIN32)
+  target_compile_definitions(ai_pipeline_test PRIVATE ORT_API_MANUAL_INIT)
+else()
+  target_link_libraries(ai_pipeline_test PRIVATE "${ONNXRUNTIME_LIBRARY}")
+endif()
+target_link_libraries(ai_pipeline_test PRIVATE ${CMAKE_DL_LIBS})
 # Windows resolves an import from the executable's own directory first, then
-# System32, then PATH. A machine with another ONNX Runtime installed in System32
-# (1.17 was found in the field) therefore hands this test the wrong DLL, and
-# Session() aborts with "requested API version [20] is not available". Copy ours
-# beside the .exe, for the same reason the bundle carries the DLL beside the
-# .ofx: the build directory is the only place this test is meant to run from.
+# System32, then PATH. Copy ours beside the .exe under the private name
+# ModelRunner loads, for the same reason the bundle carries it: the build
+# directory is the only place this test is meant to run from.
 if(WIN32 AND ONNXRUNTIME_DLL)
   add_custom_command(TARGET ai_pipeline_test POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${ONNXRUNTIME_DLL}"
-            "$<TARGET_FILE_DIR:ai_pipeline_test>/onnxruntime.dll"
-    COMMENT "Copying onnxruntime.dll next to ai_pipeline_test.exe")
+            "$<TARGET_FILE_DIR:ai_pipeline_test>/onnxruntime-ofx.dll"
+    COMMENT "Copying onnxruntime-ofx.dll next to ai_pipeline_test.exe")
 endif()
 # No INSTALL_RPATH override here: CMake's build-tree rpath is what lets ctest
 # (and a plain ./ai_pipeline_test) find libonnxruntime before anything is

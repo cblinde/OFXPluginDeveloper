@@ -14,6 +14,7 @@
 #    define NOMINMAX
 #  endif
 #  include <windows.h>
+#  include <mutex>
 #endif
 
 #include <onnxruntime_cxx_api.h>
@@ -60,6 +61,79 @@ std::wstring WidePath(const std::string& utf8)
 }
 #endif
 
+#if defined(_WIN32) && defined(ORT_API_MANUAL_INIT)
+/// File name of the private runtime shipped beside the module. Resolve ships
+/// its own onnxruntime.dll next to Resolve.exe, and Windows resolves a module by
+/// base name: loading "onnxruntime.dll" - even by full path - returns the host's
+/// 1.13 copy, whose GetApi(ORT_API_VERSION) is null and crashes on first use.
+/// A name no host uses cannot collide. CMakeLists.txt copies this exact name.
+constexpr wchar_t kPrivateRuntimeDll[] = L"onnxruntime-ofx.dll";
+
+std::wstring ModuleDirectory()
+{
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(&ModuleDirectory), &module)) {
+        return std::wstring();
+    }
+    wchar_t path[MAX_PATH];
+    const DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
+    if (length == 0 || length == MAX_PATH) {
+        return std::wstring();
+    }
+    const std::wstring full(path, length);
+    const size_t slash = full.find_last_of(L"\\/");
+    return slash == std::wstring::npos ? std::wstring() : full.substr(0, slash);
+}
+
+/// Loads the private runtime once and installs its C API. Never unloaded: an
+/// Ort::Env created later outlives this call, so FreeLibrary would leave the
+/// process with dangling code pointers.
+void LoadPrivateRuntime()
+{
+    static std::once_flag once;
+    static std::string error;
+    std::call_once(once, [] {
+        const std::wstring dir = ModuleDirectory();
+        if (dir.empty()) {
+            error = "cannot determine the plug-in directory";
+            return;
+        }
+        const std::wstring file = dir + L"\\" + kPrivateRuntimeDll;
+        HMODULE library = LoadLibraryExW(
+            file.c_str(), nullptr,
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+        if (library == nullptr) {
+            error = "cannot load onnxruntime-ofx.dll beside the plug-in (Windows error " +
+                    std::to_string(GetLastError()) + ")";
+            return;
+        }
+        FARPROC symbol = GetProcAddress(library, "OrtGetApiBase");
+        if (symbol == nullptr) {
+            error = "onnxruntime-ofx.dll has no OrtGetApiBase";
+            return;
+        }
+        // memcpy rather than a cast from FARPROC: the cast is not portable and
+        // MSVC warns about it even when the sizes agree.
+        using GetApiBaseFn = const OrtApiBase*(ORT_API_CALL*)();
+        GetApiBaseFn getApiBase = nullptr;
+        static_assert(sizeof(getApiBase) == sizeof(symbol), "function pointer size");
+        std::memcpy(&getApiBase, &symbol, sizeof(getApiBase));
+        const OrtApi* api = getApiBase()->GetApi(ORT_API_VERSION);
+        if (api == nullptr) {
+            error = "onnxruntime-ofx.dll is older than ORT_API_VERSION " +
+                    std::to_string(ORT_API_VERSION);
+            return;
+        }
+        Ort::InitApi(api);
+    });
+    if (!error.empty()) {
+        throw std::runtime_error("ModelRunner: " + error);
+    }
+}
+#endif
+
 } // namespace
 
 struct ModelRunner::Impl {
@@ -74,6 +148,10 @@ struct ModelRunner::Impl {
 ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
     : _impl(new Impl())
 {
+#if defined(_WIN32) && defined(ORT_API_MANUAL_INIT)
+    // Before any Ort:: object exists: the C++ wrappers call through this API.
+    LoadPrivateRuntime();
+#endif
     if (modelPath.empty()) {
         throw std::runtime_error("ModelRunner: empty model path");
     }
