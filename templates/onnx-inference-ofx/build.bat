@@ -5,6 +5,8 @@ rem
 rem   set ONNXRUNTIME_ROOT=C:\onnxruntime-win-x64-1.20.1
 rem   .\build.bat                  Release
 rem   .\build.bat Debug            another configuration
+rem   .\build.bat Release install  build, then copy the bundle into
+rem                                %COMMONPROGRAMFILES%\OFX\Plugins
 rem
 rem The leading .\ matters when NoDefaultCurrentDirectoryInExePath=1 is set (a
 rem common policy): a bare `build.bat` is then not found, by cmd.exe itself.
@@ -13,7 +15,11 @@ rem Environment:
 rem   ONNXRUNTIME_ROOT  required. The Windows release zip (onnxruntime-win-x64-*)
 rem                     holds include\onnxruntime_cxx_api.h, lib\onnxruntime.lib
 rem                     and bin\onnxruntime.dll. The DLL is what goes into the
-rem                     bundle; the .lib is only the import library.
+rem                     bundle; the .lib is only the import library. No release
+rem                     zip at hand? The NuGet package carries the same files:
+rem                       https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/<version>
+rem                     (a .nupkg is a zip) with build\native\include,
+rem                     runtimes\win-x64\native\*.lib and ...\*.dll.
 rem   OFX_SOURCE_DIR    point at an existing openfx checkout (offline builds);
 rem                     when unset, CMake fetches OFX_Release_1.5.1
 rem   CMAKE_GENERATOR   force a generator (default: the newest Visual Studio that
@@ -43,6 +49,10 @@ if not defined ONNXRUNTIME_ROOT (
   echo   Download onnxruntime-win-x64-^<version^>.zip from
   echo   https://github.com/microsoft/onnxruntime/releases and extract it, then
   echo     set ONNXRUNTIME_ROOT=C:\path\to\onnxruntime-win-x64-^<version^>
+  echo   Release assets unreachable? The NuGet package has the same files:
+  echo     https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/^<version^>
+  echo   copy build\native\include\* to include\, runtimes\win-x64\native\*.lib
+  echo   to lib\ and runtimes\win-x64\native\*.dll to bin\.
   exit /b 2
 )
 if not exist "%ONNXRUNTIME_ROOT%\include\onnxruntime_cxx_api.h" (
@@ -54,7 +64,8 @@ set "ORT_LIB="
 if exist "%ONNXRUNTIME_ROOT%\lib\onnxruntime.lib" set "ORT_LIB=%ONNXRUNTIME_ROOT%\lib\onnxruntime.lib"
 if not defined ORT_LIB (
   echo error: no lib\onnxruntime.lib under %ONNXRUNTIME_ROOT%.
-  echo   The pip wheel ships only the DLL and no headers; use the release zip.
+  echo   The pip wheel ships only the DLL and no headers; use the release zip,
+  echo   or the NuGet package's runtimes\win-x64\native\*.lib.
   exit /b 2
 )
 if not exist "%ONNXRUNTIME_ROOT%\bin\onnxruntime.dll" (
@@ -134,6 +145,14 @@ if /I "!GEN!"=="Ninja" (
 
 cmake -S "%HERE%." -B "%BUILD_DIR%" !GENARG! !EXTRA! || goto :error
 cmake --build "%BUILD_DIR%" --config %CONFIG% --parallel || goto :error
+
+rem ---- optional install ------------------------------------------------------
+rem %2=install is what README.md documents, and minimal-cuda-ofx already honours
+rem it. Without this block the ONNX script accepted the argument and silently
+rem installed nothing.
+if /I "%~2"=="install" (
+  cmake --build "%BUILD_DIR%" --config %CONFIG% --target install-bundle || goto :error
+)
 
 rem ---- prove the bundle is where a host will look ---------------------------
 rem Same trap as the other templates: a MODULE target lands in Win64 under MSVC
