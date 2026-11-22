@@ -11,12 +11,24 @@
 // failure, naming the assertion. Run it against a deliberately broken plug-in
 // (testkit/negative-controls) to see that behaviour.
 //
-// Linux/macOS use dlopen/dlsym. On Windows the equivalent is LoadLibraryExW +
-// GetProcAddress on the same two names; that path is documented in
-// TESTING_STRATEGY.md but not built here.
+// Linux/macOS use dlopen/dlsym. Windows uses LoadLibraryExW + GetProcAddress on
+// the same two names. Both paths are built: an OFX host on Windows is doing the
+// LoadLibraryExW half of this, so leaving it untested meant the platform the
+// template claims to support had no loader-level verification at all.
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -77,19 +89,65 @@ struct Module {
   int (*numberOfPlugins)() = nullptr;
   OfxPlugin* (*plugin)(int) = nullptr;
 
+  static std::string lastLoaderError() {
+#ifdef _WIN32
+    const DWORD code = ::GetLastError();
+    char* text = nullptr;
+    const DWORD n = ::FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr, code, 0, reinterpret_cast<char*>(&text), 0, nullptr);
+    std::string message = (n != 0 && text != nullptr) ? std::string(text, n)
+                                                      : std::string("LoadLibraryEx failed");
+    if (text != nullptr) ::LocalFree(text);
+    while (!message.empty() && (message.back() == '\n' || message.back() == '\r' ||
+                                message.back() == ' ' || message.back() == '.')) {
+      message.pop_back();
+    }
+    return message + " (Win32 error " + std::to_string(code) + ")";
+#else
+    const char* e = ::dlerror();
+    return e ? std::string(e) : std::string("dlopen failed");
+#endif
+  }
+
   bool open(const std::string& path, std::string* error) {
-    handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (!handle) {
-      *error = ::dlerror() ? ::dlerror() : "dlopen failed";
+#ifdef _WIN32
+    // A Windows OFX binary is a DLL with a .ofx extension. LOAD_WITH_ALTERED_SEARCH_PATH
+    // makes the loader search the bundle first, which is how a host finds a
+    // cudart shipped next to the plug-in.
+    const int wide = ::MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
+    std::wstring wpath(static_cast<size_t>(wide > 0 ? wide - 1 : 0), L'\0');
+    if (wide > 1) {
+      ::MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, &wpath[0], wide);
+    }
+    HMODULE h = ::LoadLibraryExW(wpath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    handle = h;
+    if (!h) {
+      *error = lastLoaderError();
       return false;
     }
     // Both names are mandated by OFX; a bundle missing either is not loadable.
+    numberOfPlugins =
+        reinterpret_cast<int (*)()>(::GetProcAddress(h, "OfxGetNumberOfPlugins"));
+    plugin = reinterpret_cast<OfxPlugin* (*)(int)>(::GetProcAddress(h, "OfxGetPlugin"));
+#else
+    handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (!handle) {
+      *error = lastLoaderError();
+      return false;
+    }
     numberOfPlugins = reinterpret_cast<int (*)()>(::dlsym(handle, "OfxGetNumberOfPlugins"));
     plugin = reinterpret_cast<OfxPlugin* (*)(int)>(::dlsym(handle, "OfxGetPlugin"));
+#endif
     return true;
   }
   void close() {
+#ifdef _WIN32
+    if (handle) ::FreeLibrary(static_cast<HMODULE>(handle));
+#else
     if (handle) ::dlclose(handle);
+#endif
     handle = nullptr;
   }
   ~Module() { close(); }
@@ -114,6 +172,12 @@ struct Spec {
   bool expectNotIdentityAfterSet = false;
   bool byteDstRejected = false;
   bool negativePitch = false;
+  // Multi-instance and thread-safety checks. `concurrencyThreads == 0` turns
+  // them off; `scaleParam` names a numeric parameter that is given a different
+  // value on each instance (e.g. "gain").
+  int concurrencyThreads = 4;
+  int concurrencyIterations = 3;
+  std::string scaleParam;
 };
 
 std::string canonicalType(const std::string& t) {
@@ -140,6 +204,194 @@ bool readFloats(const std::string& path, std::vector<float>* out, size_t expecte
 bool validThreadSafety(const std::string& s) {
   return s == kOfxImageEffectRenderUnsafe || s == kOfxImageEffectRenderInstanceSafe ||
          s == kOfxImageEffectRenderFullySafe;
+}
+
+// Checks that `pixels` is the source scaled by `scale`, the same gain-like
+// assumption the single-instance check makes. Returns the worst deviation.
+double deviationFromScaledSource(const std::vector<float>& pixels, const std::vector<float>& srcRGBA,
+                                 double scale, std::string* where) {
+  double worst = 0.0;
+  for (size_t i = 0; i + 3 < pixels.size() && i + 3 < srcRGBA.size(); i += 4) {
+    for (int c = 0; c < 3; ++c) {
+      const double expected = static_cast<double>(srcRGBA[i + c]) * scale;
+      const double diff = std::abs(static_cast<double>(pixels[i + c]) - expected);
+      if (diff > worst) {
+        worst = diff;
+        *where = "pixel " + std::to_string(i / 4) + " channel " + std::to_string(c);
+      }
+    }
+  }
+  return worst;
+}
+
+// Two live instances must keep separate parameter values, and the declared
+// render thread safety must hold under real threads. OFX defines the levels
+// precisely: kOfxImageEffectRenderInstanceSafe allows concurrent renders of
+// *different* instances, kOfxImageEffectRenderFullySafe also allows several
+// threads to render the *same* instance. kOfxImageEffectRenderUnsafe promises
+// nothing, and is reported as a named skip rather than silently passing.
+bool runMultiInstance(const Spec& spec, testkit::FakeHost& host, const std::string& safety,
+                      const std::vector<float>& srcRGBA) {
+  if (spec.concurrencyThreads <= 0) {
+    ok("multi-instance and thread-safety checks skipped (--concurrency-threads 0)");
+    return true;
+  }
+  const OfxRectI window = {0, 0, spec.width, spec.height};
+
+  // A host gives every instance the same baseline configuration (model path,
+  // tile size, ...); only the values a test varies per instance differ.
+  auto applyBaseline = [&](int index) {
+    for (const auto& set : spec.sets) {
+      if (!check("baseline " + set.first + " on instance " + std::to_string(index),
+                 host.setParamForInstance(index, set.first, set.second))) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // ---- two live instances, each with its own parameter values -------------
+  const int second = host.createInstanceIndexed(spec.context.c_str());
+  if (!check("a second instance can be created", second >= 0)) return false;
+  if (!check("two instances are live at the same time", host.instanceCount() >= 2,
+             std::to_string(host.instanceCount()) + " instances")) {
+    return false;
+  }
+  if (!applyBaseline(0) || !applyBaseline(second)) return false;
+
+  double firstScale = 1.0;
+  double secondScale = 1.0;
+  if (!spec.scaleParam.empty()) {
+    firstScale = 1.5;
+    secondScale = 2.5;
+    if (!check("instance 0 accepts its own " + spec.scaleParam,
+               host.setParamForInstance(0, spec.scaleParam, "1.5"))) {
+      return false;
+    }
+    if (!check("instance 1 accepts a different " + spec.scaleParam,
+               host.setParamForInstance(second, spec.scaleParam, "2.5"))) {
+      return false;
+    }
+  }
+
+  host.selectInstance(0);
+  if (!check("render instance 0 while instance 1 is alive",
+             host.render(0.0, window) == kOfxStatOK)) {
+    return false;
+  }
+  const std::vector<float> firstPixels = host.destination();
+  host.selectInstance(second);
+  if (!check("render instance 1 with its own settings",
+             host.render(0.0, window) == kOfxStatOK)) {
+    return false;
+  }
+  const std::vector<float> secondPixels = host.destination();
+
+  if (!spec.scaleParam.empty()) {
+    std::string where;
+    const double worst0 = deviationFromScaledSource(firstPixels, srcRGBA, firstScale, &where);
+    if (!check("instance 0 used its own value, not its neighbour's", worst0 <= 1e-6,
+               "max deviation " + std::to_string(worst0) + " at " + where)) {
+      return false;
+    }
+    const double worst1 = deviationFromScaledSource(secondPixels, srcRGBA, secondScale, &where);
+    if (!check("instance 1 used its own value, not its neighbour's", worst1 <= 1e-6,
+               "max deviation " + std::to_string(worst1) + " at " + where)) {
+      return false;
+    }
+  } else if (!check("two instances with identical settings produce identical pixels",
+                    !firstPixels.empty() && firstPixels == secondPixels,
+                    std::to_string(firstPixels.size()) + " vs " +
+                        std::to_string(secondPixels.size()) + " floats")) {
+    return false;
+  }
+
+  // ---- concurrent renders, as many as the declared safety allows ---------
+  const bool fullySafe = safety == kOfxImageEffectRenderFullySafe;
+  const bool instanceSafe = safety == kOfxImageEffectRenderInstanceSafe || fullySafe;
+  if (!instanceSafe) {
+    ok("declared " + safety + ": no concurrent render is promised, test skipped by name");
+  } else {
+    const int threads = std::max(2, spec.concurrencyThreads);
+    std::vector<int> used;
+    used.push_back(0);
+    if (fullySafe) {
+      used.assign(static_cast<size_t>(threads), 0); // same instance, many threads
+    } else {
+      used.push_back(second);
+      while (static_cast<int>(used.size()) < threads) {
+        const int id = host.createInstanceIndexed(spec.context.c_str());
+        if (!check("instance for parallel worker " + std::to_string(used.size()), id >= 0)) {
+          return false;
+        }
+        if (!applyBaseline(id)) return false;
+        used.push_back(id);
+      }
+    }
+
+    std::map<int, double> valueByInstance;
+    for (size_t i = 0; i < used.size(); ++i) {
+      const double value = 1.0 + 0.5 * static_cast<double>(i);
+      valueByInstance[used[i]] = value;
+      if (!spec.scaleParam.empty() &&
+          !check("set " + spec.scaleParam + " on the instance of parallel worker " +
+                     std::to_string(i),
+                 host.setParamForInstance(used[i], spec.scaleParam, std::to_string(value)))) {
+        return false;
+      }
+    }
+
+    const std::vector<testkit::FakeHost::RenderRecord> records =
+        host.renderConcurrently(used, spec.concurrencyIterations, window);
+    const size_t expected = used.size() * static_cast<size_t>(spec.concurrencyIterations);
+    if (!check("concurrent renders produced every record", records.size() == expected,
+               std::to_string(records.size()) + " of " + std::to_string(expected))) {
+      return false;
+    }
+
+    bool allOk = true;
+    std::string firstBad;
+    for (const auto& record : records) {
+      if (record.status != kOfxStatOK) {
+        allOk = false;
+        if (firstBad.empty()) firstBad = statusName(record.status);
+      }
+    }
+    if (!check("every concurrent render returned kOfxStatOK", allOk, firstBad)) return false;
+
+    bool readable = true;
+    for (const auto& record : records) readable = readable && record.pixels.size() == srcRGBA.size();
+    if (!check("every concurrent render produced a readable destination", readable)) return false;
+
+    if (!spec.scaleParam.empty()) {
+      double worst = 0.0;
+      std::string where;
+      for (const auto& record : records) {
+        const double diff =
+            deviationFromScaledSource(record.pixels, srcRGBA, valueByInstance[record.instance], &where);
+        if (diff > worst) worst = diff;
+      }
+      if (!check("concurrent instances kept their own parameter values", worst <= 1e-6,
+                 "max deviation " + std::to_string(worst) + " at " + where)) {
+        return false;
+      }
+    } else {
+      bool identical = true;
+      for (const auto& record : records) identical = identical && record.pixels == records.front().pixels;
+      if (!check("concurrent renders with identical settings are identical", identical)) return false;
+    }
+  }
+
+  // Leave exactly the first instance alive, selected, for the rest of the cycle.
+  while (host.instanceCount() > 1) {
+    const int last = host.instanceCount() - 1;
+    if (!check("destroy instance " + std::to_string(last),
+               host.destroyInstanceAt(last) == kOfxStatOK)) {
+      return false;
+    }
+  }
+  host.selectInstance(0);
+  return true;
 }
 
 // Runs one whole open -> unload cycle. Returns false on the first failed check.
@@ -379,6 +631,8 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     if (!check("alpha is unchanged", alphaPreserved)) return failCycle(host);
   }
 
+  if (!runMultiInstance(spec, host, safety, srcRGBA)) return failCycle(host);
+
   if (spec.byteDstRejected) {
     host.setDestinationByteImage(true);
     const OfxStatus st = host.render(0.0, window);
@@ -409,7 +663,9 @@ int main(int argc, char** argv) {
                  "usage: contract_test <plugin.ofx> --id <identifier> [--param name:type]...\n"
                  "       [--clip name]... [--set name=value]... [--context <context>]\n"
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
-                 "       [--negative-pitch] [--src file --golden file --size WxH]\n");
+                 "       [--negative-pitch] [--src file --golden file --size WxH]\n"
+                 "       [--concurrency-param name] [--concurrency-threads N]\n"
+                 "       [--concurrency-iterations N] (threads=0 skips the checks)\n");
     return 2;
   }
   spec.path = argv[1];
@@ -474,6 +730,12 @@ int main(int argc, char** argv) {
       spec.byteDstRejected = true;
     } else if (a == "--negative-pitch") {
       spec.negativePitch = true;
+    } else if (a == "--concurrency-threads") {
+      spec.concurrencyThreads = std::atoi(next("--concurrency-threads").c_str());
+    } else if (a == "--concurrency-iterations") {
+      spec.concurrencyIterations = std::atoi(next("--concurrency-iterations").c_str());
+    } else if (a == "--concurrency-param") {
+      spec.scaleParam = next("--concurrency-param");
     } else {
       std::fprintf(stderr, "error: unknown argument '%s'\n", a.c_str());
       return 2;

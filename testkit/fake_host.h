@@ -6,18 +6,20 @@
 // (kOfxPropertySuite, kOfxImageEffectSuite, kOfxParameterSuite,
 // kOfxMultiThreadSuite, kOfxMemorySuite) plus the message suite, and it
 // implements the object model those suites address: one plug-in descriptor,
-// one effect instance, the clips and parameters declared through it, and the
-// source/destination images handed to a render.
+// any number of effect instances each with its own parameter values, the clips
+// declared once through the descriptor, and the source/destination images
+// handed to a render.
 //
 // What it is for: driving a real .ofx through describe, describeInContext,
 // createInstance, isIdentity, render, destroyInstance and unload inside a
 // process with no host application, so a plug-in's declarations, status codes
-// and pixels can be asserted in CI.
+// and pixels can be asserted in CI. It holds more than one instance at a time
+// and can render them from several threads, because the declared render thread
+// safety is a claim about exactly that.
 //
-// What it is not: a conformant host. See TESTING_STRATEGY.md L3 for the three
-// things it cannot prove (the multi-resolution/tile protocol, clip preferences
-// and host scheduling, and anything about how a real host presents errors).
-// It is a contract test, not a certification.
+// What it is not: a conformant host. See TESTING_STRATEGY.md L3 for what it
+// cannot prove (the multi-resolution/tile protocol, clip preferences, and how a
+// real host presents errors). It is a contract test, not a certification.
 
 #pragma once
 
@@ -46,6 +48,33 @@ public:
   OfxStatus describe();
   OfxStatus describeInContext(const char* context);
   OfxStatus createInstance(const char* context);
+  // Creates one more instance and returns its index, or -1 when the plug-in
+  // refuses. A host really does hold several instances at once; the contract
+  // test uses this to check that two instances keep separate parameter values.
+  int createInstanceIndexed(const char* context);
+  // Makes the instance at `index` the one that receives isIdentity/render/
+  // destroyInstance; -1 (or an out-of-range index) selects none.
+  void selectInstance(int index);
+  int instanceCount() const;
+  OfxStatus destroyInstanceAt(int index);
+
+  // Sets a parameter on one instance without changing the selected instance.
+  bool setParamForInstance(int index, const std::string& name, const std::string& value);
+
+  // One render performed by renderConcurrently(); `pixels` is the destination
+  // read back tightly packed, top-down, RGBA float.
+  struct RenderRecord {
+    int instance = -1;
+    double time = 0.0;
+    OfxStatus status = kOfxStatOK;
+    std::vector<float> pixels;
+  };
+  // Renders `iterations` frames on one thread per entry of `instances`, each
+  // thread bound to that instance (the same index repeated means the same
+  // instance from several threads). Each worker gets its own source and
+  // destination images, so a race reported here belongs to the plug-in.
+  std::vector<RenderRecord> renderConcurrently(const std::vector<int>& instances, int iterations,
+                                               const OfxRectI& window);
   // On kOfxStatOK the identity clip name is written to *identityClip (the
   // host-side outArgs property is kOfxPropName).
   OfxStatus isIdentity(double time, const OfxRectI& window, std::string* identityClip);

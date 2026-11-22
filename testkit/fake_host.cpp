@@ -14,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ofxGPURender.h"
@@ -77,8 +78,13 @@ struct ImageObj {
   long long pitchFloats = 0;
 };
 
+// One effect instance. Parameters live here, not in Impl: two live instances
+// must be able to hold different values for the same parameter, because that is
+// exactly what a host does when it renders two clips at once.
 struct EffectObj {
   PropSet props;
+  PropSet paramSet;
+  std::map<std::string, ParamObj*> params;
 };
 
 constexpr int kPadPixels = 5; // padding so rowBytes != width*16
@@ -97,14 +103,15 @@ struct Impl {
   OfxMessageSuiteV1 messageSuite{};
 
   EffectObj pluginDesc;
-  EffectObj effect;
-  PropSet paramSet;
-  bool hasEffect = false;
+  std::vector<EffectObj*> instances;
+  EffectObj* current = nullptr; // instance that receives host actions
+  // True only while renderConcurrently() runs: each worker then gets its own
+  // source/destination images instead of the shared ones.
+  bool parallel = false;
 
   std::vector<ClipObj*> clips;
   std::vector<ParamObj*> params;
   std::map<std::string, ClipObj*> clipByName;
-  std::map<std::string, ParamObj*> paramByName;
 
   // images
   int imgW = 64;
@@ -122,6 +129,7 @@ struct Impl {
   void reset();
 
   ~Impl() {
+    for (EffectObj* e : instances) delete e;
     for (ClipObj* c : clips) delete c;
     for (ParamObj* p : params) delete p;
     delete srcImage;
@@ -133,11 +141,25 @@ namespace {
 
 Impl* g = nullptr;
 
+// The effect a call belongs to when it arrives from a render worker; see
+// renderConcurrently(). Empty on the host thread, where Impl::current decides.
+thread_local EffectObj* tlsEffect = nullptr;
+struct ThreadImages {
+  ImageObj* src = nullptr;
+  ImageObj* dst = nullptr;
+};
+thread_local ThreadImages tlsImages;
+
+// messageFn() can be called from any render thread; the vector behind it is
+// shared host state, so it gets a lock even though nothing else here needs one.
+std::mutex gMessageMutex;
+
 // ---------------------------------------------------------------- property set
 
 PropSet* ps(OfxPropertySetHandle h) { return reinterpret_cast<PropSet*>(h); }
 PropSet* ps(OfxParamHandle h) { return reinterpret_cast<PropSet*>(h); }
 PropSet* ps(OfxImageClipHandle h) { return reinterpret_cast<PropSet*>(h); }
+PropSet* ps(OfxParamSetHandle h) { return reinterpret_cast<PropSet*>(h); }
 
 template <typename T>
 OfxPropertySetHandle handleOf(T* p) {
@@ -296,6 +318,29 @@ OfxStatus propGetDimensionFn(OfxPropertySetHandle h, const char* n, int* count) 
 
 // ------------------------------------------------------------------ parameters
 
+EffectObj* effectOf(OfxPropertySetHandle h) {
+  if (!h) return nullptr;
+  PropSet* s = ps(h);
+  return (s->ownerKind == kEffect) ? static_cast<EffectObj*>(s->owner) : nullptr;
+}
+
+// Descriptor-level parameters are templates; an instance gets its own copy the
+// first time it asks for the handle, with the same defaults and an unset value.
+ParamObj* ensureParam(EffectObj* effect, const std::string& name) {
+  if (!effect) return nullptr;
+  auto it = effect->params.find(name);
+  if (it != effect->params.end()) return it->second;
+  auto tmpl = g->pluginDesc.params.find(name);
+  if (tmpl == g->pluginDesc.params.end()) return nullptr;
+  ParamObj* copy = new ParamObj(*tmpl->second);
+  copy->props.owner = copy; // the copy must not point at the template
+  copy->props.ownerKind = kParam;
+  copy->isSet = false;
+  g->params.push_back(copy);
+  effect->params[name] = copy;
+  return copy;
+}
+
 ParamObj* paramOf(OfxParamHandle p) {
   if (!p) return nullptr;
   PropSet* s = ps(p);
@@ -320,9 +365,11 @@ std::string paramString(ParamObj* p) {
 
 bool isType(const ParamObj* p, const char* t) { return p->type == t; }
 
-OfxStatus paramDefineFn(OfxParamSetHandle, const char* paramType, const char* name,
+OfxStatus paramDefineFn(OfxParamSetHandle paramSet, const char* paramType, const char* name,
                         OfxPropertySetHandle* propertySet) {
   if (!paramType || !name || !propertySet) return kOfxStatErrBadHandle;
+  EffectObj* effect = effectOf(reinterpret_cast<OfxPropertySetHandle>(paramSet));
+  if (!effect) return kOfxStatErrBadHandle;
   ParamObj* p = new ParamObj();
   p->name = name;
   p->type = paramType;
@@ -332,24 +379,25 @@ OfxStatus paramDefineFn(OfxParamSetHandle, const char* paramType, const char* na
   setString(&p->props, kOfxPropName, 0, name);
   setString(&p->props, kOfxPropLabel, 0, name);
   g->params.push_back(p);
-  g->paramByName[name] = p;
+  effect->params[name] = p;
   *propertySet = handleOf(&p->props);
   return kOfxStatOK;
 }
 
-OfxStatus paramGetHandleFn(OfxParamSetHandle, const char* name, OfxParamHandle* param,
+OfxStatus paramGetHandleFn(OfxParamSetHandle paramSet, const char* name, OfxParamHandle* param,
                            OfxPropertySetHandle* propertySet) {
   if (!name) return kOfxStatErrBadHandle;
-  auto it = g->paramByName.find(name);
-  if (it == g->paramByName.end()) return kOfxStatErrBadHandle;
-  if (param) *param = reinterpret_cast<OfxParamHandle>(&it->second->props);
-  if (propertySet) *propertySet = handleOf(&it->second->props);
+  EffectObj* effect = effectOf(reinterpret_cast<OfxPropertySetHandle>(paramSet));
+  ParamObj* p = ensureParam(effect, name);
+  if (!p) return kOfxStatErrBadHandle;
+  if (param) *param = reinterpret_cast<OfxParamHandle>(&p->props);
+  if (propertySet) *propertySet = handleOf(&p->props);
   return kOfxStatOK;
 }
 
-OfxStatus paramSetGetPropertySetFn(OfxParamSetHandle, OfxPropertySetHandle* prop) {
-  if (!prop) return kOfxStatErrBadHandle;
-  *prop = handleOf(&g->paramSet);
+OfxStatus paramSetGetPropertySetFn(OfxParamSetHandle paramSet, OfxPropertySetHandle* prop) {
+  if (!paramSet || !prop) return kOfxStatErrBadHandle;
+  *prop = handleOf(ps(paramSet));
   return kOfxStatOK;
 }
 
@@ -372,7 +420,7 @@ OfxStatus paramGetValueFn(OfxParamHandle param, ...) {
     *va_arg(ap, int*) = paramInt(p);
     st = kOfxStatOK;
   } else if (isType(p, kOfxParamTypeString)) {
-    static std::string s;
+    thread_local std::string s; // render workers read string parameters too
     s = paramString(p);
     *va_arg(ap, char**) = const_cast<char*>(s.c_str());
     st = kOfxStatOK;
@@ -395,7 +443,7 @@ OfxStatus paramGetValueAtTimeFn(OfxParamHandle param, OfxTime time, ...) {
     *va_arg(ap, int*) = paramInt(p);
     st = kOfxStatOK;
   } else if (isType(p, kOfxParamTypeString)) {
-    static std::string s;
+    thread_local std::string s; // render workers read string parameters too
     s = paramString(p);
     *va_arg(ap, char**) = const_cast<char*>(s.c_str());
     st = kOfxStatOK;
@@ -569,10 +617,25 @@ void buildDstImage(ImageObj* img) {
 }
 
 ImageObj* imageFor(ClipObj* clip) {
-  ImageObj*& img = (clip->name == kOfxImageEffectSimpleSourceClipName) ? g->srcImage : g->dstImage;
+  const bool isSource = clip->name == kOfxImageEffectSimpleSourceClipName;
+  // A render worker gets its own images: two threads writing one destination
+  // buffer would test the host, not the plug-in.
+  if (g->parallel) {
+    ImageObj*& img = isSource ? tlsImages.src : tlsImages.dst;
+    if (!img) img = new ImageObj();
+    if (img->w != g->imgW || img->h != g->imgH) {
+      if (isSource) {
+        buildSourceImage(img);
+      } else {
+        buildDstImage(img);
+      }
+    }
+    return img;
+  }
+  ImageObj*& img = isSource ? g->srcImage : g->dstImage;
   if (!img) img = new ImageObj();
   if (img->w != g->imgW || img->h != g->imgH) {
-    if (clip->name == kOfxImageEffectSimpleSourceClipName) {
+    if (isSource) {
       buildSourceImage(img);
     } else {
       buildDstImage(img);
@@ -603,9 +666,11 @@ OfxStatus getPropertySetFn(OfxImageEffectHandle handle, OfxPropertySetHandle* pr
   return kOfxStatOK;
 }
 
-OfxStatus getParamSetFn(OfxImageEffectHandle, OfxParamSetHandle* paramSet) {
+OfxStatus getParamSetFn(OfxImageEffectHandle handle, OfxParamSetHandle* paramSet) {
   if (!paramSet) return kOfxStatErrBadHandle;
-  *paramSet = reinterpret_cast<OfxParamSetHandle>(&g->paramSet);
+  EffectObj* effect = effectOf(reinterpret_cast<OfxPropertySetHandle>(handle));
+  if (!effect) return kOfxStatErrBadHandle;
+  *paramSet = reinterpret_cast<OfxParamSetHandle>(&effect->paramSet);
   return kOfxStatOK;
 }
 
@@ -651,10 +716,14 @@ OfxStatus clipGetImageFn(OfxImageClipHandle clipHandle, OfxTime, const OfxRectD*
   publishImageProps(img, clip);
   // A host updates the clip instance's declared depth/components to match the
   // image it is about to hand over; a plug-in that checks the clip and then the
-  // image would otherwise see two different answers.
-  setString(&clip->props, kOfxImageEffectPropPixelDepth, 0,
-            img->isByte ? kOfxBitDepthByte : kOfxBitDepthFloat);
-  setString(&clip->props, kOfxImageEffectPropComponents, 0, kOfxImageComponentRGBA);
+  // image would otherwise see two different answers. In a parallel render the
+  // clip object is shared, so the write is skipped: a real host announces the
+  // format before the render action, not inside clipGetImage.
+  if (!g->parallel) {
+    setString(&clip->props, kOfxImageEffectPropPixelDepth, 0,
+              img->isByte ? kOfxBitDepthByte : kOfxBitDepthFloat);
+    setString(&clip->props, kOfxImageEffectPropComponents, 0, kOfxImageComponentRGBA);
+  }
   *imageHandle = handleOf(&img->props);
   return kOfxStatOK;
 }
@@ -751,7 +820,10 @@ OfxStatus messageFn(void*, const char* messageType, const char* messageId, const
     line += messageId;
     line += ")";
   }
-  g->messages.push_back(line);
+  {
+    std::lock_guard<std::mutex> lock(gMessageMutex);
+    g->messages.push_back(line);
+  }
   return kOfxStatOK;
 }
 
@@ -882,8 +954,8 @@ Impl::Impl() {
   initHostProps(&hostProps);
   pluginDesc.props.owner = &pluginDesc;
   pluginDesc.props.ownerKind = kEffect;
-  effect.props.owner = &effect;
-  effect.props.ownerKind = kEffect;
+  pluginDesc.paramSet.owner = &pluginDesc;
+  pluginDesc.paramSet.ownerKind = kEffect;
 
   host.host = handleOf(&hostProps);
   host.fetchSuite = fetchSuite;
@@ -898,21 +970,23 @@ Impl::Impl() {
 }
 
 void Impl::reset() {
+  for (EffectObj* e : instances) delete e;
+  instances.clear();
+  current = nullptr;
   for (ClipObj* c : clips) delete c;
   for (ParamObj* p : params) delete p;
   clips.clear();
   params.clear();
   clipByName.clear();
-  paramByName.clear();
   delete srcImage;
   delete dstImage;
   srcImage = nullptr;
   dstImage = nullptr;
   pluginDesc.props.props.clear();
-  effect.props.props.clear();
-  paramSet.props.clear();
+  pluginDesc.params.clear();
+  pluginDesc.paramSet.props.clear();
   messages.clear();
-  hasEffect = false;
+  parallel = false;
   padded = true;
   negativePitch = false;
   byteDst = false;
@@ -944,8 +1018,10 @@ void FakeHost::attach(OfxPlugin* plugin) {
 
 OfxStatus FakeHost::mainEntry(const char* action, void* outArgs, void* inArgs) {
   if (!plugin_ || !plugin_->mainEntry) return kOfxStatErrBadHandle;
-  const void* handle = impl_->hasEffect ? static_cast<const void*>(&impl_->effect.props)
-                                        : static_cast<const void*>(&impl_->pluginDesc.props);
+  // A render worker names its own effect; otherwise the selected instance does.
+  EffectObj* effect = tlsEffect ? tlsEffect : impl_->current;
+  const void* handle = effect ? static_cast<const void*>(&effect->props)
+                              : static_cast<const void*>(&impl_->pluginDesc.props);
   return plugin_->mainEntry(action, handle, reinterpret_cast<OfxPropertySetHandle>(inArgs),
                             reinterpret_cast<OfxPropertySetHandle>(outArgs));
 }
@@ -966,10 +1042,53 @@ OfxStatus FakeHost::describeInContext(const char* context) {
 }
 
 OfxStatus FakeHost::createInstance(const char* context) {
-  setString(&impl_->effect.props, kOfxImageEffectPropContext, 0, context);
-  setString(&impl_->effect.props, kOfxPropName, 0, "testkit-instance");
-  impl_->hasEffect = true;
-  return pluginMain(kOfxActionCreateInstance);
+  return createInstanceIndexed(context) >= 0 ? kOfxStatOK : kOfxStatFailed;
+}
+
+int FakeHost::createInstanceIndexed(const char* context) {
+  if (!plugin_) return -1;
+  EffectObj* effect = new EffectObj();
+  effect->props.owner = effect;
+  effect->props.ownerKind = kEffect;
+  effect->paramSet.owner = effect;
+  effect->paramSet.ownerKind = kEffect;
+  const std::string name = "testkit-instance-" + std::to_string(impl_->instances.size());
+  setString(&effect->props, kOfxImageEffectPropContext, 0, context);
+  setString(&effect->props, kOfxPropName, 0, name.c_str());
+  impl_->instances.push_back(effect);
+  impl_->current = effect;
+  const int index = static_cast<int>(impl_->instances.size()) - 1;
+  if (pluginMain(kOfxActionCreateInstance) != kOfxStatOK) {
+    impl_->instances.pop_back();
+    impl_->current = impl_->instances.empty() ? nullptr : impl_->instances.back();
+    delete effect;
+    return -1;
+  }
+  return index;
+}
+
+void FakeHost::selectInstance(int index) {
+  impl_->current = (index >= 0 && index < static_cast<int>(impl_->instances.size()))
+                       ? impl_->instances[static_cast<size_t>(index)]
+                       : nullptr;
+}
+
+int FakeHost::instanceCount() const { return static_cast<int>(impl_->instances.size()); }
+
+OfxStatus FakeHost::destroyInstanceAt(int index) {
+  if (index < 0 || index >= static_cast<int>(impl_->instances.size())) return kOfxStatErrBadHandle;
+  EffectObj* effect = impl_->instances[static_cast<size_t>(index)];
+  EffectObj* saved = impl_->current;
+  impl_->current = effect;
+  const OfxStatus st = pluginMain(kOfxActionDestroyInstance);
+  impl_->instances.erase(impl_->instances.begin() + index);
+  if (saved == effect) {
+    impl_->current = nullptr;
+  } else {
+    impl_->current = saved;
+  }
+  delete effect;
+  return st;
 }
 
 OfxStatus FakeHost::isIdentity(double time, const OfxRectI& window, std::string* identityClip) {
@@ -999,9 +1118,10 @@ OfxStatus FakeHost::render(double time, const OfxRectI& window) {
 }
 
 OfxStatus FakeHost::destroyInstance() {
-  OfxStatus st = pluginMain(kOfxActionDestroyInstance);
-  impl_->hasEffect = false;
-  return st;
+  for (int i = 0; i < instanceCount(); ++i) {
+    if (impl_->instances[static_cast<size_t>(i)] == impl_->current) return destroyInstanceAt(i);
+  }
+  return pluginMain(kOfxActionDestroyInstance);
 }
 
 OfxStatus FakeHost::unload() { return pluginMain(kOfxActionUnload); }
@@ -1112,8 +1232,9 @@ long long FakeHost::destinationRowBytes() const {
   return impl_->dstImage ? impl_->dstImage->rowBytes : 0;
 }
 
-std::vector<float> FakeHost::destination() const {
-  const ImageObj* img = impl_->dstImage;
+namespace {
+
+std::vector<float> snapshotImage(const ImageObj* img) {
   if (!img || img->isByte || img->w <= 0) return {};
   std::vector<float> out(static_cast<size_t>(img->w) * img->h * 4, 0.0f);
   for (int y = 0; y < img->h; ++y) {
@@ -1123,10 +1244,54 @@ std::vector<float> FakeHost::destination() const {
   return out;
 }
 
+} // namespace
+
+std::vector<float> FakeHost::destination() const { return snapshotImage(impl_->dstImage); }
+
+std::vector<FakeHost::RenderRecord> FakeHost::renderConcurrently(
+    const std::vector<int>& instances, int iterations, const OfxRectI& window) {
+  std::vector<RenderRecord> out;
+  if (instances.empty() || iterations <= 0) return out;
+
+  impl_->parallel = true;
+  std::vector<std::vector<RenderRecord>> perWorker(instances.size());
+  std::vector<std::thread> workers;
+  workers.reserve(instances.size());
+  for (size_t t = 0; t < instances.size(); ++t) {
+    const int index = instances[t];
+    workers.emplace_back([this, t, index, iterations, window, &perWorker]() {
+      tlsEffect = (index >= 0 && index < static_cast<int>(impl_->instances.size()))
+                      ? impl_->instances[static_cast<size_t>(index)]
+                      : nullptr;
+      tlsImages = ThreadImages{};
+      for (int k = 0; k < iterations; ++k) {
+        RenderRecord record;
+        record.instance = index;
+        // Distinct times per worker: a host renders different frames at once,
+        // and a plug-in that caches per-time state shows up here.
+        record.time = 1.0 + static_cast<double>(k) + 0.125 * static_cast<double>(t);
+        record.status = render(record.time, window);
+        record.pixels = snapshotImage(tlsImages.dst);
+        perWorker[t].push_back(std::move(record));
+      }
+      delete tlsImages.src;
+      delete tlsImages.dst;
+      tlsImages = ThreadImages{};
+      tlsEffect = nullptr;
+    });
+  }
+  for (std::thread& worker : workers) worker.join();
+  impl_->parallel = false;
+
+  for (std::vector<RenderRecord>& records : perWorker) {
+    for (RenderRecord& record : records) out.push_back(std::move(record));
+  }
+  return out;
+}
+
 bool FakeHost::setParam(const std::string& name, const std::string& value) {
-  auto it = impl_->paramByName.find(name);
-  if (it == impl_->paramByName.end()) return false;
-  ParamObj* p = it->second;
+  ParamObj* p = ensureParam(impl_->current, name);
+  if (!p) return false;
   if (p->type == kOfxParamTypeDouble) {
     p->d = std::atof(value.c_str());
     p->isSet = true;
@@ -1142,7 +1307,19 @@ bool FakeHost::setParam(const std::string& name, const std::string& value) {
   return true;
 }
 
-std::vector<std::string> FakeHost::messages() const { return impl_->messages; }
+bool FakeHost::setParamForInstance(int index, const std::string& name, const std::string& value) {
+  if (index < 0 || index >= static_cast<int>(impl_->instances.size())) return false;
+  EffectObj* saved = impl_->current;
+  impl_->current = impl_->instances[static_cast<size_t>(index)];
+  const bool ok = setParam(name, value);
+  impl_->current = saved;
+  return ok;
+}
+
+std::vector<std::string> FakeHost::messages() const {
+  std::lock_guard<std::mutex> lock(gMessageMutex);
+  return impl_->messages;
+}
 
 std::string FakeHost::messageText() const {
   std::string out;
