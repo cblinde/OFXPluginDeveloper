@@ -303,6 +303,16 @@ search paths (`/usr/OFX/Plugins`, `C:\Program Files\Common Files\OFX\Plugins`,
 here [I — see [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md)].
 `Resources/` is optional [I].
 
+The bundle also carries obligations a build log cannot show. If it ships a
+model, a font or a tokenizer table, the licence text for each belongs in
+`Contents/Resources` beside it — "in the repository" is not "in the bundle".
+Copy the ledger as a `POST_BUILD` step with
+`${CMAKE_COMMAND} -E copy_if_different`, after the asset copies, and warn
+(`message(WARNING)`) instead of failing when it is absent, so a source tree
+without the ledger still builds. A field-tested detector shipped 385 MB of
+AGPL-3.0 and research-only weights and had its notice file only in the
+repository root **[B]**.
+
 ---
 
 ## 4. Claims this build corrected
@@ -332,6 +342,7 @@ These are the places where building disagreed with prose that already existed.
 |---|---|
 | Does a real host (Resolve/Nuke/Natron/SCRATCH) load, enumerate and instantiate it? | **Unverified.** No host is installed here. |
 | Does `describe`/`describeInContext`/`render` behave under a host's real suite set? | **Partly verified**: the fake host in [`testkit/`](testkit/) drives those actions (98 checks), holds two instances at once and checks their separate values, but it is not a host. |
+| Do the licence texts of the models, fonts and runtimes in the bundle travel with it? | **Not checked by any build.** A bundle can install and render with no notice file; only a file listing proves it. The copy step and the warning are in §3.11. |
 | Does the pixel output match a reference? | **Unverified for this plug-in.** The ONNX template has golden-file tests; the reference gain has no golden. |
 | GPU, Windows/MSVC, macOS/Clang paths | **Unverified.** Only Linux x86-64 with GCC 13.3 was built. |
 | Host-specific quirks (blacklist behaviour, bundle caching, install-time locking) | **Unverified.** See [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md), graded B there. |

@@ -258,6 +258,16 @@ name is mandatory: `LoadLibrary` matches an already-loaded module by base name,
 so even the full path to a file called `onnxruntime.dll` returns the host's copy.
 Never `FreeLibrary` it; an `Ort::Env` created afterwards outlives the call.
 
+Never put a runtime-owned object in a function-local static either. An
+`Ort::Env env` there has its destructor run at `DLL_PROCESS_DETACH`, after the
+host unloaded the plug-in and while ORT's thread pool is winding down — a
+segfault *after* `kOfxActionUnload` returned `kOfxStatOK`, and a flaky one
+because it depends on shutdown timing (measured elsewhere: the same binary
+exited 0 once and 139 nine times **[B]**). Leak one environment per process
+instead (`static Ort::Env* env = new Ort::Env(...)`); sessions and thread-pool
+objects follow the same rule. A function-local static is only safe for objects
+whose destructor does not call into the runtime.
+
 **macOS.** The runtime is `libonnxruntime.<version>.dylib` and dyld records an
 install name of `@rpath/libonnxruntime.<version>.dylib`, so the bundle needs an
 `@loader_path` rpath entry and the file has to keep that versioned name.
@@ -430,6 +440,32 @@ documented from the ORT API, not compiled here.
 - **"End-to-end" export is a different contract.** When NMS lives inside the
   graph the output is a small `[1, N, 6]` table with no anchors; check the
   model's metadata before writing a decoder for a shape it does not produce.
+- **Read the class names from the model, not from a table in your source.** An
+  Ultralytics export writes `custom_metadata_map["names"]` as a Python dict
+  literal (`{0: 'person', 1: 'bus'}`); read it when the session is created and
+  keep a side-car file only as the override. A hardcoded COCO list mislabels
+  every custom model past the prefix it shares with COCO — measured elsewhere: a
+  35-word YOLO-World export answered class 29 with COCO's 30th name **[B]**. Be
+  as tolerant as the writer is sloppy (single or double quotes, quoted or bare
+  numeric keys, a plain list) and reject sparse or negative indices instead of
+  attaching a name to the wrong row.
+- **A promptable export can bake the class count at trace time.** In Ultralytics'
+  `YOLOEDetect.forward_head` the score tensor is built with
+  `int(x[-1].shape[1])`, a constant once traced, so a graph exported with three
+  classes only runs with three: `Non concat axis dimensions must match: Axis 2
+  has mismatched dimensions of 25200 and 8400`. Patch the reshape to use
+  `nc = x[-1].shape[1]` and call `forward_head(...)` + `Detect._inference(...)`
+  directly, because the `super()`-based forwards let the segmentation subclass
+  in the MRO append its 32 mask coefficients **[B]**. This is invisible until a
+  second prompt with a different class count is typed.
+- **CLIP's `</w>` marker is part of the token.** It is appended to a word's last
+  symbol *before* the BPE merges, so the vocabulary holds both `person</w>`
+  (2533) and `person` (3510). A reimplementation that skips it produces valid
+  ids that are one token off for every single-word prompt, and nothing reports an
+  error; an embedding comparison will not catch it either (the int8 text tower
+  stays near 0.96 cosine). Compare ids against reference tokenizer output
+  instead — the harness in the reporting tree does exactly that for twelve
+  prompts **[B]**.
 
 ---
 

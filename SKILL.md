@@ -376,6 +376,24 @@ packaging spec). The file must end in `.ofx` on every platform, and the *stem mu
 the bundle name*. A plugin named `MinimalCudaGain` must live at
 `MinimalCudaGain.ofx.bundle/Contents/Win64/MinimalCudaGain.ofx`.
 
+**What the bundle ships is part of the bundle.** The architecture directory
+decides whether a host finds the module; the files beside it decide whether it
+works and whether you may ship it. Walk the list once: the runtime under the
+name its loader expects (the per-platform branch in
+`templates/onnx-inference-ofx/CMakeLists.txt`, `BUILD_PLAYBOOK.md` §7), every
+model the UI offers, fonts, tokenizer tables — and the **licence text for each
+third-party item**. Let one list drive the copies, the dropdown labels and any
+generated header, so a model cannot be offered in the UI and missing from
+`Contents/Resources`, and a file nothing lists is removed and named in the build
+log. A ledger in the repository is not in the bundle. Copy it from
+`CMakeLists.txt` with a `POST_BUILD` step (`${CMAKE_COMMAND} -E
+copy_if_different`), after the asset copy and before any stale-file cleanup,
+and make a missing ledger a `message(WARNING)` so a source tree without it still
+builds. `POST_BUILD` rather than a configure-time copy is what puts an edited
+notice into an already installed bundle on the next build. A bundle of AGPL
+weights that installs and renders without the notice has shipped for eight
+builds in a field-tested plug-in **[B]**.
+
 **Install locations.**
 
 | Host | Windows | Linux |

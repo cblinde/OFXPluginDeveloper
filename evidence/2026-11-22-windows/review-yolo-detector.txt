@@ -209,3 +209,78 @@ Also reported, already covered: the NuGet package as fallback when the GitHub
 release assets 404 (AI_MODEL_INTEGRATION.md section 4), exactly two exports under
 MSVC, and the GPU status codes. One addition made here: the Linux tarball has a
 mirror route too (pip download for the library, headers from the same tag).
+
+Addendum 3 (2026-11-22, F9 to F15)
+----------------------------------
+The same session's later passes, while the detector grew an open-vocabulary model,
+a help page, a push button and a promptable export. Seven findings, none of which
+a build or the existing suites could see.
+
+F9 (high) - class names came from coco_classes.hpp, not from the model. A
+YOLO-World v2 export with 35 baked terms labelled the bus "frisbee": class 29 of
+that vocabulary was answered with COCO's thirtieth name. The larger half is
+older than the model - every model opened through the documented "Custom path"
+feature was labelled with COCO names, so an advertised feature mislabels its
+output. Ultralytics writes custom_metadata_map["names"], a Python dict literal;
+the fix reads it at session creation, keeps the side-car file as the override,
+and only falls back to COCO when the graph carries no names. The parser has to
+accept the writer's sloppiness (quotes, bare or quoted numeric keys, a plain
+list) and reject sparse or negative indices [B]. Documented in
+AI_MODEL_INTEGRATION.md section 7, "Detection heads".
+
+F10 (low) - contract_test's --set assumed a gain: it compared the frame with
+src * atof(value), so fontScale=2.5 failed with "max deviation 1.125" and
+classFilter=person with 0.75, although the plug-in was right [B]. Fixed with
+--set-status-only, which renders, asserts kOfxStatOK and the accepted write and
+skips the comparison; the usage text and testkit/README.md now state the
+assumption next to the flag.
+
+F11 (medium, export) - YOLOE's head bakes the class count at trace time
+(int(x[-1].shape[1])), so a graph traced with three classes fails with any other
+count ("Non concat axis dimensions must match ... 25200 and 8400", then a
+Reshape), and CLIP appends </w> before the merges, so person</w> (2533) and
+person (3510) both exist and a tokenizer that skips the marker is one token off
+for every single-word prompt. The embeddings stay near 0.96 cosine either way,
+so only an id comparison catches it [B]. Documented in AI_MODEL_INTEGRATION.md
+section 7.
+
+F12 (high, crash) - an Ort::Env in a function-local static was destroyed at
+DLL_PROCESS_DETACH, after the runtime had begun shutting down: "221 checks, 0
+failed", "ok 221 - kOfxActionUnload", then exit 139 - 0 once and 139 nine times
+with the same binary [B]. Fixed in templates/onnx-inference-ofx/src/ModelRunner.cpp
+by leaking one new Ort::Env per process; AI_MODEL_INTEGRATION.md section 4 states
+the rule for env, session and thread-pool objects.
+
+F13 (medium) - the fake host's paramSetValue/paramSetValueAtTime read scalar
+arguments as pointers (*va_arg(ap, double*)), but OFX passes them by value. The
+first setValueAtTime from a plug-in read address 0x3FF0000000000000 and crashed
+inside the host with the stack pointing at the plug-in. Push buttons had no click
+path at all, and mainEntry's kOfxStatReplyDefault looked like a failure [B].
+Fixed here: both setters read double/int by value; FakeHost::setParam now calls
+paramSetValueAtTime instead of writing the fields, so every template's --set test
+exercises the convention; FakeHost::pressParam sends kOfxActionInstanceChanged
+with kOfxPropType, kOfxPropName, kOfxChangeUserEdited, the time and the render
+scale, and counts only kOfxStatFailed/kOfxStatErrBadHandle as a rejection.
+Verified here [V] with a fixture plug-in that declares an integer and a push
+button and writes 7 through paramSetValueAtTime on the click: set->3, press->7.
+
+F14 (medium) - nothing in the build guidance asked whether the licence texts of
+bundled models, fonts and tokenizer tables travel in the bundle. The ledger sat
+in the repository root while the installed bundle carried 385 MB of AGPL-3.0 and
+research-only weights [B]. SKILL.md section 6 and BUILD_PLAYBOOK.md section 3.11
+now say: POST_BUILD + copy_if_different (after the asset copies, before stale
+cleanup), warn instead of fail when the file is missing.
+
+F15 (medium) - a text overlay cannot be judged at 320x240, and "the frame
+changed" passes for a page drawn upside down or clipped past the column edge.
+The reporting tree found both with a host-free 12-check test at 1280x720,
+640x480 and 320x240 that asserts bounds (ink inside the panel, both columns,
+nothing past the right edge) and dumps a PPM; the OFX suites had been green [B].
+TESTING_STRATEGY.md section 5 and section 14 now state that layout is a bound and
+point at contract_test --size WxH, which already existed.
+
+What was not verified here: the promptable export, the metadata parser, the
+full-page overlay and the licence copy step live in or came from the reporter's
+tree. This checkout changed the harness, the ONNX template's environment and the
+documentation, and ./run-tests.sh plus the fixture above cover those.
+

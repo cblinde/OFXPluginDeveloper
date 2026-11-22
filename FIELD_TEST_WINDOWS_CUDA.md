@@ -216,7 +216,8 @@ plain `LoadLibraryW` gets the `System32` copy of any DLL it also imports;
 A third Windows session built `com.ai.ofx.YoloObjectDetector` — ONNX Runtime
 YOLOv8/v11 detection, overlay drawing, byte and float, RGB and RGBA — from the
 skill alone, and reported eight defects (F1–F8), four gaps (G1–G4) and one
-deprecation (P1). The report is archived as
+deprecation (P1). A later pass from the same session added seven findings
+(F9–F15), listed below with the first eight. The report is archived as
 [`review-yolo-detector.txt`](evidence/2026-11-22-windows/review-yolo-detector.txt).
 Its environment: Windows 11, VS 18 Build Tools only (MSVC 14.50.35717, no VS 2022
 instance), CMake 4.4.4, Ninja 1.10, ONNX Runtime 1.20.1 from NuGet, OpenFX 1.5.1.
@@ -233,6 +234,13 @@ corpus that this checkout cannot measure, only read.
 | F6 | the Windows bundle linked `onnxruntime.lib` and shipped `onnxruntime.dll`; a host with its own runtime (Resolve 21 ships 1.13) resolved the import by base name, `GetApi(20)` returned null, and `render` access-violated **[B]** | Windows builds compile with `ORT_API_MANUAL_INIT`, do not link the import library, ship `onnxruntime-ofx.dll`, and load that private name from the module directory at first use; `build.bat` asserts the private file and `AI_MODEL_INTEGRATION.md` §4 documents the trap. The Windows branch itself is **[I]** here — no MSVC in this checkout |
 | F7 | a `kOfxParamTypeChoice` knob could be declared but not read or set: `paramGetValueAtTime` answered `kOfxStatErrUnsupported`, Support threw, and `render` failed after `describe`/`createInstance` with no message; the declared option list could not be read back either | choice shares the integer path in all four get/set functions and in `setParam`; `FakeHost::paramOptions(name)` returns `kOfxParamPropChoiceOption` in order; `testkit/README.md` documents the type vocabulary |
 | F8 | nothing checked where a pixel *landed*, and the fake host derived `kOfxImagePropData`'s origin from the stride's sign, so the top-down-framebuffer layout could not be built and a mirror-blind overlay passed. The plug-in shipped mirrored labels to Resolve **[B]** | `FakeHost` takes the origin (`setImageOrigin`) and the stride sign (`setNegativePitch`) as separate axes; all four layouts are in-buffer and documented; `SKILL.md` rule 3 and §8, `AI_MODEL_INTEGRATION.md` §5, `PATTERN_INDEX.md` state the y-up rule and the position/orientation test. The plug-in-side rebase and its 94-check tile test are **[B]** (reporter's tree); the harness axis is **[V]** here |
+| F9 | the detector's class names came from a hardcoded COCO table instead of the model's `names` metadata, so every custom or baked-vocabulary model was mislabelled past the shared prefix **[B]** | `AI_MODEL_INTEGRATION.md` §7 "Detection heads": read `custom_metadata_map["names"]` at session creation, side-car file only as override, tolerate the writer's quoting and reject sparse indices |
+| F10 | `--set` compared the frame with `src × atof(value)`, so a class filter or font scale failed although the plug-in was right **[B]** | `--set-status-only` renders and checks the status and the accepted write, skipping the gain comparison; the usage text and `testkit/README.md` state the assumption |
+| F11 | a promptable YOLOE export baked the class count at trace time, and CLIP's `</w>` marker was missing before the merges **[B]** | `AI_MODEL_INTEGRATION.md` §7 "Detection heads": the `int(x[-1].shape[1])` patch and the token-id cross-check |
+| F12 | an `Ort::Env` in a function-local static was destroyed at `DLL_PROCESS_DETACH`: segfault after a successful unload, flaky **[B]** | `templates/onnx-inference-ofx/src/ModelRunner.cpp` leaks one `new Ort::Env`; `AI_MODEL_INTEGRATION.md` §4 states the rule for env, session and thread-pool objects |
+| F13 | the suite setters read scalar arguments as pointers, so the first `setValueAtTime` from a plug-in crashed; push buttons had no click path **[B]** | both setters read `double`/`int` by value; `setParam` now drives `paramSetValueAtTime` instead of writing fields, so every `--set` test exercises the convention; `FakeHost::pressParam` sends `kOfxActionInstanceChanged` |
+| F14 | nothing asked whether the licence texts of bundled models, fonts and tokenizer tables travel in the bundle **[B]** | `SKILL.md` §6 and `BUILD_PLAYBOOK.md` §3.11: `POST_BUILD` + `copy_if_different`, warn instead of fail, after the asset copies |
+| F15 | a text overlay cannot be judged at 320×240, and "the frame changed" passes for a mirrored or clipped page **[B]** | `TESTING_STRATEGY.md` §5 and §14: layout is a bound, assert where ink may not be, and render at a named `--size` |
 | F4 | `SKILL.md` §6 omitted `Linux-aarch64`, which the packaging spec and `BUILD_PLAYBOOK.md` §7 both list | `SKILL.md` §6 names all four arch directories |
 | G1 | the Support names `eBitDepthUByte` (there is no `eBitDepthByte`) and the `bool getRegionOfDefinition(..., OfxRectD&)` signature were stated nowhere | `SKILL.md` §5 depth table and the action's real signature |
 | G2 | the routing table sent every per-frame model to the ONNX template, whose runner requires `out shape == in shape`; a detection head cannot use it | `SKILL.md` §4 row, `AI_MODEL_INTEGRATION.md` §7 item 6, `PATTERN_INDEX.md` |
@@ -264,6 +272,11 @@ What that run confirms, and this checkout could not have produced:
   `Visual Studio 17 2022` generator could not configure, and Ninja after
   `vcvars64.bat` worked first try. The `vswhere.exe` line that `vcvars64.bat`
   prints on that host is noise, not a skill defect.
+- **The licence gap is the quietest one in the list** **[B]**: F14 did not break
+  a build or a render. The notice file sat in the repository root while the
+  installed bundle carried 385 MB of third-party weights, so nothing in the
+  plug-in's own tests could notice it. That is why the copy step is a build step
+  and not a checklist item.
 
 The architectural note worth carrying forward is the same one F2 makes on
 Windows and macOS alike: the loader's search is a **name** contract (SONAME,

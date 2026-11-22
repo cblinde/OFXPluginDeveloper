@@ -265,6 +265,18 @@ What a fake host cannot prove, and must not be credited with: real host image
 lifetimes and caching, real thread scheduling, host-specific RoD/proxy behaviour,
 colour management, and anything GPU (a fake host has no device pointers).
 
+**Layout is a bound, not a pixel value.** "The frame changed" is satisfied by an
+overlay that is mirrored, clipped or drawn outside the area you meant, which is
+exactly how a full-page card reached a host upside down while every OFX check was
+green **[B]**. Assert where ink may *not* be: it stays inside the panel, both
+columns carry ink (one clipped column passes a single "something was drawn"
+check), nothing crosses the right edge, and a small canvas takes its short
+branch. Give the harness a **size** as well: `contract_test --src/--golden
+/--size WxH` renders at the size you name, because every size-dependent feature
+— a label at the frame edge, a wrapped readout, a full-page overlay — is
+otherwise only ever exercised at the default 64×48 image. A 1280×720 help page
+auto-shrunk into 320×240 is correct behaviour that hides the layout bug.
+
 **Built here: `testkit/`.** The SDK does not give you a host — `.ofx-ref/Support/`
 contains the plug-in-side library, the sample plug-ins and `PropTester`, which is
 itself a plug-in (it builds via `add_ofx_plugin`). So the host was written, once,
@@ -676,6 +688,7 @@ build/gpu-kernel-test.exe        # 28 cases, hardware only
 | "It loads" / "it did not crash" | no assertion | assert the structure fields, the status codes, the pixels |
 | CPU path compared to CPU path on a GPU build | never exercises the GPU path | assert which path ran, and fail if the expected one did not |
 | One size, one frame | 1920×1080 hides stride bugs | geometry matrix (§6) |
+| An overlay asserted as "the frame changed" | a mirrored, clipped or off-canvas overlay changes pixels too; a pass-through copy matches at either orientation | assert bounds and orientation at a real frame size (`--size`), with a mark that is not centred (§5) |
 | Sanitizer build skipped "because it is slow" | the only check that sees UB | run it on every PR; it is seconds |
 | Test disabled "flaky" without a cause | a race, usually | TSan, then fix it; flaky is a diagnosis, not a status |
 | Numbers in a commit message | unreproducible within a week | a benchmark file with the command, the machine and the distribution |

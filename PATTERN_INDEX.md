@@ -78,6 +78,11 @@ performance ones. This is the short route to the likely row above.
 | Viewer hangs while scrubbing | synchronous inference inside `render()` | §1 rows 10 and 11 |
 | Host dies on shutdown or on a bad frame | runtime called during finalisation; uncaught exception across the ABI | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §3 |
 | Result is plausible but wrong (colour, range) | channel order, value range, colour space | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §5 |
+| Every custom model is labelled with COCO names past the shared prefix | the class table came from a table in the source, not the model's `names` metadata | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Detection heads" |
+| A promptable model fails on the second prompt, naming a `Concat`/`Reshape` node | the class count was baked at trace time (`int(x[-1].shape[1])`) | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Detection heads" |
+| Host segfaults right after a successful unload (exit 139) | a runtime object in a function-local static is destroyed at `DLL_PROCESS_DETACH` | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §4 (leak the `Ort::Env`) |
+| A push button does nothing in the harness | the fake host had no click path and answered the notification as a failure | [`testkit/README.md`](testkit/README.md) (`FakeHost::pressParam`) |
+| `--set fontScale=2.5` fails although the plug-in is right | the contract test assumed every `--set` is a gain (`dst == src × atof(value)`) | pass `--set-status-only` ([`testkit/README.md`](testkit/README.md)) |
 | Same frame differs between machines | silent Python/CPU fallback, or default thread count | §1 rows 12 and 9 |
 | Second instance of the effect shows the first instance's setting | a parameter cached in a static/global instead of read per instance | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) §8 (`contract_test --concurrency-param`); [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) "Thread safety" |
 | TSan: data race in `OFX::Log::indent` with two concurrent renders | not your code: every action increments a plain global counter in the Support library (`ofxsLog.cpp:63`, called from `ofxsImageEffect.cpp:2569`) | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) "Thread safety"; audit your own shared state, the counter is cosmetic |
