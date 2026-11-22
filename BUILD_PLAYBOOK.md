@@ -395,8 +395,15 @@ dumpbin /dependents <Name>.ofx   # what the loader must find
 cuobjdump -lelf     <Name>.ofx   # cubins for every architecture in the list
 ```
 
-Both `build.bat` scripts call it after the build; missing tools are a printed
-skip, never a pass. From the field test: 2 exports, 7 cubins
+All three `build.bat` scripts call it with `--strict` after the build, and the
+checker resolves the tools itself: `dumpbin` from `PATH`, `%VCToolsInstallDir%`,
+`vswhere -find` or the `Program Files\Microsoft Visual Studio\<year>` layout,
+`cuobjdump` from `PATH`, `%CUDA_PATH%`, `%CUDA_HOME%` or the toolkit roots. That
+lookup is not optional: a Visual Studio generator build never calls `vcvars64`,
+so neither tool is on `PATH` there, and trusting `PATH` turned the artifact check
+into a printed skip in exactly the branch most people use. With `--strict` a
+missing tool fails the build (exit 3); standalone use without the flag keeps the
+named skip. From the field test: 2 exports, 7 cubins
 `sm_75`…`sm_120`, and no CUDA runtime import **[B]**.
 
 **Start the script with `.\build.bat`.** With `NoDefaultCurrentDirectoryInExePath=1`

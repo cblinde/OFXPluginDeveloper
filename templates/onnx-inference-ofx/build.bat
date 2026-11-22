@@ -164,7 +164,10 @@ if not exist "%BUNDLE%\Contents\Win64\onnxruntime.dll" (
 echo   %BUNDLE%\Contents\Win64\onnxruntime.dll
 echo.
 echo Exports and load-time imports:
-call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" || goto :error
+rem --strict: the Visual Studio generator branch never runs vcvars64, so dumpbin
+rem is not on PATH; the checker finds it through vswhere, and a build that cannot
+rem inspect its artifact fails instead of printing a skip.
+call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" --strict || goto :error
 exit /b 0
 
 :error

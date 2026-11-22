@@ -20,7 +20,7 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `contract_main.cpp` | the checks and the command line (`.ofx` path + what the plug-in is expected to declare) |
 | `build-contract-test.sh` | compiles the two files into one binary, finding the OFX headers from the template's CMake cache |
 | `build-contract-test.bat` | the same build under MSVC; the loader path in `contract_main.cpp` is `LoadLibraryExW` there |
-| `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins; both `build.bat` scripts call it |
+| `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping |
 | `negative-controls/` | two deliberately broken plug-ins that prove the harness fails when it should |
 | `run-negative-controls.sh` | builds those controls, asserts each is rejected with the right message |
 
@@ -75,9 +75,10 @@ Written down because each one is a way for a green run to mean less than it look
   than a host's scheduler and a weaker *duration* test than a long-lived pool.
 
 On Windows, `testkit/build-contract-test.bat <out.exe> <openfx-include-dir>`
-compiles the same two files with MSVC, and the same flags apply. `build.bat` in
-either template calls `check-ofx-artifact.bat` on the result, so the export and
-device-code claims are checked on the platform too.
+compiles the same two files with MSVC, and the same flags apply. Every template's
+`build.bat` calls `check-ofx-artifact.bat --strict` on the result, so the export
+and device-code claims are checked on the platform too - and a missing `dumpbin`
+fails the build rather than turning the check into a skip.
 
 `testkit/run-negative-controls.sh` proves the harness is not a rubber stamp. It
 is deliberately not part of `./run-tests.sh`: a normal run has to stay green.

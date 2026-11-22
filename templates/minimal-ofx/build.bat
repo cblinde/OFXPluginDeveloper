@@ -136,8 +136,11 @@ if not exist "%PLUGIN_OFX%" (
 echo   %PLUGIN_OFX%
 echo   CPU only: this plug-in has no CUDA path.
 rem The nm / readelf proof from build.sh, in the tools Windows has: exports and
-rem load-time imports, checked rather than assumed.
-call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" || goto :error
+rem load-time imports, checked rather than assumed. --strict matters here: the
+rem Visual Studio generator branch never runs vcvars64, so dumpbin is not on PATH.
+rem The checker resolves it through vswhere, and must fail rather than skip if it
+rem cannot - a build that never looked at its artifact is not a passing build.
+call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" --strict || goto :error
 exit /b 0
 
 :error

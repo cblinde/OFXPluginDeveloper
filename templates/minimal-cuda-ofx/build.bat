@@ -203,9 +203,19 @@ rem Linux. Reports what the binary really exports and imports, not what it was
 rem meant to: CUDA 13 on Windows does not produce a cudart64_*.dll import even
 rem when device code is present, so the message above must not claim one.
 set "PLUGIN_OFX=%BUILD_DIR%\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx"
-if exist "%PLUGIN_OFX%" (
-  call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" --cuda || goto :error
+if not exist "%PLUGIN_OFX%" (
+  echo.
+  echo BUILD FAILED: no .ofx in Contents\Win64
+  echo   expected: %PLUGIN_OFX%
+  echo   produced:
+  dir /s /b "%BUILD_DIR%\bundle\*.ofx" 2>nul
+  echo   See the output-directory block in CMakeLists.txt.
+  exit /b 1
 )
+rem --strict: the Visual Studio generator branch never runs vcvars64, so neither
+rem dumpbin nor cuobjdump is on PATH. Both are resolved by the checker; if that
+rem fails, the build fails - an artifact nobody inspected is not a pass.
+call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" --cuda --strict || goto :error
 exit /b 0
 
 :error

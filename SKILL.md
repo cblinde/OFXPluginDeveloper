@@ -506,7 +506,10 @@ kernel.
       those too (`templates/minimal-ofx/exports.map`).
 - [ ] Windows: `dumpbin /exports <Name>.ofx` shows the same two names and
       nothing else; `cuobjdump -lelf` lists the cubins when CUDA is on. Both are
-      checked by `testkit/check-ofx-artifact.bat`, which `build.bat` calls.
+      checked by `testkit/check-ofx-artifact.bat`, which every `build.bat` calls
+      with `--strict`: it locates `dumpbin`/`cuobjdump` through `vswhere` and the
+      CUDA roots, because the Visual Studio generator branch has neither on
+      `PATH`, and fails the build when it cannot find them.
 - [ ] `dlopen`/`LoadLibraryEx` succeeds and the plugin enumerates (id, version,
       mainEntry).
 - [ ] Rendered in at least one real host, in both GPU and CPU modes.
