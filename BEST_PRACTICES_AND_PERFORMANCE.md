@@ -28,7 +28,9 @@ The review ran a mechanical check of the repo against the official sources.
 
 | Check | Result |
 | --- | --- |
-| Every `kOfx*` identifier cited anywhere in the repo (66 of them) exists in OFX 1.5.1 | 64 found; of the 2 not found, **1 was a real error, now fixed** — `ARCHITECTURE_AND_CUDA_PIPELINE.md` cited `kOfxImageEffectActionInstanceChanged`; the real action is `kOfxActionInstanceChanged` (`ofxCore.h:447`). The other, `kOfxImageEffectPropUnmappedComponents` in `SKILL.md`, is a deliberate negative example ("there is no such constant"), so it stays. |
+| Every `kOfx*` identifier cited anywhere in the repo (70 of them) exists in OFX 1.5.1 | 68 found; of the 2 not found, **1 was a real error, now fixed** — `ARCHITECTURE_AND_CUDA_PIPELINE.md` cited `kOfxImageEffectActionInstanceChanged`; the real action is `kOfxActionInstanceChanged` (`ofxCore.h:447`). The other, `kOfxImageEffectPropUnmappedComponents` in `SKILL.md`, is a deliberate negative example ("there is no such constant"), so it stays. |
+| The GPU property table in `SKILL.md` §5 against the headers | 12/12 exist; three descriptions were wrong and are fixed (wrong header for `...OpenCLRenderSupported`, OpenGL declared `C string` not `string`, and the OpenCL Buffers/Images distinction now quoted from the header) |
+| A committed GPU-free test suite (`templates/minimal-cuda-ofx/test/run-tests.sh`) | predicate table + 3,456-launch kernel comparison + CPU-loop comparison + PTX counts, exit-code gated |
 | Every CUDA runtime symbol the template calls (9) is declared in the toolkit headers | all present |
 | The quoted stream-contract text exists verbatim in `ofxGPURender.h` | present at lines 608–617 |
 | Property types and defaults used by the template | confirmed, see §3 |
@@ -60,6 +62,25 @@ team already paid for.
 **The pattern across all of them:** the winners are boring about ownership,
 loud about what they actually built, and paranoid about which host they are in.
 The losers are clever about kernels and silent about dispatch.
+
+### 2.3 Counter-examples: where a big project is wrong
+
+Being widely used is not a correctness argument. Reading the actual source of
+**OneGrade** (`src/CudaKernel.cu`, GPL-3.0 — read for analysis, never copied)
+shows three patterns this repository deliberately does **not** adopt:
+
+| What that source does | Why it is a problem | What this repo does instead |
+| --- | --- | --- |
+| `cudaMalloc` + `cudaMemcpyAsync` for the parameter vector and the 3D LUT inside `RunCudaKernel`, i.e. **on every render** | `cudaMalloc` is a synchronising call: it serialises with all other device work, so the plugin becomes a pipeline barrier for every other GPU node at 24–60 fps **[D]** | No allocation in the render path at all — the gain travels as kernel arguments. If scratch memory is needed, cache it per instance and release it in the destructor / `purgeCaches()` (§5.1) |
+| `cudaStreamSynchronize(stream)` right after the launch, then `cudaFree` (which also synchronises the device) | Synchronising on a **host-supplied** stream is precisely what `ofxGPURender.h` says not to do: the host orders its own work against that stream and expects the render action to return **[S]** | Sync only when `_pCudaStream == nullptr`, the one case where the contract requires completion before returning (§7) |
+| The kernel indexes `((y * W) + x) * 4`, assuming tightly packed rows | Correct only while `rowBytes == width * 16`; any host padding shears the image, and it silently ignores a negative pitch **[S]** | Address through `kOfxImagePropRowBytes` in bytes, widened to `int64_t` and signed (§6 of `ARCHITECTURE_AND_CUDA_PIPELINE.md`) |
+
+This does not make OneGrade a bad plugin — it is a colour tool whose pixel work
+dominates its overhead, and its authors validated it in a host. The lesson is
+narrower and more useful: **the spec text is the authority, not the popularity of
+the code you are reading.** When a reference implementation and `ofxGPURender.h`
+disagree, the header wins — and you should be able to name the line that settled
+it.
 
 ---
 
@@ -447,7 +468,9 @@ access and leaks **[D]**. It is slow — run it on 256×256, not 4K.
   no number is given for it.
 - **The equivalence proof stopped at the host.** The two kernels and the two CPU
   loop forms were shown to agree byte-for-byte by executing the real kernel
-  source on the CPU (§6.1), which is not the same as running SASS on a GPU.
+  source on the CPU (§6.1), which is not the same as running SASS on a GPU. The
+  same checks are committed as `templates/minimal-cuda-ofx/test/run-tests.sh` so
+  they can be re-run after any change.
 - **No host has ever loaded these plugins.** Every host-behaviour claim in this
   document is graded **[R]** or **[S]**, never **[M]**.
 - **Resolve's scanline padding** (256-byte alignment, the 208×117 thumbnail case

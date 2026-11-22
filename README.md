@@ -82,7 +82,7 @@ run may pick up a newer patch release.
 | `cuda-cudart-12-9` | 12.9.37-1 | bootstrap | `libcudart.so.12` — the plugin's `NEEDED` entry (`cudart64_*.dll` on Windows). |
 | `cuda-cudart-dev-12-9` | 12.9.37-1 | bootstrap | `include/cuda_runtime.h` and friends — the only CUDA header the template includes — plus the link-time `libcudart.so` stub. |
 | `cuda-crt-12-9` | 12.9.41-1 | bootstrap | `include/crt/*.h` device-runtime headers nvcc needs for `<<<>>>` launches and vector types. |
-| `CUDA::cudart` | from the toolkit above | `find_package(CUDAToolkit REQUIRED)` plus `target_link_libraries` | The import target the module links, unconditionally: the built plugin has `NEEDED libcudart.so.12` (see [Known gaps](#known-gaps-in-the-repository)). |
+| `CUDA::cudart` or `CUDA::cudart_static` | from the toolkit above | `find_package(CUDAToolkit REQUIRED)` plus `target_link_libraries` | The import target the module links. Default is the shared runtime (`NEEDED libcudart.so.12`); `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` swaps in `libcudart_static.a`, which ships in `cuda-cudart-dev`. |
 
 **Nothing else is fetched.** There are no git submodules (`git submodule status`
 is empty), no `.patch` files, no vendored third-party directory, and no package
@@ -230,29 +230,13 @@ cache variables, so either layer can be driven directly.
 | `CPU_ONLY` | both | unset | `1` skips discovery and bootstrap and sets `OFXPLUGIN_ENABLE_CUDA=OFF`. |
 | `OFX_INSTALL_DIR` | CMake (used by the `install` step) | `/usr/OFX/Plugins`, `%COMMONPROGRAMFILES%/OFX/Plugins` on Windows, `/Library/OFX/Plugins` on macOS | Destination of `install-bundle`. |
 | `OFXPLUGIN_ENABLE_CUDA` | CMake | `ON` | Compile the CUDA render path. Falls back to `OFF` with a warning if no compiler is found, so the plugin keeps its CPU path. |
-| `OFXPLUGIN_CUDA_STATIC_RUNTIME` | CMake | `OFF` | Declared, but **currently not wired to anything**: the module always links `CUDA::cudart`. Setting it changes the build in no way — see [Known gaps](#known-gaps-in-the-repository). |
+| `OFXPLUGIN_CUDA_STATIC_RUNTIME` | CMake | `OFF` | `ON` links `CUDA::cudart_static` instead of the shared runtime. Verified: the resulting `.ofx` drops `libcudart.so.12` from `NEEDED` and has zero undefined `cuda*` symbols. |
 | `CMAKE_CUDA_COMPILER`, `CUDAToolkit_ROOT` | CMake | set by the scripts from `CUDA_HOME` | Seam for a toolkit in an unusual location. |
 | `CMAKE_BUILD_TYPE`, `CMAKE_CUDA_ARCHITECTURES`, `CMAKE_CUDA_VISIBILITY_PRESET` | CMake | set by the scripts | Standard CMake variables; use these when invoking CMake without the wrapper scripts. |
 
 The build ends by printing what it produced: the bundle path, the `.ofx` path,
 the exported dynamic symbol count (must be 2) and whether the CUDA launcher is in
 the binary.
-
-#### Known gaps in the repository
-
-Documented rather than hidden, because each one is a trap for the next reader:
-
-1. **`OFXPLUGIN_CUDA_STATIC_RUNTIME` is inert.** It is a real cache option with
-   `OFF` as its default, but no CMake line consumes it, so the plugin always has
-   a `libcudart` dependency. If you need a static runtime, change the
-   `target_link_libraries` call; do not trust the option name.
-2. **No top-level `LICENSE` file.** The per-file SPDX headers are the operative
-   licence statement (see [Licensing](#licensing-and-provenance)).
-3. **`build.bat` has never been executed** — it is syntax-reviewed only. Until it
-   is run under MSVC, treat the Windows path as unproven.
-4. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
-   `/usr/OFX/Plugins` is root-owned on most Linux systems, so run that step with
-   `sudo` or point `OFX_INSTALL_DIR` at a writable host plugin directory.
 
 > **Note on the bootstrap.** The `nvidia-cuda-nvcc-cu12` pip wheel is *not*
 > enough — it ships `ptxas` and NVVM but no `nvcc`/`cudafe++`/`nvlink`, so it
@@ -261,6 +245,19 @@ Documented rather than hidden, because each one is a trap for the next reader:
 > root and no system packages. It requires network access and `curl`, `tar`,
 > `gzip`, `awk` and binutils (`ar`); `nm` from the same binutils is used for the
 > end-of-build symbol check.
+
+#### Known gaps in the repository
+
+Documented rather than hidden, because each one is a trap for the next reader:
+
+1. **No top-level `LICENSE` file.** The per-file SPDX headers are the operative
+   licence statement (see [Licensing](#licensing-and-provenance)).
+2. **`build.bat` has never been executed** — it is syntax-reviewed only. Until it
+   is run under MSVC, treat the Windows path as unproven.
+3. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
+   `/usr/OFX/Plugins` is root-owned on most Linux systems, so run that step with
+   `sudo` or point `OFX_INSTALL_DIR` at a writable host plugin directory.
+
 
 ### 4. Verify before you test in a host
 
@@ -278,6 +275,17 @@ Then install and work through the per-host protocol in
 [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) §7 — in a real
 host, render to file, at an odd resolution such as 1919×1081 (1920×1080 hides
 stride bugs).
+
+The repository also ships a host test suite that needs no GPU:
+
+```bash
+./test/run-tests.sh
+```
+
+It compiles the real `Kernel.cu` with a shim, checks the alignment predicate,
+compares both kernels over 3,456 emulated launches, compares the hoisted CPU loop
+against the per-pixel form, and — when `nvcc` is on `PATH` — asserts the PTX
+instruction counts. Exit status is non-zero on any mismatch.
 
 If the plugin stops loading after a crash, the host has blacklisted it: clear
 Resolve's `OFXPluginCacheV2.xml` and re-enable it under Preferences → Video
@@ -314,6 +322,11 @@ OpenFX `OFX_Release_1.5.1`:
 - Both kernels produce byte-identical output to a scalar reference across 3,456
   host-emulated launches covering widths 0–63, all four `width % 4` classes, odd
   origins, padded pitches and 4-byte-misaligned bases.
+- `./test/run-tests.sh` passes end to end (predicate table, 3,456 launches, CPU-loop
+  comparison, PTX instruction counts, bundle hygiene). Those checks are committed,
+  not just run once.
+- `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` builds and links: `libcudart.so.12` disappears
+  from `NEEDED` and there are zero undefined `cuda*` symbols.
 - `CPU_ONLY=1`, and "CUDA requested but no compiler", both still build and pass
   the same registration check.
 - The no-root bootstrap was exercised from an empty cache directory.
@@ -332,6 +345,9 @@ templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp        OFX host wrapper: params, dispatch, isIdentity
   src/Kernel.cuh src/Kernel.cu        CUDA interface + vec4/scalar kernels + launcher
+  test/run-tests.sh                    GPU-free test suite (equivalence, PTX, bundle)
+  test/kernel_equivalence.cpp          host harness for kernels and CPU loop
+  test/shim/                           minimal <cuda_runtime.h> for host builds
   build.sh  build.bat                 toolkit discovery, bootstrap, build
 ```
 

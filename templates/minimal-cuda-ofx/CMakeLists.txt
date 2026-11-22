@@ -140,7 +140,15 @@ file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resour
 if(OFXPLUGIN_ENABLE_CUDA)
   target_sources(${PLUGIN_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/Kernel.cu")
   target_compile_definitions(${PLUGIN_TARGET} PRIVATE OFXPLUGIN_WITH_CUDA=1)
-  target_link_libraries(${PLUGIN_TARGET} PRIVATE CUDA::cudart)
+  # CUDA::cudart_static carries its own interface link dependencies (dl, rt,
+  # pthread on Linux), so no manual -lpthread is needed here. Static linking is
+  # opt-in because it duplicates the runtime the host already ships, which is
+  # normally undesirable but is the only option on systems without libcudart.
+  if(OFXPLUGIN_CUDA_STATIC_RUNTIME)
+    target_link_libraries(${PLUGIN_TARGET} PRIVATE CUDA::cudart_static)
+  else()
+    target_link_libraries(${PLUGIN_TARGET} PRIVATE CUDA::cudart)
+  endif()
 
   if(OFXPLUGIN_USER_CUDA_ARCHS)
     set(_ofx_cuda_archs "${OFXPLUGIN_USER_CUDA_ARCHS}")

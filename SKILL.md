@@ -77,6 +77,7 @@ templates/minimal-cuda-ofx/
   src/Plugin.cpp                       descriptor, params, dispatch, isIdentity
   src/Kernel.cuh                       CUDA-free interface header
   src/Kernel.cu                        vec4 + scalar kernels, device-guarded launcher
+  test/run-tests.sh                    GPU-free test suite (equivalence, PTX, bundle)
   build.sh / build.bat                 portable out-of-source builds
 ```
 
@@ -226,16 +227,26 @@ See §7. Log through `OfxMessageSuite` (`OFX::Log::print`), never `stdout`.
 
 ## 5. OFX constant reference (verified against OFX 1.5.1 headers)
 
-GPU capability properties, all `string × 1`, set on the plugin descriptor:
+GPU capability properties, set on the plugin descriptor. All are `string × 1`
+except the OpenGL one, which the header declares as **`C string × 1`**:
 
 | Constant | Header | Notes |
 | --- | --- | --- |
 | `kOfxImageEffectPropCudaRenderSupported` | `ofxGPURender.h` | `"false"` default for a plugin |
-| `kOfxImageEffectPropCudaStreamSupported` | `ofxGPURender.h` | `"true"` = you can use host streams |
-| `kOfxImageEffectPropOpenCLRenderSupported` | `ofxImageEffect.h` | OpenCL *buffers* |
-| `kOfxImageEffectPropOpenCLSupported` | `ofxGPURender.h` | OpenCL *images* |
+| `kOfxImageEffectPropCudaStreamSupported` | `ofxGPURender.h` | `"true"` = you can use host streams; only then may the host set `...CudaStream` |
+| `kOfxImageEffectPropOpenCLRenderSupported` | `ofxGPURender.h` | OpenCL **Buffers** render (the header's own wording) |
+| `kOfxImageEffectPropOpenCLSupported` | `ofxGPURender.h` | OpenCL **Images** render; then use `kOfxImageEffectPropOpenCLImage`, not `kOfxImagePropData` |
 | `kOfxImageEffectPropMetalRenderSupported` | `ofxGPURender.h` | macOS |
-| `kOfxImageEffectPropOpenGLRenderSupported` | `ofxGPURender.h` | legacy path |
+| `kOfxImageEffectPropOpenGLRenderSupported` | `ofxGPURender.h` | **C string**; has a third value `"needed"`; may flip at `kOfxActionInstanceChanged` since v1.4 |
+
+Two traps follow from that table:
+
+- **None of these six is an int.** They are strings; the *per-render* flags below
+  (`...CudaEnabled`, `...OpenCLEnabled`, `...MetalEnabled`) are ints. Use
+  `propGetString` for this group and `propGetInt` for the next.
+- **`kOfxImagePropRowBytes` is not guaranteed for OpenCL Images**: the header
+  states row bytes need not be set, "since OpenCL Images do not have the concept
+  of row bytes" - so pitch arithmetic applies to the Buffers path only.
 
 Per-render in-args properties (valid only inside Render / BeginSequenceRender /
 EndSequenceRender):
@@ -501,6 +512,11 @@ OpenFX `OFX_Release_1.5.1`):
   version `1.0`, `setHost` and `mainEntry` set — for the CUDA build, the
   `CPU_ONLY=1` build, and the CUDA-requested-but-toolchain-absent build.
 - `CPU_ONLY=1 ./build.sh` builds, exports 2 symbols, and has no launcher symbol.
+- `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` builds: the bundle drops `libcudart.so.12`
+  from `NEEDED` and has zero undefined `cuda*` symbols.
+- `./test/run-tests.sh` passes: the alignment predicate, 3,456 emulated kernel
+  launches, the CPU loop comparison, and (with `nvcc` on `PATH`) the PTX
+  instruction-count assertions.
 - `build.sh` with no toolkit and no `--bootstrap-cuda` exits 2 with actionable
   instructions; the CMake target still degrades with a warning when CUDA is
   requested without a compiler.

@@ -292,10 +292,14 @@ void GainPluginFactory::describe(OFX::ImageEffectDescriptor& desc)
     desc.setSupportsMultipleClipPARs(false);
     desc.setSupportsMultipleClipDepths(false);
 
-    // Unsafe means the host serialises render calls across all instances. This
-    // is the honest answer for a plugin that shares no per-instance GPU state
-    // and lets the CUDA runtime pick the device: raising it without auditing
-    // every shared allocation is a data race in the host's address space.
+    // eRenderInstanceSafe means: one render per instance at a time, but several
+    // instances may render concurrently on different threads (verified against
+    // RenderSafetyEnum in ofxsImageEffect.h). That is the honest answer here -
+    // a render touches only its own images, params are read through
+    // getValueAtTime(), and the one piece of cross-render state is the calling
+    // thread's current CUDA device, which DeviceGuard saves and restores.
+    // eRenderFullySafe would additionally promise concurrent renders of the SAME
+    // instance, which would require every allocation to be keyed per render.
     desc.setRenderThreadSafety(OFX::eRenderInstanceSafe);
 
 #ifdef OFXPLUGIN_WITH_CUDA
