@@ -119,23 +119,24 @@ InferencePlugin::InferencePlugin(OfxImageEffectHandle handle)
     }
 }
 
-ModelRunner& InferencePlugin::AcquireRunner(const std::string& path)
+std::shared_ptr<ModelRunner> InferencePlugin::AcquireRunner(const std::string& path)
 {
     std::lock_guard<std::mutex> lock(_runnerMutex);
     if (_runner && _loadedPath == path) {
-        return *_runner;
+        return _runner;
     }
     try {
-        std::unique_ptr<ModelRunner> fresh(new ModelRunner(path, 1));
-        _runner = std::move(fresh);
-        _loadedPath = path;
+        std::shared_ptr<ModelRunner> fresh = std::make_shared<ModelRunner>(path, 1);
         OFX::Log::print("%s: loaded %s (%d input channels)", kPluginName, path.c_str(),
-                        _runner->InputChannels());
+                        fresh->InputChannels());
+        _runner = fresh;
+        _loadedPath = path;
+        return fresh;
     } catch (const std::exception& e) {
         OFX::Log::print("%s: cannot load '%s': %s", kPluginName, path.c_str(), e.what());
         OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
+        throw; // unreachable; throwSuiteStatusException always throws
     }
-    return *_runner;
 }
 
 void InferencePlugin::render(const OFX::RenderArguments& args)
@@ -190,8 +191,8 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
 
     CopyAlpha(src.get(), dst.get(), window);
 
-    ModelRunner& runner = AcquireRunner(path);
-    const int channels = runner.InputChannels();
+    std::shared_ptr<ModelRunner> runner = AcquireRunner(path);
+    const int channels = runner->InputChannels();
     if (channels != 3) {
         OFX::Log::print("%s: model has %d channels; this plug-in feeds RGB only", kPluginName,
                         channels);
@@ -220,10 +221,10 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
         opts.halo = halo;
 
         if (tileSize <= 0 || (tileSize >= width && tileSize >= height)) {
-            RunWhole(runner, reinterpret_cast<const float*>(srcBase), channels, width, height,
+            RunWhole(*runner, reinterpret_cast<const float*>(srcBase), channels, width, height,
                      srcPitch, planar.data());
         } else {
-            RunTiled(runner, reinterpret_cast<const float*>(srcBase), channels, width, height,
+            RunTiled(*runner, reinterpret_cast<const float*>(srcBase), channels, width, height,
                      srcPitch, opts, planar.data());
         }
         UnpackRGB(planar.data(), width, height, reinterpret_cast<float*>(dstBase), dstPitch, 0, 0);

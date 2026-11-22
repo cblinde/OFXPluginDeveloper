@@ -37,7 +37,9 @@ public:
 private:
     /// Loads the session for `path` if it is not the one already loaded.
     /// Throws OFX::Exception on failure, never a bare std::exception.
-    ModelRunner& AcquireRunner(const std::string& path);
+    /// Returns a shared_ptr so the caller keeps the session alive even if a
+    /// later render replaces the cached one.
+    std::shared_ptr<ModelRunner> AcquireRunner(const std::string& path);
 
     OFX::Clip* _dstClip;         // borrowed, never deleted
     OFX::Clip* _srcClip;         // borrowed, never deleted
@@ -46,7 +48,7 @@ private:
     OFX::IntParam* _halo;
 
     std::mutex _runnerMutex;
-    std::unique_ptr<ModelRunner> _runner;
+    std::shared_ptr<ModelRunner> _runner;
     std::string _loadedPath;
 };
 
