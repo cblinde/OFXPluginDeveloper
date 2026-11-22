@@ -64,7 +64,10 @@ class TileAccumulator
 public:
     TileAccumulator(int width, int height, int channels);
 
-    /// `planar` holds channels*data.w*data.h values for `data`.
+    /// `planar` holds channels*data.w*data.h values for `data`. Throws
+    /// std::invalid_argument when `core` does not lie inside `data` and the
+    /// image, which is the case that would otherwise read or write out of
+    /// bounds.
     void Add(const TileRect& data, const TileRect& core, const float* planar, int channels, int halo);
 
     /// Writes channels*width*height values; pixels with no contribution are 0.
@@ -84,6 +87,7 @@ struct TiledOptions {
     /// Pixels of context added on each side. Must be at least the model's
     /// receptive field radius: 1 for a single 3x3 convolution, more for a
     /// stack of them. Too small is a correctness bug, not a quality trade.
+    /// Negative values are clamped to 0 by RunTiled().
     int halo = 8;
 };
 

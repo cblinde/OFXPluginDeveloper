@@ -9,8 +9,11 @@
 //      tools/make-test-model.py produced with the Python ONNX Runtime.
 //   3. Tiled evaluation against whole-frame evaluation over several tile sizes.
 //      With a correct halo the two agree to within float rounding.
-//   4. A negative control: the same comparison with halo = 0 MUST disagree.
-//      Without it, test 3 could pass for the wrong reason.
+//   4. Negative controls: the same comparison with halo = 0 MUST disagree (so
+//      test 3 is not passing for the wrong reason), a negative halo MUST come
+//      out bit-identical to halo = 0 instead of shrinking the data rect below
+//      the core rect, and Add() MUST refuse a core rect outside its data rect
+//      rather than read or write past the buffers.
 //
 // Exit status 0 only if every case behaves as expected.
 
@@ -20,6 +23,7 @@
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -264,13 +268,48 @@ void TestTiling(aiofx::ModelRunner& runner, const std::vector<float>& planar,
                              " tiled matches whole").c_str(), worst);
     }
 
-    std::printf("[4/4] negative control: halo=0 must be wrong\n");
+    // A negative halo is a caller error, not "no context": with -1 the data
+    // rect ends up inside the core rect and Add() indexes past the tile buffer
+    // (ASan: SEGV in TileAccumulator::Add). RunTiled() clamps, so the result
+    // must equal halo = 0 exactly - same arithmetic on the same rects.
+    std::vector<float> zeroHalo(out.size(), 0.0f);
+    aiofx::TiledOptions clampOpts;
+    clampOpts.tileSize = 13;
+    clampOpts.halo = 0;
+    aiofx::RunTiled(runner, img.base, channels, width, height, img.rowBytes, clampOpts,
+                    zeroHalo.data());
+    // -1 shrinks the data rect and reads past a tile row; -7 inverts it (negative
+    // width/height). Both must take the halo = 0 path.
+    const int badHalos[] = { -1, -7 };
+    for (int badHalo : badHalos) {
+        clampOpts.halo = badHalo;
+        aiofx::RunTiled(runner, img.base, channels, width, height, img.rowBytes, clampOpts,
+                        out.data());
+        const double clampDiff = MaxAbsDiff(out.data(), zeroHalo.data(), out.size());
+        Check(clampDiff == 0.0,
+              ("tile=13 halo=" + std::to_string(badHalo) + " is clamped to halo=0").c_str(),
+              clampDiff);
+    }
+
+    std::printf("[4/4] negative controls: wrong blending, negative halo, bad rect\n");
     aiofx::TiledOptions opts;
     opts.tileSize = 13;
     opts.halo = 0;
     aiofx::RunTiled(runner, img.base, channels, width, height, img.rowBytes, opts, out.data());
     const double worst = MaxAbsDiff(out.data(), whole.data(), out.size());
     Check(worst > 1e-3, "tile=13 halo=0 disagrees with whole (expected)", worst);
+
+    // The accumulator is public API: a core rect that does not lie inside its
+    // data rect must be refused, not written through.
+    aiofx::TileAccumulator acc(8, 8, 3);
+    std::vector<float> tile(static_cast<size_t>(3) * 4 * 4, 0.0f);
+    bool refused = false;
+    try {
+        acc.Add(aiofx::TileRect{ 0, 0, 4, 4 }, aiofx::TileRect{ 0, 0, 6, 6 }, tile.data(), 3, 1);
+    } catch (const std::invalid_argument&) {
+        refused = true;
+    }
+    Check(refused, "Add rejects a core rect outside its data rect");
 }
 
 } // namespace

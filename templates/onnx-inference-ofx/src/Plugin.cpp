@@ -19,6 +19,7 @@
 
 #include "Plugin.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -211,7 +212,11 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
                     static_cast<long long>(window.x1 - db.x1) * kPixelBytes;
 
     const int tileSize = static_cast<int>(_tileSize->getValueAtTime(args.time));
-    const int halo = static_cast<int>(_halo->getValueAtTime(args.time));
+    // setRange(0, 256) is what the UI offers, but a host can hand back a scripted
+    // value outside it. A negative halo would make AiCore's Expand() shrink the
+    // data rect below the core rect, so clamp before it reaches TiledOptions;
+    // AiCore clamps again for callers that do not come through this parameter.
+    const int halo = std::max(0, static_cast<int>(_halo->getValueAtTime(args.time)));
 
     try {
         std::vector<float> planar(static_cast<size_t>(channels) * static_cast<size_t>(width) *

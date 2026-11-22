@@ -119,6 +119,16 @@ void TileAccumulator::Add(const TileRect& data, const TileRect& core, const floa
         throw std::invalid_argument(
             "TileAccumulator: Add() channel count differs from the constructor");
     }
+    // Add() reads `planar` relative to `data` and writes the full-frame planes
+    // at `core`. A core that does not lie inside both would read past the tile
+    // buffer or write past the accumulator, so refuse it instead of trusting
+    // the caller's halo arithmetic.
+    if (core.x < data.x || core.y < data.y || core.w < 0 || core.h < 0 ||
+        core.x + core.w > data.x + data.w || core.y + core.h > data.y + data.h ||
+        core.x < 0 || core.y < 0 || core.x + core.w > _width || core.y + core.h > _height) {
+        throw std::invalid_argument(
+            "TileAccumulator: core rect must lie inside the data rect and the image");
+    }
     const size_t dataPlane = static_cast<size_t>(data.w) * static_cast<size_t>(data.h);
     const bool startX = data.x == 0;
     const bool endX = data.x + data.w == _width;
@@ -170,11 +180,17 @@ void RunWhole(ModelRunner& runner, const float* rgba, int channels, int width, i
 void RunTiled(ModelRunner& runner, const float* rgba, int channels, int width, int height,
               long long rowBytes, const TiledOptions& opts, float* planarOut)
 {
+    // A negative halo does not mean "no context": Expand() would cut the data
+    // rect below the core rect and Add() would read the tile buffer out of
+    // bounds (ASan: SEGV in TileAccumulator::Add with halo = -1). The plug-in
+    // clamps its parameter; clamp here too, because this function is the API.
+    const int halo = std::max(0, opts.halo);
+
     const auto tiles = PlanTiles(width, height, opts.tileSize);
     if (tiles.empty()) {
         return;
     }
-    if (tiles.size() == 1 && opts.halo <= 0) {
+    if (tiles.size() == 1 && halo <= 0) {
         // Nothing to blend and nothing to add: skip the copy through the
         // accumulator.
         RunWhole(runner, rgba, channels, width, height, rowBytes, planarOut);
@@ -185,14 +201,14 @@ void RunTiled(ModelRunner& runner, const float* rgba, int channels, int width, i
     std::vector<float> in;
     std::vector<float> out;
     for (const TileRect& core : tiles) {
-        const TileRect data = Expand(core, opts.halo, width, height);
+        const TileRect data = Expand(core, halo, width, height);
         const size_t elements = static_cast<size_t>(channels) * static_cast<size_t>(data.w) *
                                 static_cast<size_t>(data.h);
         in.resize(elements);
         out.resize(elements);
         PackRGB(rgba, rowBytes, data.x, data.y, data.w, data.h, in.data());
         runner.Run(in.data(), channels, data.h, data.w, out.data());
-        acc.Add(data, core, out.data(), channels, opts.halo);
+        acc.Add(data, core, out.data(), channels, halo);
     }
     acc.Resolve(planarOut);
 }
