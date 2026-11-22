@@ -12,7 +12,7 @@ Natron, on Windows (MSVC + CUDA Toolkit) and Linux (GCC/Clang + CUDA Toolkit).
 **Provenance.** **[V]** verified in this repository (compiled, measured or run);
 **[I]** inferred from a header or documented behaviour, not demonstrated;
 **[B]** external evidence, grade B in `HOST_COMPATIBILITY_MATRIX.md`; the
-2026-11-22 Windows/GPU run is archived in
+2026-11-22 Windows runs (CUDA field test and ONNX review) are archived in
 [`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md). Unmarked statements
 are design guidance that follows from the model, not measurements.
 
@@ -170,8 +170,18 @@ writing the kernel — the answer changes the architecture, not just the code.
 
 ### Phase 1 — Scaffold
 
+Pick the template that matches the effect. Copying the CUDA one for a CPU-only
+or model plug-in drags in a toolkit dependency and a GPU dispatch the effect
+never uses, and the first thing you then do is delete them.
+
+| Effect | Start from | Why that one |
+| --- | --- | --- |
+| CPU-only pixel maths (grade, blur, keyer) | `templates/minimal-ofx/` | smallest host-loadable module, no CUDA, no model |
+| CUDA render path with a CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
+| ONNX model per frame | `templates/onnx-inference-ofx/` | ORT session, packing, tiling, golden fixtures |
+
 ```
-templates/minimal-cuda-ofx/ -> plugins/<youreffect>/
+templates/<chosen>/ -> plugins/<youreffect>/
 ```
 
 Rename in `CMakeLists.txt`: `PLUGIN_TARGET`, `PLUGIN_BUNDLE`. Rename in
@@ -311,6 +321,12 @@ Image handle properties:
 | `kOfxImageEffectPropComponents` | `string` | `kOfxImageComponentRGBA` / `RGB` / `Alpha` |
 | `kOfxImageEffectPropPreMultiplication` | `string` | premultiplied / unpremultiplied |
 | `kOfxImagePropPixelAspectRatio` | `double` | non-square pixels are legal |
+
+`kOfxImagePropRowBytes` is an `int` in the header, and the Support accessor
+(`OFX::Image::getRowBytes()`) returns `int` too. Widen it to `long long` before
+multiplying by a row index, which is what the templates do; keeping the stride
+and the offset arithmetic in `int` overflows on a large frame. Reading the
+accessor once per row and reusing it is the other half of the same fix.
 
 Clip property for the *unmapped* component string is
 `kOfxImageClipPropUnmappedComponents` (`ofxImageEffect.h`). There is no

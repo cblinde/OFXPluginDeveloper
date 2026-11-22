@@ -1,0 +1,217 @@
+# Handover: OFXPluginDeveloper – Review beim Bau eines ONNX-Upscale-Plugins
+
+**Datum:** 2026-11-22
+**Skill-Version:** `cblinde/OFXPluginDeveloper` @ `main` (heute geklont)
+**Aufgabe:** Ein einfaches OFX-Plugin bauen, das ein Upscale-ONNX-Modell anwendet.
+
+## 1. Umgebung
+
+| Komponente | Wert |
+|---|---|
+| OS | Windows 11 (10.0.26300) |
+| Compiler | MSVC 19.50.35726 (Visual Studio Build Tools 18 / 2026) |
+| CMake | 4.4.4, Generator „Visual Studio 18 2026“ |
+| ONNX Runtime (C++) | 1.20.1, bezogen über NuGet (`Microsoft.ML.OnnxRuntime`) |
+| OpenFX | `OFX_Release_1.5.1` (lokaler Checkout) |
+| Shell | Git Bash + `cmd` |
+
+Das gebaute Plugin liegt in `onnx-upscale/`, Details in `onnx-upscale/README.md`.
+
+Geprüft am gebauten Plugin: Kompilierung ohne Fehler, `dumpbin /exports` = exakt
+2 Namen, `dumpbin /dependents` enthält `onnxruntime.dll`, ein numerischer
+Pipeline-Test (Packing, Golden-Vergleich, negative Pitch, Sub-Window, Alpha,
+Negativkontrollen) und ein Lade-/Enumerate-Test über `ctypes`. **Nicht** geprüft:
+Render in einem echten Host (kein Resolve/Nuke installiert).
+
+## 2. Befunde
+
+### B1 – `testkit/check-ofx-artifact.bat --strict` scheitert auf einem normalen Windows-Setup (hoch)
+
+`testkit/check-ofx-artifact.bat:67` sucht `dumpbin` über
+
+~~~bat
+for /f "usebackq delims=" %%P in (`"!VSWHERE!" ... -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe"`) do ...
+~~~
+
+`vswhere.exe` liegt unter `C:\Program Files (x86)\...`; die Anführungszeichen
+werden von `cmd` beim Ausführen des Backtick-Kommandos entfernt, der Pfad wird am
+Leerzeichen getrennt. Ergebnis:
+
+~~~
+Der Befehl "C:\Program" ist entweder falsch geschrieben oder
+konnte nicht gefunden werden.
+check-ofx-artifact: FAILED - dumpbin not found
+~~~
+
+Repro (frisches `cmd`, VS installiert, `cl`/`dumpbin` nicht im PATH):
+
+~~~
+cmd /c ".ofxskill\testkit\check-ofx-artifact.bat <irgendein.ofx> --strict"
+~~~
+
+Folge: **beide** `templates/*/build.bat` rufen den Checker mit `--strict` auf und
+brechen deshalb am Ende ab, obwohl das Bundle korrekt gebaut wurde:
+
+~~~
+templates\onnx-inference-ofx\build.bat Release
+  ...
+  Bundle: ...\OnnxInference.ofx.bundle
+  Exports and load-time imports:
+  Der Befehl "C:\Program" ist entweder falsch geschrieben oder ...
+  check-ofx-artifact: FAILED - dumpbin not found
+BUILD FAILED
+~~~
+
+Der `-strict`-Modus ist nach dem Feldtest dazugekommen (das Archiv ist
+ausdrücklich „a record, not a build input“), wurde auf Windows aber nicht erneut
+ausgeführt. Fix: `vswhere -property installationPath` abfragen (dieser Aufruf
+funktioniert, er wird in denselben Skripten für die Generator-Wahl benutzt) und
+dann `%%P\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe` globben – oder den
+`-find`-Aufruf mit doppelten Anführungszeichen (`""..." ...""`) kapseln.
+
+### B2 – Windows-Test lädt eine fremde `onnxruntime.dll` aus `System32` und stürzt ab (hoch)
+
+`templates/onnx-inference-ofx/CMakeLists.txt:191–213` kopiert die Runtime nur
+neben das `.ofx` (POST_BUILD im Bundle-Block), **nicht** neben
+`ai_pipeline_test.exe`. Auf Linux rettet `BUILD_RPATH` das (Zeile 209, nur
+`if(NOT WIN32)`); auf Windows entscheidet die DLL-Suchreihenfolge.
+
+Auf dieser Maschine liegt `C:\Windows\System32\onnxruntime.dll` in Version
+**1.17.1** (von einer anderen Anwendung installiert). Der gegen 1.20.1-Header
+gebaute Test lädt diese DLL:
+
+~~~
+The requested API version [20] is not available, only API versions [1, 17] are supported in this build.
+Current ORT Version is: 1.17.1
+Segmentation fault   (Exit 139)
+~~~
+
+`PATH` auf das ORT-`bin` zu setzen hilft nicht – `System32` wird vor `PATH`
+durchsucht. Kopiert man die DLL neben die `.exe`, läuft alles durch
+(`PASS: inference pipeline behaves as specified`, inkl. `halo=0`-Negativkontrolle
+mit 0.263). Fix: denselben POST_BUILD-Copy-Block wie für das `.ofx` auch am
+Test-Target anbringen (oder `SetDefaultDllDirectories`/`AddDllDirectory` im
+Test). Für das Plugin selbst ist derselbe Fall ein Produktionsrisiko: ein Host,
+der die `.ofx` mit einfachem `LoadLibraryW` statt
+`LOAD_WITH_ALTERED_SEARCH_PATH` lädt, bekommt ebenfalls die System32-Version.
+
+### B3 – Leerer Modellpfad lässt RGB im Ziel uninitialisiert (mittel)
+
+`templates/onnx-inference-ofx/src/Plugin.cpp:152–160`: erst `CopyAlpha(...)`,
+dann bei leerem Pfad `return`. Der Kommentar sagt „leaving the source pixels in
+the destination is the honest behaviour“, tatsächlich wird nur Alpha kopiert.
+`isIdentity()` verhindert das normalerweise, aber ein Host darf trotzdem rendern
+(Identity abgeschaltet, Vorschau, falsch implementierter Host) – dann enthält das
+Bild undefiniertes RGB. Fix: den ganzen Frame kopieren (wie in
+`onnx-upscale/src/UpscaleCore.cpp`, `CopyRect`), nicht nur Alpha.
+
+### B4 – Windows-Pfad wird nicht UTF-8 → UTF-16 konvertiert (mittel)
+
+`templates/onnx-inference-ofx/src/ModelRunner.cpp:61`
+
+~~~cpp
+const std::wstring wide(modelPath.begin(), modelPath.end());
+~~~
+
+Das verbreitert Bytes einzeln; jeder Nicht-ASCII-Pfad (z. B. `C:\Users\Müller\…`)
+wird falsch und der Session-Aufbau schlägt fehl. Fix:
+`MultiByteToWideChar(CP_UTF8, …)` (siehe `onnx-upscale/src/ModelRunner.cpp`).
+
+### B5 – `SKILL.md` §4 schickt jedes neue Plugin durch das CUDA-Scaffold (mittel, Doku)
+
+`SKILL.md` §4 „Phase 1 – Scaffold“ sagt:
+
+~~~
+templates/minimal-cuda-ofx/ -> plugins/<youreffect>/
+~~~
+
+Für ein CPU-/ONNX-Plugin ist das der falsche Startpunkt; `AGENTS.md`
+(„New plug-in … then copy `templates/minimal-ofx/`“) und `README.md`
+(„the scaffold to copy“) sagen etwas anderes. Ich habe deshalb direkt das
+ONNX-Template kopiert. Vorschlag: in §4 nach Effekttyp verzweigen
+(CPU → `minimal-ofx`, CUDA → `minimal-cuda-ofx`, Modell → `onnx-inference-ofx`).
+
+### B6 – `templates/onnx-inference-ofx/build.bat` ignoriert das dokumentierte `install`-Argument (niedrig)
+
+`README.md` (Argumenttabelle) verspricht für `build.bat`, dass `%2 == install`
+das Target `install-bundle` baut. `templates/minimal-cuda-ofx/build.bat:188`
+implementiert das, `templates/onnx-inference-ofx/build.bat` wertet `%2` nirgends
+aus – `build.bat Release install` installiert stillschweigend nichts.
+
+### B7 – Der ONNX-Runner kann per Konstruktion nicht upscalen, obwohl Upscale das dokumentierte Ziel ist (niedrig, Doku/API)
+
+`templates/onnx-inference-ofx/src/ModelRunner.cpp` prüft
+`outInfo.GetElementCount() != elements` und wirft, wenn die Ausgabe nicht
+genauso groß ist wie die Eingabe. `AI_MODEL_INTEGRATION.md` nennt Upscale
+explizit als typischen Anwendungsfall. Wer das Template für ein
+Auflösungs-Plugin kopiert, muss zuerst diese Prüfung und die
+RoD-Berechnung ergänzen – ein Hinweis im Template-README würde das abfangen.
+
+### B8 – Windows-C++-Bezug von ONNX Runtime ist nicht dokumentiert (niedrig, Doku)
+
+`build.bat` verweist auf `onnxruntime-win-x64-<version>.zip` von den
+GitHub-Releases. In dieser Umgebung waren die Release-Assets nicht erreichbar
+(HTTP 404 auf `releases/latest` und auf die Asset-URLs). Der NuGet-Weg hat
+funktioniert und liefert genau die erwartete Struktur:
+
+~~~
+https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.20.1
+  build/native/include/*            -> <root>/include
+  runtimes/win-x64/native/*.lib     -> <root>/lib
+  runtimes/win-x64/native/*.dll     -> <root>/bin
+~~~
+
+Das gehört als alternatives Rezept in `build.bat`/`AI_MODEL_INTEGRATION.md`.
+
+### B9 – Kleinkram
+
+* `templates/onnx-inference-ofx/CMakeLists.txt` setzt `INSTALL_RPATH "$ORIGIN"`
+  und `BUILD_WITH_INSTALL_RPATH ON` auch unter Windows (wirkungslos, aber
+  irreführend).
+* `CopyAlpha` in `Plugin.cpp` rechnet mit hart kodierten 16 Byte/Pixel; das ist
+  nur korrekt, weil ausschließlich Float-RGBA akzeptiert wird – ein Kommentar
+  fehlt.
+* `SKILL.md` §5 listet `kOfxImagePropRowBytes` als `int`; die Support-API gibt
+  tatsächlich `int` zurück, die Templates casten auf `long long`. Kein Fehler,
+  aber die Diskrepanz ist verwirrend.
+
+## 3. Was gut funktioniert hat
+
+* Das ONNX-Template kompiliert auf Anhieb mit MSVC 2026 / CMake 4.4.4 /
+  ORT 1.20.1 (nur die bekannte `getenv`-Warnung aus der Support-Library).
+* Bundle-Layout, `Contents/Win64`, `$<1:…>` gegen `/Release`, DLL-Bundling und
+  der Zwei-Symbole-Export funktionieren; `dumpbin /dependents` zeigt
+  `onnxruntime.dll` wie dokumentiert.
+* Die Golden-Fixtures des Templates (`models/test_conv.onnx`, `test_golden.bin`)
+  sind bit-exakt (max. Differenz 0) und die `halo=0`-Negativkontrolle schlägt
+  erwartungsgemäß mit 0.263 an.
+* Die Struktur (Host-Wrapper / Core / Runner) ließ sich für ein
+  auflösungsänderndes Plugin sauber übernehmen; `getRegionOfDefinition` und die
+  RoD-Regeln aus `ARCHITECTURE_AND_CUDA_PIPELINE.md` §7 waren korrekt und
+  ausreichend.
+* `setSupportsTiles(false)` = „Host liefert das volle RoD“ ist im Skill klar
+  dokumentiert und war für ein Ganzbild-Modell die richtige Wahl.
+
+## 4. Nicht geprüft
+
+* Kein Render in Resolve/Nuke/SCRATCH/Natron (kein Host auf dieser Maschine).
+* Kein Linux-Build, keine Sanitizer, kein valgrind (Windows-only Umgebung).
+* CUDA-Pfad des Skills nicht angefasst.
+
+## 5. Repro-Kommandos
+
+~~~bat
+:: Plugin bauen (Workspace-Wurzel: Z:\Tools-DEV\TestOFXSkill)
+cd onnx-upscale
+build.bat Release
+
+:: Tests
+build\Release\upscale_test.exe models
+..\.venv\Scripts\python.exe test\smoke_load.py build\bundle\OnnxUpscale.ofx.bundle\Contents\Win64\OnnxUpscale.ofx
+
+:: B1: Checker aus einem normalen cmd
+cmd /c ".ofxskill\testkit\check-ofx-artifact.bat onnx-upscale\build\bundle\OnnxUpscale.ofx.bundle\Contents\Win64\OnnxUpscale.ofx --strict"
+
+:: B2: Template-Test ohne lokale DLL
+.ofxskill\templates\onnx-inference-ofx\build\Release\ai_pipeline_test.exe .ofxskill\templates\onnx-inference-ofx\models
+~~~

@@ -1,10 +1,13 @@
 # Field test: Windows 11, CUDA 13.0, RTX 3060 (2026-11-22)
 
-Every **[B]** claim in this corpus comes from one external run. This document is
-the evidence for it: what was executed, what the logs say, and what the run does
-not prove. Nothing on this page ran in this checkout. The raw material is
-archived verbatim under [`evidence/2026-11-22-windows/`](evidence/2026-11-22-windows/):
-the handover report (`report.txt`) and the ten logs it cites.
+Every **[B]** claim in this corpus comes from external runs on 2026-11-22: the
+Windows/GPU build below and a second Windows session that reviewed the ONNX
+template (§9). This document is the evidence for both: what was executed, what
+the logs say, and what the runs do not prove. Nothing on this page ran in this
+checkout. The raw material is archived verbatim under
+[`evidence/2026-11-22-windows/`](evidence/2026-11-22-windows/): the handover
+report (`report.txt`), the ten logs it cites, and the second review
+(`review-onnx-upscale.txt`).
 
 **Provenance.** An agent session on 2026-11-22, at the repository owner's
 request, cloned `main`, ran the documented Windows workflow, fixed the build and
@@ -158,6 +161,7 @@ is that the Windows loader path and the OFX actions behave the same as on Linux.
 | 28/28 kernel cases, stream ordering, zero-copy | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) §13, [`SKILL.md`](SKILL.md) §12 |
 | 0.212 / 0.222 ms at 1080p | [`BEST_PRACTICES_AND_PERFORMANCE.md`](BEST_PRACTICES_AND_PERFORMANCE.md) §6.1 |
 | 74-check host contract through `LoadLibraryExW` | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) §3 |
+| `--strict` checker lookup, `System32` ONNX Runtime shadowing | §9, [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) §7 |
 
 ## 8. Reproducing it
 
@@ -174,3 +178,32 @@ gpu-kernel-test.exe
 
 The GPU harness prints its device line first; if it reports no CUDA device, the
 run is invalid, not a pass.
+
+## 9. The second review: an ONNX upscale plug-in (2026-11-22)
+
+A separate Windows session cloned `main`, copied `templates/onnx-inference-ofx/`
+for an upscaling plug-in, and reported nine findings (B1–B9) against a tree that
+already contained the first field test's fixes. The report is archived verbatim
+as
+[`review-onnx-upscale.txt`](evidence/2026-11-22-windows/review-onnx-upscale.txt).
+Its environment: Windows 11 10.0.26300, MSVC 19.50 / VS 18 2026, CMake 4.4.4,
+ONNX Runtime 1.20.1 from NuGet, OpenFX 1.5.1. It built a bundle, checked its
+exports and imports with `dumpbin`, ran the template's numerical pipeline test
+and loaded the plug-in through `ctypes`; no host was installed there either.
+
+Two findings were Windows-only failures the earlier run could not have caught,
+because neither the ONNX template nor the `--strict` checker existed in its test
+set (**[B]**: executed there, not here):
+
+| Finding | What was observed | Where it is fixed |
+| --- | --- | --- |
+| B1 | `check-ofx-artifact.bat ... --strict` printed `Der Befehl "C:\Program" …` and `FAILED - dumpbin not found` on a plain `cmd` with Visual Studio installed: the `vswhere -find` invocation ends in a quoted argument, so `for /f` lost its outer quotes and cmd ran `C:\Program`. Every `build.bat` that calls the checker with `--strict` then failed after a correct build. | the checker asks vswhere for `-property installationPath` and globs `VC\Tools\MSVC\*` for `dumpbin.exe`; the quoting rule is documented in [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) §7 |
+| B2 | the template's `ai_pipeline_test.exe` loaded `onnxruntime.dll` **1.17.1 from `System32`** instead of the 1.20.1 beside the `.ofx`, and died with `requested API version [20] is not available` (exit 139). Copying the DLL next to the `.exe` made the suite pass, including the `halo=0` control at 0.263. | the ONNX CMake build copies the runtime beside the test executable as well as into the bundle |
+| B3–B9 | uninitialised RGB when the model path is empty, byte-wise UTF-8→UTF-16 widening of the model path, the CUDA scaffold named as the only start point, `install` accepted but ignored by the ONNX `build.bat`, the shape-preserving runner against upscaling, no NuGet recipe, and three cosmetic items | fixed in the commits that follow this document; each is now stated where a reader meets it |
+
+The loader rule behind B2 is worth stating once, because it applies to the
+plug-in as much as to the test: an import is resolved from the executable's own
+directory first, then `System32`, then `PATH`. A host that loads the `.ofx` with
+plain `LoadLibraryW` gets the `System32` copy of any DLL it also imports;
+`LoadLibraryExW` with `LOAD_WITH_ALTERED_SEARCH_PATH` gets the one in
+`Contents\Win64`, which is what the contract harness does.

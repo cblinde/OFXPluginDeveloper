@@ -216,6 +216,24 @@ template does. CPU and GPU are separate tarballs
 (`onnxruntime-linux-x64-gpu_cuda12-*.tgz`); a GPU build pins a cuDNN major
 (mixing 8 and 9 is not supported) (**A**).
 
+**Windows, and the NuGet route.** The release zip (`onnxruntime-win-x64-<ver>.zip`)
+has the layout the template expects: `include\`, `lib\onnxruntime.lib`,
+`bin\onnxruntime.dll`. When the GitHub release assets are not reachable, the
+NuGet package carries the same files under a different layout (**B**, field-tested
+with `Microsoft.ML.OnnxRuntime` 1.20.1):
+
+```text
+https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/<version>   (.nupkg = zip)
+  build/native/include/*            -> <root>/include
+  runtimes/win-x64/native/*.lib     -> <root>/lib
+  runtimes/win-x64/native/*.dll     -> <root>/bin
+```
+
+The split matters: `lib\onnxruntime.lib` is only the import library. Renaming
+it to `onnxruntime.dll` produces a bundle that looks complete and that the
+loader rejects at load time, which is why the template resolves the DLL
+separately and fails the configure when it is absent (**B**).
+
 ---
 
 ## 5. Tensor plumbing: where the silent bugs are
@@ -345,6 +363,14 @@ documented from the ORT API, not compiled here.
 4. If the model is not translation-invariant (normalisation over the whole
    frame, attention across the image), tiling changes the result — run the whole
    frame, or accept that tiles are an approximation and say so in the UI.
+5. A model that changes resolution needs code, not just a different file.
+   `ModelRunner::Run` requires `output shape == input shape` and copies the
+   result into a buffer of the input's size; an upscaler (the usual reason to
+   reach for a model here) therefore throws on the first frame, by design.
+   Supporting one means returning the output shape from `Run()`, mapping it into
+   the output RoD in `AiCore`, and scaling the source RoD in
+   `getRegionOfDefinition` — see `ARCHITECTURE_AND_CUDA_PIPELINE.md` §7 for the
+   RoD rules and §5 of this document for the packing side.
 
 ---
 

@@ -36,7 +36,7 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | File | What it is |
 | --- | --- |
 | [`AGENTS.md`](AGENTS.md) | The 30-line router for generic coding agents: commands, read order per task type, hard rules — points into the documents below rather than restating them |
-| [`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md) | The archived 2026-11-22 Windows/GPU run behind every **[B]** claim: environment, executed tests, artifact and kernel logs, and what it does not prove |
+| [`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md) | The archived 2026-11-22 Windows runs behind every **[B]** claim: the CUDA/GPU field test and the ONNX review, with environment, executed tests, logs, and what they do not prove |
 | [`SKILL.md`](SKILL.md) | Master reference: ground rules, generation workflow, verified constants, build standards, anti-patterns, checklists, mandatory git workflow |
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, the stream contract, pitch arithmetic, RoD/RoI, colour/alpha, TensorRT/ONNX zero-copy, toolchain, profiling |
 | [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) | The build proved by a compile: one command from a clean checkout, the artifact's measured contract (`nm`, `readelf`, `dlopen`), and every compile-level requirement with file:line evidence and a verified/inferred label |
@@ -170,6 +170,10 @@ cp -r templates/minimal-cuda-ofx plugins/my-effect
 cd plugins/my-effect
 ```
 
+For a CPU-only effect start from `templates/minimal-ofx/`; for a model,
+`templates/onnx-inference-ofx/`. `SKILL.md` §4 names which scaffold belongs to
+which effect and why the CUDA one is the wrong start for the other two.
+
 Then rename these, in this order:
 
 | Where | What |
@@ -218,7 +222,7 @@ before failing, so a CPU-only build is never produced silently.
 | `build.sh` | `--bootstrap-cuda` | When no toolkit is found, downloads and unpacks the CUDA packages, then builds with CUDA. |
 | `build.sh` | `-h`, `--help` | Prints the usage header. |
 | `build.bat` | `%1` (`Release`, `Debug`, …) | Passed to `cmake --build --config`. Default `Release`. |
-| `build.bat` | `%2` equal to `install` | Runs the `install-bundle` target. |
+| `build.bat` | `%2` equal to `install` | Runs the `install-bundle` target, which `minimal-cuda-ofx` and `onnx-inference-ofx` define. |
 
 `build.sh` accepts these in any order and rejects anything else with exit code 2.
 `build.bat` picks the newest Visual Studio instance that actually has the C++
