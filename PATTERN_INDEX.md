@@ -6,13 +6,15 @@ not a tutorial: every row points at code in this repository or at a project that
 shipped the pattern, and the prose that explains *why* lives in the linked
 documents.
 
-Read it three ways:
+Read it four ways:
 
 - **By task** — [§1](#1-by-task-i-need-to) when you know what you are building.
 - **By symptom** — [§2](#2-by-symptom-the-render-is-wrong) when something is
   already broken.
 - **By property** — [§3](#3-by-property-which-constant-does-what) when you are
   staring at a `kOfx*` name and need to know who sets it.
+- **By repository** — [§5](#5-the-general-purpose-suites-what-to-read-what-to-skip)
+  when you would rather read shipping code than prose.
 
 For the reading order that teaches the object model, see
 [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md). For why a pattern is
@@ -137,7 +139,68 @@ evidence grade **B**. Links go to the projects, not to mirrors.
 
 ---
 
-## 5. If you only need the decision, not the code
+## 5. The general-purpose suites: what to read, what to skip
+
+The AI repositories in [§4](#4-external-ai-onnx-plug-ins-what-exists-what-to-learn-what-to-avoid)
+answer "how do I ship a model". These answer "how do I ship a plug-in at all",
+and they are where the host protocol is exercised at a scale one person cannot
+write alone.
+
+Metadata below was checked on **2026-11-22**: every URL resolved with
+`git ls-remote`, the licence was read from the repository's own licence file, and
+the `openfx-misc` pointers in [§5.1](#51-mechanics-and-the-exact-file-to-read)
+were verified in a shallow clone. Still grade **B** — none of it was built here.
+
+| Repository | Licence | What it is | Read it for | Do not read it for |
+|---|---|---|---|---|
+| [`NatronGitHub/openfx-misc`](https://github.com/NatronGitHub/openfx-misc) | GPL-2.0 | 92 node directories — the widest single OFX collection | Declared contexts, clip and parameter shapes, temporal actions; exact files in [§5.1](#51-mechanics-and-the-exact-file-to-read) | GPU work: the repository contains **0** `.cu` or `.cl` files |
+| [`NatronGitHub/openfx-io`](https://github.com/NatronGitHub/openfx-io) | GPL-2.0 | readers/writers on OpenImageIO and FFmpeg, plus OpenColorIO | Generator context, host memory, colour-config initialisation | Pixel effects — it is I/O |
+| [`NatronGitHub/openfx-arena`](https://github.com/NatronGitHub/openfx-arena) | GPL-2.0 | Cairo/Pango text and vector, audio-driven parameters | Overlay drawing, dynamic outputs, non-pixel inputs | GPU code — the drawing is CPU-side Cairo |
+| [`NatronGitHub/openfx-gmic`](https://github.com/NatronGitHub/openfx-gmic) | dual-licensed — read its `COPYING` | G'MIC bridged into OFX | Generating parameters from a foreign engine at `describe` time | Copying: two licences apply and the engine's is not yours |
+| [`NatronGitHub/openfx-opencv`](https://github.com/NatronGitHub/openfx-opencv) | no licence file at the root — check before copying | OpenCV bridged into OFX | `cv::Mat` ↔ OFX image conversion | Modern host builds — its README still badges `devernay/openfx-opencv` |
+| [`gillesvink/opendefocus`](https://github.com/gillesvink/opendefocus) | EUPL-1.2 | Rust convolution library (published on crates.io) with an OFX front end | A large, living defocus implementation, and how a non-C++ core is packaged | Licensing: EUPL is copyleft |
+| [`purzbeats/purzos-ofx`](https://github.com/purzbeats/purzos-ofx) | MIT | 64 single-file plug-ins, one shared header, built on the Support library | Determinism as a feature: randomness hashed from `(seed, frame, position)`, byte-identical renders | GPU code — CPU pixel loops |
+| [`tuttleofx/TuttleOFX`](https://github.com/tuttleofx/TuttleOFX) | no licence at the root — check subprojects | framework plus bundled plug-ins, default branch `develop` | A C++ abstraction over the C API at framework scale | Assuming it is maintained — check activity first |
+
+### 5.1 Mechanics and the exact file to read
+
+All paths are inside `openfx-misc` at its 2026-11-22 `master` (92 node
+directories). The size of each file is part of the lesson: the mechanic is never
+the one-liner an index promises.
+
+| You need | Open |
+|---|---|
+| Several input clips, negotiated at render time | `Merge/Merge.cpp:1559` (`eContextGeneral`); the node is 2,055 lines |
+| Time remapping, and telling the host which frames you will read | `Retime/Retime.cpp:428` (the comment that states the contract) and `:477` (`getFramesNeeded`) |
+| A different frame on every scanline | `SlitScan/SlitScan.cpp:296` (`getFramesNeededRange`), `:315` (`getFramesNeeded`) |
+| A frozen frame | `FrameHold/FrameHold.cpp:77` |
+| An RoI that follows a warp | `Distortion/Distortion.cpp:2980` (`getRegionsOfInterest`); the node is 6,634 lines |
+| Writing parameters from inside `render` | `ImageStatistics/ImageStatistics.cpp:98` — the comment explains why the write is deferred |
+| An OpenGL render suite, with a GPU on/off parameter | `Shadertoy/Shadertoy.cpp:1240`, `:2296` (`setSupportsOpenGLRender`) |
+| Overlay interacts | 18 node sources use `OverlayInteract`; start with `Transform/Transform.cpp`, `Crop/Crop.cpp`, `Card3D/Card3D.cpp` |
+
+### 5.2 Before you trust a third-party index
+
+A "50 OFX plug-ins" index circulating as an AI prompt mixes real repository
+names with API that does not exist. Every row below is one `grep` against
+`.ofx-ref/include`; run the equivalent check before copying any symbol out of an
+index.
+
+| The index says | OFX 1.5.1 says |
+|---|---|
+| `ofxCUDAImageEffectSuite->getCudaStream(handle, &stream)` | There is no CUDA suite. `grep -rn "CUDA.*Suite" .ofx-ref/include/` matches a comment. The stream arrives as `kOfxImageEffectPropCudaStream` in the render inArgs (`ofxGPURender.h:617`), and only if the effect advertised `kOfxImageEffectPropCudaStreamSupported` (`:588`) |
+| "Ensure explicit stream synchronisation (`cudaStreamSynchronize`, or the host stream)" | Backwards. With a host stream, the plug-in SHOULD NOT wait and SHOULD NOT call `cudaDeviceSynchronize()` at any time (`ofxGPURender.h:608`–`:610`). Wait only when no stream was supplied — see [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) |
+| Transition progress parameter `TransitionMain` | `kOfxImageEffectTransitionParamName`, value `"Transition"` (`ofxImageEffect.h:1475`) |
+| "`ImageStatistics`: atomic GPU reduction kernels" | One CPU translation unit, `ImageStatistics/ImageStatistics.cpp` (2,959 lines). No GPU code exists anywhere in that repository |
+| `GainPlugin`, `TemporalBlurPlugin`, … under `DaVinci-Resolve-OpenFX-Samples` | No public Blackmagic repository of that name; the only GitHub match is an archived third-party copy. The sample plug-ins ship inside the Resolve installer, which is why the public SDK is the ASWF `openfx` repository |
+
+Two habits follow. An index's *count* is nodes, not repositories: the "50" above
+names 9 repositories, and 38 of its entries are directories inside
+`openfx-misc`. And an index that shows CUDA mechanics for `openfx-misc` is
+describing code that is not there, so treat its API names as unverified until a
+header agrees.
+
+## 6. If you only need the decision, not the code
 
 | Situation | Shape | Where the reasoning is |
 |---|---|---|
