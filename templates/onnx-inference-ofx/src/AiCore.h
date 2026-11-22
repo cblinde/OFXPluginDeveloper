@@ -58,10 +58,11 @@ TileRect Expand(const TileRect& r, int halo, int width, int height);
 float EdgeWeight(int indexInData, int dataExtent, bool atImageStart, bool atImageEnd, int halo);
 
 /// Accumulates overlapping model outputs and normalises by the total weight.
+/// `channels` sizes both full-frame planes; Add() must be given the same count.
 class TileAccumulator
 {
 public:
-    TileAccumulator(int width, int height);
+    TileAccumulator(int width, int height, int channels);
 
     /// `planar` holds channels*data.w*data.h values for `data`.
     void Add(const TileRect& data, const TileRect& core, const float* planar, int channels, int halo);
@@ -72,6 +73,7 @@ public:
 private:
     int _width;
     int _height;
+    int _channels;
     std::vector<float> _acc;
     std::vector<float> _weight;
 };
@@ -93,8 +95,10 @@ void RunWhole(ModelRunner& runner, const float* rgba, int channels, int width, i
               long long rowBytes, float* planarOut);
 
 /// Model evaluation over tiles of `opts.tileSize` with `opts.halo` context,
-/// blended back together. Use this when the frame at full resolution would
-/// exhaust device or host memory.
+/// blended back together. It bounds the model's working set (one tile plus its
+/// halo); it does not shrink the plug-in's own buffers. The accumulator holds
+/// two full-frame planes per channel - 24 bytes/pixel at three channels, about
+/// 800 MB at 8K - on top of the caller's output.
 void RunTiled(ModelRunner& runner, const float* rgba, int channels, int width, int height,
               long long rowBytes, const TiledOptions& opts, float* planarOut);
 

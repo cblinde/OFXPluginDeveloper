@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 namespace aiofx {
 namespace {
@@ -97,17 +98,27 @@ float EdgeWeight(int indexInData, int dataExtent, bool atImageStart, bool atImag
     return static_cast<float>(distance + 1) / static_cast<float>(halo);
 }
 
-TileAccumulator::TileAccumulator(int width, int height)
-    : _width(width)
-    , _height(height)
-    , _acc(static_cast<size_t>(width) * static_cast<size_t>(height) * 3, 0.0f)
-    , _weight(static_cast<size_t>(width) * static_cast<size_t>(height) * 3, 0.0f)
+TileAccumulator::TileAccumulator(int width, int height, int channels)
+    : _width(width > 0 ? width : 0)
+    , _height(height > 0 ? height : 0)
+    , _channels(channels > 0 ? channels : 0)
+    , _acc(static_cast<size_t>(_width) * static_cast<size_t>(_height) *
+               static_cast<size_t>(_channels), 0.0f)
+    , _weight(static_cast<size_t>(_width) * static_cast<size_t>(_height) *
+                  static_cast<size_t>(_channels), 0.0f)
 {
 }
 
 void TileAccumulator::Add(const TileRect& data, const TileRect& core, const float* planar,
                           int channels, int halo)
 {
+    // The planes are sized by the constructor. Writing more channels than that
+    // would index past them, which is how a four-channel model would corrupt
+    // the heap instead of failing.
+    if (channels != _channels) {
+        throw std::invalid_argument(
+            "TileAccumulator: Add() channel count differs from the constructor");
+    }
     const size_t dataPlane = static_cast<size_t>(data.w) * static_cast<size_t>(data.h);
     const bool startX = data.x == 0;
     const bool endX = data.x + data.w == _width;
@@ -135,7 +146,8 @@ void TileAccumulator::Add(const TileRect& data, const TileRect& core, const floa
 
 void TileAccumulator::Resolve(float* planarOut) const
 {
-    const size_t total = static_cast<size_t>(_width) * static_cast<size_t>(_height) * 3;
+    const size_t total = static_cast<size_t>(_width) * static_cast<size_t>(_height) *
+                         static_cast<size_t>(_channels);
     for (size_t i = 0; i < total; ++i) {
         const float w = _weight[i];
         planarOut[i] = w > 0.0f ? _acc[i] / w : 0.0f;
@@ -169,7 +181,7 @@ void RunTiled(ModelRunner& runner, const float* rgba, int channels, int width, i
         return;
     }
 
-    TileAccumulator acc(width, height);
+    TileAccumulator acc(width, height, channels);
     std::vector<float> in;
     std::vector<float> out;
     for (const TileRect& core : tiles) {
