@@ -62,11 +62,13 @@ find_library(ONNXRUNTIME_LIBRARY
   HINTS "${ONNXRUNTIME_ROOT}/lib" "${ONNXRUNTIME_ROOT}/onnxruntime/capi"
   NO_DEFAULT_PATH)
 
-if(NOT ONNXRUNTIME_INCLUDE_DIR OR NOT ONNXRUNTIME_LIBRARY)
+# Windows loads the runtime instead of linking it, so only the headers (and the
+# DLL, checked where it is bundled) are required there. Other platforms link it.
+if(NOT ONNXRUNTIME_INCLUDE_DIR)
   message(FATAL_ERROR
     "ONNX Runtime not found under ONNXRUNTIME_ROOT='${ONNXRUNTIME_ROOT}'.\n"
-    "  Expected include/onnxruntime_cxx_api.h and lib/libonnxruntime.so\n"
-    "  (Windows: lib/onnxruntime.lib, plus bin/onnxruntime.dll when bundling).\n"
+    "  Expected include/onnxruntime_cxx_api.h\n"
+    "  (Windows: plus bin/onnxruntime.dll when bundling; the .lib is not used).\n"
     "  CPU build: https://github.com/microsoft/onnxruntime/releases -> "
     "onnxruntime-linux-x64-<ver>.tgz\n"
     "  or point ONNXRUNTIME_ROOT at the directory of a pip wheel:\n"
@@ -74,10 +76,18 @@ if(NOT ONNXRUNTIME_INCLUDE_DIR OR NOT ONNXRUNTIME_LIBRARY)
     "unzip -q onnxruntime-*.whl\n"
     "  (a pip wheel ships the .so but not the headers; take them from the same "
     "release tag)")
+elseif(NOT WIN32 AND NOT ONNXRUNTIME_LIBRARY)
+  message(FATAL_ERROR
+    "ONNX Runtime library not found under ONNXRUNTIME_ROOT='${ONNXRUNTIME_ROOT}'.\n"
+    "  Expected lib/libonnxruntime.so (or onnxruntime/capi/ in a pip wheel).")
 endif()
 
 message(STATUS "ONNX Runtime include: ${ONNXRUNTIME_INCLUDE_DIR}")
-message(STATUS "ONNX Runtime library: ${ONNXRUNTIME_LIBRARY}")
+if(WIN32)
+  message(STATUS "ONNX Runtime library: not linked (loaded from beside the .ofx)")
+else()
+  message(STATUS "ONNX Runtime library: ${ONNXRUNTIME_LIBRARY}")
+endif()
 
 # ---------------------------------------------------------------------------
 # 3. The plug-in module
@@ -170,7 +180,11 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
 
-get_filename_component(_onnx_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
+if(ONNXRUNTIME_LIBRARY)
+  get_filename_component(_onnx_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
+else()
+  set(_onnx_dir "${ONNXRUNTIME_ROOT}/lib")
+endif()
 if(WIN32)
   # The Windows package puts the import library in lib/ and the DLL in bin/.
   # Copying ${ONNXRUNTIME_LIBRARY} under the name onnxruntime.dll would produce

@@ -69,38 +69,47 @@ std::wstring WidePath(const std::string& utf8)
 /// A name no host uses cannot collide. CMakeLists.txt copies this exact name.
 constexpr wchar_t kPrivateRuntimeDll[] = L"onnxruntime-ofx.dll";
 
-std::wstring ModuleDirectory()
+/// Full path of the private runtime next to this module, or empty when the
+/// module path cannot be determined. The buffer grows because install paths
+/// longer than MAX_PATH are legal.
+std::wstring PrivateRuntimePath()
 {
     HMODULE module = nullptr;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                 GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPCWSTR>(&ModuleDirectory), &module)) {
+                            reinterpret_cast<LPCWSTR>(&PrivateRuntimePath), &module)) {
         return std::wstring();
     }
-    wchar_t path[MAX_PATH];
-    const DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
-    if (length == 0 || length == MAX_PATH) {
-        return std::wstring();
+    std::wstring path(MAX_PATH, L'\0');
+    DWORD length = 0;
+    for (;;) {
+        length = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
+        if (length == 0 || length < static_cast<DWORD>(path.size())) break;
+        if (path.size() >= 32768) return std::wstring(); // longer than any legal path
+        path.resize(path.size() * 2);
     }
-    const std::wstring full(path, length);
-    const size_t slash = full.find_last_of(L"\\/");
-    return slash == std::wstring::npos ? std::wstring() : full.substr(0, slash);
+    if (length == 0) return std::wstring();
+    const size_t slash = path.find_last_of(L"\\/", length - 1);
+    return slash == std::wstring::npos ? std::wstring()
+                                       : path.substr(0, slash + 1) + kPrivateRuntimeDll;
 }
 
 /// Loads the private runtime once and installs its C API. Never unloaded: an
 /// Ort::Env created later outlives this call, so FreeLibrary would leave the
-/// process with dangling code pointers.
+/// process with dangling code pointers. A failure is remembered rather than
+/// retried: the plug-in constructs a ModelRunner per render attempt, and a
+/// retry would re-map the DLL every frame for a cause that cannot change
+/// without a host restart.
 void LoadPrivateRuntime()
 {
     static std::once_flag once;
     static std::string error;
     std::call_once(once, [] {
-        const std::wstring dir = ModuleDirectory();
-        if (dir.empty()) {
+        const std::wstring file = PrivateRuntimePath();
+        if (file.empty()) {
             error = "cannot determine the plug-in directory";
             return;
         }
-        const std::wstring file = dir + L"\\" + kPrivateRuntimeDll;
         HMODULE library = LoadLibraryExW(
             file.c_str(), nullptr,
             LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
@@ -148,13 +157,14 @@ struct ModelRunner::Impl {
 ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
     : _impl(new Impl())
 {
-#if defined(_WIN32) && defined(ORT_API_MANUAL_INIT)
-    // Before any Ort:: object exists: the C++ wrappers call through this API.
-    LoadPrivateRuntime();
-#endif
     if (modelPath.empty()) {
         throw std::runtime_error("ModelRunner: empty model path");
     }
+
+#if defined(_WIN32) && defined(ORT_API_MANUAL_INIT)
+    // Before the first Ort:: object exists: the C++ wrappers call through this API.
+    LoadPrivateRuntime();
+#endif
 
     Ort::SessionOptions options;
     // See the header: the host already runs render() on several threads.

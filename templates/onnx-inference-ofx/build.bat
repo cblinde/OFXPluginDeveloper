@@ -12,11 +12,11 @@ rem The leading .\ matters when NoDefaultCurrentDirectoryInExePath=1 is set (a
 rem common policy): a bare `build.bat` is then not found, by cmd.exe itself.
 rem
 rem Environment:
-rem   ONNXRUNTIME_ROOT  required. The Windows release zip (onnxruntime-win-x64-*)
-rem                     holds include\onnxruntime_cxx_api.h, lib\onnxruntime.lib
-rem                     and bin\onnxruntime.dll. The DLL is copied into the
-rem                     bundle as onnxruntime-ofx.dll and loaded by that name;
-rem                     the .lib is NOT linked on Windows. No release
+rem   ONNXRUNTIME_ROOT  required. Needs include\onnxruntime_cxx_api.h and
+rem                     bin\onnxruntime.dll from the release zip (or NuGet).
+rem                     The DLL is copied into the bundle as
+rem                     onnxruntime-ofx.dll and loaded by that name; the .lib
+rem                     is NOT linked on Windows and is not required. No release
 rem                     zip at hand? The NuGet package carries the same files:
 rem                       https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/<version>
 rem                     (a .nupkg is a zip) with build\native\include,
@@ -52,21 +52,13 @@ if not defined ONNXRUNTIME_ROOT (
   echo     set ONNXRUNTIME_ROOT=C:\path\to\onnxruntime-win-x64-^<version^>
   echo   Release assets unreachable? The NuGet package has the same files:
   echo     https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/^<version^>
-  echo   copy build\native\include\* to include\, runtimes\win-x64\native\*.lib
-  echo   to lib\ and runtimes\win-x64\native\*.dll to bin\.
+  echo   copy build\native\include\* to include\ and runtimes\win-x64\native\*.dll
+  echo   to bin\. (The .lib is not used; Windows loads the DLL at runtime.)
   exit /b 2
 )
 if not exist "%ONNXRUNTIME_ROOT%\include\onnxruntime_cxx_api.h" (
   echo error: %ONNXRUNTIME_ROOT%\include\onnxruntime_cxx_api.h not found.
   echo   Point ONNXRUNTIME_ROOT at the extracted Windows release zip.
-  exit /b 2
-)
-set "ORT_LIB="
-if exist "%ONNXRUNTIME_ROOT%\lib\onnxruntime.lib" set "ORT_LIB=%ONNXRUNTIME_ROOT%\lib\onnxruntime.lib"
-if not defined ORT_LIB (
-  echo error: no lib\onnxruntime.lib under %ONNXRUNTIME_ROOT%.
-  echo   The pip wheel ships only the DLL and no headers; use the release zip,
-  echo   or the NuGet package's runtimes\win-x64\native\*.lib.
   exit /b 2
 )
 if not exist "%ONNXRUNTIME_ROOT%\bin\onnxruntime.dll" (
