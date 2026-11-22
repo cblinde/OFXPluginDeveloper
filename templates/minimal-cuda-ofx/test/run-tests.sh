@@ -138,7 +138,8 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
   "${TMP}/contract_test" "${BUNDLE_OFX}" \
     --id com.ofxplugindeveloper.minimalcudagain \
     --param gain:double --param gainAlpha:double --clip Source --clip Output \
-    --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected
+    --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
+    --concurrency-param gain
 else
   echo "  skipped: no build/ tree yet (run ./build.sh first)"
 fi
@@ -183,6 +184,7 @@ else
       --id com.ofxplugindeveloper.minimalcudagain \
       --param gain:double --param gainAlpha:double --clip Source --clip Output \
       --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
+      --concurrency-param gain \
       > "${TMP}/vg-contract.log" 2>&1 || {
         echo "  FAIL: memcheck reported errors in the contract test" >&2
         grep -E "ERROR SUMMARY|Invalid|uninitialised|definitely lost" \

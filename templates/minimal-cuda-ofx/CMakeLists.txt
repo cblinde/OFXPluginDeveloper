@@ -67,6 +67,17 @@ if(OFXPLUGIN_ENABLE_CUDA)
   if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
+    # Remember nvcc's own default list once. CMAKE_CUDA_ARCHITECTURES is a CACHE
+    # variable that enable_language() initialises, so on every configure after the
+    # first it is already set and looks exactly like a user choice. Without this
+    # marker, an incremental rebuild of a clean-configured tree silently shrank
+    # the binary to nvcc's legacy default (measured here: 75 only, everything
+    # else dropped, no warning) - which is the failure the comment above claims
+    # to prevent.
+    if(NOT DEFINED OFXPLUGIN_COMPILER_DEFAULT_ARCHS)
+      set(OFXPLUGIN_COMPILER_DEFAULT_ARCHS "${CMAKE_CUDA_ARCHITECTURES}"
+          CACHE INTERNAL "nvcc's default architecture list, used to detect an unset user choice")
+    endif()
   else()
     message(WARNING
       "OFXPLUGIN_ENABLE_CUDA=ON but no CUDA compiler was found. "
@@ -123,15 +134,38 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
 
 # Hosts look for the binary by exact name inside Contents/<arch>/, so the
 # extension must be ".ofx" and the prefix must be empty on every platform.
-# Because these directories are set explicitly, multi-config generators do not
-# append a per-configuration subdirectory: Debug and Release overwrite each
-# other inside the same bundle, which is what a host expects.
+#
+# Which of the two properties CMake honours for a MODULE target depends on the
+# platform AND the generator: on Windows/Ninja the module is written to
+# LIBRARY_OUTPUT_DIRECTORY, while the MSVC generators use RUNTIME_OUTPUT_DIRECTORY.
+# Setting both to the same, platform-correct path removes the difference. Before
+# that, `build.bat` on Windows produced
+#   Contents/Linux-x86-64/MinimalCudaGain.ofx
+# which is a bundle no host ever scans - the build reported success.
+#
+# The $<1:...> wrapper is load-bearing: multi-configuration generators append
+# /Release or /Debug to a plain output directory, and a host will not find the
+# binary there. A generator expression suppresses that suffix.
+if(WIN32)
+  set(_ofx_arch_dir "Win64")
+elseif(APPLE)
+  set(_ofx_arch_dir "MacOS")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv8.*)$")
+  # A Linux bundle on ARM is not a Linux-x86-64 bundle, and naming it that way
+  # is the same silent failure as writing Win64 binaries into Linux-x86-64: the
+  # build succeeds and no host scans the directory.
+  set(_ofx_arch_dir "Linux-aarch64")
+else()
+  set(_ofx_arch_dir "Linux-x86-64")
+endif()
+set(_ofx_bundle_arch_dir "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/${_ofx_arch_dir}")
+
 set_target_properties(${PLUGIN_TARGET} PROPERTIES
   PREFIX ""
   SUFFIX ".ofx"
   OUTPUT_NAME "${PLUGIN_TARGET}"
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Linux-x86-64"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Win64")
+  LIBRARY_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>"
+  RUNTIME_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>")
 
 # Bundle scaffolding (Resources/ is optional but hosts that read icons want it)
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
@@ -152,8 +186,11 @@ if(OFXPLUGIN_ENABLE_CUDA)
     target_link_libraries(${PLUGIN_TARGET} PRIVATE CUDA::cudart)
   endif()
 
-  if(OFXPLUGIN_USER_CUDA_ARCHS)
+  # A user choice is a value that differs from what enable_language() cached.
+  if(OFXPLUGIN_USER_CUDA_ARCHS AND
+     NOT "${OFXPLUGIN_USER_CUDA_ARCHS}" STREQUAL "${OFXPLUGIN_COMPILER_DEFAULT_ARCHS}")
     set(_ofx_cuda_archs "${OFXPLUGIN_USER_CUDA_ARCHS}")
+    message(STATUS "CUDA architectures: ${_ofx_cuda_archs} (from CMAKE_CUDA_ARCHITECTURES)")
   else()
     # Turing .. Hopper is the practical floor for current post houses.
     set(_ofx_cuda_archs 75 80 86 89 90)
@@ -161,6 +198,7 @@ if(OFXPLUGIN_ENABLE_CUDA)
       # Blackwell (RTX 50 / B100 / GB10). Requires CUDA >= 12.8.
       list(APPEND _ofx_cuda_archs 100 120)
     endif()
+    message(STATUS "CUDA architectures: ${_ofx_cuda_archs} (default list)")
   endif()
 
   # A bare number emits BOTH real SASS and PTX, so the highest architecture
@@ -169,7 +207,6 @@ if(OFXPLUGIN_ENABLE_CUDA)
   # is stale", not as noise.
   set_target_properties(${PLUGIN_TARGET} PROPERTIES
     CUDA_ARCHITECTURES "${_ofx_cuda_archs}")
-  message(STATUS "CUDA architectures: ${_ofx_cuda_archs}")
 
   if(OFXPLUGIN_CUDA_STATIC_RUNTIME)
     set_target_properties(${PLUGIN_TARGET} PROPERTIES CUDA_RUNTIME_LIBRARY Static)

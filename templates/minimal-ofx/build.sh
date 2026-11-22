@@ -68,7 +68,7 @@ exports="$(nm -D --defined-only "${ofx_file}" | awk '$2 == "T" {print $3}' | sor
 expected=$'OfxGetNumberOfPlugins\nOfxGetPlugin'
 if [[ "${exports}" != "${expected}" ]]; then
   echo "  exported text symbols:" >&2
-  printf '    %s\n' ${exports:-"<none>"} >&2
+  printf '    %s\n' "${exports:-<none>}" >&2
   echo "  expected exactly: ${expected//$'\n'/ and }" >&2
   die "wrong set of exported entry points"
 fi
@@ -94,6 +94,7 @@ echo "  undefined OFX  : none (all host access goes through fetchSuite at runtim
 rpath="$(readelf -d "${ofx_file}" | grep -E 'RPATH|RUNPATH' || true)"
 if [[ -n "${rpath}" ]]; then
   echo "  ${rpath}"
+  # shellcheck disable=SC2016  # matching the literal text $ORIGIN, not expanding it
   [[ "${rpath}" == *'$ORIGIN'* ]] || die "the module records a build-machine library path"
 fi
 echo "  RPATH/RUNPATH  : ${rpath:+$ORIGIN-based}${rpath:-none}"

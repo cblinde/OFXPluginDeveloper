@@ -98,12 +98,33 @@ endif()
 
 # The host looks for the binary by exact name inside Contents/<arch>/: the
 # extension must be ".ofx" and the prefix empty on every platform.
+#
+# Both output-directory properties are set to the same, platform-correct path
+# because a MODULE target goes to LIBRARY_OUTPUT_DIRECTORY under Ninja but to
+# RUNTIME_OUTPUT_DIRECTORY under the MSVC generators. Hard-coding them per
+# platform (as this file did) put the Windows build in
+# Contents/Linux-x86-64/ReferenceGain.ofx, where no host looks. The $<1:...>
+# wrapper stops multi-config generators from appending /Release.
+if(WIN32)
+  set(_ofx_arch_dir "Win64")
+elseif(APPLE)
+  set(_ofx_arch_dir "MacOS")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv8.*)$")
+  # A Linux bundle on ARM is not a Linux-x86-64 bundle; the wrong directory
+  # builds fine and no host scans it, which is the platform version of the
+  # Win64\Release mistake.
+  set(_ofx_arch_dir "Linux-aarch64")
+else()
+  set(_ofx_arch_dir "Linux-x86-64")
+endif()
+set(_ofx_bundle_arch_dir "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/${_ofx_arch_dir}")
+
 set_target_properties(${PLUGIN_TARGET} PROPERTIES
   PREFIX ""
   SUFFIX ".ofx"
   OUTPUT_NAME "${PLUGIN_TARGET}"
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Linux-x86-64"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Win64")
+  LIBRARY_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>"
+  RUNTIME_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>")
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
 

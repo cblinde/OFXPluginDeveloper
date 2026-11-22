@@ -5,7 +5,8 @@
 #
 #   ./run-tests.sh
 #
-# It builds both templates and then runs, for each one, the unit/image tests,
+# It checks the documentation, builds every template, and then runs, for each
+# one, the unit/image tests,
 # the bundle and memory checks, and the dlopen + fake-host contract test:
 #
 #   templates/minimal-ofx/test/run-tests.sh        (build + artifact + contract)
@@ -15,7 +16,8 @@
 # Environment:
 #   OFX_SOURCE_DIR     openfx checkout (default: ./.ofx-ref when present,
 #                      otherwise each template fetches OFX_Release_1.5.1)
-#   ONNXRUNTIME_ROOT   required for the ONNX template (see its build.sh --help)
+#   ONNXRUNTIME_ROOT   optional: without it the ONNX template is skipped by
+#                      name, not silently (see its build.sh --help)
 #   CPU_ONLY=1         force the CUDA template to build its CPU path only
 #   RUN_VALGRIND       auto | 1 | 0 (forwarded to both suites)
 #   SANITIZE           e.g. address,undefined (forwarded; skips memcheck)
@@ -25,6 +27,17 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Documentation is part of the deliverable: fail the run when the prose drifts
+# from the tree (links, anchors, counts, duplicated measurements, provenance).
+echo
+echo "== docs: check-docs =="
+if command -v python3 >/dev/null 2>&1; then
+  python3 "${ROOT}/tools/check-docs.py"
+else
+  echo "error: python3 is required to check the documentation" >&2
+  exit 2
+fi
 
 if [[ -z "${OFX_SOURCE_DIR:-}" && -f "${ROOT}/.ofx-ref/include/ofxCore.h" ]]; then
   OFX_SOURCE_DIR="${ROOT}/.ofx-ref"
@@ -38,11 +51,15 @@ if [[ -n "${OFX_SOURCE_DIR:-}" ]]; then
   echo "[ofx] using ${OFX_SOURCE_DIR}"
 fi
 
+# A missing ONNX Runtime skips one template, it does not abort the run. The
+# reference and CUDA plug-ins need nothing, and exiting here meant a machine
+# without ONNX Runtime never tested them at all.
+onnx=1
 if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
-  echo "error: ONNXRUNTIME_ROOT is not set; the ONNX template cannot build." >&2
-  echo "  Point it at a directory with include/onnxruntime_cxx_api.h and" >&2
-  echo "  lib/libonnxruntime.so (see templates/onnx-inference-ofx/build.sh --help)." >&2
-  exit 2
+  onnx=0
+  echo "[onnx] ONNXRUNTIME_ROOT is unset: templates/onnx-inference-ofx is skipped by name"
+  echo "       Point it at a directory with include/onnxruntime_cxx_api.h and"
+  echo "       lib/libonnxruntime.so (see templates/onnx-inference-ofx/build.sh --help)."
 fi
 
 # ---------------------------------------------------------------------------
@@ -60,8 +77,12 @@ echo "== build: minimal-cuda-ofx (${cuda_mode}) =="
 ( cd "${ROOT}/templates/minimal-cuda-ofx" && ./build.sh )
 
 echo
-echo "== build: onnx-inference-ofx =="
-( cd "${ROOT}/templates/onnx-inference-ofx" && ./build.sh )
+if [[ "${onnx}" == "1" ]]; then
+  echo "== build: onnx-inference-ofx =="
+  ( cd "${ROOT}/templates/onnx-inference-ofx" && ./build.sh )
+else
+  echo "== build: onnx-inference-ofx (skipped: ONNXRUNTIME_ROOT unset) =="
+fi
 
 # ---------------------------------------------------------------------------
 # Test
@@ -78,14 +99,22 @@ echo "== test: minimal-cuda-ofx =="
 "${ROOT}/templates/minimal-cuda-ofx/test/run-tests.sh"
 
 echo
-echo "== test: onnx-inference-ofx =="
-"${ROOT}/templates/onnx-inference-ofx/test/run-tests.sh"
+if [[ "${onnx}" == "1" ]]; then
+  echo "== test: onnx-inference-ofx =="
+  "${ROOT}/templates/onnx-inference-ofx/test/run-tests.sh"
+else
+  echo "== test: onnx-inference-ofx (skipped: ONNXRUNTIME_ROOT unset) =="
+fi
 
 echo
 echo "=================================================================="
-echo "all suites passed, every template:"
+echo "all suites passed, every template that was built:"
+echo "  docs drift check                (tools/check-docs.py)"
 echo "  reference build + artifact      (minimal-ofx)"
-echo "  unit/equivalence  (both)        image/golden      (both)"
-echo "  artifact + fake host (both)     memory            (both)"
+echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
+echo "  artifact + fake host (all)      memory            (all)"
+if [[ "${onnx}" == "0" ]]; then
+  echo "  skipped: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
+fi
 echo "Negative controls are separate: testkit/run-negative-controls.sh"
 echo "=================================================================="

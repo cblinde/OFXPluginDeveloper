@@ -69,7 +69,8 @@ find_library(ONNXRUNTIME_LIBRARY
 if(NOT ONNXRUNTIME_INCLUDE_DIR OR NOT ONNXRUNTIME_LIBRARY)
   message(FATAL_ERROR
     "ONNX Runtime not found under ONNXRUNTIME_ROOT='${ONNXRUNTIME_ROOT}'.\n"
-    "  Expected include/onnxruntime_cxx_api.h and lib/libonnxruntime.so.\n"
+    "  Expected include/onnxruntime_cxx_api.h and lib/libonnxruntime.so\n"
+    "  (Windows: lib/onnxruntime.lib, plus bin/onnxruntime.dll when bundling).\n"
     "  CPU build: https://github.com/microsoft/onnxruntime/releases -> "
     "onnxruntime-linux-x64-<ver>.tgz\n"
     "  or point ONNXRUNTIME_ROOT at the directory of a pip wheel:\n"
@@ -102,7 +103,11 @@ target_include_directories(${PLUGIN_TARGET} PRIVATE
   "${ONNXRUNTIME_INCLUDE_DIR}")
 
 target_compile_features(${PLUGIN_TARGET} PRIVATE cxx_std_17)
-target_compile_options(${PLUGIN_TARGET} PRIVATE -Wall -Wextra)
+if(MSVC)
+  target_compile_options(${PLUGIN_TARGET} PRIVATE /W3)
+else()
+  target_compile_options(${PLUGIN_TARGET} PRIVATE -Wall -Wextra)
+endif()
 target_link_libraries(${PLUGIN_TARGET} PRIVATE "${ONNXRUNTIME_LIBRARY}")
 target_link_libraries(${PLUGIN_TARGET} PRIVATE ${CMAKE_DL_LIBS})
 
@@ -124,12 +129,28 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
   BUILD_WITH_INSTALL_RPATH ON
   INSTALL_RPATH "$ORIGIN")
 
+# The bundle's arch directory is a platform fact, and getting it wrong is
+# silent: the .ofx links, the build reports success, and no host ever scans the
+# directory it landed in. A MODULE target uses LIBRARY_OUTPUT_DIRECTORY under
+# the Makefile/Ninja generators and RUNTIME_OUTPUT_DIRECTORY under MSVC, so both
+# are set; `$<1:...>` keeps a multi-config generator from appending /Release.
+if(WIN32)
+  set(_ofx_arch_dir "Win64")
+elseif(APPLE)
+  set(_ofx_arch_dir "MacOS")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv8.*)$")
+  set(_ofx_arch_dir "Linux-aarch64")
+else()
+  set(_ofx_arch_dir "Linux-x86-64")
+endif()
+set(_ofx_bundle_arch_dir "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/${_ofx_arch_dir}")
+
 set_target_properties(${PLUGIN_TARGET} PROPERTIES
   PREFIX ""
   SUFFIX ".ofx"
   OUTPUT_NAME "${PLUGIN_TARGET}"
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Linux-x86-64"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Win64")
+  LIBRARY_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>"
+  RUNTIME_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>")
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
 
@@ -139,13 +160,26 @@ if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
   # 34 MB target, which is how a bundle quietly doubles in size.
   get_filename_component(_onnx_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
   if(WIN32)
+    # The Windows package puts the import library in lib/ and the DLL in bin/.
+    # Copying ${ONNXRUNTIME_LIBRARY} under the name onnxruntime.dll would produce
+    # a file the loader rejects - a bundle that looks complete and fails at load.
+    find_file(ONNXRUNTIME_DLL NAMES onnxruntime.dll
+      HINTS "${ONNXRUNTIME_ROOT}/bin" "${ONNXRUNTIME_ROOT}/lib" "${_onnx_dir}"
+      NO_DEFAULT_PATH)
+    if(NOT ONNXRUNTIME_DLL)
+      message(FATAL_ERROR
+        "OFXPLUGIN_BUNDLE_ONNX_RUNTIME=ON but no onnxruntime.dll under "
+        "ONNXRUNTIME_ROOT='${ONNXRUNTIME_ROOT}' (looked in bin/ and lib/).")
+    endif()
+    set(_onnx_copy "${ONNXRUNTIME_DLL}")
     set(_onnx_bundled_name "onnxruntime.dll")
   else()
+    set(_onnx_copy "${ONNXRUNTIME_LIBRARY}")
     set(_onnx_bundled_name "libonnxruntime.so.1")
   endif()
   add_custom_command(TARGET ${PLUGIN_TARGET} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "${ONNXRUNTIME_LIBRARY}"
+            "${_onnx_copy}"
             "$<TARGET_FILE_DIR:${PLUGIN_TARGET}>/${_onnx_bundled_name}"
     COMMENT "Bundling ONNX Runtime next to the .ofx as ${_onnx_bundled_name}")
 endif()
@@ -162,13 +196,19 @@ target_include_directories(ai_pipeline_test PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${ONNXRUNTIME_INCLUDE_DIR}")
 target_compile_features(ai_pipeline_test PRIVATE cxx_std_17)
-target_compile_options(ai_pipeline_test PRIVATE -Wall -Wextra)
+if(MSVC)
+  target_compile_options(ai_pipeline_test PRIVATE /W3)
+else()
+  target_compile_options(ai_pipeline_test PRIVATE -Wall -Wextra)
+endif()
 target_link_libraries(ai_pipeline_test PRIVATE "${ONNXRUNTIME_LIBRARY}" ${CMAKE_DL_LIBS})
 # No INSTALL_RPATH override here: CMake's build-tree rpath is what lets ctest
 # (and a plain ./ai_pipeline_test) find libonnxruntime before anything is
 # installed or bundled.
-set_target_properties(ai_pipeline_test PROPERTIES
-  BUILD_RPATH "${_onnx_dir}")
+if(NOT WIN32)
+  set_target_properties(ai_pipeline_test PROPERTIES
+    BUILD_RPATH "${_onnx_dir}")
+endif()
 add_test(NAME ai_pipeline
   COMMAND ai_pipeline_test "${CMAKE_CURRENT_SOURCE_DIR}/models")
 
