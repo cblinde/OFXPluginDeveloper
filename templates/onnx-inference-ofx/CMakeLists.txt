@@ -2,12 +2,6 @@ cmake_minimum_required(VERSION 3.21)
 
 project(onnx-inference-ofx LANGUAGES CXX)
 
-# See the CUDA template: CMP0169 keeps the explicit FetchContent_Populate() call
-# working on CMake 3.30+.
-if(POLICY CMP0169)
-  cmake_policy(SET CMP0169 OLD)
-endif()
-
 set(PLUGIN_TARGET "OnnxInference")
 set(PLUGIN_BUNDLE "${PLUGIN_TARGET}.ofx.bundle")
 
@@ -21,15 +15,17 @@ set(OFX_SOURCE_DIR "" CACHE PATH "Existing openfx checkout; leave empty to fetch
 
 if(NOT OFX_SOURCE_DIR)
   include(FetchContent)
+  # SOURCE_SUBDIR names a directory with no CMakeLists.txt, so MakeAvailable
+  # populates the checkout without adding OpenFX's own project (which builds
+  # its samples) to this build. It is also the non-deprecated replacement for
+  # FetchContent_Populate() on CMake 3.30+ (CMP0169).
   FetchContent_Declare(openfx
     GIT_REPOSITORY https://github.com/AcademySoftwareFoundation/openfx.git
     GIT_TAG        OFX_Release_1.5.1
     GIT_SHALLOW    TRUE
-    GIT_PROGRESS   TRUE)
-  FetchContent_GetProperties(openfx)
-  if(NOT openfx_POPULATED)
-    FetchContent_Populate(openfx)
-  endif()
+    GIT_PROGRESS   TRUE
+    SOURCE_SUBDIR  cmake/do-not-build)
+  FetchContent_MakeAvailable(openfx)
   set(OFX_SOURCE_DIR "${openfx_SOURCE_DIR}")
 endif()
 
@@ -123,11 +119,16 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN ON)
 
-# $ORIGIN, so the bundle resolves libonnxruntime placed beside it and nothing
-# records the build machine's path. Windows has neither rpath nor RUNPATH; the
-# DLL beside the .ofx is found by the loader's own search, so setting these
-# there would be a no-op that reads like a guarantee.
-if(NOT WIN32)
+# Resolve the runtime from beside the module and never from a build-machine
+# path. The token is platform-specific: dyld knows @loader_path and treats
+# $ORIGIN as a literal directory name, while ELF loaders know $ORIGIN and not
+# @loader_path. Windows has neither rpath nor RUNPATH; the DLL beside the .ofx
+# is found by the loader's own search, so setting either there is a no-op.
+if(APPLE)
+  set_target_properties(${PLUGIN_TARGET} PROPERTIES
+    BUILD_WITH_INSTALL_RPATH ON
+    INSTALL_RPATH "@loader_path")
+elseif(UNIX)
   set_target_properties(${PLUGIN_TARGET} PROPERTIES
     BUILD_WITH_INSTALL_RPATH ON
     INSTALL_RPATH "$ORIGIN")
@@ -171,9 +172,8 @@ if(WIN32)
 endif()
 
 if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
-  # The binary records NEEDED libonnxruntime.so.1 (the SONAME), so ship exactly
-  # that name. Globbing libonnxruntime.so* would copy the symlink AND its
-  # 34 MB target, which is how a bundle quietly doubles in size.
+  # Ship the file name each platform's loader actually looks for; the branches
+  # below say why that name differs.
   if(WIN32)
     if(NOT ONNXRUNTIME_DLL)
       message(FATAL_ERROR
@@ -182,7 +182,18 @@ if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
     endif()
     set(_onnx_copy "${ONNXRUNTIME_DLL}")
     set(_onnx_bundled_name "onnxruntime.dll")
+  elseif(APPLE)
+    # dyld records an install name of @rpath/libonnxruntime.<version>.dylib and
+    # @loader_path resolves it only if the file keeps that name. find_library()
+    # usually returns the unversioned symlink, so resolve it first: copying it
+    # as the Linux SONAME produces a bundle whose lookup cannot succeed.
+    get_filename_component(_onnx_real "${ONNXRUNTIME_LIBRARY}" REALPATH)
+    get_filename_component(_onnx_bundled_name "${_onnx_real}" NAME)
+    set(_onnx_copy "${_onnx_real}")
   else()
+    # Linux: the binary records NEEDED libonnxruntime.so.1 (the SONAME), so ship
+    # exactly that name. Globbing libonnxruntime.so* would copy the symlink and
+    # its target, which is how a bundle quietly doubles in size.
     set(_onnx_copy "${ONNXRUNTIME_LIBRARY}")
     set(_onnx_bundled_name "libonnxruntime.so.1")
   endif()

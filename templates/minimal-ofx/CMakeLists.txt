@@ -14,12 +14,6 @@ project(minimal-ofx LANGUAGES CXX)
 # requires it, in BUILD_PLAYBOOK.md.
 # ---------------------------------------------------------------------------
 
-# CMP0169 keeps the explicit FetchContent_Populate() call below working on
-# CMake 3.30+.
-if(POLICY CMP0169)
-  cmake_policy(SET CMP0169 OLD)
-endif()
-
 set(PLUGIN_TARGET "ReferenceGain")
 set(PLUGIN_BUNDLE "${PLUGIN_TARGET}.ofx.bundle")
 
@@ -32,15 +26,17 @@ set(OFX_SOURCE_DIR "" CACHE PATH "Existing openfx checkout; leave empty to fetch
 
 if(NOT OFX_SOURCE_DIR)
   include(FetchContent)
+  # SOURCE_SUBDIR names a directory with no CMakeLists.txt, so MakeAvailable
+  # populates the checkout without adding OpenFX's own project (which builds
+  # its samples) to this build. It is also the non-deprecated replacement for
+  # FetchContent_Populate() on CMake 3.30+ (CMP0169).
   FetchContent_Declare(openfx
     GIT_REPOSITORY https://github.com/AcademySoftwareFoundation/openfx.git
     GIT_TAG        OFX_Release_1.5.1
     GIT_SHALLOW    TRUE
-    GIT_PROGRESS   TRUE)
-  FetchContent_GetProperties(openfx)
-  if(NOT openfx_POPULATED)
-    FetchContent_Populate(openfx)
-  endif()
+    GIT_PROGRESS   TRUE
+    SOURCE_SUBDIR  cmake/do-not-build)
+  FetchContent_MakeAvailable(openfx)
   set(OFX_SOURCE_DIR "${openfx_SOURCE_DIR}")
 endif()
 
