@@ -385,7 +385,8 @@ limits of that run are in
 | generator ↔ cached build tree | the second run may pick a different generator than the cache records | `Error: generator … Does not match the generator used previously` | reuse `CMAKE_GENERATOR:INTERNAL` from `build\CMakeCache.txt`, refuse loudly when that generator cannot build CUDA |
 | CUDA ↔ architecture list | `enable_language(CUDA)` caches nvcc's default; a second configure sees a defined variable | `-- CUDA architectures: 75`, one `--generate-code`, SASS only for Volta | record nvcc's default once and treat a differing `CMAKE_CUDA_ARCHITECTURES` as a user choice |
 | CUDA 13 ↔ runtime import | the Windows image does not import `cudart64_*.dll` even with device code present | `dumpbin /dependents` lists no CUDA DLL | say "device code present, runtime resolved at load"; never print the import you expected |
-| ONNX Runtime ↔ import library | the Windows package keeps headers in `include\`, the import library in `lib\onnxruntime.lib` and the DLL in `bin\onnxruntime.dll` | the build succeeds, the bundle carries a file named `onnxruntime.dll` that the loader rejects, and the plug-in fails at load | link the `.lib`, copy the `.dll`; `templates/onnx-inference-ofx/CMakeLists.txt` resolves both and fails the configure when the DLL is missing |
+| ONNX Runtime ↔ import library | the Windows package keeps headers in `include\`, the import library in `lib\onnxruntime.lib` and the DLL in `bin\onnxruntime.dll` | the build succeeds, the bundle carries a file named `onnxruntime.dll` that the loader rejects, and the plug-in fails at load | on Windows do **not** link the `.lib`: compile with `ORT_API_MANUAL_INIT`, copy the DLL as `onnxruntime-ofx.dll` and load it by full path (`AI_MODEL_INTEGRATION.md` §4); Linux/macOS link as usual. The template fails the configure when the DLL is missing |
+| host runtime ↔ bundled runtime | Windows resolves an import by base name, and the host's directory comes first: Resolve 21 ships `onnxruntime.dll` 1.13, Windows ML ships one in `System32` | `render` access-violates; the minidump names the host's `onnxruntime.dll` and not the bundle's | private file name + `ORT_API_MANUAL_INIT` + `LoadLibraryExW` from the module directory; a bound import cannot be overridden by copying a file beside the `.ofx` |
 | `vswhere` ↔ `for /f` | a `for /f` backtick command whose first **and** last characters are quotes loses both before `cmd /c` runs it, so the program path is split at its first space | `Der Befehl "C:\Program" ist entweder falsch geschrieben oder konnte nicht gefunden werden.` — then the checker reports `dumpbin not found` and every `build.bat` aborts after a correct build | end the command with an unquoted argument (`-property installationPath`) and locate the tool with a `for /d` glob; never pass a quoted `-find` pattern there |
 | platform ↔ architecture directory | the directory name is part of the contract: `Linux-x86-64`, `Linux-aarch64`, `MacOS`, `Win64` | an ARM Linux build links, reports success and lands in `Contents/Linux-x86-64`, which no host scans | derive the directory from `WIN32`/`APPLE`/`CMAKE_SYSTEM_PROCESSOR` once, and set both output properties to it |
 
@@ -420,10 +421,10 @@ nothing else.
 **The ONNX template is a bundle of two binaries.** `templates/onnx-inference-ofx/build.bat`
 requires `ONNXRUNTIME_ROOT` with `include\onnxruntime_cxx_api.h`,
 `lib\onnxruntime.lib` and `bin\onnxruntime.dll`; it asserts both the `.ofx` in
-`Contents\Win64` and the DLL beside it, then runs the artifact check. That second
-assertion is the F8 lesson in another form: a plug-in that imports
-`onnxruntime.dll` and ships a renamed import library instead loads nowhere, while
-the build reports success. The Linux script has the equivalent check via `readelf -d` (`NEEDED libonnxruntime.so.1`). The `.ofx` here is also the one template whose
+`Contents\Win64` and the private `onnxruntime-ofx.dll` beside it, then runs the
+artifact check. That second assertion covers both ways to ship a bundle that
+cannot work: an import library renamed to `.dll`, and the old `onnxruntime.dll`
+name that a host's own runtime pre-empts even when the file is present. The Linux script has the equivalent check via `readelf -d` (`NEEDED libonnxruntime.so.1`). The `.ofx` here is also the one template whose
 failure mode is *two* files, so the contract harness needs the bundle directory,
 not just the `.ofx` path.
 

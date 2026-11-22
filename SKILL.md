@@ -112,7 +112,8 @@ templates/minimal-cuda-ofx/
   build.sh / build.bat                 portable out-of-source builds
 templates/onnx-inference-ofx/
   build.sh / build.bat                 needs ONNXRUNTIME_ROOT; the Windows bundle
-                                       carries bin\onnxruntime.dll next to the .ofx
+                                       carries bin\onnxruntime.dll as
+                                       onnxruntime-ofx.dll next to the .ofx
 ```
 
 The template is the reference implementation for this skill. When generating a

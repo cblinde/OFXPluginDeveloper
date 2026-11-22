@@ -234,6 +234,26 @@ it to `onnxruntime.dll` produces a bundle that looks complete and that the
 loader rejects at load time, which is why the template resolves the DLL
 separately and fails the configure when it is absent (**B**).
 
+**On Windows, do not link the runtime at all, and do not ship it as
+`onnxruntime.dll`.** Windows resolves an imported DLL by module *base name* and
+searches the executable's directory first, so a host that carries ONNX Runtime
+never opens yours: Resolve 21 ships `onnxruntime.dll` 1.13 beside `Resolve.exe`,
+a plug-in built against 1.20 asks `GetApi(20)`, receives null, and the first ORT
+call is an access violation in `render` with nothing naming the plug-in (**B**,
+from Resolve's minidump). `%WINDIR%\System32\onnxruntime.dll` (Windows ML) wins
+the same way, so "it works on my machine" proves nothing about the host.
+
+The template therefore compiles with `ORT_API_MANUAL_INIT`, does **not** link
+`onnxruntime.lib`, copies the DLL into the bundle as `onnxruntime-ofx.dll`, and
+loads that private name from the module directory at first use
+(`LoadLibraryExW(..., LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)`),
+then `GetProcAddress("OrtGetApiBase")`, `GetApi(ORT_API_VERSION)` and
+`Ort::InitApi(api)`. A missing or too-old runtime becomes an exception from
+`ModelRunner` - a render error with a message - instead of a crash. The private
+name is mandatory: `LoadLibrary` matches an already-loaded module by base name,
+so even the full path to a file called `onnxruntime.dll` returns the host's copy.
+Never `FreeLibrary` it; an `Ort::Env` created afterwards outlives the call.
+
 **macOS.** The runtime is `libonnxruntime.<version>.dylib` and dyld records an
 install name of `@rpath/libonnxruntime.<version>.dylib`, so the bundle needs an
 `@loader_path` rpath entry and the file has to keep that versioned name.

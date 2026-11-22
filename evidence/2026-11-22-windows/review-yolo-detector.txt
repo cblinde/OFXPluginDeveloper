@@ -139,3 +139,33 @@ F5 (medium) - OFX::Log::print is silent in Release builds. Support opens the log
 
 Also kept from the first revision: the -Wall -Wextra fixture build and the
 documented vocabulary in testkit/README.md.
+
+F6 (high, crash) - the ONNX template's Windows bundle crashed in Resolve.
+  It linked onnxruntime.lib and copied the DLL as onnxruntime.dll. Windows
+  resolves an import by module base name and searches the executable's directory
+  first, so Resolve's own onnxruntime.dll (1.13, beside Resolve.exe) was bound
+  instead of the bundled 1.20: GetApi(ORT_API_VERSION=20) returned null, the C++
+  wrapper stored it unchecked, and the first ORT call access-violated inside
+  render. Resolve's minidump names the host's DLL; the bundle's file never
+  appears in the module list [B]. The same applies to Windows ML's copy in
+  System32, so "works on my machine" proves nothing.
+  Fixed in templates/onnx-inference-ofx:
+    - CMake on WIN32 no longer links the import library, and compiles both the
+      plug-in and ai_pipeline_test with ORT_API_MANUAL_INIT;
+    - the bundle and the test directory carry the runtime as
+      onnxruntime-ofx.dll (build.bat asserts that name);
+    - ModelRunner loads the private name from the module directory with
+      LoadLibraryExW(LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+      LOAD_LIBRARY_SEARCH_DEFAULT_DIRS), resolves OrtGetApiBase, calls
+      GetApi(ORT_API_VERSION), checks for null, calls Ort::InitApi(api), and
+      never calls FreeLibrary. A missing or too-old runtime throws from
+      ModelRunner (a render error with a message) rather than crashing.
+    - AI_MODEL_INTEGRATION.md section 4, BUILD_PLAYBOOK.md section 7,
+      PATTERN_INDEX.md and SKILL.md carry the rule.
+  Verification here is partial by nature: the Linux build and all suites still
+  pass with the unchanged static linking, and the new Windows code type-checks
+  against the real ORT 1.20 headers with a stub windows.h (-Wall -Wextra,
+  -fsyntax-only). It cannot be compiled with MSVC or executed here, so the
+  loader and the CMake branch remain [I] until a Windows run repeats the field
+  test. The
+  referenced field evidence for the failure itself is [B].
