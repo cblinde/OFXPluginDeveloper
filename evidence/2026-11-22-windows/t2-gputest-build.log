@@ -1,0 +1,25 @@
+[gpu-test] using "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+Microsoft (R) C/C++-Optimierungscompiler Version 19.44.35224 fÅr x64
+gpu-kernel-test.cu
+tmpxft_00005ec4_00000000-7_gpu-kernel-test.cudafe1.cpp
+BUILD_OK
+== the minimal-cuda-ofx kernels on real hardware ==
+device 0: NVIDIA GeForce RTX 3060, compute capability 8.6, 28 SMs, 12287 MiB
+runtime : CUDA 13.5 (13050), unified addressing yes, host-mapped yes
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+  200 queued launches on one non-blocking stream, one sync: ok
+[3/6] concurrent launches from host threads
+  8 threads, 0 failing
+[4/6] zero-copy on host-mapped memory
+  128x64 on pinned mapped memory, no device allocation: ok
+[5/6] both kernels launched directly (bypassing the launcher)
+  vec4 (direct)  333x101 exact match
+  scalar (direct) 333x101 exact match
+[6/6] throughput (first numbers this repository has for a real GPU)
+  vec4   1920x1080 RGBA32F: 0.212 ms/frame, 312.4 GB/s effective
+  scalar 1920x1080 RGBA32F: 0.222 ms/frame, 299.5 GB/s effective
+
+28 launcher cases, 0 failure(s)
+PASS: hardware matches the CPU reference bit for bit
+EXIT=0

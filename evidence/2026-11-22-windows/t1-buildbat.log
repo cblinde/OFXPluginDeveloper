@@ -1,0 +1,39 @@
+[build] CUDA toolkit: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+[build] generator: Ninja (no NVIDIA build customisations for the installed Visual Studio)
+Microsoft (R) C/C++-Optimierungscompiler Version 19.44.35224 fÅr x64
+-- The CXX compiler identification is MSVC 19.44.35224.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.44.35207/bin/HostX64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- The CUDA compiler identification is NVIDIA 13.0.48 with host compiler MSVC 19.44.35224.0
+-- Detecting CUDA compiler ABI info
+-- Detecting CUDA compiler ABI info - done
+-- Check for working CUDA compiler: C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/nvcc.exe - skipped
+-- Detecting CUDA compile features
+-- Detecting CUDA compile features - done
+-- Found CUDAToolkit: C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/include/cccl (found version "13.0.48")
+-- CUDA architectures: 75;80;86;89;90;100;120
+-- OFX plugin : MinimalCudaGain (CUDA ON)
+-- Bundle     : Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle
+-- Configuring done (127.2s)
+-- Generating done (0.2s)
+-- Build files have been written to: Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-cuda-ofx/build
+[0/2] Re-checking globbed directories...
+[1/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\_deps\openfx-src\Support\Library\ofxsLog.cpp.obj
+[2/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\_deps\openfx-src\Support\Library\ofxsCore.cpp.obj
+[3/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\_deps\openfx-src\Support\Library\ofxsMultiThread.cpp.obj
+[4/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\_deps\openfx-src\Support\Library\ofxsPropertyValidation.cpp.obj
+[5/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\_deps\openfx-src\Support\Library\ofxsInteract.cpp.obj
+[6/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\_deps\openfx-src\Support\Library\ofxsProperty.cpp.obj
+[7/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\src\Plugin.cpp.obj
+[8/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\_deps\openfx-src\Support\Library\ofxsParams.cpp.obj
+[9/11] Building CUDA object CMakeFiles\MinimalCudaGain.dir\src\Kernel.cu.obj
+Kernel.cu
+tmpxft_00000a40_00000000-7_Kernel.compute_120.cudafe1.cpp
+[10/11] Building CXX object CMakeFiles\MinimalCudaGain.dir\_deps\openfx-src\Support\Library\ofxsImageEffect.cpp.obj
+[11/11] Linking CXX shared module bundle\MinimalCudaGain.ofx.bundle\Contents\Linux-x86-64\MinimalCudaGain.ofx
+
+Bundle: Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle
+  CUDA path: compiled in, links cudart64_*.dll

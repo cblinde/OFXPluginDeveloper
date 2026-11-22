@@ -36,6 +36,7 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | File | What it is |
 | --- | --- |
 | [`AGENTS.md`](AGENTS.md) | The 30-line router for generic coding agents: commands, read order per task type, hard rules — points into the documents below rather than restating them |
+| [`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md) | The archived 2026-11-22 Windows/GPU run behind every **[B]** claim: environment, executed tests, artifact and kernel logs, and what it does not prove |
 | [`SKILL.md`](SKILL.md) | Master reference: ground rules, generation workflow, verified constants, build standards, anti-patterns, checklists, mandatory git workflow |
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, the stream contract, pitch arithmetic, RoD/RoI, colour/alpha, TensorRT/ONNX zero-copy, toolchain, profiling |
 | [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) | The build proved by a compile: one command from a clean checkout, the artifact's measured contract (`nm`, `readelf`, `dlopen`), and every compile-level requirement with file:line evidence and a verified/inferred label |
@@ -267,6 +268,7 @@ Documented rather than hidden, because each one is a trap for the next reader:
 2. **The Windows path was executed on another machine, not here.** The 2026-11-22
    field test built, loaded and rendered through `.\build.bat`; this checkout can
    only syntax-review it, so treat the Windows build as externally verified **[B]**
+   ([the archived run](FIELD_TEST_WINDOWS_CUDA.md))
    rather than as a check `./run-tests.sh` performs.
 3. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
    `/usr/OFX/Plugins` is root-owned on most Linux systems, so run that step with
@@ -378,8 +380,8 @@ inspections from that machine; the commands and the full results are in
 A 2026-11-22 field test on Windows 11 (RTX 3060, sm_86; CUDA 13.0 toolkit on a
 13.5 driver; MSVC 19.44 and 19.50; CMake 4.4.4) executed what this machine could
 not. Those results are **[B]** — external evidence, not reproduced in this
-checkout; the measurements themselves are quoted with their logs in the field
-test report.
+checkout; the measurements themselves are quoted with their logs in
+[`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md).
 
 - `.\build.bat` now configures and builds: generator from `vswhere`, canonical
   CUDA paths, Ninja fallback when the installed Visual Studio has no NVIDIA CUDA

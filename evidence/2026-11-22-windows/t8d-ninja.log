@@ -1,0 +1,27 @@
+[build] generator: Ninja
+-- The CXX compiler identification is MSVC 19.50.35726.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- OFX plugin : ReferenceGain
+-- Bundle     : Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle
+-- Configuring done (1.3s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-ofx/build
+[0/2] Re-checking globbed directories...
+[1/10] Building CXX object CMakeFiles\ReferenceGain.dir\Z_\Tools-DEV\TestOFXSkill\artifacts\openfx-src\Support\Library\ofxsLog.cpp.obj
+[2/10] Building CXX object CMakeFiles\ReferenceGain.dir\Z_\Tools-DEV\TestOFXSkill\artifacts\openfx-src\Support\Library\ofxsPropertyValidation.cpp.obj
+[3/10] Building CXX object CMakeFiles\ReferenceGain.dir\Z_\Tools-DEV\TestOFXSkill\artifacts\openfx-src\Support\Library\ofxsCore.cpp.obj
+[4/10] Building CXX object CMakeFiles\ReferenceGain.dir\Z_\Tools-DEV\TestOFXSkill\artifacts\openfx-src\Support\Library\ofxsMultiThread.cpp.obj
+[5/10] Building CXX object CMakeFiles\ReferenceGain.dir\Z_\Tools-DEV\TestOFXSkill\artifacts\openfx-src\Support\Library\ofxsProperty.cpp.obj
+[6/10] Building CXX object CMakeFiles\ReferenceGain.dir\Z_\Tools-DEV\TestOFXSkill\artifacts\openfx-src\Support\Library\ofxsInteract.cpp.obj
+[7/10] Building CXX object CMakeFiles\ReferenceGain.dir\src\Plugin.cpp.obj
+[8/10] Building CXX object CMakeFiles\ReferenceGain.dir\Z_\Tools-DEV\TestOFXSkill\artifacts\openfx-src\Support\Library\ofxsParams.cpp.obj
+[9/10] Building CXX object CMakeFiles\ReferenceGain.dir\Z_\Tools-DEV\TestOFXSkill\artifacts\openfx-src\Support\Library\ofxsImageEffect.cpp.obj
+[10/10] Linking CXX shared module bundle\ReferenceGain.ofx.bundle\Contents\Win64\ReferenceGain.ofx
+
+Bundle: Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-ofx\build\bundle\ReferenceGain.ofx.bundle
+  Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-ofx\build\bundle\ReferenceGain.ofx.bundle\Contents\Win64\ReferenceGain.ofx
+  CPU only: this plug-in has no CUDA path.

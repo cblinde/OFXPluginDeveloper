@@ -1,0 +1,14 @@
+[build] CUDA toolkit: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+[build] generator: Ninja (no NVIDIA build customisations for the installed Visual Studio)
+Microsoft (R) C/C++-Optimierungscompiler Version 19.44.35224 fÅr x64
+-- OFX plugin : MinimalCudaGain (CUDA ON)
+-- Bundle     : Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle
+-- Configuring done (4.8s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-cuda-ofx/build
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+
+Bundle: Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle
+MinimalCudaGain.ofx
+  CUDA path: compiled in, links cudart64_*.dll

@@ -146,7 +146,8 @@ OfxPlugin* (*g)(int) = (OfxPlugin* (*)(int))GetProcAddress(h, "OfxGetPlugin");
 `LOAD_WITH_ALTERED_SEARCH_PATH` is the Windows equivalent of `$ORIGIN`: it makes
 the loader look next to the `.ofx` first, which is how a plug-in finds a runtime
 it ships. Measured externally: the ported harness drove a Windows bundle through
-the whole protocol with 0 failures **[B]**.
+the whole protocol with 0 failures **[B]**
+([`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md) §5).
 
 The `OfxPlugin` fields are the ones a host reads before it calls anything
 (`api`, `apiVersion`, `pluginIdentifier`, `pluginVersionMajor`,
@@ -653,8 +654,10 @@ Resolve/Nuke/Natron anywhere in these tests), no timing measured here, and no
 multi-resolution/tile-protocol test (the fake host does not speak it — §5.4).
 The Windows build, the Windows contract run, the hardware kernel cases and the
 throughput numbers come from a 2026-11-22 field test on another machine and are
-marked **[B]**; `test/gpu-kernel-test.cu` is the harness that produced them and
-ships so they can be repeated on any GPU:
+marked **[B]**, archived in
+[`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md);
+`test/gpu-kernel-test.cu` is the harness that produced them and ships so they can
+be repeated on any GPU:
 
 ```bash
 nvcc -arch=sm_86 -O2 -std=c++17 test/gpu-kernel-test.cu -o build/gpu-kernel-test.exe

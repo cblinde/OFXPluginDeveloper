@@ -1,0 +1,82 @@
+Der Befehl "vswhere.exe" ist entweder falsch geschrieben oder
+konnte nicht gefunden werden.
+fake_host.cpp
+contract_main.cpp
+Code wird generiert...
+ok 1 - dlopen(Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - param 'gainAlpha' declared
+ok 22 - param 'gainAlpha' type
+ok 23 - clip 'Source' declared
+ok 24 - clip 'Output' declared
+ok 25 - kOfxActionCreateInstance
+ok 26 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 27 - identity clip is the source clip
+ok 28 - set param 'gain'
+ok 29 - isIdentity is false once a setting changes the output
+ok 30 - kOfxImageEffectActionRender
+ok 31 - destination is readable
+ok 32 - render applied the parameter value
+ok 33 - alpha is unchanged
+ok 34 - render rejects a byte image
+ok 35 - kOfxActionDestroyInstance
+ok 36 - kOfxActionUnload
+ok 37 - unload cycle completed
+ok 38 - dlopen(Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx)
+ok 39 - OfxGetNumberOfPlugins is exported
+ok 40 - OfxGetPlugin is exported
+ok 41 - OfxGetNumberOfPlugins() >= 1
+ok 42 - OfxGetPlugin(0) returns a plug-in
+ok 43 - pluginApi
+ok 44 - apiVersion
+ok 45 - pluginIdentifier is non-empty
+ok 46 - pluginIdentifier
+ok 47 - pluginIdentifier stable across loads
+ok 48 - pluginVersion
+ok 49 - setHost is non-null
+ok 50 - mainEntry is non-null
+ok 51 - kOfxActionLoad
+ok 52 - kOfxActionDescribe
+ok 53 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 54 - descriptor lists the requested context
+ok 55 - descriptor sets a legal render thread safety
+ok 56 - param 'gain' declared
+ok 57 - param 'gain' type
+ok 58 - param 'gainAlpha' declared
+ok 59 - param 'gainAlpha' type
+ok 60 - clip 'Source' declared
+ok 61 - clip 'Output' declared
+ok 62 - kOfxActionCreateInstance
+ok 63 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 64 - identity clip is the source clip
+ok 65 - set param 'gain'
+ok 66 - isIdentity is false once a setting changes the output
+ok 67 - kOfxImageEffectActionRender
+ok 68 - destination is readable
+ok 69 - render applied the parameter value
+ok 70 - alpha is unchanged
+ok 71 - render rejects a byte image
+ok 72 - kOfxActionDestroyInstance
+ok 73 - kOfxActionUnload
+ok 74 - unload cycle completed
+contract_test: 74 checks, 0 failed
+
+CONTRACT_EXIT=0

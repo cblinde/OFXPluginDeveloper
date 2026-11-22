@@ -6,8 +6,10 @@ C++ Support library (`OFX::ImageEffect`, `OFX::ImageProcessor`), and CUDA 12/13.
 
 **Provenance.** **[V]** verified in this repository (compiled, measured, or
 quoted from the pinned 1.5.1 headers); **[I]** inferred from a header or from the
-API contract, not demonstrated; **[B]** external evidence — a vendor document or
-a shipped project, grade B in `HOST_COMPATIBILITY_MATRIX.md`. Unmarked text is
+API contract, not demonstrated; **[B]** external evidence — a vendor document, a
+shipped project, or the archived 2026-11-22 hardware run
+([`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md)) — grade B in
+`HOST_COMPATIBILITY_MATRIX.md`. Unmarked text is
 design guidance.
 
 ---

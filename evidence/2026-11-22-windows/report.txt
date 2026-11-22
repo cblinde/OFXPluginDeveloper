@@ -1,0 +1,657 @@
+# OFXPluginDeveloper — field test report
+
+**Subject:** `cblinde/OFXPluginDeveloper` (commit at `main`, cloned 2026‑11‑22)
+**Tested by:** automated agent session, at the request of the repository author's environment owner
+**Machine:** Windows 11 (10.0.26300), RTX 3060 (sm_86), driver 621.24 / CUDA UMD 13.5
+**Date:** 2026‑11‑22
+
+---
+
+## 1. Verdict in one paragraph
+
+The **reference material is accurate and unusually good**: every constant, header quirk
+and ground rule this test could check held up, and the template's design (CPU/CUDA split,
+pitch arithmetic, stream policy, visibility) survived real hardware and a real Windows
+toolchain. The **build and test plumbing does not survive Windows**, which is the one
+platform the skill says it supports and simultaneously admits it never executed:
+`build.bat` failed on first run at four consecutive, independent points, and after the
+build finally succeeded it produced a bundle in the **wrong architecture directory while
+reporting success**. The CPU-emulated test suite and the `dlopen` contract harness cannot
+run on Windows at all (no `g++`, `nm -D`, `readelf`, `valgrind`, `dlopen`). On the
+positive side, after the fixes below, the Windows `.ofx` passes **74/74 host-contract
+checks** and the kernels pass **28/28 real-GPU cases bit-exactly**, which are two things
+the repository has never had before.
+
+Every defect listed in §4 was reproduced, diagnosed to a file and line, fixed in place,
+and re-verified. The fixes are in the working tree; §9 lists them as a patch.
+
+Severity legend: **S1** = blocks the documented workflow; **S2** = silently wrong output
+or wrong claim; **S3** = documentation/polish.
+
+---
+
+## 2. Environment
+
+| Component | Value | Note |
+|---|---|---|
+| OS | Windows 10.0.26300 (Win 11 26H1) | |
+| GPU | NVIDIA GeForce RTX 3060, 8.6, 28 SMs, 12287 MiB | single GPU |
+| Driver | 621.24, CUDA UMD 13.5 | newer than either installed toolkit |
+| CUDA Toolkit | **13.0.48** (on `PATH`), 12.9 also installed | skill was verified only against 12.9 |
+| CUDA runtime seen by a built binary | **13.5** (driver‑supplied) | forward compatibility works |
+| CMake | 4.4.4 | skill verified with 3.31.6 |
+| Generators available | `Visual Studio 18 2026`, `17 2022`, `16 2019`, `15 2017`, Ninja | |
+| Visual Studio | **BuildTools 18 (2026)** with MSVC 14.44 + 14.50 — *the only instance with a C++ toolset* | |
+| | BuildTools 2022 installed **without the VC workload** (no `VC/Tools/MSVC`) | |
+| | BuildTools 2019, Community 2019 (not probed further) | |
+| Ninja | from the Python 3.10 `Scripts` dir | |
+| Shell | Git Bash (MSYS2) + `cmd` | **no** `g++`, `clang`, `nm`, `readelf`, `objdump`, `make`, `valgrind` |
+| Environment flag | `NoDefaultCurrentDirectoryInExePath=1` | see F14 |
+
+Two consequences up front: (a) the skill's entire verification layer (`run-tests.sh`,
+`test/*/run-tests.sh`, `testkit/build-contract-test.sh`) is **unrunnable** on this
+machine, and (b) `nvcc` and the installed MSVC disagree about what "current" means, which
+is where the first hard stop comes from.
+
+---
+
+## 3. What was actually executed
+
+| # | Test | Command | Result |
+|---|---|---|---|
+| T1 | Documented Windows build | `build.bat Release` | **failed 4×, then passed** after fixes (§4 F1–F6) |
+| T2 | Artifact contract (Windows) | `dumpbin /exports`, `/dependents`, `cuobjdump -lelf` | 2 exports, 7 cubins (§5) |
+| T3 | Host contract harness (Windows) | `testkit` ported to `LoadLibraryExW` | **74 checks, 0 failed** |
+| T4 | CPU-only build (`CPU_ONLY=1`) | `build.bat Release` with CUDA disabled, VS generator | passes after F6 (§5.4) |
+| T5 | Reference template on Windows | new `templates/minimal-ofx/build.bat` | 4 paths (VS, cached, Debug, Ninja) → `Contents/Win64` (§5.5) |
+| T6 | **Real GPU execution** | new `test/gpu-kernel-test.cu` | **28/28 cases, bit-exact** (§5.1) |
+| T7 | Throughput | same harness, `cudaEvent` timing | first real numbers for the repo (§5.2) |
+| T8 | Load + enumerate | `ctypes.WinDLL` → `OfxGetNumberOfPlugins` | 1 plugin, correct id/version (§5.3) |
+| T9 | `run-tests.sh`, `test/run-tests.sh`, `run-analysis.sh` | — | **not runnable** on Windows (F11) |
+| T10 | Host acceptance (Resolve/Nuke) | — | **not possible**: no host installed |
+
+---
+
+## 4. Findings
+
+### F1 — `build.bat` hard-codes a generator that may not exist (S1)
+
+```
+cmake -S "%HERE%." -B "%BUILD_DIR%" -G "Visual Studio 17 2022" -A x64 %EXTRA%
+```
+On this machine the only Visual Studio instance **with a C++ toolset** is 2026; the 2022
+Build Tools are installed without `VC/Tools/MSVC`. First real run of the script:
+
+```
+CMake Error at CMakeLists.txt:3 (project):
+  Generator
+    Visual Studio 17 2022
+  could not find any instance of Visual Studio.
+BUILD FAILED (see the cmake output above)
+```
+
+This is the first thing a Windows user with a clean, current Visual Studio install sees,
+and the message names nothing actionable. It is also the exact failure the README's
+"Known gaps" predicted ("`build.bat` has never been executed").
+
+**Fixed:** the generator is resolved through `vswhere -latest -products *
+-requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64`, mapping the major version
+to the CMake generator name, with `CMAKE_GENERATOR` as the override. Verified: the run
+now prints `[build] generator: Visual Studio 18 2026`.
+
+---
+
+### F2 — Unquoted `-D` values split at the space in "Program Files" (S1)
+
+```
+if not defined CUDA_FOUND set "EXTRA=%EXTRA% -DCMAKE_CUDA_COMPILER=%CUDA_FOUND%\bin\nvcc.exe -DCUDAToolkit_ROOT=%CUDA_FOUND% ..."
+```
+`%CUDA_FOUND%` is `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0`, so CMake
+received `-DCUDAToolkit_ROOT=C:\Program` plus a stray argument:
+
+```
+[build] CUDA toolkit: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\..
+CMake Warning:
+  Ignoring extra path from command line:
+   "Toolkit\CUDA\v13.0\bin\.."
+```
+
+Two bugs in one line: the value is unquoted, **and** the discovery leaves the path
+un-normalised (`...\v13.0\bin\..`), which is what makes the stray token look like a path
+rather than a variable expansion bug.
+
+**Fixed:** discovery canonicalises through `for %%J in ("%%~dpI..") do set "CUDA_FOUND=%%~fJ"`,
+and every `-D` is quoted. The leftover `Linux-x86-64` artefact from the un-normalised
+path is also gone.
+
+---
+
+### F3 — Visual Studio generators cannot compile CUDA without NVIDIA's build customisations (S1)
+
+With the generator fixed, the next stop:
+
+```
+CMake Error at .../CMakeDetermineCompilerId.cmake:714 (message):
+  No CUDA toolset found.
+```
+
+A VS generator compiles `.cu` only through NVIDIA's MSBuild `BuildCustomizations` for
+*that exact VS version*. CUDA 13.0 ships none for VS 2026, so the VS path is dead on any
+machine without NVIDIA's matching VS integration — and CMake's message does not say so.
+The skill never mentions this coupling; `SKILL.md` §6's "MSVC" paragraph talks only about
+`/MD` vs `/MDd`.
+
+**Fixed:** `build.bat` probes `%VSINSTALL%\MSBuild\Microsoft\VC\*\BuildCustomizations\CUDA *.props`
+and falls back to **Ninja + `vcvars64.bat`** when the customisations are missing, printing
+why. Verified: `[build] generator: Ninja (no NVIDIA build customisations for the installed Visual Studio)`.
+
+---
+
+### F4 — `nvcc` 13.0 rejects MSVC 19.50 (VS 2026) outright (S1)
+
+Independently of the generator, with the VS toolset selected:
+
+```
+C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\include\crt/host_config.h(164):
+fatal error C1189: #error:  -- unsupported Microsoft Visual Studio version!
+Only the versions between 2019 and 2022 (inclusive) are supported!
+The nvcc flag '-allow-unsupported-compiler' can be used to override this version check
+```
+
+This is a **toolkit/MSVC version matrix** problem the skill has no section for. It will
+hit anybody who installs "the newest Visual Studio" and "the newest CUDA", which is the
+default outcome of following both download links.
+
+**Fixed (in the Ninja path only):** the fallback calls
+`vcvars64.bat -vcvars_ver=14.44` — the newest MSVC that `host_config.h` accepts — and
+echoes the `cl` version so the log shows what was used. Verified: `cl` 19.44.35224,
+`Kernel.cu` then compiles.
+
+**Documentation needed (not fixed, needs your decision):** the skill should carry an
+explicit compatibility row — *CUDA 12.x/13.0 support MSVC ≤ 19.44; VS 2026's 19.50 needs
+`-allow-unsupported-compiler`, and `build.bat`'s toolset pinning is the safer route.*
+
+---
+
+### F5 — The Windows build wrote the `.ofx` into `Contents/Linux-x86-64/` and reported success (S2 → would be S1 in a host)
+
+After F1–F4 the build completed:
+
+```
+[11/11] Linking CXX shared module bundle\MinimalCudaGain.ofx.bundle\Contents\Linux-x86-64\MinimalCudaGain.ofx
+Bundle: ...\bundle\MinimalCudaGain.ofx.bundle
+  CUDA path: compiled in, links cudart64_*.dll
+```
+
+The last two lines *claim* a Win64 bundle. The file is in the Linux directory:
+
+```
+find build/bundle -name '*.ofx'
+  .../Contents/Linux-x86-64/MinimalCudaGain.ofx      <-- only file produced
+```
+
+Cause: `CMakeLists.txt` sets `LIBRARY_OUTPUT_DIRECTORY` to `.../Linux-x86-64` and
+`RUNTIME_OUTPUT_DIRECTORY` to `.../Win64`. Which one a `MODULE` target uses depends on
+platform **and generator**: MSVC multi-config generators use `RUNTIME_`, Ninja on
+Windows uses `LIBRARY_`. So the bundle layout is correct only for the generator the
+author happened to use on Linux.
+
+This is the worst class of bug in the repository's own terms: a build that reports
+success and produces an artefact no host will scan, with no error anywhere.
+
+**Fixed** in both templates: the arch directory is chosen from `WIN32`/`APPLE`, both
+output properties point at it, and each is wrapped in `$<1:...>` so multi-config
+generators do not append `/Release`:
+
+```cmake
+if(WIN32)      set(_ofx_arch_dir "Win64")
+elseif(APPLE)  set(_ofx_arch_dir "MacOS")
+else()         set(_ofx_arch_dir "Linux-x86-64")
+endif()
+set(_ofx_bundle_arch_dir ".../Contents/${_ofx_arch_dir}")
+set_target_properties(... LIBRARY_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>"
+                          RUNTIME_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>")
+```
+
+Verified: `find build/bundle -name '*.ofx'` → `Contents/Win64/MinimalCudaGain.ofx`.
+
+---
+
+### F6 — Second run in the same build directory is a dead end (S1)
+
+Because the script can choose different generators on different runs (Ninja for CUDA, VS
+for CPU-only), the second run dies with:
+
+```
+CMake Error: Error: generator : Visual Studio 18 2026
+Does not match the generator used previously: Ninja
+```
+
+No hint that deleting `build\` is the fix.
+
+**Fixed:** `build.bat` reads `CMAKE_GENERATOR:INTERNAL` from `build\CMakeCache.txt` and
+reuses it (`[build] reusing generator from build\CMakeCache.txt: ...`), and refuses
+loudly, with instructions, if the cached generator cannot compile CUDA.
+
+---
+
+### F7 — The curated CUDA architecture list collapses to one architecture on every re-configure (S2)
+
+`SKILL.md` §6 documents this trap and claims the template avoids it by capturing
+`CMAKE_CUDA_ARCHITECTURES` *before* `enable_language(CUDA)`. That works for the **first**
+configure and fails for every one after it, because `enable_language()` stores the
+compiler default in the **cache**. Measured, second configure of the same tree:
+
+```
+-- CUDA architectures: 75
+```
+and `build.ninja` carried a single `--generate-code=arch=compute_75`.
+A clean configure produced seven. So an incremental rebuild silently dropped 80/86/89/90/100/120
+— the same failure the comment says it prevents, just delayed by one configure.
+
+Impact: the shipped binary JIT-compiles on Ampere/Ada/Hopper/Blackwell instead of using
+SASS, and `SKILL.md`'s "A bare number emits SASS **and** PTX" promise is only true for a
+pristine tree.
+
+**Fixed** by recording nvcc's default once and treating `CMAKE_CUDA_ARCHITECTURES` as a
+user choice only when it differs from that default:
+
+```cmake
+if(NOT DEFINED OFXPLUGIN_COMPILER_DEFAULT_ARCHS)
+  set(OFXPLUGIN_COMPILER_DEFAULT_ARCHS "${CMAKE_CUDA_ARCHITECTURES}" CACHE INTERNAL ...)
+endif()
+...
+if(OFXPLUGIN_USER_CUDA_ARCHS AND NOT "${OFXPLUGIN_USER_CUDA_ARCHS}" STREQUAL "${OFXPLUGIN_COMPILER_DEFAULT_ARCHS}")
+```
+
+Verified three ways: clean configure prints the 7‑arch list; the **second** configure
+keeps it (`grep -c -- --generate-code` = 7); `cuobjdump -lelf` on the finished `.ofx`
+lists `sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120`.
+
+---
+
+### F8 — `build.bat` prints a CUDA linkage claim that is false on Windows (S3)
+
+```
+echo   CUDA path: compiled in, links cudart64_*.dll
+```
+The produced `.ofx` has **no CUDA runtime import**:
+
+```
+dumpbin /dependents → KERNEL32, MSVCP140, VCRUNTIME140, VCRUNTIME140_1, api-ms-win-crt-*
+```
+and the only related string in the image is `cudart_hybrid64.dll`. The device code is
+definitely present (`cuobjdump -lelf` lists 7 cubins; `cudaPointerGetAttributes` is
+referenced from `Kernel.cu.obj`), and `LoadLibrary` succeeds, so nothing is broken — but
+CUDA 13's Windows runtime no longer produces the loader-level `cudart64_*.dll` dependency
+that `SKILL.md` §6 ("Depends on `cudart64_*.dll` / `libcudart.so.*` at load") and the
+script's own output describe.
+
+**Not fixed** — this needs your knowledge of CUDA 13's hybrid runtime rather than a guess.
+Suggest: change the message to report what was measured (`dumpbin /dependents`) instead of
+what was intended, and add a note to the runtime-linkage table.
+
+---
+
+### F9 — The contract harness could not run on Windows, by its own admission (S1)
+
+```cpp
+// Linux/macOS use dlopen/dlsym. On Windows the equivalent is LoadLibraryExW +
+// GetProcAddress on the same two names; that path is documented in
+// TESTING_STRATEGY.md but not built here.
+#include <dlfcn.h>
+```
+
+So L1/L3 — the layer that proves the artefact is loadable and honours the host contract —
+was Linux-only, for a skill whose stated scope is "Linux or Windows".
+
+**Fixed:** `contract_main.cpp` now has a real `_WIN32` path
+(`MultiByteToWideChar` + `LoadLibraryExW(..., LOAD_WITH_ALTERED_SEARCH_PATH)` +
+`GetProcAddress`, `FreeLibrary`, and `FormatMessage`-based error text), and
+`testkit/build-contract-test.bat` compiles it with MSVC. Verified: **74 checks, 0 failed**
+against the Windows bundle, including `--negative-pitch`, `--byte-dst-rejected` and the
+double open/unload cycle.
+
+The comment is worth keeping in spirit: the `#ifdef` belongs exactly there, in one
+translation unit, not in a second copy of the checks.
+
+---
+
+### F10 — The rest of the test layer is unrunnable on Windows (S1, documentation gap)
+
+`templates/minimal-cuda-ofx/test/run-tests.sh` requires `g++`, `nm -D`, `readelf` and
+`valgrind`; `kernel_equivalence.cpp` calls `posix_memalign` (4 sites), which MSVC does not
+have. None of those tools exists on this machine. `BUILD_PLAYBOOK.md`'s "measured contract
+(`nm`, `readelf`, `dlopen`)" is therefore a Linux-only contract with no Windows
+equivalent, and `SKILL.md` §10's checklist ("`nm -D` shows only the two entry points")
+cannot be followed by a Windows user.
+
+Two additions would close this and are cheap:
+
+* a `dumpbin /exports` equivalent of the `nm` check (2 exports — verified, §5.3);
+* `cuobjdump -lelf` as the Windows equivalent of `readelf -S | grep nv_fatbin`
+  (7 cubins — verified, §5.3).
+
+Both are in the patch as helper scripts; they are not yet wired into `run-tests.sh`.
+
+---
+
+### F11 — `run-tests.sh` cannot run at all without ONNX Runtime (S2, all platforms)
+
+```bash
+if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
+  echo "error: ONNXRUNTIME_ROOT is not set; the ONNX template cannot build." >&2
+  exit 2
+fi
+```
+The repository's "one command for the whole host-side test story" exits **before building
+anything** on a machine without ONNX Runtime — so the OFX template and the reference
+plug-in, which need nothing, are never tested. Suggest: skip the ONNX suite with a printed
+notice and a non-zero *summary* flag, rather than aborting the run.
+
+---
+
+### F12 — `minimal-ofx` (the "reference plug-in") had no Windows build path (S2, fixed)
+
+`templates/minimal-ofx/` ships `build.sh` and `exports.map` only. `exports.map` is a GNU
+version script and is correctly guarded with `if(UNIX AND NOT APPLE)`, so on Windows the
+export set is whatever `__declspec(dllexport)` provides — which is correct (exactly two),
+but unreachable by the documented one command. It also had the same wrong-arch-directory
+bug as F5, so even a hand-rolled Windows build produced
+`Contents/Linux-x86-64/ReferenceGain.ofx`.
+
+**Fixed:** the arch-directory block, and a `templates/minimal-ofx/build.bat` that mirrors
+the CUDA template's generator handling (vswhere → newest instance with the C++ toolset,
+`CMAKE_GENERATOR` override, reuse of the generator cached in `build\CMakeCache.txt`,
+Ninja branch that calls `vcvars64.bat` first). It has no CUDA discovery because this
+template has no CUDA path, and no toolset pinning because that is an nvcc constraint.
+
+It also ends with a check the Linux script does not need and this platform does: the
+assertion that the `.ofx` really is at `Contents\Win64\`. That single check is what turns
+F5 from a silent wrong bundle into a failed build. Exercised both ways — with the F5
+output-directory defect reintroduced in a scratch copy, the script exits 1:
+
+```
+BUILD FAILED: no .ofx in Contents\Win64
+  expected: ...\Contents\Win64\ReferenceGain.ofx
+  produced:
+...\Contents\Linux-x86-64\Release\ReferenceGain.ofx
+```
+
+(The produced path also shows the multi-config `/Release` suffix that the `$<1:...>`
+wrapper removes — the second half of F5, visible in the same line.)
+
+---
+
+### F13 — `test/gpu-kernel-test.cu` (new): the repository's first hardware test
+
+`SKILL.md` §12 is honest that no kernel has ever executed on hardware, and
+`TESTING_STRATEGY.md` explains why the CPU-emulated harness is believed sufficient. On a
+machine with a GPU, it is not sufficient, and two things the emulation cannot see showed
+up immediately (both in my own harness, both worth adding to the skill's rules):
+
+1. **A host-supplied stream is not ordered against the legacy default stream.** The first
+   version uploaded the source with `cudaMemcpy` and launched on a `cudaStreamNonBlocking`
+   stream; 2 of 28 cases failed at a mid-image row because blocks read half-written
+   source. Emulation cannot catch this. Proposed new ground rule: *"`cudaMemcpy` on the
+   default stream does not order against a non-default stream; if the host gave you a
+   stream, every transfer you make must be on that stream."*
+2. **The vec4 path is not measurably faster at 1080p** — see §5.2. The PTX-count
+   assertion ("1 load + 1 store") is a correctness property, not a performance one.
+
+The harness is in the patch as `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu`
+(standalone: `nvcc -arch=sm_86 test/gpu-kernel-test.cu -o gpu-kernel-test.exe`).
+
+---
+
+### F14 — Minor: `build.bat` cannot be started by the name the docs use (S3)
+
+With `NoDefaultCurrentDirectoryInExePath=1` (a common security policy, set on this
+machine), `build.bat` typed in its own directory fails with *"The command ... is either
+misspelled or could not be found"*; `.\build.bat` works. `SKILL.md` §4 Phase 6 and the
+script header both say `build.bat`. Suggest documenting `.\build.bat`, and doing the same
+for `call .\build.bat` inside any wrapper.
+
+---
+
+## 5. What passed — claims now verified on real hardware
+
+### 5.1 Kernel correctness on hardware (new)
+
+`test/gpu-kernel-test.cu`, RTX 3060 (sm_86), CUDA 13.0 compiler, CUDA 13.5 driver runtime:
+
+```
+device 0: NVIDIA GeForce RTX 3060, compute capability 8.6, 28 SMs, 12287 MiB
+runtime : CUDA 13.5 (13050), unified addressing yes, host-mapped yes
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+  200 queued launches on one non-blocking stream, one sync: ok
+[3/6] concurrent launches from host threads
+  8 threads, 0 failing
+[4/6] zero-copy on host-mapped memory
+  128x64 on pinned mapped memory, no device allocation: ok
+[5/6] both kernels launched directly (bypassing the launcher)
+  vec4 (direct)   333x101 exact match
+  scalar (direct) 333x101 exact match
+[6/6] throughput ...
+28 launcher cases, 0 failure(s)
+PASS: hardware matches the CPU reference bit for bit
+```
+
+Cases covered, all bit-exact against a host reference using the same pitch arithmetic:
+
+* packed 64×48, padded pitch (+256), pitch +8 (not 16-aligned → scalar path);
+* base pointer +4 bytes (float4 would fault — routing picks the scalar kernel, confirmed
+  against `IsVec4Addressable`);
+* window offset inside bounds (the `window.x1- bounds.x1` origin arithmetic in `Plugin.cpp`);
+* negative pitch, both 16-aligned (vec4) and not (scalar) — the flipped-image case;
+* 1×1, 3×5, 17×1, 1×17, 63×65, 16×16, 32×33, 129×7, **208×117** (the thumbnail arithmetic
+  `SKILL.md` cites), 0-width and 0-height (must be a no-op);
+* overrun: every byte outside the render window and every padding byte asserted unwritten;
+* `WaitForDefaultStream()` completion path and the host-stream path.
+
+This is the first time `SKILL.md`'s claim "the vectorized kernel emits one 16-byte load and
+one 16-byte store per pixel" has been observed to produce correct pixels rather than
+correct PTX.
+
+### 5.2 Throughput (first real numbers in the repository)
+
+1920×1080 RGBA32F, 100 iterations, `cudaEvent` timing, RTX 3060:
+
+| Kernel | ms/frame | Effective bandwidth |
+|---|---|---|
+| vec4 | 0.212 | 312 GB/s |
+| scalar | 0.222 | 300 GB/s |
+
+~4% difference on a ~360 GB/s card — i.e. both paths are bandwidth-bound and the
+vectorisation is **not** the performance lever the PTX section implies. Worth stating
+explicitly in `BEST_PRACTICES_AND_PERFORMANCE.md`, because a reader currently concludes
+that the `float4` path is where the speed is.
+
+### 5.3 Windows artifact contract
+
+```
+dumpbin /exports
+  1    0 00010580 OfxGetNumberOfPlugins
+  2    1 000105A0 OfxGetPlugin
+  → 2 number of functions, 2 number of names
+dumpbin /dependents
+  KERNEL32, MSVCP140, VCRUNTIME140, VCRUNTIME140_1, api-ms-win-crt-*
+cuobjdump -lelf
+  MinimalCudaGain.1.sm_75.cubin ... MinimalCudaGain.7.sm_120.cubin
+```
+
+The final clean build of the patched tree ends with:
+
+```
+[build] generator: Ninja (no NVIDIA build customisations for the installed Visual Studio)
+-- CUDA architectures: 75;80;86;89;90;100;120 (default list)
+[11/11] Linking CXX shared module bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx
+contract_test: 74 checks, 0 failed
+```
+
+So `SKILL.md` §6's "exactly two dynamic symbols" holds on Windows too — by a different
+mechanism (the Support library's `OfxExport` → `__declspec(dllexport)`), which the skill
+does not currently explain. `CUDA_VISIBILITY_PRESET` is an ELF concept and has no effect
+under MSVC; the Windows export set is correct anyway, so the paragraph should say *why*
+rather than leaving the reader to assume it was luck.
+
+Runtime load, no host (the equivalent of the skill's `dlopen` check):
+
+```
+LoadLibrary: ok
+OfxGetNumberOfPlugins() = 1
+pluginApi   = OfxImageEffectPluginAPI    apiVersion = 1
+identifier  = com.ofxplugindeveloper.minimalcudagain
+version     = 1.0                        setHost/mainEntry non-null
+```
+
+### 5.4 CPU-only build and the host contract
+
+`CPU_ONLY=1 build.bat Release` — which on this machine is the **only** configuration that
+reaches the Visual Studio generator — builds without nvcc and produces:
+
+```
+MinimalCudaGain.vcxproj -> ...\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx
+  CUDA path: not compiled (CPU-only build)
+```
+
+Two things this confirms: the MSVC multi-config generator honours the `$<1:...>` wrapper
+(no `Contents/Win64/Release/` subdirectory, which is where a host would fail to find it),
+and the CPU fallback compiles and links on MSVC with no warnings. The CUDA-requested build
+then correctly refuses to reuse that directory (F6) rather than producing CMake's
+unexplained generator-mismatch error:
+
+```
+[build] reusing generator from build\CMakeCache.txt: Visual Studio 18 2026
+error: build\CMakeCache.txt is configured with "Visual Studio 18 2026", which has no NVIDIA
+       CUDA build customisations, so it cannot compile Kernel.cu.
+       Delete "...\build" and re-run; the script will then pick Ninja.
+```
+
+### 5.5 Reference template (`minimal-ofx`) on Windows
+
+The reference plug-in now has `build.bat`, and all four paths were exercised:
+
+| Run | Result |
+|---|---|
+| clean, default generator | `[build] generator: Visual Studio 18 2026` → `Contents\Win64\ReferenceGain.ofx` |
+| second run, same `build\` | exit 0, generator reused from the cache, no reconfigure failure |
+| `build.bat Debug` | `Contents\Win64\ReferenceGain.ofx` — **no** `Win64\Debug\` subdirectory |
+| clean, `CMAKE_GENERATOR=Ninja` | `[10/10] Linking ... Contents\Win64\ReferenceGain.ofx` |
+
+Artifact checks on the result (the Windows equivalents of `build.sh` step 4):
+
+```
+dumpbin /exports → OfxGetNumberOfPlugins, OfxGetPlugin   (2 defined names, nothing else)
+LoadLibrary      → ok
+OfxGetNumberOfPlugins() = 1
+pluginApi        = OfxImageEffectPluginAPI v1
+identifier       = com.ofxplugindeveloper.referencegain   version 1.0
+setHost / mainEntry present
+```
+
+Before the arch-directory fix this build produced `Contents/Linux-x86-64/ReferenceGain.ofx`
+— i.e. the scaffold `SKILL.md` recommends copying for every new plug-in could not produce
+a host-discoverable bundle on Windows at all.
+
+---
+
+## 6. Documentation corrections
+
+| File | Claim | Reality |
+|---|---|---|
+| `README.md` "What has actually been verified" | Linux only; "No Windows/MSVC build", "No GPU" | both now exercised; the sections should record CUDA 13.0 + MSVC 19.44 + RTX 3060 (sm_86) |
+| `SKILL.md` §6 "CUDA runtime linkage" | "`CUDA::cudart` … depends on `cudart64_*.dll` at load" | no such import on Windows with CUDA 13.0 (F8) |
+| `SKILL.md` §6 "Firewall your symbols" | `CXX_VISIBILITY_PRESET` + `CUDA_VISIBILITY_PRESET` are "easy to miss" | ELF-only; on MSVC they are no-ops and the export set comes from `__declspec(dllexport)` in the Support library |
+| `SKILL.md` §4 Phase 6 | "Windows: `build.bat` → `build\bundle\…\Contents\Win64\…`" | was false until F5; also the verification commands shown (`find`, `nm -D`) are Linux-only |
+| `SKILL.md` §6 / `CMakeLists.txt` comment | the pre-`enable_language` capture fixes the architecture default | only for the first configure (F7) |
+| `SKILL.md` §10 checklist | "`nm -D --defined-only` shows only the two entry points" | no Windows equivalent given (F10) |
+| `SKILL.md` §12 "Still not verified" | "No GPU", "No host", "No Windows/MSVC build" | first two still true here (no Resolve), third is now verified |
+| `build.bat` header | "Release, CUDA if a toolkit is found" | was true only on a machine coincidentally matching the author's VS version |
+| `TESTING_STRATEGY.md` L1 | `dlopen` snippet only | add the `LoadLibraryExW` counterpart, now proven |
+
+Missing section, in my view the single most valuable addition: **a Windows toolchain
+compatibility matrix** — CUDA ↔ MSVC ↔ generator, in the style of
+`HOST_COMPATIBILITY_MATRIX.md` (which is excellent). The three facts that cost this test
+the most time were: CUDA 13.0 ↔ MSVC ≤ 19.44; VS generator ↔ NVIDIA build customisations;
+Ninja ↔ `RUNTIME_`/`LIBRARY_OUTPUT_DIRECTORY`.
+
+---
+
+## 7. Not verified / limitations of this report
+
+* **No OFX host.** DaVinci Resolve, Nuke, SCRATCH and Natron are not installed on this
+  machine, so nothing here says a pixel was rendered by a host. `HOST_COMPATIBILITY_MATRIX.md`
+  stays graded B/C.
+* **Single GPU**, so multi-GPU `DeviceGuard` behaviour is untested beyond the code path
+  being exercised (one device).
+* **No sanitizer/valgrind pass on Windows.** MSVC has no ASan equivalent here that the
+  scripts use, and `kernel_equivalence.cpp` does not compile under MSVC (`posix_memalign`).
+* **Performance is one GPU, one resolution, one kernel.** No Nsight capture.
+* **`onnx-inference-ofx`** was not built (no ONNX Runtime), so its Windows story is unknown.
+* **Install target** was not exercised into a system plugin directory (deliberately: this
+  test was required to leave the machine outside the project untouched). `install-bundle`
+  itself is a `cmake -E copy_directory` into `OFX_INSTALL_DIR` and was not run.
+* Fixes are **uncommitted** local edits. `SKILL.md` §11 mandates commit+push per change;
+  that was not done because pushing to your repository is not authorized here.
+
+---
+
+## 8. Suggested priority for you
+
+1. **F5 + F7** — silent wrong artefacts / silent architecture loss. These are the two that
+   produce a "passing" build whose output is not what the documentation describes.
+2. **F1–F4, F6** — `build.bat` as a whole. It is 4 small fixes; the file could then be
+   honestly described as executed.
+3. **F9 + F10** — wire the Windows contract harness and `dumpbin`/`cuobjdump` checks into
+   the test story, or state plainly that verification is Linux-only.
+4. **F11** — let `run-tests.sh` run the OFX suites without ONNX Runtime.
+5. **F8, F13, doc matrix** — accuracy: what the binary links, what the numbers mean, and
+   which toolchain combinations exist.
+
+---
+
+## 9. Patch inventory
+
+Inside the clone (`skill/`), all verified to build and run after the change:
+
+| File | Change |
+|---|---|
+| `templates/minimal-cuda-ofx/build.bat` | vswhere generator detection + `CMAKE_GENERATOR` override; canonicalised & quoted CUDA paths; Ninja fallback with `-vcvars_ver=14.44`; cached-generator reuse; clear refusal when the cached generator cannot build CUDA |
+| `templates/minimal-cuda-ofx/CMakeLists.txt` | platform-correct bundle arch dir for both output properties (`$<1:…>`); `OFXPLUGIN_COMPILER_DEFAULT_ARCHS` marker so the curated arch list survives re-configures; visible arch-list message in both branches |
+| `templates/minimal-ofx/CMakeLists.txt` | same arch-dir correction |
+| `templates/minimal-ofx/build.bat` | **new** — Windows counterpart of `build.sh`: vswhere generator selection, `CMAKE_GENERATOR` override, cached-generator reuse, Ninja branch via `vcvars64.bat`, and a hard check that the `.ofx` is in `Contents\Win64` |
+| `testkit/contract_main.cpp` | `_WIN32` loader path (`LoadLibraryExW`/`GetProcAddress`/`FreeLibrary`, `FormatMessage` errors) |
+| `testkit/build-contract-test.bat` | **new** — MSVC build of the shared harness |
+| `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu` | **new** — hardware harness (28 launcher cases, direct kernels, zero-copy, streams, concurrency, throughput) |
+
+Outside the clone, as reproduction scaffolding (not intended for upstream, listed so the
+numbers can be reproduced):
+
+`run-build.cmd`, `run-cpu-build.cmd`, `run-contract-test.cmd`, `build-gpu-test.cmd`,
+`build-minimal-ofx-win.cmd`, `inspect-ofx.cmd`, `logs/*.log`, `artifacts/`.
+
+A unified diff of everything inside the clone is at
+`artifacts/OFXPluginDeveloper-windows-fixes.patch`.
+
+---
+
+## 10. Reproducing this test
+
+```bash
+git clone https://github.com/cblinde/OFXPluginDeveloper
+cd OFXPluginDeveloper/templates/minimal-cuda-ofx
+.\build.bat Release                      # needs the F1–F6 fixes to get past configure
+
+nvcc -DOFXPLUGIN_WITH_CUDA=1 -arch=sm_86 -O2 -std=c++17 \
+     test/gpu-kernel-test.cu -o build/gpu-kernel-test.exe
+build\gpu-kernel-test.exe                # 28 cases, hardware
+
+..\..\testkit\build-contract-test.bat contract_test.exe ^
+     build\_deps\openfx-src\include
+contract_test.exe build\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx ^
+     --id com.ofxplugindeveloper.minimalcudagain --param gain:double --param gainAlpha:double ^
+     --clip Source --clip Output --identity --negative-pitch --set gain=2.0 ^
+     --not-identity-after-set --byte-dst-rejected
+```

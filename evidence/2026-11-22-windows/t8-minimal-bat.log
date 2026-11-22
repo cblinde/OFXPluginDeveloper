@@ -1,0 +1,35 @@
+[build] generator: Visual Studio 18 2026
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- The CXX compiler identification is MSVC 19.50.35726.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- OFX plugin : ReferenceGain
+-- Bundle     : Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle
+-- Configuring done (2.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-ofx/build
+MSBuild-Version 18.4.0+6e61e96ac für .NET Framework
+
+  Checking File Globs
+  1>Checking Build System
+  Building Custom Rule Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-ofx/CMakeLists.txt
+  Plugin.cpp
+  ofxsCore.cpp
+  ofxsImageEffect.cpp
+  ofxsInteract.cpp
+  ofxsLog.cpp
+  ofxsMultiThread.cpp
+  ofxsParams.cpp
+  ofxsProperty.cpp
+  ofxsPropertyValidation.cpp
+  Code wird generiert...
+     Bibliothek "Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-ofx/build/Release/ReferenceGain.lib" und Objekt "Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-ofx/build/Release/ReferenceGain.exp" werden erstellt.
+  ReferenceGain.vcxproj -> Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-ofx\build\bundle\ReferenceGain.ofx.bundle\Contents\Win64\ReferenceGain.ofx
+  Building Custom Rule Z:/Tools-DEV/TestOFXSkill/skill/templates/minimal-ofx/CMakeLists.txt
+
+Bundle: Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-ofx\build\bundle\ReferenceGain.ofx.bundle
+  Z:\Tools-DEV\TestOFXSkill\skill\templates\minimal-ofx\build\bundle\ReferenceGain.ofx.bundle\Contents\Win64\ReferenceGain.ofx
+  CPU only: this plug-in has no CUDA path.

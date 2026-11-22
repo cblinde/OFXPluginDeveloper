@@ -23,6 +23,7 @@ python3 tools/check-docs.py                 # documentation drift, ~1 s
 | Debug a symptom | `PATTERN_INDEX.md` §2 (runtime and compile/link) → `SKILL.md` §7 → `ARCHITECTURE_AND_CUDA_PIPELINE.md` | template sources, until the table names a file |
 | AI-model decision | `AI_MODEL_INTEGRATION.md` §1–§2 → `PATTERN_INDEX.md` §1 → `templates/onnx-inference-ofx/` | CUDA kernel detail |
 | Host-specific behaviour | `HOST_COMPATIBILITY_MATRIX.md`, whose grades are A/B/C | anything claiming a host was tested |
+| Check a [B] claim | `FIELD_TEST_WINDOWS_CUDA.md`: the 2026-11-22 run, its logs, its limits | the design docs, until the evidence contradicts them |
 
 ## Hard rules
 

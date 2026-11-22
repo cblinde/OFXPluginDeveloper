@@ -485,7 +485,8 @@ Nine of the ten sources include `OFX::ImageProcessor`:
 - **No GPU was available here.** No kernel or CUDA execution provider executes
   in this environment's suites, so the GPU statements above are derived from
   headers, documentation or host-side emulation — except where `SKILL.md` §12
-  quotes the external 2026-11-22 hardware run **[B]**.
+  quotes the external 2026-11-22 hardware run **[B]**
+  ([`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md)).
 - **The SDK samples were read, not executed.** Their line numbers are for tag
   `OFX_Release_1.5.1` and will drift on other tags; re-grep the symbol if a line
   looks wrong.

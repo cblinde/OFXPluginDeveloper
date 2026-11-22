@@ -11,8 +11,10 @@ Natron, on Windows (MSVC + CUDA Toolkit) and Linux (GCC/Clang + CUDA Toolkit).
 
 **Provenance.** **[V]** verified in this repository (compiled, measured or run);
 **[I]** inferred from a header or documented behaviour, not demonstrated;
-**[B]** external evidence, grade B in `HOST_COMPATIBILITY_MATRIX.md`. Unmarked
-statements are design guidance that follows from the model, not measurements.
+**[B]** external evidence, grade B in `HOST_COMPATIBILITY_MATRIX.md`; the
+2026-11-22 Windows/GPU run is archived in
+[`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md). Unmarked statements
+are design guidance that follows from the model, not measurements.
 
 Read this file first. Then read the deep-dive companion documents when the task
 touches their subject:
@@ -353,7 +355,8 @@ Visibility attributes are an ELF mechanism: under MSVC `CXX_VISIBILITY_PRESET`
 and `CUDA_VISIBILITY_PRESET` are no-ops, and the Windows export set comes from
 the Support library's `OfxExport`, which expands to `__declspec(dllexport)`.
 That still yields exactly two exported names, verified with `dumpbin /exports`
-on a built Windows bundle **[B]**; the version script in
+on a built Windows bundle **[B]** ([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3);
+the version script in
 `templates/minimal-ofx/exports.map` is guarded by `if(UNIX AND NOT APPLE)` for
 the same reason — on Windows there is nothing for it to do.
 
@@ -366,7 +369,8 @@ On **Windows with CUDA 13**, do not claim a `cudart64_*.dll` import without
 checking it: `dumpbin /dependents` on a built template lists only KERNEL32,
 MSVCP140, VCRUNTIME140 and the UCRT, no CUDA runtime DLL, while the device code
 is present (seven cubins) and the module loads. The runtime is resolved through
-the hybrid runtime, and the string in the image is `cudart_hybrid64.dll` **[B]**.
+the hybrid runtime, and the string in the image is `cudart_hybrid64.dll` **[B]**
+([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3).
 The portable statement is "device code present, runtime resolved at load"; the
 import list, not the intent, is what a host depends on.
 
@@ -385,7 +389,8 @@ variable before enabling the language fixes the **first** configure only: the
 value is now in the cache, so a second configure over the same build tree sees
 `if(NOT DEFINED …)` as false again and keeps nvcc's single architecture —
 measured: the second configure printed `-- CUDA architectures: 75` and
-generated one `--generate-code`, where a clean configure had seven **[B]**. The
+generated one `--generate-code`, where a clean configure had seven **[B]**
+([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3). The
 template therefore records nvcc's default once in an internal cache variable and
 treats `CMAKE_CUDA_ARCHITECTURES` as a user choice only when it differs from
 that default. Any project that ships a curated list needs the same trick; "it
@@ -584,7 +589,8 @@ OpenFX `OFX_Release_1.5.1`):
   has never rendered a pixel, and every host-specific claim in
   `HOST_COMPATIBILITY_MATRIX.md` remains graded B/C rather than verified.
 **Executed elsewhere, not here [B]** (2026-11-22 field test: Windows 11, RTX 3060
-sm_86, CUDA 13.0 toolkit on a 13.5 driver, MSVC 19.44/19.50):
+sm_86, CUDA 13.0 toolkit on a 13.5 driver, MSVC 19.44/19.50; the logs are
+archived in [`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md)):
 
 - `.\build.bat` configures and builds; the result is
   `Contents\Win64\<Name>.ofx` with exactly two exports (`dumpbin /exports`) and

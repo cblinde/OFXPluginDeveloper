@@ -372,7 +372,9 @@ The Linux build is a compiler and CMake. The Windows build is a **three-way
 match** between CUDA, MSVC and the generator, and each pair can fail on its own.
 Every row below was reproduced on a machine with VS 2026 (MSVC 19.50) and VS 2022
 Build Tools installed without the C++ workload **[B]** (2026‑11‑22 field test,
-Windows 11, RTX 3060, CUDA 13.0.48, CMake 4.4.4).
+Windows 11, RTX 3060, CUDA 13.0.48, CMake 4.4.4; environment, logs and the
+limits of that run are in
+[`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md)).
 
 | Pair | What breaks | Symptom | Fix |
 |---|---|---|---|
@@ -404,7 +406,8 @@ so neither tool is on `PATH` there, and trusting `PATH` turned the artifact chec
 into a printed skip in exactly the branch most people use. With `--strict` a
 missing tool fails the build (exit 3); standalone use without the flag keeps the
 named skip. From the field test: 2 exports, 7 cubins
-`sm_75`…`sm_120`, and no CUDA runtime import **[B]**.
+`sm_75`…`sm_120`, and no CUDA runtime import **[B]**
+([`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md) §3).
 
 **Start the script with `.\build.bat`.** With `NoDefaultCurrentDirectoryInExePath=1`
 set (a common policy), `cmd.exe` will not find a bare `build.bat` in the current

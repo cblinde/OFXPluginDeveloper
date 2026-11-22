@@ -296,7 +296,8 @@ padded pitches and 4-byte-misaligned bases. The harness also verified that no
 byte outside the render window is written **[M]**.
 
 **The runtime delta, measured on hardware** (2026-11-22 field test, RTX 3060
-sm_86, 1920×1080 RGBA32F, 100 iterations, `cudaEvent`, CUDA 13.0) **[B]**:
+sm_86, 1920×1080 RGBA32F, 100 iterations, `cudaEvent`, CUDA 13.0) **[B]**,
+archived in [`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md) §4:
 
 | Kernel | ms/frame | Effective bandwidth |
 |---|---|---|
