@@ -6,6 +6,16 @@
 #include <stdexcept>
 #include <vector>
 
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
+
 #include <onnxruntime_cxx_api.h>
 
 namespace aiofx {
@@ -24,6 +34,31 @@ std::string CopyName(const char* name)
 {
     return name != nullptr ? std::string(name) : std::string();
 }
+
+#ifdef _WIN32
+/// ORT's Windows entry point takes UTF-16; the OFX string parameter is UTF-8.
+/// Widening byte by byte - std::wstring(path.begin(), path.end()) - corrupts
+/// every non-ASCII name, so the model at C:\Users\Müller\model.onnx is looked
+/// up under mojibake and Session() fails with nothing pointing at the path.
+std::wstring WidePath(const std::string& utf8)
+{
+    if (utf8.empty()) {
+        return std::wstring();
+    }
+    const int length = static_cast<int>(utf8.size());
+    const int needed = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.c_str(), length,
+                                          nullptr, 0);
+    if (needed <= 0) {
+        throw std::runtime_error("ModelRunner: model path is not valid UTF-8");
+    }
+    std::wstring wide(static_cast<size_t>(needed), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.c_str(), length, wide.data(),
+                            needed) != needed) {
+        throw std::runtime_error("ModelRunner: cannot convert the model path to UTF-16");
+    }
+    return wide;
+}
+#endif
 
 } // namespace
 
@@ -58,7 +93,7 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
     options.DisableMemPattern();
 
 #ifdef _WIN32
-    const std::wstring wide(modelPath.begin(), modelPath.end());
+    const std::wstring wide = WidePath(modelPath);
     _impl->session = Ort::Session(SharedEnv(), wide.c_str(), options);
 #else
     _impl->session = Ort::Session(SharedEnv(), modelPath.c_str(), options);
@@ -141,8 +176,18 @@ void ModelRunner::Run(const float* input, int channels, int height, int width, f
     }
     const auto outInfo = outputs[0].GetTensorTypeAndShapeInfo();
     const auto outShape = outInfo.GetShape();
+    // Shape-preserving by contract: the result is copied back into a buffer of
+    // the input's size. An upscaling model - the usual reason to put a model in
+    // a plug-in - cannot work through this path and fails here instead of
+    // writing past the buffer. Supporting one means reporting the output shape
+    // from Run(), mapping it into the output RoD in AiCore, and scaling the RoD
+    // in the plug-in; see "Adapting it to a real model" in
+    // AI_MODEL_INTEGRATION.md.
     if (outShape.size() != 4 || outShape[1] != channels || outInfo.GetElementCount() != elements) {
-        throw std::runtime_error("ModelRunner: output shape does not match the input");
+        throw std::runtime_error(
+            "ModelRunner: output shape does not match the input (this runner is "
+            "shape-preserving; a resolution-changing model needs the changes in "
+            "AI_MODEL_INTEGRATION.md)");
     }
 
     const float* data = outputs[0].GetTensorData<float>();

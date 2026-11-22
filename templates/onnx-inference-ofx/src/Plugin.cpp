@@ -20,6 +20,7 @@
 #include "Plugin.h"
 
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <vector>
 
@@ -47,6 +48,9 @@ const char* const kParamHalo = "halo";
 
 constexpr std::int64_t kPixelBytes = 4 * sizeof(float); // RGBA float
 
+// Alpha only: the model has three channels and alpha is not its business.
+// 16 bytes per pixel is correct because render() rejects every other layout:
+// float RGBA is the only format this plug-in accepts.
 void CopyAlpha(const OFX::Image* src, OFX::Image* dst, const OfxRectI& window)
 {
     const long long srcPitch = src->getRowBytes();
@@ -67,6 +71,29 @@ void CopyAlpha(const OFX::Image* src, OFX::Image* dst, const OfxRectI& window)
         for (int x = 0; x < w; ++x) {
             d[4 * x + 3] = s[4 * x + 3];
         }
+    }
+}
+
+// Copies the render window, all four channels, through the host's stride.
+// Used when there is no model to run: the destination image is its own buffer,
+// so copying alpha alone leaves RGB as whatever the host allocated.
+void CopyRect(const OFX::Image* src, OFX::Image* dst, const OfxRectI& window)
+{
+    const long long srcPitch = src->getRowBytes();
+    const long long dstPitch = dst->getRowBytes();
+    const OfxRectI& sb = src->getBounds();
+    const OfxRectI& db = dst->getBounds();
+    const char* srcBase = static_cast<const char*>(src->getPixelData()) +
+                          static_cast<long long>(window.y1 - sb.y1) * srcPitch +
+                          static_cast<long long>(window.x1 - sb.x1) * kPixelBytes;
+    char* dstBase = static_cast<char*>(dst->getPixelData()) +
+                    static_cast<long long>(window.y1 - db.y1) * dstPitch +
+                    static_cast<long long>(window.x1 - db.x1) * kPixelBytes;
+
+    const size_t rowBytes = static_cast<size_t>(window.x2 - window.x1) * kPixelBytes;
+    for (int y = 0; y < window.y2 - window.y1; ++y) {
+        std::memcpy(dstBase + static_cast<long long>(y) * dstPitch,
+                    srcBase + static_cast<long long>(y) * srcPitch, rowBytes);
     }
 }
 
@@ -149,16 +176,19 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
         return;
     }
 
-    CopyAlpha(src.get(), dst.get(), window);
-
     std::string path;
     _modelPath->getValueAtTime(args.time, path);
     if (path.empty()) {
-        // isIdentity() normally keeps us out of here; if it did not, leaving
-        // the source pixels in the destination is the honest behaviour.
+        // isIdentity() normally keeps us out of here, but a host may render
+        // anyway (identity switched off, a preview pass, a host that ignores
+        // the return value). Copy the frame: only alpha would leave RGB
+        // undefined, and the destination is not a view of the source.
+        CopyRect(src.get(), dst.get(), window);
         OFX::Log::print("%s: no model path set, passing the source through", kPluginName);
         return;
     }
+
+    CopyAlpha(src.get(), dst.get(), window);
 
     ModelRunner& runner = AcquireRunner(path);
     const int channels = runner.InputChannels();
