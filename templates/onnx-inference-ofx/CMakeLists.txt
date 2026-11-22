@@ -267,10 +267,26 @@ if(WIN32 AND ONNXRUNTIME_DLL)
             "$<TARGET_FILE_DIR:ai_pipeline_test>/onnxruntime-ofx.dll"
     COMMENT "Copying onnxruntime-ofx.dll next to ai_pipeline_test.exe")
 endif()
-# No INSTALL_RPATH override here: CMake's build-tree rpath is what lets ctest
-# (and a plain ./ai_pipeline_test) find libonnxruntime before anything is
-# installed or bundled.
-if(NOT WIN32)
+# The executable's NEEDED entry is the SONAME, libonnxruntime.so.1, but a
+# runtime root can ship only the unversioned libonnxruntime.so - the NuGet
+# package does. An rpath to that directory cannot satisfy the SONAME, so the
+# test links, then dies with "libonnxruntime.so.1: cannot open shared object
+# file". Stage the runtime beside the executable under the SONAME and put
+# $ORIGIN on the build rpath; ${_onnx_dir} stays first for roots that do carry
+# the versioned file. macOS is left alone: dyld resolves the install name
+# embedded in the dylib, not a fixed SONAME, so there is nothing to rename.
+if(UNIX AND NOT APPLE)
+  add_custom_command(TARGET ai_pipeline_test POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${ONNXRUNTIME_LIBRARY}"
+            "$<TARGET_FILE_DIR:ai_pipeline_test>/libonnxruntime.so.1"
+    COMMENT "Staging libonnxruntime.so.1 next to ai_pipeline_test")
+  set_target_properties(ai_pipeline_test PROPERTIES
+    BUILD_RPATH "${_onnx_dir};\$ORIGIN")
+elseif(APPLE)
+  # No INSTALL_RPATH override here: CMake's build-tree rpath is what lets ctest
+  # (and a plain ./ai_pipeline_test) find libonnxruntime before anything is
+  # installed or bundled.
   set_target_properties(ai_pipeline_test PROPERTIES
     BUILD_RPATH "${_onnx_dir}")
 endif()
