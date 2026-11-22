@@ -90,7 +90,10 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
     // CPU EP is the only provider this template links. If the ORT build has
     // others (a -gpu package), they are NOT enabled implicitly: a plug-in must
     // opt in deliberately, see AI_MODEL_INTEGRATION.md.
-    options.DisableMemPattern();
+    //
+    // Memory patterns stay on (the ORT default). They cache the per-shape
+    // allocations a session reuses on every Run(), which is exactly this
+    // plug-in's access pattern: one shape, once per frame.
 
 #ifdef _WIN32
     const std::wstring wide = WidePath(modelPath);
@@ -183,7 +186,11 @@ void ModelRunner::Run(const float* input, int channels, int height, int width, f
     // from Run(), mapping it into the output RoD in AiCore, and scaling the RoD
     // in the plug-in; see "Adapting it to a real model" in
     // AI_MODEL_INTEGRATION.md.
-    if (outShape.size() != 4 || outShape[1] != channels || outInfo.GetElementCount() != elements) {
+    // Every dimension, not just the element count: 1x3x48x64 has the same
+    // number of floats as 1x3x64x48, and batch 2 with half the rows matches
+    // too. Either would be copied back as a plausible, wrong image.
+    if (outShape.size() != 4 || outShape[0] != 1 || outShape[1] != channels ||
+        outShape[2] != height || outShape[3] != width) {
         throw std::runtime_error(
             "ModelRunner: output shape does not match the input (this runner is "
             "shape-preserving; a resolution-changing model needs the changes in "
