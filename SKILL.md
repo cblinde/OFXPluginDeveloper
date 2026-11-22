@@ -179,6 +179,7 @@ never uses, and the first thing you then do is delete them.
 | CPU-only pixel maths (grade, blur, keyer) | `templates/minimal-ofx/` | smallest host-loadable module, no CUDA, no model |
 | CUDA render path with a CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
 | ONNX model per frame | `templates/onnx-inference-ofx/` | ORT session, packing, tiling, golden fixtures |
+| Model with a non-image output (detection, classification, embedding) | `templates/onnx-inference-ofx/` for the session and packaging shape only | `ModelRunner` requires out shape == in shape and `AiCore` unpacks an image; the head decoder is yours (`AI_MODEL_INTEGRATION.md` §7) |
 
 ```
 templates/<chosen>/ -> plugins/<youreffect>/
@@ -337,13 +338,34 @@ Error codes worth knowing: `kOfxStatGPUOutOfMemory` = `1001`,
 **not** pulled in by `ofxsImageEffect.h` — include it explicitly or the compiler
 will report them undeclared.
 
+**Support names for the depths.** The strings above are the C API; the Support
+library spells the depths as an enum, and the 8-bit case is the one every
+byte-capable plug-in gets wrong first:
+
+| C value | Support name (`OFX::`) | Notes |
+| --- | --- | --- |
+| `kOfxBitDepthByte` | `eBitDepthUByte` | there is no `eBitDepthByte` |
+| `kOfxBitDepthShort` | `eBitDepthUShort` | 16-bit integer |
+| `kOfxBitDepthHalf` | `eBitDepthHalf` | |
+| `kOfxBitDepthFloat` | `eBitDepthFloat` | what every template advertises |
+
+Advertise a depth only when `render()` handles it: the templates accept float
+only, and a host that hands over a byte image the descriptor did not declare is
+a crash or a black frame, not a conversion.
+
+**`getRegionOfDefinition` returns `bool` and takes an out-parameter.** It is not
+`OfxRectD getRegionOfDefinition(const Args&)`:
+`virtual bool getRegionOfDefinition(const OFX::RegionOfDefinitionArguments&, OfxRectD&)`.
+Return `true` only when you set the rect; `false` means "use the default", the
+union of the input clips' RoD (`ofxsImageEffect.h:1119-1127`).
+
 ---
 
 ## 6. Build and packaging standards
 
 **Bundle layout.** Hosts scan `NAME.ofx.bundle/Contents/<ARCH>/NAME.ofx`, where
-`ARCH` is `Win64` or `Linux-x86-64` (per the OFX packaging spec; `MacOS` for
-Apple). The file must end in `.ofx` on every platform, and the *stem must match
+`ARCH` is `Win64`, `Linux-x86-64`, `Linux-aarch64` or `MacOS` (per the OFX
+packaging spec). The file must end in `.ofx` on every platform, and the *stem must match
 the bundle name*. A plugin named `MinimalCudaGain` must live at
 `MinimalCudaGain.ofx.bundle/Contents/Win64/MinimalCudaGain.ofx`.
 
@@ -414,9 +436,11 @@ built" after an incremental reconfigure is not evidence the list survived.
 
 **Do not bake the toolkit path into the bundle.** By default CMake records the
 directory it linked `cudart` from in `RUNPATH` — an absolute build-machine path
-for a bootstrapped toolkit. The template sets `INSTALL_RPATH "$ORIGIN"` with
+for a bootstrapped toolkit. The template sets `INSTALL_RPATH` with
 `BUILD_WITH_INSTALL_RPATH ON`, so the `.ofx` resolves a `libcudart` placed beside
-it and otherwise uses the host's own runtime.
+it and otherwise uses the host's own runtime. The token is platform-specific:
+`$ORIGIN` for ELF, `@loader_path` for dyld (see `BUILD_PLAYBOOK.md` §7); using
+the wrong one builds fine and cannot resolve at load.
 
 **MSVC.** The CUDA host compiler must use the same runtime library as the rest of
 the binary. CMake propagates this; do not hand-add `-Xcompiler /MD` to a Debug

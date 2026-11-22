@@ -1,0 +1,107 @@
+Feedback handover - OFXPluginDeveloper (third review)
+Written 2026-11-22 while building com.ai.ofx.YoloObjectDetector from the skill.
+
+Environment: Windows 11, no VS 2022 instance (VS 18 Build Tools, MSVC 14.50.35717),
+CMake 4.4.4, Ninja 1.10, OpenFX OFX_Release_1.5.1, ONNX Runtime 1.20.1 (NuGet, CPU).
+No OFX host and no macOS/Linux machine, so host behaviour and the Apple branches
+are inferred, not measured.
+
+Labels: [V] ran and pasted; [I] inferred from a header, packaging spec or platform
+documentation.
+
+Findings and where they were fixed
+----------------------------------
+
+F1 (high, macOS) - RPATH was "$ORIGIN" on every non-Windows platform;
+dyld needs @loader_path and treats $ORIGIN as a literal directory.
+  templates/onnx-inference-ofx/CMakeLists.txt (now APPLE / elseif(UNIX))
+  templates/minimal-cuda-ofx/CMakeLists.txt (same split)
+  [I] no Mac available.
+
+F2 (high, macOS) - the runtime was copied as libonnxruntime.so.1 on macOS too;
+the dylib's install name is @rpath/libonnxruntime.<version>.dylib.
+  templates/onnx-inference-ofx/CMakeLists.txt: APPLE branch resolves the
+  symlink (REALPATH) and keeps the versioned file name. [I]
+  Documented in BUILD_PLAYBOOK.md section 7 and AI_MODEL_INTEGRATION.md section 4.
+
+F3 (medium) - testkit could not declare a colour parameter: canonicalType()
+mapped only double/int/string/bool, so --param boxColor:rgb failed although the
+declared value was OfxParamTypeRGB [V, reproduced with the pre-fix harness].
+  testkit/contract_main.cpp now maps rgb, rgba and choice; the vocabulary is
+  listed in testkit/README.md.
+  Post-fix verification [V]: a throwaway copy of templates/minimal-ofx declaring
+  gain (double), boxColor (RGB), tint (RGBA) and mode (choice) was driven through
+  testkit/contract_main.cpp with
+  --param gain:double --param boxColor:rgb --param tint:rgba --param mode:choice
+  -> "contract_test: 90 checks, 0 failed".
+
+F4 (low) - SKILL.md section 6 named only Win64 / Linux-x86-64 / MacOS, while
+BUILD_PLAYBOOK.md section 7 and ofxPackaging.rst:124 also have Linux-aarch64.
+  SKILL.md now lists all four. [V] sources disagreed.
+
+G1 (medium) - Support names for byte support were never stated:
+OFX::eBitDepthUByte (there is no eBitDepthByte), and
+bool getRegionOfDefinition(const RegionOfDefinitionArguments&, OfxRectD&)
+(not OfxRectD getRegionOfDefinition(const Args&)).
+  SKILL.md section 5 now has the depth table and the signature.
+
+G2 (medium) - the ONNX template's runner is shape-preserving, but the routing
+table did not say so: ModelRunner::Run requires out shape == in shape, so a
+detection or classification head cannot use it.
+  SKILL.md section 4 routing table row; AI_MODEL_INTEGRATION.md section 7 item 6;
+  PATTERN_INDEX.md task row.
+
+G3 (medium) - no guidance for drawing into the frame (destination pitch, bounds
+vs render window, premultiplied overlay, bitmap font).
+  ARCHITECTURE_AND_CUDA_PIPELINE.md section 13; PATTERN_INDEX.md task row.
+
+G4 (medium) - no detection-model guidance (letterbox, [1, 4+N, anchors] layout,
+per-class NMS, end-to-end exports).
+  AI_MODEL_INTEGRATION.md section 7, "Detection heads: the four facts that cost
+  a day".
+
+P1 (low) - FetchContent_Populate() needed CMP0169 OLD on CMake >= 3.30.
+  All three templates now use FetchContent_MakeAvailable() with
+  SOURCE_SUBDIR cmake/do-not-build, and the policy escape is gone.
+  Verified here [V]: minimal-ofx configured and built from a real network clone
+  with no OFX_SOURCE_DIR (51 s configure), and all templates configured through
+  MakeAvailable; ./run-tests.sh exit 0.
+
+What worked and is now externally verified
+------------------------------------------
+- NuGet fallback is load-bearing: the GitHub release assets returned HTTP 404
+  from that network for every version tried, while
+  https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.20.1 returned
+  200 (108 MB) and its layout (build/native/include,
+  runtimes/win-x64/native/*.lib|*.dll) mapped onto <root>/include|lib|bin [V].
+  Keep the section; consider the same treatment for the Linux tarball.
+- Exactly two exports on MSVC [V]: dumpbin /exports on the built .ofx lists only
+  OfxGetNumberOfPlugins and OfxGetPlugin, with no /EXPORT flags and only
+  CXX_VISIBILITY_PRESET hidden (a documented no-op there).
+- Bundle layout and arch names [V] for Win64; Linux-x86-64, MacOS and
+  Linux-aarch64 match ofxPackaging.rst:81-124 (only SKILL.md section 6 was short).
+- kOfxImagePropRowBytes is integer x 1, may be negative, not supported for
+  OpenCL images [V] (ofxImageEffect.h:1340-1353).
+- kOfxStatGPUOutOfMemory 1001 / kOfxStatGPURenderFailed 1002 [V]
+  (ofxGPURender.h:185-189).
+- testkit is genuinely reusable: unmodified, it drove a very different
+  architecture (stateful detector behind a mutex, byte and float, RGB and RGBA,
+  no image maths) through describe -> describeInContext -> createInstance ->
+  isIdentity -> render -> destroyInstance -> unload, twice, with two live
+  instances, four concurrent render threads and a negative-pitch destination:
+  110 checks, 0 failed [V].
+- BUILD_PLAYBOOK.md section 7 is accurate for the VS 18 machine: no VS 2022
+  instance, vswhere -latest returns VS 18 BuildTools, the "Visual Studio 17
+  2022" CMake generator cannot configure, and Ninja after vcvars64.bat worked
+  first try [V].
+- ORT version claims are consistent: PyPI reports 1.32.0, matching
+  ORT_API_VERSION 32 in AI_MODEL_INTEGRATION.md section 4 [V]. This build used
+  1.20.1 / API 20 for the NuGet reason above; nothing used differs.
+
+Environment notes (not skill defects)
+-------------------------------------
+- vcvars64.bat prints 'Der Befehl "vswhere.exe" ist entweder falsch geschrieben'
+  before doing its job; harmless, but it makes build logs look broken.
+- The Visual Studio 17 2022 CMake generator is unavailable even though
+  C:\Program Files\Microsoft Visual Studio\2022 exists (no C++ workload
+  registered). This matches BUILD_PLAYBOOK.md section 7's own field test.

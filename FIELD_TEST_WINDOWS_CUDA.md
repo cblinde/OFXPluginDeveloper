@@ -1,13 +1,14 @@
 # Field test: Windows 11, CUDA 13.0, RTX 3060 (2026-11-22)
 
 Every **[B]** claim in this corpus comes from external runs on 2026-11-22: the
-Windows/GPU build below and a second Windows session that reviewed the ONNX
-template (§9). This document is the evidence for both: what was executed, what
-the logs say, and what the runs do not prove. Nothing on this page ran in this
-checkout. The raw material is archived verbatim under
+Windows/GPU build below, a second Windows session that reviewed the ONNX
+template (§9), and a third that built a YOLO detector from it (§10). This
+document is the evidence for all three: what was executed, what the logs say,
+and what the runs do not prove. Nothing on this page ran in this checkout. The
+raw material is archived verbatim under
 [`evidence/2026-11-22-windows/`](evidence/2026-11-22-windows/): the handover
-report (`report.txt`), the ten logs it cites, and the second review
-(`review-onnx-upscale.txt`).
+report (`report.txt`), the ten logs it cites, the second review
+(`review-onnx-upscale.txt`) and the third (`review-yolo-detector.txt`).
 
 **Provenance.** An agent session on 2026-11-22, at the repository owner's
 request, cloned `main`, ran the documented Windows workflow, fixed the build and
@@ -207,3 +208,62 @@ directory first, then `System32`, then `PATH`. A host that loads the `.ofx` with
 plain `LoadLibraryW` gets the `System32` copy of any DLL it also imports;
 `LoadLibraryExW` with `LOAD_WITH_ALTERED_SEARCH_PATH` gets the one in
 `Contents\Win64`, which is what the contract harness does.
+
+---
+
+## 10. The third review: a YOLO object detector (2026-11-22)
+
+A third Windows session built `com.ai.ofx.YoloObjectDetector` — ONNX Runtime
+YOLOv8/v11 detection, overlay drawing, byte and float, RGB and RGBA — from the
+skill alone, and reported four defects (F1–F4), four gaps (G1–G4) and one
+deprecation (P1). The report is archived as
+[`review-yolo-detector.txt`](evidence/2026-11-22-windows/review-yolo-detector.txt).
+Its environment: Windows 11, VS 18 Build Tools only (MSVC 14.50.35717, no VS 2022
+instance), CMake 4.4.4, Ninja 1.10, ONNX Runtime 1.20.1 from NuGet, OpenFX 1.5.1.
+No OFX host and no Apple machine were available there, so the two loader
+findings are marked inferred (**[I]**) — they are the first findings in this
+corpus that this checkout cannot measure, only read.
+
+| Finding | What it was | Where it is fixed |
+| --- | --- | --- |
+| F1 | `INSTALL_RPATH "$ORIGIN"` under `if(NOT WIN32)`: dyld treats `$ORIGIN` as a literal directory, so a Mac bundle records an rpath that cannot resolve | `templates/onnx-inference-ofx/CMakeLists.txt` and `templates/minimal-cuda-ofx/CMakeLists.txt` split `APPLE` (`@loader_path`) from other UNIX (`$ORIGIN`) |
+| F2 | the ONNX runtime was copied as `libonnxruntime.so.1` in the `else()` branch, which includes `APPLE`, where the install name is `@rpath/libonnxruntime.<ver>.dylib` | the APPLE branch resolves the symlink and keeps the versioned dylib name; `BUILD_PLAYBOOK.md` §7 has the row |
+| F3 | `canonicalType()` mapped only four types, so `--param boxColor:rgb` failed the check with `OfxParamTypeRGB (expected rgb)` **[B]** | `testkit/contract_main.cpp` maps `rgb`, `rgba`, `choice`; the vocabulary is in `testkit/README.md`. Re-checked here with a fixture declaring all three: 90 checks, 0 failed **[V]** |
+| F4 | `SKILL.md` §6 omitted `Linux-aarch64`, which the packaging spec and `BUILD_PLAYBOOK.md` §7 both list | `SKILL.md` §6 names all four arch directories |
+| G1 | the Support names `eBitDepthUByte` (there is no `eBitDepthByte`) and the `bool getRegionOfDefinition(..., OfxRectD&)` signature were stated nowhere | `SKILL.md` §5 depth table and the action's real signature |
+| G2 | the routing table sent every per-frame model to the ONNX template, whose runner requires `out shape == in shape`; a detection head cannot use it | `SKILL.md` §4 row, `AI_MODEL_INTEGRATION.md` §7 item 6, `PATTERN_INDEX.md` |
+| G3 | no guidance for drawing into the frame: destination pitch, bounds vs render window, premultiplied overlay, font | `ARCHITECTURE_AND_CUDA_PIPELINE.md` §13 and a `PATTERN_INDEX.md` row |
+| G4 | no detection-model guidance: letterbox mapping, `[1, 4+N, anchors]` vs transposed, per-class NMS, end-to-end exports | `AI_MODEL_INTEGRATION.md` §7, "Detection heads" |
+| P1 | `FetchContent_Populate()` with `CMP0169 OLD` in all three templates | all three use `FetchContent_MakeAvailable()` with `SOURCE_SUBDIR cmake/do-not-build`; verified here by a real network clone and `./run-tests.sh` **[V]** |
+
+What that run confirms, and this checkout could not have produced:
+
+- **The NuGet fallback is load-bearing.** `github.com/microsoft/onnxruntime/
+  releases/download/...` returned HTTP 404 from that network for every version
+  tried, while
+  `https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.20.1`
+  returned 200 (108 MB) and its layout mapped onto `<root>/include|lib|bin`
+  **[B]**. The paragraph in `AI_MODEL_INTEGRATION.md` §4 is why the build
+  existed at all.
+- **Exactly two exports on MSVC** **[B]**: `dumpbin /exports` on the built
+  `.ofx` lists `OfxGetNumberOfPlugins` and `OfxGetPlugin` and nothing else, with
+  no `/EXPORT` flag and only `CXX_VISIBILITY_PRESET hidden` (a documented no-op
+  there) — the claim in `SKILL.md` §6 holds.
+- **`testkit` is reusable by a very different architecture.** Unmodified, it
+  drove a stateful detector behind a mutex with byte and float, RGB and RGBA and
+  no image maths, through `describe` → `describeInContext` → `createInstance` →
+  `isIdentity` → `render` → `destroyInstance` → `unload`, twice, with two live
+  instances, four concurrent render threads and a negative-pitch destination:
+  **110 checks, 0 failed** **[B]**. That is the third independent architecture
+  the harness has accepted, and none of the three needed a harness change.
+- **`BUILD_PLAYBOOK.md` §7 is right for a VS 18-only machine** **[B]**: the
+  `Visual Studio 17 2022` generator could not configure, and Ninja after
+  `vcvars64.bat` worked first try. The `vswhere.exe` line that `vcvars64.bat`
+  prints on that host is noise, not a skill defect.
+
+The architectural note worth carrying forward is the same one F2 makes on
+Windows and macOS alike: the loader's search is a **name** contract (SONAME,
+install name, DLL file name), and a copy step that invents a name — or an rpath
+token from another platform's loader — builds cleanly and fails only at load. F1
+and F2 are one bug seen twice, which is why both loader-bearing templates were
+changed, not just the one that was reported.

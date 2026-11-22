@@ -721,3 +721,45 @@ the maths in `multiThreadProcessImages`, the maths in `ScalePixel` (shared by bo
 the argument struct passed to the launcher. Everything else — bundling,
 visibility, stream policy, device binding — should be left alone. Those are the
 parts that took the longest to get right.
+
+---
+
+## 13. Drawing into the frame (boxes, labels, plates)
+
+An overlay is still a write into a host buffer, so it fails in the same three
+places a filter does — plus one of its own.
+
+**Address through the destination, not the source.** The output image has its own
+base pointer, its own `kOfxImagePropRowBytes` (signed, possibly negative) and its
+own bounds. A rect computed in image coordinates must be offset by
+`window − bounds`, and every row reached as
+`dstBase + (y − window.y1) * dstPitch`. Reaching row `y` at `base + y * rowBytes`
+is correct; assuming the first row is the top of the buffer is not, and a
+negative-pitch destination flips an overlay that ignores it.
+
+**Clip to the render window and to the bounds.** A box can lie partly outside the
+window the host asked for (proxy, tile, RoI). Clip in integer coordinates before
+writing: a fill that runs one row past the window is a write into another clip's
+image in some hosts, and the crash appears in the host, not in your plug-in.
+
+**Premultiplied images.** OFX images are usually premultiplied — the clip's
+`kOfxImageEffectPropPreMultiplication` is `kOfxImagePreMultiplied`
+(`ofxImageEffect.h:978-992`). An overlay colour must then be composited
+premultiplied: `dst = dst * (1 − a) + colour * a`, and the box or plate itself
+must be written as `colour * a`, not `colour`. Writing the straight colour makes
+a soft matte glow — the opposite of what a filter must do with its own alpha,
+which is to copy it through untouched.
+
+**Never change alpha you were not asked to change.** A label on an opaque frame
+is fine; on a frame with a matte, either keep the source alpha and draw colour
+only where alpha is already 1, or composite as above and leave the result
+premultiplied. Decide which, write it in the UI text, and keep it constant across
+tiles.
+
+**A font without a GUI.** `stb_easy_font` (public domain, single header) renders
+glyphs as quads in screen space: no FreeType, no font file, no host UI. A filled
+rect plus that is a complete label in about 150 lines.
+
+**Draw after inference, once per frame.** Not per tile, not per thread: the
+overlay is not part of the model's receptive field, and drawing it before tiling
+would feed it back into the model and change the result with the tile size.

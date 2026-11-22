@@ -234,6 +234,13 @@ it to `onnxruntime.dll` produces a bundle that looks complete and that the
 loader rejects at load time, which is why the template resolves the DLL
 separately and fails the configure when it is absent (**B**).
 
+**macOS.** The runtime is `libonnxruntime.<version>.dylib` and dyld records an
+install name of `@rpath/libonnxruntime.<version>.dylib`, so the bundle needs an
+`@loader_path` rpath entry and the file has to keep that versioned name.
+Renaming it to the Linux SONAME, or recording `$ORIGIN` (an ELF-only token dyld
+treats as a literal directory), produces a bundle that builds cleanly and cannot
+load; `templates/onnx-inference-ofx/CMakeLists.txt` has the per-platform branch.
+
 ---
 
 ## 5. Tensor plumbing: where the silent bugs are
@@ -344,8 +351,9 @@ SANITIZE=address,undefined ./test/run-tests.sh
 ```
 
 What this template proves, on this machine: see §5's measurements, plus the
-bundle exports exactly two symbols, records `NEEDED libonnxruntime.so.1`, carries
-`RUNPATH $ORIGIN`, ships one copy of the runtime, and `dlopen` enumerates one
+bundle exports exactly two symbols, records `NEEDED libonnxruntime.so.1` and
+`RUNPATH $ORIGIN` on Linux (`@loader_path` on macOS, where the runtime keeps its
+versioned `.dylib` name), ships one copy of the runtime, and `dlopen` enumerates one
 plugin (`com.ofxplugindeveloper.onnxinference` v1.0).
 
 What it does **not** prove: no host has rendered through it, no GPU execution
@@ -371,6 +379,32 @@ documented from the ORT API, not compiled here.
    the output RoD in `AiCore`, and scaling the source RoD in
    `getRegionOfDefinition` — see `ARCHITECTURE_AND_CUDA_PIPELINE.md` §7 for the
    RoD rules and §5 of this document for the packing side.
+6. A model whose output is not an image — detection (`[1, 4+N, anchors]`),
+   classification (`[1, classes]`), segmentation masks, embeddings — does not fit
+   this template's plumbing at all. `ModelRunner` requires
+   `output shape == input shape`, and `AiCore` unpacks RGB into a frame. Keep the
+   template for its session lifetime, thread budget, bundling and packing, and
+   write the head decoder yourself; nothing in the runner or the unpacker
+   applies.
+
+#### Detection heads: the four facts that cost a day
+
+- **Letterbox, and keep the mapping.** YOLO-style models are trained on a square
+  input: scale by `min(size/w, size/h)`, pad to the square with 114/255 (or 255,
+  per the export), and store `scale` and `(padX, padY)`. Every box comes back in
+  that letterboxed space; inverse-map it before drawing.
+- **Read the output layout from its shape, not from a blog post.** Ultralytics
+  exports `[1, 4 + classes, anchors]`; some exports are transposed to
+  `[1, anchors, 4 + classes]`. Compare the two non-batch dimensions, take the
+  smaller as the attribute axis, and sanity-check that the objectness/class
+  column lies in `[0, 1]` — the wrong choice yields plausible numbers, so a range
+  check is cheaper than a wrong overlay.
+- **Decode, threshold, then NMS per class.** `cx, cy, w, h` are in input pixels;
+  convert to `x1, y1, x2, y2`, drop boxes below the score threshold, run IoU NMS
+  per class rather than across classes, and only then inverse-map and draw.
+- **"End-to-end" export is a different contract.** When NMS lives inside the
+  graph the output is a small `[1, N, 6]` table with no anchors; check the
+  model's metadata before writing a decoder for a shape it does not produce.
 
 ---
 
