@@ -62,7 +62,37 @@ as fact.
 | [DaVinci Resolve OFX samples](https://github.com/illusionyy/DaVinci-Resolve-OpenFX-Samples) (public mirror of the SDK shipped in Resolve 18.5) | OFX-1.4 headers + Support | Resolve's own `GainPlugin`, `TemporalBlurPlugin`, `RandomFrameAccessPlugin` and `DissolveTransitionPlugin`, all with CUDA/OpenCL/Metal kernels. Confirms Resolve's GPU expectations and the multi-frame access model. The SDK is installed with Resolve at `Support/Developer/OpenFX/` (`C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\OpenFX` on Windows, `/opt/resolve/Developer/OpenFX` on Linux) and can be passed as `OFX_SOURCE_DIR` for a fully offline build. |
 | [Blackmagic Design forum](https://forum.blackmagicdesign.com/) | — | Confirms there is no separate "Resolve plugin SDK": OFX is the plugin route, and Resolve supports the OpenCL/CUDA extension to OFX. Used for the Resolve-specific rows in the host matrix (graded B). |
 | [NVIDIA CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/cuda-programming-guide/) / [Runtime API](https://docs.nvidia.com/cuda/cuda-runtime-api/) | 12.9 | Kernel launch, streams, `cudaPointerGetAttributes`, device/primary-context semantics, pitch and alignment behaviour, and the architecture list (§6 of `SKILL.md`). |
-| [NVIDIA CUDA apt repository](https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64) | 12.9.41 | The `cuda-nvcc`, `cuda-nvvm`, `cuda-cudart`, `cuda-cudart-dev` and `cuda-crt` packages that `build.sh --bootstrap-cuda` unpacks without root. |
+| [NVIDIA CUDA apt repository](https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64) | 12.9 series | Source of the toolkit packages that `build.sh --bootstrap-cuda` unpacks without root. Itemised, with versions, in [Artifacts the build pulls in](#artifacts-the-build-pulls-in). |
+
+### Artifacts the build pulls in
+
+Everything below is obtained at build time and is **not** stored in this
+repository. Versions are what upstream served when this was verified (November
+2026); the bootstrap deliberately resolves the newest package in the `12.9`
+series from the repository index instead of pinning exact versions, so a later
+run may pick up a newer patch release.
+
+| Artifact | Version | Obtained by | What it contributes |
+| --- | --- | --- | --- |
+| OpenFX source tree | git tag `OFX_Release_1.5.1`, shallow clone | `FetchContent_Declare` in `CMakeLists.txt` (skipped when `OFX_SOURCE_DIR` is set) | All OFX headers, plus the eight `Support/Library/*.cpp` translation units compiled into the plugin: `ofxsCore`, `ofxsImageEffect`, `ofxsInteract`, `ofxsLog`, `ofxsMultiThread`, `ofxsParams`, `ofxsProperty`, `ofxsPropertyValidation`. Fetched, never vendored. |
+| `Packages.gz` | live index | `build.sh --bootstrap-cuda`, via `curl` | The package-to-filename map; this is what lets the script name the `.deb` files without hard-coding versions. |
+| `cuda-nvcc-12-9` | 12.9.41-1 | bootstrap: `ar` + `tar` into `$OFX_CUDA_TOOLKIT_DIR/stage` | `nvcc`, `cudafe++`, `ptxas`, `nvlink`, `fatbinary`, `bin2c` — the compiler that actually builds `Kernel.cu`. |
+| `cuda-nvvm-12-9` | 12.9.41-1 | bootstrap | `nvvm/libdevice/libdevice.10.bc` and the NVVM libraries nvcc uses for device code generation. |
+| `cuda-cudart-12-9` | 12.9.37-1 | bootstrap | `libcudart.so.12` — the plugin's `NEEDED` entry (`cudart64_*.dll` on Windows). |
+| `cuda-cudart-dev-12-9` | 12.9.37-1 | bootstrap | `include/cuda_runtime.h` and friends — the only CUDA header the template includes — plus the link-time `libcudart.so` stub. |
+| `cuda-crt-12-9` | 12.9.41-1 | bootstrap | `include/crt/*.h` device-runtime headers nvcc needs for `<<<>>>` launches and vector types. |
+| `CUDA::cudart` | from the toolkit above | `find_package(CUDAToolkit REQUIRED)` plus `target_link_libraries` | The import target the module links, unconditionally: the built plugin has `NEEDED libcudart.so.12` (see [Known gaps](#known-gaps-in-the-repository)). |
+
+**Nothing else is fetched.** There are no git submodules (`git submodule status`
+is empty), no `.patch` files, no vendored third-party directory, and no package
+manager is invoked — `pip`, `apt`, `vcpkg` and `conan` are never called by any
+script here. The only third-party code compiled into the plugin is the OpenFX
+Support library, fetched at configure time.
+
+The bootstrap leaves three things under `$OFX_CUDA_TOOLKIT_DIR`: `debs/` (the
+downloaded packages and the index), `stage/` (their unpacked contents) and a
+`home` symlink to the extracted `cuda-12.9` tree. Delete that directory to
+reclaim roughly 100 MB.
 
 ### Open-source implementations analysed
 
@@ -82,8 +112,10 @@ informed design decisions only (see [Licensing](#licensing-and-provenance)).
 
 ### Licensing and provenance
 
-- The template is original code released under **BSD-3-Clause** (matching the
-  OpenFX headers and Support library it links).
+- The template source files are original code, each marked
+  `SPDX-License-Identifier: BSD-3-Clause` in its header (matching the OpenFX
+  headers and Support library it links). Note that the repository currently has
+  **no top-level `LICENSE` file** — the SPDX headers are the operative statement.
 - The GPL-3.0 projects above were consulted as documentation and engineering
   evidence. No source, table or shader text was copied from them, so nothing here
   inherits their licence.
@@ -93,6 +125,20 @@ informed design decisions only (see [Licensing](#licensing-and-provenance)).
   them yourself.
 - Verification used the NVIDIA CUDA toolkit packages described above, which are
   governed by NVIDIA's own licence agreement, not by this repository.
+
+### Deliberately not included
+
+Listed so nobody goes looking for them, or mistakes an incomplete dependency for
+an oversight:
+
+| Not used | Why |
+| --- | --- |
+| TensorRT, ONNX Runtime | `ARCHITECTURE_AND_CUDA_PIPELINE.md` §9 describes the zero-copy integration pattern (device pointers, `IoBinding`, the CUDA EP compute stream), but the template implements no inference path. Adding either would put a multi-hundred-megabyte dependency into a starter template. |
+| NVTX (`nvtx3/nvToolsExt.h`) | Appears only as a profiling snippet in `ARCHITECTURE_AND_CUDA_PIPELINE.md` §5. The template neither includes nor links it. |
+| OpenCL, Metal, OpenGL backends | `OFX::ImageProcessor` can dispatch to them, but only CUDA and CPU are implemented; the others are out of scope. |
+| DaVinci Resolve scripting API, DCTL | Different extension mechanisms, not OFX. Useful alongside a plugin, not part of one. |
+| pip CUDA wheels (`nvidia-cuda-nvcc-cu12`, `nvidia-cuda-runtime-cu12`) | Tried and rejected for the bootstrap: the nvcc wheel ships `ptxas` and NVVM but no `nvcc`/`cudafe++`/`nvlink`, so it cannot compile a translation unit. |
+| The GPL reference plugins | Read as engineering evidence only; never vendored or copied — see [Licensing](#licensing-and-provenance). |
 
 ---
 
@@ -144,28 +190,76 @@ cd templates\minimal-cuda-ofx
 build.bat Release install
 ```
 
-All options are environment variables, all optional:
+`build.bat` has no bootstrap — Windows toolkits come from an installer. It probes
+`CUDA_HOME`, `CUDA_PATH`, `where nvcc` and the default
+`%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v12.9`, and if all of those
+miss it prints the paths it searched plus
+[https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads)
+before failing, so a CPU-only build is never produced silently.
 
-| Variable | Applies to | Meaning |
+#### Arguments accepted by the scripts
+
+| Script | Argument | Effect |
 | --- | --- | --- |
-| `CUDA_HOME` | `build.sh` | Toolkit to use. Otherwise discovered via `PATH`, `/usr/local/cuda*`, `/opt/cuda`, then a bootstrapped one. |
-| `CUDA_ARCHS` | both | Semicolon list, e.g. `86;89`. Default `75;80;86;89;90` (+`100;120` on CUDA ≥ 12.8). |
-| `OFX_SOURCE_DIR` | both | Existing OpenFX checkout. Point at Resolve's shipped `Support/Developer/OpenFX` for an offline build. |
-| `OFX_CUDA_TOOLKIT_DIR` | `build.sh` | Where `--bootstrap-cuda` installs (default `${XDG_CACHE_HOME:-$HOME/.cache}/ofx-cuda-toolkit`). |
-| `CUDA_VER` / `CUDA_REPO` | `build.sh` | Toolkit series and apt repository used by the bootstrap (default `12.9`, Ubuntu 24.04). |
-| `CPU_ONLY=1` | both | Skip CUDA entirely. |
-| `OFX_INSTALL_DIR` | CMake | Override the install target for `install-bundle`. |
-| `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` | CMake | Link `cudart_static` instead of the shared runtime. |
+| `build.sh` | `Debug`, `Release`, `RelWithDebInfo`, `MinSizeRel` | Sets `CMAKE_BUILD_TYPE`. Default `Release`. |
+| `build.sh` | `install` | After building, runs the `install-bundle` target, which copies the bundle into `OFX_INSTALL_DIR`. Needs write permission there. |
+| `build.sh` | `--bootstrap-cuda` | When no toolkit is found, downloads and unpacks the CUDA packages, then builds with CUDA. |
+| `build.sh` | `-h`, `--help` | Prints the usage header. |
+| `build.bat` | `%1` (`Release`, `Debug`, …) | Passed to `cmake --build --config`. Default `Release`. |
+| `build.bat` | `%2` equal to `install` | Runs the `install-bundle` target. |
 
-The build ends by printing three facts about what it produced: exported dynamic
-symbol count (must be 2), whether the CUDA launcher is in the binary, and the
-bundle path.
+`build.sh` accepts these in any order and rejects anything else with exit code 2.
+`build.bat` uses the `Visual Studio 17 2022` generator with `-A x64`; edit it or
+pass `-G` for another toolchain.
+
+#### Options and environment variables
+
+All optional. `build.sh` / `build.bat` translate their environment into CMake
+cache variables, so either layer can be driven directly.
+
+| Variable | Accepted by | Default | Meaning |
+| --- | --- | --- | --- |
+| `CUDA_HOME` | `build.sh` | unset | Toolkit root containing `bin/nvcc`. Discovery order when unset: `CUDA_HOME`, then `nvcc` on `PATH`, then `/usr/local/cuda`, `/usr/local/cuda-*`, `/opt/cuda`, then a directory bootstrapped by this script. Passed on as `CMAKE_CUDA_COMPILER` and `CUDAToolkit_ROOT`. |
+| `CUDA_PATH` | `build.bat` | unset | Windows equivalent of `CUDA_HOME`. Discovery order: `CUDA_HOME`, `CUDA_PATH`, `where nvcc`, then `%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v12.9`. |
+| `CUDA_ARCHS` | both | unset | Semicolon list, e.g. `86;89`, passed as `CMAKE_CUDA_ARCHITECTURES`. When unset, CMake uses `75;80;86;89;90`, plus `100;120` if the toolkit is ≥ 12.8. |
+| `OFX_SOURCE_DIR` | both, and the CMake cache | empty | Use an existing OpenFX tree instead of fetching. It must contain `include/ofxImageEffect.h` — for Resolve's SDK that is its `OpenFX-1.4` subdirectory, not the `Support/Developer/OpenFX` parent. CMake aborts with a message if the file is missing; the offline build works with this set. |
+| `OFX_CUDA_TOOLKIT_DIR` | `build.sh` | `${XDG_CACHE_HOME:-$HOME/.cache}/ofx-cuda-toolkit` | Where the bootstrap puts `debs/`, `stage/` and the `home` symlink. |
+| `CUDA_VER` | `build.sh` | `12.9` | Toolkit series to bootstrap; package names are derived from it (`12.9` becomes `-12-9`). |
+| `CUDA_REPO` | `build.sh` | `https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64` | apt repository holding the packages. The default targets Ubuntu 24.04 x86-64; set this for another distribution or architecture. |
+| `CPU_ONLY` | both | unset | `1` skips discovery and bootstrap and sets `OFXPLUGIN_ENABLE_CUDA=OFF`. |
+| `OFX_INSTALL_DIR` | CMake (used by the `install` step) | `/usr/OFX/Plugins`, `%COMMONPROGRAMFILES%/OFX/Plugins` on Windows, `/Library/OFX/Plugins` on macOS | Destination of `install-bundle`. |
+| `OFXPLUGIN_ENABLE_CUDA` | CMake | `ON` | Compile the CUDA render path. Falls back to `OFF` with a warning if no compiler is found, so the plugin keeps its CPU path. |
+| `OFXPLUGIN_CUDA_STATIC_RUNTIME` | CMake | `OFF` | Declared, but **currently not wired to anything**: the module always links `CUDA::cudart`. Setting it changes the build in no way — see [Known gaps](#known-gaps-in-the-repository). |
+| `CMAKE_CUDA_COMPILER`, `CUDAToolkit_ROOT` | CMake | set by the scripts from `CUDA_HOME` | Seam for a toolkit in an unusual location. |
+| `CMAKE_BUILD_TYPE`, `CMAKE_CUDA_ARCHITECTURES`, `CMAKE_CUDA_VISIBILITY_PRESET` | CMake | set by the scripts | Standard CMake variables; use these when invoking CMake without the wrapper scripts. |
+
+The build ends by printing what it produced: the bundle path, the `.ofx` path,
+the exported dynamic symbol count (must be 2) and whether the CUDA launcher is in
+the binary.
+
+#### Known gaps in the repository
+
+Documented rather than hidden, because each one is a trap for the next reader:
+
+1. **`OFXPLUGIN_CUDA_STATIC_RUNTIME` is inert.** It is a real cache option with
+   `OFF` as its default, but no CMake line consumes it, so the plugin always has
+   a `libcudart` dependency. If you need a static runtime, change the
+   `target_link_libraries` call; do not trust the option name.
+2. **No top-level `LICENSE` file.** The per-file SPDX headers are the operative
+   licence statement (see [Licensing](#licensing-and-provenance)).
+3. **`build.bat` has never been executed** — it is syntax-reviewed only. Until it
+   is run under MSVC, treat the Windows path as unproven.
+4. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
+   `/usr/OFX/Plugins` is root-owned on most Linux systems, so run that step with
+   `sudo` or point `OFX_INSTALL_DIR` at a writable host plugin directory.
 
 > **Note on the bootstrap.** The `nvidia-cuda-nvcc-cu12` pip wheel is *not*
 > enough — it ships `ptxas` and NVVM but no `nvcc`/`cudafe++`/`nvlink`, so it
 > cannot compile a translation unit. The bootstrap instead unpacks NVIDIA's
 > official `.deb` packages with `ar`/`tar` into a private prefix, which needs no
-> root and no system packages.
+> root and no system packages. It requires network access and `curl`, `tar`,
+> `gzip`, `awk` and binutils (`ar`); `nm` from the same binutils is used for the
+> end-of-build symbol check.
 
 ### 4. Verify before you test in a host
 
@@ -195,7 +289,8 @@ Plugins. Details in `SKILL.md` §7.
 | | Linux (verified) | Windows |
 | --- | --- | --- |
 | Compiler | GCC 13.3 as nvcc's host compiler | MSVC 2022 (x64) |
-| CUDA | 12.9.41 toolkit, or `--bootstrap-cuda` | 12.9 toolkit |
+| CUDA | 12.9 series (nvcc 12.9.41 verified), or `--bootstrap-cuda` | 12.9 toolkit |
+| Bootstrap tooling | `curl`, `tar`, `gzip`, `awk`, binutils (`ar`, `nm`) | not applicable — no bootstrap on Windows |
 | CMake | ≥ 3.21 (verified 3.31.6) | ≥ 3.21 |
 | OpenFX | `OFX_Release_1.5.1`, fetched automatically or `OFX_SOURCE_DIR` | same |
 | GPU | not needed to build; needed to run the CUDA path | same |
