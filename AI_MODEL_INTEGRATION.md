@@ -217,8 +217,9 @@ template does. CPU and GPU are separate tarballs
 (mixing 8 and 9 is not supported) (**A**).
 
 **Windows, and the NuGet route.** The release zip (`onnxruntime-win-x64-<ver>.zip`)
-has the layout the template expects: `include\`, `lib\onnxruntime.lib`,
-`bin\onnxruntime.dll`. When the GitHub release assets are not reachable, the
+has the layout the template expects: `include\` and `bin\onnxruntime.dll`. It
+also carries `lib\onnxruntime.lib`, which the template does not link on Windows
+(see the next paragraph). When the GitHub release assets are not reachable, the
 NuGet package carries the same files under a different layout (**B**, field-tested
 with `Microsoft.ML.OnnxRuntime` 1.20.1):
 

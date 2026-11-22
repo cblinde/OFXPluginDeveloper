@@ -419,8 +419,8 @@ directory; the failure text says "misspelled or could not be found" and names
 nothing else.
 
 **The ONNX template is a bundle of two binaries.** `templates/onnx-inference-ofx/build.bat`
-requires `ONNXRUNTIME_ROOT` with `include\onnxruntime_cxx_api.h`,
-`lib\onnxruntime.lib` and `bin\onnxruntime.dll`; it asserts both the `.ofx` in
+requires `ONNXRUNTIME_ROOT` with `include\onnxruntime_cxx_api.h` and
+`bin\onnxruntime.dll` (the `.lib` is not linked on Windows); it asserts both the `.ofx` in
 `Contents\Win64` and the private `onnxruntime-ofx.dll` beside it, then runs the
 artifact check. That second assertion covers both ways to ship a bundle that
 cannot work: an import library renamed to `.dll`, and the old `onnxruntime.dll`
