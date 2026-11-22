@@ -8,6 +8,7 @@
 # It builds both templates and then runs, for each one, the unit/image tests,
 # the bundle and memory checks, and the dlopen + fake-host contract test:
 #
+#   templates/minimal-ofx/test/run-tests.sh        (build + artifact + contract)
 #   templates/minimal-cuda-ofx/test/run-tests.sh
 #   templates/onnx-inference-ofx/test/run-tests.sh
 #
@@ -65,6 +66,13 @@ echo "== build: onnx-inference-ofx =="
 # ---------------------------------------------------------------------------
 # Test
 # ---------------------------------------------------------------------------
+# The reference plug-in has no GPU or model dependency, so it builds and
+# verifies itself first; a failure here means the scaffold or the toolchain, not
+# kernel maths.
+echo
+echo "== reference plug-in: minimal-ofx (build, artifact, contract) =="
+"${ROOT}/templates/minimal-ofx/test/run-tests.sh"
+
 echo
 echo "== test: minimal-cuda-ofx =="
 "${ROOT}/templates/minimal-cuda-ofx/test/run-tests.sh"
@@ -76,6 +84,7 @@ echo "== test: onnx-inference-ofx =="
 echo
 echo "=================================================================="
 echo "all suites passed for both templates:"
+echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (both)        image/golden      (both)"
 echo "  artifact + fake host (both)     memory            (both)"
 echo "Negative controls are separate: testkit/run-negative-controls.sh"

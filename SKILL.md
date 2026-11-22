@@ -15,6 +15,7 @@ touches their subject:
 | Document | Read it when |
 | --- | --- |
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, streams, memory layout, RoD/RoI, colour/alpha, TensorRT/ORT, profiling |
+| [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) | Building for real: the one command, the measured artifact contract, every compile-level requirement with file:line evidence, and what remains unproven without a host |
 | [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | A behaviour differs between hosts, or a host-specific workaround is needed |
 | [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | Before shipping: the questions to answer, each with the header line or spec sentence that settles it |
 | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | A neural network in the plug-in: integration shapes, language-runtime hazards, ONNX Runtime API, CUDA decision rules |
@@ -22,6 +23,7 @@ touches their subject:
 | [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | "I need to do X": the pattern, the file that proves it, the symptom that means you got it wrong, which shipped AI repository to learn from, and which general-purpose suite to read for a mechanic |
 | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | Testing a plug-in to ship it: ten layers, goldens and negative controls, sanitizers, concurrency, host acceptance, failure injection, CI |
 | [`testkit/`](testkit/) | Running the artifact and fake-host layers: `./run-tests.sh` loads each built `.ofx`, checks the struct, and drives describe/render without a host |
+| [`templates/minimal-ofx/`](templates/minimal-ofx/) | Starting a new plug-in from the smallest scaffold a host will load, built and verified by one command |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | Starting a new plugin, or needing a known-good reference |
 
 ---
@@ -75,6 +77,7 @@ host crash with no stack trace. None of them is stylistic.
 ```
 SKILL.md                              this file
 ARCHITECTURE_AND_CUDA_PIPELINE.md      the deep dive
+BUILD_PLAYBOOK.md                      clean-checkout build, artifact contract, compile rules
 HOST_COMPATIBILITY_MATRIX.md           per-host behaviour and workarounds
 BEST_PRACTICES_AND_PERFORMANCE.md      performance rules, reference-project lessons, graded evidence
 PREFLIGHT_REVIEW_CHECKLIST.md          pre-ship questions, each citing the line that settles it
@@ -82,8 +85,14 @@ AI_MODEL_INTEGRATION.md                model integration: runtimes, languages, w
 REFERENCE_READING_GUIDE.md             reading OFX code: tiers, patterns, tells, reading plan
 PATTERN_INDEX.md                       lookup by task, symptom, property; external repos
 TESTING_STRATEGY.md                    testing layers, what each proves, host acceptance script
-run-tests.sh                           build both templates + run every suite
+run-tests.sh                           build every template + run every suite
 testkit/                               dlopen + fake-host harness, negative controls
+templates/minimal-ofx/
+  CMakeLists.txt                       reference build: module, support sources, exports
+  src/Plugin.cpp                       the smallest host-loadable plug-in
+  exports.map                          version script: exactly two dynamic symbols
+  build.sh                             fetch headers, build, inspect the artifact
+  test/run-tests.sh                    contract harness against the reference plug-in
 templates/minimal-cuda-ofx/
   CMakeLists.txt                       bundle-producing build
   src/Plugin.h                         host wrapper declarations
@@ -219,7 +228,11 @@ find build/bundle -name '*.ofx' -type f      # on Linux/macOS
 nm -D --defined-only <bundle>/Contents/Linux-x86-64/<Name>.ofx | grep Ofx
 ```
 
-You want exactly `OfxGetNumberOfPlugins` and `OfxGetPlugin` exported.
+You want exactly two dynamic symbols, `OfxGetNumberOfPlugins` and `OfxGetPlugin`.
+`-fvisibility=hidden` is not enough on its own: GCC still exports five weak
+`std::` template helpers (measured: 7 symbols). Pin the export list with a
+version script — [`templates/minimal-ofx/exports.map`](templates/minimal-ofx/exports.map)
+— or the equivalent for your platform; `BUILD_PLAYBOOK.md` §3.5 has the numbers.
 
 ### Phase 7 — Install and smoke test
 
@@ -457,7 +470,9 @@ kernel.
 **Before calling it done**
 
 - [ ] Compiles clean on the intended toolchain(s); warnings read, not ignored.
-- [ ] `nm -D` shows only the mandated entry points exported.
+- [ ] `nm -D --defined-only | grep ' T '` shows only the two entry points. Weak
+      `W` template helpers may remain; a version script removes those too
+      (`templates/minimal-ofx/exports.map`).
 - [ ] `dlopen`/load succeeds and the plugin enumerates (id, version, mainEntry).
 - [ ] Rendered in at least one real host, in both GPU and CPU modes.
 - [ ] Identity path verified (no render when params are neutral).
@@ -521,8 +536,9 @@ OpenFX `OFX_Release_1.5.1`):
   for `75;80;86;89;90;100;120`, the link pulls `libcudart.so.12`, and the bundle
   `Contents/Linux-x86-64/MinimalCudaGain.ofx` is produced with no compiler
   warnings (including `-Xptxas=-warn-spills` and deprecated-architecture checks).
-- That `.ofx` exports exactly two dynamic symbols (`OfxGetNumberOfPlugins`,
-  `OfxGetPlugin`) and contains the CUDA launcher plus a `.nv_fatbin` section with
+- That `.ofx` exports exactly two strong (`T`) symbols (`OfxGetNumberOfPlugins`,
+  `OfxGetPlugin`), plus five weak `W` template helpers, and contains the CUDA
+  launcher plus a `.nv_fatbin` section with
   the kernel (`nm`, `readelf -S`, `strings`).
 - Kernel PTX measured (`-arch=sm_89`): the vectorized kernel emits one 16-byte
   load and one 16-byte store per pixel with 14 registers, 0 spills, 0 stack; the

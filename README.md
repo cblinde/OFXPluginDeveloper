@@ -37,6 +37,7 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | --- | --- |
 | [`SKILL.md`](SKILL.md) | Master reference: ground rules, generation workflow, verified constants, build standards, anti-patterns, checklists, mandatory git workflow |
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, the stream contract, pitch arithmetic, RoD/RoI, colour/alpha, TensorRT/ONNX zero-copy, toolchain, profiling |
+| [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) | The build proved by a compile: one command from a clean checkout, the artifact's measured contract (`nm`, `readelf`, `dlopen`), and every compile-level requirement with file:line evidence and a verified/inferred label |
 | [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | Resolve/Nuke/SCRATCH/Natron behaviour and workarounds, every claim graded A/B/C by evidence source |
 | [`BEST_PRACTICES_AND_PERFORMANCE.md`](BEST_PRACTICES_AND_PERFORMANCE.md) | Review-level synthesis: what the reference projects teach, verified header quirks, host- and kernel-side performance rules with measured PTX evidence, anti-patterns by symptom |
 | [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | The questions to answer before shipping, each one settled by a header line or a spec sentence, plus the automated gates that answer half of them |
@@ -45,6 +46,7 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | The lookup table: task → proven pattern → the file that implements it, plus symptom and property routes, what ten shipped AI repositories teach and warn against, and which general-purpose OFX suite to read for a mechanic |
 | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | How to test a plug-in properly: ten layers from pure maths to host acceptance, what each proves and cannot prove, the failure-injection table, and what this repository actually runs |
 | [`testkit/`](testkit/) | The runnable host harness: loads a built `.ofx` with `dlopen`, checks the `OfxPlugin` struct, then drives describe/describeInContext/render through a hand-written host — shared by both templates, with two negative controls proving it can fail |
+| [`templates/minimal-ofx/`](templates/minimal-ofx/) | The reference plug-in: one RGBA gain, no CUDA and no model, built and verified from a clean checkout by one command — the scaffold to copy |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | The buildable template: CMake + OFX host wrapper + CUDA kernel + CPU fallback |
 | [`templates/onnx-inference-ofx/`](templates/onnx-inference-ofx/) | The buildable inference template: ONNX Runtime session, pitch-correct packing, tiled inference, golden-file tests |
 
@@ -337,6 +339,12 @@ OpenFX `OFX_Release_1.5.1`:
   the launcher symbol, both kernels (`GainKernelRGBA32FVec4`,
   `GainKernelRGBA32FScalar`) and a `.nv_fatbin` section, and passes
   `dlopen` → `OfxGetNumberOfPlugins() == 1` with the expected identifier.
+- `templates/minimal-ofx` builds from a tree with no OFX headers and no build
+  directory with one command, and its artifact has exactly **two** defined dynamic
+  symbols (a version script suppresses the five weak `std::` helpers that
+  `-fvisibility=hidden` alone leaves); `dlopen` reports
+  `OfxImageEffectPluginAPI` v1, `com.ofxplugindeveloper.referencegain` 1.0, with
+  `setHost` and `mainEntry` set. No host was involved — see `BUILD_PLAYBOOK.md` §5.
 - The vectorized kernel emits one 16-byte load and one 16-byte store per pixel
   at PTX level (`-arch=sm_89`), with 14 registers, no spills and no stack, the
   same register count as the scalar fallback.
@@ -369,14 +377,21 @@ compiled; and no performance numbers exist. See `SKILL.md` §12.
 ```
 SKILL.md                            master reference and workflow
 ARCHITECTURE_AND_CUDA_PIPELINE.md    deep dive
+BUILD_PLAYBOOK.md                    clean-checkout build, artifact contract, compile rules
 HOST_COMPATIBILITY_MATRIX.md         per-host differences
 PREFLIGHT_REVIEW_CHECKLIST.md        pre-ship questions, each with the line that settles it
 AI_MODEL_INTEGRATION.md              model runtimes, language embedding, CUDA decision rules
 REFERENCE_READING_GUIDE.md           how to read OFX code: tiers, patterns, anti-patterns, reading plan
 PATTERN_INDEX.md                     lookup: task -> pattern -> code, symptom, property; external repos
 TESTING_STRATEGY.md                  testing layers, measured results, failure injection, host acceptance
-run-tests.sh                         one command: build both templates, run every suite
+run-tests.sh                         one command: build every template, run every suite
 testkit/                             dlopen + fake-host contract harness (shared), negative controls
+templates/minimal-ofx/
+  CMakeLists.txt                     reference build: module, support sources, export list
+  src/Plugin.cpp                     the smallest host-loadable plug-in
+  exports.map                        version script: exactly two dynamic symbols
+  build.sh                           fetch headers, build, inspect the artifact
+  test/run-tests.sh                    contract harness against the reference plug-in
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp        OFX host wrapper: params, dispatch, isIdentity

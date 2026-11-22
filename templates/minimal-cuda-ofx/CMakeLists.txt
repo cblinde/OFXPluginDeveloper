@@ -95,7 +95,9 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CXX_EXTENSIONS OFF)
 
-# Hide everything except the three mandated entry points. This is not cosmetic:
+# Hide everything except the two exported entry points (the third — setHost — is
+# a field of the OfxPlugin struct, not an export; the Support library does not
+# define OfxSetHost at all, see BUILD_PLAYBOOK.md §3.6). This is not cosmetic:
 # every OFX plugin statically links its own copy of the Support library, so with
 # default visibility two plugins loaded into the same host process export the
 # same mangled symbols and the dynamic loader silently binds one plugin's

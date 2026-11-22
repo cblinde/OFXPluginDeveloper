@@ -94,7 +94,8 @@ interface, not the test.
 A plug-in that compiles can still be a module the host will not load. Three
 checks, all cheap:
 
-**Exports.** Exactly two dynamic symbols, both registry functions:
+**Exports.** Exactly two strong (`T`) dynamic symbols, both registry functions —
+and nothing else strong:
 
 ```bash
 nm -D --defined-only <bundle>/Contents/Linux-x86-64/<Name>.ofx | grep ' T '
@@ -102,10 +103,20 @@ nm -D --defined-only <bundle>/Contents/Linux-x86-64/<Name>.ofx | grep ' T '
 # OfxGetPlugin
 ```
 
-Measured in this repository: both templates report exactly 2. Removing the
-visibility block from `templates/minimal-cuda-ofx/CMakeLists.txt` and rebuilding
-CPU-only reported **663**, because the statically linked Support library's
-symbols become visible. That is the failure mode the rule exists to prevent.
+Measured in this repository: all three templates report exactly 2 `T` symbols.
+Removing the visibility block from `templates/minimal-cuda-ofx/CMakeLists.txt`
+and rebuilding CPU-only reported **663**, because the statically linked Support
+library's symbols become visible. That is the failure mode the rule exists to
+prevent.
+
+Visibility attributes do not reach **weak template instantiations**: the same
+builds also export five weak `W` helpers in `MinimalCudaGain`, six in
+`OnnxInference` and five in `ReferenceGain` (`std::vector<OFX::ContextEnum>`'s
+`_M_realloc_insert`, …). They are 7–8 defined dynamic symbols, not 2. They cannot
+interpose a strong definition, but they are not intended exports either. The
+reference plug-in pins the export list with a linker version script
+(`templates/minimal-ofx/exports.map`), after which `nm -D --defined-only` has
+exactly two rows — see `BUILD_PLAYBOOK.md` §3.5.
 
 **dlopen and enumeration.** Twenty lines, and it catches the whole class of
 "file is in the right place but the host never lists it":
@@ -149,8 +160,9 @@ testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
   --identity --set gain=2.0 --not-identity-after-set --byte-dst-rejected
 ```
 
-Measured (CPU-only build of the CUDA template, this machine): **74 checks, 0
-failed** for `MinimalCudaGain`, **80 checks, 0 failed** for `OnnxInference`. The
+Measured (CPU-only build of the CUDA template, this machine): **56 checks, 0
+failed** for `ReferenceGain`, **74 checks, 0 failed** for `MinimalCudaGain`,
+**80 checks, 0 failed** for `OnnxInference`. The
 checks are: the two export symbols; `pluginApi`, `apiVersion`, non-empty
 `pluginIdentifier` (stable across a second load), `pluginVersionMajor/Minor`;
 non-null `setHost`/`mainEntry`; and then a whole `describe → describeInContext →
@@ -534,10 +546,11 @@ does *not* prove; §2–§4 are the questions a reviewer signs off.
 Reproduce all of it from a clean checkout; nothing needs a GPU or a host.
 
 ```bash
-# Everything, both templates: build, unit, image, artifact, fake host, memcheck
+# Everything, every template: reference build, unit, image, artifact, fake host, memcheck
 ONNXRUNTIME_ROOT=/path/to/ort ./run-tests.sh
 
 # Or one template at a time:
+cd templates/minimal-ofx && ./build.sh && ./test/run-tests.sh
 cd templates/minimal-cuda-ofx && ./build.sh && ./test/run-tests.sh
 cd templates/onnx-inference-ofx && ONNXRUNTIME_ROOT=/path/to/ort \
   ./build.sh && ./test/run-tests.sh
@@ -558,11 +571,13 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | CUDA kernels | 3,240 grid launches (vec4 = 1,152, scalar = 2,304), 0 failures |
 | CUDA CPU loop | 1,464 components compared, 0 failures |
 | CUDA concurrency | 6 threads, 0 failures, TSan-clean |
-| CUDA bundle | 2 exports; valgrind `0 errors from 0 contexts` |
+| CUDA bundle | 2 `T` exports (+5 weak `W`); valgrind `0 errors from 0 contexts` |
+| Reference build | one command from a tree with no headers/build dir; 2 dynamic symbols total, `dlopen` + `OfxGetPlugin` → 1 plug-in |
 | Inference golden | C++ vs Python max absolute difference = 0 over the frame |
 | Inference tiling | tile 5/13/17/256 and odd 1×1, 7×5, 64×3, 3×48 all `0` |
 | Inference control | `halo = 0` deviates by `0.263276` (expected) |
-| Inference bundle | 2 exports, `NEEDED libonnxruntime` = 1, `RUNPATH $ORIGIN` = 1 |
+| Inference bundle | 2 `T` exports (+6 weak `W`), `NEEDED libonnxruntime` = 1, `RUNPATH $ORIGIN` = 1 |
+| Artifact + fake host (reference) | 56 checks, 0 failed, two load/unload cycles |
 | Artifact + fake host (CUDA) | 74 checks, 0 failed, two load/unload cycles |
 | Artifact + fake host (inference) | 80 checks, 0 failed, render matches the Python golden through the OFX API |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
