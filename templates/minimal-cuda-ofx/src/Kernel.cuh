@@ -18,6 +18,38 @@ namespace mcofx {
 /// value is a cudaError_t value and can be turned into text with StatusMessage().
 constexpr int kLaunchOK = 0;
 
+/// True when a 16-byte vector access is legal for this pair of buffers.
+///
+/// The requirement is stronger than "RGBA32F is 16 bytes per pixel": the base
+/// pointers the host hands out must themselves be 16-byte aligned, and both
+/// pitches must be multiples of 16, or the second row onwards would be
+/// misaligned even with an aligned base. Pitch is signed (OFX permits negative
+/// rowBytes for flipped images); signed modulo still yields 0 for a negative
+/// multiple of 16, which is what we want.
+///
+/// This lives in the header rather than in Kernel.cu so the decision can be
+/// tested on a machine with no GPU (see the equivalence harness described in
+/// BEST_PRACTICES_AND_PERFORMANCE.md).
+inline bool IsVec4Addressable(const void* src, const void* dst,
+                              std::int64_t srcPitch, std::int64_t dstPitch)
+{
+    constexpr std::uintptr_t kVec4Alignment = 16u;
+
+    if (reinterpret_cast<std::uintptr_t>(src) % kVec4Alignment != 0) {
+        return false;
+    }
+    if (reinterpret_cast<std::uintptr_t>(dst) % kVec4Alignment != 0) {
+        return false;
+    }
+    if (srcPitch % static_cast<std::int64_t>(kVec4Alignment) != 0) {
+        return false;
+    }
+    if (dstPitch % static_cast<std::int64_t>(kVec4Alignment) != 0) {
+        return false;
+    }
+    return true;
+}
+
 // The launcher interface uses C language linkage on purpose. Kernel.cu is
 // compiled by nvcc (C++ host compiler) while Plugin.cpp may be compiled by a
 // different host compiler; C linkage removes any dependence on both sides

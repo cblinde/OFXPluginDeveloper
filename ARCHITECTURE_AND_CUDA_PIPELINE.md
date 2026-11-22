@@ -677,7 +677,8 @@ Where each invariant lives:
 | --- | --- |
 | Device-vs-host decision | `ImageProcessor::process()` (Support) driven by `setGPURenderArgs` |
 | Pitch-correct addressing | `processImagesCuda()`, host side |
-| Boundary check | `GainKernelRGBA32F`, `if (x >= width \|\| y >= height) return;` |
+| Boundary check | both kernels — `if (x >= width \|\| y >= height) return;` |
+| 16-byte access legality | `IsVec4Addressable()` gates `GainKernelRGBA32FVec4`; a misaligned base or pitch falls back to `GainKernelRGBA32FScalar` |
 | Stream contract | `processImagesCuda()` — the `if (_pCudaStream == nullptr)` branch |
 | Device binding | `LaunchGainRGBA32F()` + `DeviceGuard` |
 | Launch error check | `cudaGetLastError()` immediately after `<<<>>>` |

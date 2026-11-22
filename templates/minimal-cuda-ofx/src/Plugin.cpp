@@ -140,22 +140,31 @@ void GainProcessor::multiThreadProcessImages(OfxRectI window)
 
         // Destination is guaranteed to be inside its bounds here:
         // ImageProcessor::process() validates the render window against them.
-        float* dstPix = static_cast<float*>(_dstImg->getPixelAddress(window.x1, y));
-        if (dstPix == nullptr) {
+        //
+        // One call per ROW, not per pixel: OFX::Image::getPixelAddress is
+        // declared in the header but defined out of line in the Support library,
+        // so calling it inside the x loop pays a function call per pixel. The
+        // pixel arithmetic below is unchanged - only the addressing is hoisted.
+        float* dstRow = static_cast<float*>(_dstImg->getPixelAddress(window.x1, y));
+        if (dstRow == nullptr) {
             continue;
         }
+        const float* srcRow = _src
+                                  ? static_cast<const float*>(_src->getPixelAddress(window.x1, y))
+                                  : nullptr;
 
-        for (int x = window.x1; x < window.x2; ++x) {
-            const float* srcPix = _src ? static_cast<const float*>(_src->getPixelAddress(x, y)) : nullptr;
-            if (srcPix != nullptr) {
-                dstPix[0] = srcPix[0] * _gain[0];
-                dstPix[1] = srcPix[1] * _gain[1];
-                dstPix[2] = srcPix[2] * _gain[2];
-                dstPix[3] = srcPix[3] * _gain[3];
-            } else {
-                dstPix[0] = dstPix[1] = dstPix[2] = dstPix[3] = 0.0f;
+        if (srcRow != nullptr) {
+            for (int x = window.x1; x < window.x2; ++x, dstRow += 4, srcRow += 4) {
+                dstRow[0] = srcRow[0] * _gain[0];
+                dstRow[1] = srcRow[1] * _gain[1];
+                dstRow[2] = srcRow[2] * _gain[2];
+                dstRow[3] = srcRow[3] * _gain[3];
             }
-            dstPix += 4;
+        } else {
+            // Unconnected source: the row is opaque-free, exactly as before.
+            for (int x = window.x1; x < window.x2; ++x, dstRow += 4) {
+                dstRow[0] = dstRow[1] = dstRow[2] = dstRow[3] = 0.0f;
+            }
         }
     }
 }

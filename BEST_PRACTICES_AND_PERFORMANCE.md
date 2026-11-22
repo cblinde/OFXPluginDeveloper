@@ -34,7 +34,9 @@ The review ran a mechanical check of the repo against the official sources.
 | Property types and defaults used by the template | confirmed, see §3 |
 | `ImageProcessor` dispatches the GPU path once per render, not per thread | confirmed, see §5.2 |
 | The CPU path is already threaded by the Support library | confirmed, see §5.4 |
-| Kernel memory-instruction count | measured, see §6.1 |
+| Kernel memory instructions, after vectorizing | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** per pixel, 14 registers, 0 spills, 0 stack — measured, see §6.1 |
+| Vec4 path versus scalar path, executing the real kernel source on the host | **3,456 kernel runs, 0 mismatches**: widths 0–63 covering every `width % 4`, heights 1/2/3/5, origins (0,0)/(5,3)/(17,9), aligned and padded and misaligned pitches — see §6.1 |
+| CPU path: hoisted row pointers versus the previous per-pixel addressing | bit-identical over 1,464 pixel components — see §5.4 |
 
 ---
 
@@ -195,10 +197,13 @@ for (int y = window.y1; y < window.y2; ++y) {
 }
 ```
 
-The template as shipped calls `getPixelAddress` per pixel. That is fine for a
-reference implementation and is the first change to make in a production effect.
-**[S]** for the out-of-line declaration; **[U]** for the resulting speedup — it
-depends on whether the host build uses LTO.
+The template now does exactly this: `multiThreadProcessImages` calls
+`getPixelAddress` once per row and walks `srcRow`/`dstRow` through the pixel loop
+**[S]**. The pixel arithmetic is untouched (same four multiplies, same order), and
+a host comparison of the old per-pixel form against the hoisted form over 1,464
+pixel components produced bit-identical output **[M]**. The speedup is still
+**[U]**: it depends on whether the host's build inlines `getPixelAddress`, which
+LTO changes.
 
 ### 5.5 Abort checks belong per row, not per pixel
 
@@ -227,26 +232,52 @@ reason.
 
 ## 6. Kernel-level performance
 
-### 6.1 Measure the memory instructions first — the template has a 4× headroom
+### 6.1 One 16-byte load and one 16-byte store per pixel
 
-Measured with the real toolchain on this repo's kernel and a `float4` variant of
-exactly the same maths (`nvcc -arch=sm_89 -ptx`, nvcc 12.9.41) **[M]**:
+The template ships two kernels with the same arithmetic: a vectorized fast path
+and a scalar fallback for the buffers that cannot legally be vectorized. Both
+call `ScalePixel`, so they cannot drift apart. Measured with the real toolchain
+on this repo's `Kernel.cu` (`nvcc -arch=sm_89 -ptx`, nvcc 12.9.41) **[M]**:
 
 | Kernel | Per-pixel global memory instructions | Registers / spills |
 | --- | --- | --- |
-| Template as shipped (`d[0..3] = s[0..3] * g`) | **4 `ld.global.nc.f32` + 4 `st.global.f32`** | 14, 0 spills |
-| `float4` (`const float4 v = *s; *d = make_float4(...)`) | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** | 14, 0 spills |
+| `GainKernelRGBA32FVec4` (shipped fast path) | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** | 14 registers, 0 spills, 0 stack |
+| `GainKernelRGBA32FScalar` (alignment fallback) | 4 `ld.global.nc.f32` + 4 `st.global.f32` | 14 registers, 0 spills, 0 stack |
 
-Same register count, same arithmetic, four times fewer memory instructions. The
-compiler cannot prove that a `const float*` base plus `4*x` is 16-byte aligned,
-so it will not fuse the four loads; casting to `float4*` states the alignment you
-already know from the OFX contract (RGBA32F pixels are 16 B, and hosts align
-scanlines). **[M]** for the instruction counts, **[U]** for the runtime delta —
-on a bandwidth-bound kernel it is usually close to the instruction ratio, but
-that is a hypothesis until measured.
+Same register count, same arithmetic, four times fewer memory instructions on
+the fast path. The compiler cannot prove that a `const float*` base plus `4*x` is
+16-byte aligned, so it will not fuse the four loads — which is why the vector
+kernel states the alignment by indexing through `float4*`.
 
-This is the single highest-value kernel change for almost any elementwise effect,
-and it costs one `reinterpret_cast`.
+The fast path is selected only when it is legal. `mcofx::IsVec4Addressable`
+(`Kernel.cuh`) requires both bases **and** both pitches to be 16-byte
+addressable, because a `float4` access from a 4-byte-aligned buffer is a runtime
+fault ("misaligned address"), not a compile error — and nothing in the OFX
+contract promises more than natural alignment for the pixel format. Signed modulo
+handles negative `rowBytes` (flipped images) correctly **[S]**. Decision table,
+produced by calling the shipped predicate:
+
+| Buffers | vec4 legal | Kernel the launcher picks |
+| --- | --- | --- |
+| aligned base, aligned pitch | yes | `GainKernelRGBA32FVec4` |
+| src base + 4 bytes | no | `GainKernelRGBA32FScalar` |
+| dst base + 8 bytes | no | `GainKernelRGBA32FScalar` |
+| pitch 256 + 8 | no | `GainKernelRGBA32FScalar` |
+| negative pitch, multiple of 16 | yes | `GainKernelRGBA32FVec4` |
+| negative pitch, not a multiple of 16 | no | `GainKernelRGBA32FScalar` |
+| pitch 0 (single row) | yes | `GainKernelRGBA32FVec4` |
+
+The two paths were then run against each other on the host, executing the real
+kernel source (thread mapping emulated): **3,456 kernel executions, 0 mismatches**
+— **1,152** through the vec4 path and **2,304** through the scalar fallback, with
+widths 0–63 spanning all four `width % 4` classes, heights 1/2/3/5, odd origins,
+padded pitches and 4-byte-misaligned bases. The harness also verified that no
+byte outside the render window is written **[M]**.
+
+**[U]** for the runtime delta: on a bandwidth-bound kernel the savings usually
+track the instruction ratio, but the speedup has not been measured — there is no
+GPU in this environment, and this document does not quote a number it did not
+measure.
 
 ### 6.2 Block and grid
 
@@ -412,7 +443,11 @@ access and leaks **[D]**. It is slow — run it on 256×256, not 4K.
 ## 12. What is still unverified
 
 - **No runtime measurement of anything.** No GPU exists here. The 4×
-  instruction reduction is PTX-level **[M]**; the speedup is a hypothesis.
+  instruction reduction is PTX-level **[M]**; the speedup is a hypothesis, and
+  no number is given for it.
+- **The equivalence proof stopped at the host.** The two kernels and the two CPU
+  loop forms were shown to agree byte-for-byte by executing the real kernel
+  source on the CPU (§6.1), which is not the same as running SASS on a GPU.
 - **No host has ever loaded these plugins.** Every host-behaviour claim in this
   document is graded **[R]** or **[S]**, never **[M]**.
 - **Resolve's scanline padding** (256-byte alignment, the 208×117 thumbnail case

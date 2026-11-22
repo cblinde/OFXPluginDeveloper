@@ -167,7 +167,7 @@ Then rename these, in this order:
 | `src/Plugin.cpp` | `kPluginIdentifier` (reverse-DNS), `kPluginName`, `kPluginGrouping`, `kPluginDescription`, parameter names |
 | `src/Plugin.h` | class names, if you want them specific |
 | `src/Plugin.cpp` | the maths in `multiThreadProcessImages` (CPU) |
-| `src/Kernel.cu` | the maths in `GainKernelRGBA32F` (must match the CPU path) |
+| `src/Kernel.cu` | the maths in `ScalePixel`, which both kernels call (must match the CPU path) |
 | `src/Kernel.cuh` / `Kernel.cu` | the launcher argument struct, if your parameters changed |
 
 Leave alone: `processImagesCuda`'s pitch/offset arithmetic, the stream-policy
@@ -305,8 +305,15 @@ OpenFX `OFX_Release_1.5.1`:
   `75;80;86;89;90;100;120`, links `libcudart.so.12`, and produces
   `MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx`.
 - That `.ofx` exports exactly `OfxGetNumberOfPlugins` and `OfxGetPlugin`, contains
-  the launcher symbol and a `.nv_fatbin` section with the kernel, and passes
+  the launcher symbol, both kernels (`GainKernelRGBA32FVec4`,
+  `GainKernelRGBA32FScalar`) and a `.nv_fatbin` section, and passes
   `dlopen` → `OfxGetNumberOfPlugins() == 1` with the expected identifier.
+- The vectorized kernel emits one 16-byte load and one 16-byte store per pixel
+  at PTX level (`-arch=sm_89`), with 14 registers, no spills and no stack, the
+  same register count as the scalar fallback.
+- Both kernels produce byte-identical output to a scalar reference across 3,456
+  host-emulated launches covering widths 0–63, all four `width % 4` classes, odd
+  origins, padded pitches and 4-byte-misaligned bases.
 - `CPU_ONLY=1`, and "CUDA requested but no compiler", both still build and pass
   the same registration check.
 - The no-root bootstrap was exercised from an empty cache directory.
@@ -324,7 +331,7 @@ HOST_COMPATIBILITY_MATRIX.md         per-host differences
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp        OFX host wrapper: params, dispatch, isIdentity
-  src/Kernel.cuh src/Kernel.cu        CUDA interface + kernel + launcher
+  src/Kernel.cuh src/Kernel.cu        CUDA interface + vec4/scalar kernels + launcher
   build.sh  build.bat                 toolkit discovery, bootstrap, build
 ```
 

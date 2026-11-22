@@ -76,7 +76,7 @@ templates/minimal-cuda-ofx/
   src/Plugin.h                         host wrapper declarations
   src/Plugin.cpp                       descriptor, params, dispatch, isIdentity
   src/Kernel.cuh                       CUDA-free interface header
-  src/Kernel.cu                        kernel + device-guarded launcher
+  src/Kernel.cu                        vec4 + scalar kernels, device-guarded launcher
   build.sh / build.bat                 portable out-of-source builds
 ```
 
@@ -491,6 +491,11 @@ OpenFX `OFX_Release_1.5.1`):
 - That `.ofx` exports exactly two dynamic symbols (`OfxGetNumberOfPlugins`,
   `OfxGetPlugin`) and contains the CUDA launcher plus a `.nv_fatbin` section with
   the kernel (`nm`, `readelf -S`, `strings`).
+- Kernel PTX measured (`-arch=sm_89`): the vectorized kernel emits one 16-byte
+  load and one 16-byte store per pixel with 14 registers, 0 spills, 0 stack; the
+  scalar fallback is unchanged. Both kernels were executed on the host over
+  3,456 emulated launches (widths 0–63 covering every `width % 4`, odd origins,
+  padded and misaligned pitches) with 0 mismatches.
 - `dlopen` + `OfxGetNumberOfPlugins`/`OfxGetPlugin` returns one plugin:
   `OfxImageEffectPluginAPI v1`, id `com.ofxplugindeveloper.minimalcudagain`,
   version `1.0`, `setHost` and `mainEntry` set — for the CUDA build, the
@@ -506,9 +511,11 @@ OpenFX `OFX_Release_1.5.1`):
 
 **Still not verified (state this plainly in any downstream report):**
 
-- **No GPU.** No kernel has ever executed: no SASS was run, no numerics were
-  validated, and device-dependent behaviour (real `cudaPointerGetAttributes`
-  results, multi-GPU binding, actual stream ordering) is untested.
+- **No GPU.** No kernel has ever executed on hardware: no SASS was run, and
+  device-dependent behaviour (real `cudaPointerGetAttributes` results, multi-GPU
+  binding, actual stream ordering) is untested. Numerics were validated on the
+  host only, by emulating the thread mapping over the real kernel source
+  (`BEST_PRACTICES_AND_PERFORMANCE.md` §6.1).
 - **No host.** No Resolve, Nuke, SCRATCH or Natron is installed, so the plugin
   has never rendered a pixel, and every host-specific claim in
   `HOST_COMPATIBILITY_MATRIX.md` remains graded B/C rather than verified.

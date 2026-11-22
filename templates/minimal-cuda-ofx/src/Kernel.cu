@@ -9,23 +9,64 @@
 
 namespace {
 
-/// One thread per pixel. Addressing is done through the host-supplied pitch in
-/// BYTES rather than assuming width * sizeof(pixel), because:
-///   * the host may pad scanlines for alignment (Resolve renders 208x117
-///     thumbnails through a 256-byte aligned allocator), and
-///   * rowBytes may be negative for vertically flipped images.
-__global__ void GainKernelRGBA32F(const float* __restrict__ src,
-                                  float* __restrict__ dst,
-                                  const int width,
-                                  const int height,
-                                  const long long srcPitch,
-                                  const long long dstPitch,
-                                  const float4 gain)
+/// The arithmetic, in one place, so the vector and scalar kernels cannot drift
+/// apart. Both callers apply exactly these four multiplies in this order.
+__device__ __forceinline__ float4 ScalePixel(const float4 v, const float4 gain)
+{
+    return make_float4(v.x * gain.x, v.y * gain.y, v.z * gain.z, v.w * gain.w);
+}
+
+/// One thread per pixel, one 16-byte load and one 16-byte store per pixel.
+///
+/// Only selected when both bases and both pitches are 16-byte addressable
+/// (see IsVec4Addressable in Kernel.cuh): a float4 access on a pointer the host
+/// allocated with 4-byte alignment faults at run time with "misaligned
+/// address", so the launcher decides rather than assuming.
+///
+/// Addressing still goes through the host-supplied pitch in BYTES, because the
+/// host may pad scanlines for alignment and rowBytes may be negative for
+/// vertically flipped images.
+__global__ void GainKernelRGBA32FVec4(const float* __restrict__ src,
+                                      float* __restrict__ dst,
+                                      const int width,
+                                      const int height,
+                                      const long long srcPitch,
+                                      const long long dstPitch,
+                                      const float4 gain)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // Boundary check: the grid is rounded up to whole blocks.
+    // Boundary check: the grid is rounded up to whole blocks. Width and height
+    // need not be multiples of anything - the tail is simply not addressed.
+    if (x >= width || y >= height) {
+        return;
+    }
+
+    const float4* s = reinterpret_cast<const float4*>(
+        reinterpret_cast<const char*>(src) + static_cast<long long>(y) * srcPitch);
+    float4* d = reinterpret_cast<float4*>(
+        reinterpret_cast<char*>(dst) + static_cast<long long>(y) * dstPitch);
+
+    // 1x LDG.E.128 + 1x STG.E.128 (verified in PTX; see
+    // BEST_PRACTICES_AND_PERFORMANCE.md section 6.1).
+    d[x] = ScalePixel(s[x], gain);
+}
+
+/// Fallback for pointers or pitches that are not 16-byte addressable: four
+/// scalar loads and four scalar stores per pixel. Same arithmetic, so the two
+/// paths are bit-identical by construction, not by hope.
+__global__ void GainKernelRGBA32FScalar(const float* __restrict__ src,
+                                        float* __restrict__ dst,
+                                        const int width,
+                                        const int height,
+                                        const long long srcPitch,
+                                        const long long dstPitch,
+                                        const float4 gain)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
     if (x >= width || y >= height) {
         return;
     }
@@ -119,14 +160,33 @@ extern "C" int LaunchGainRGBA32F(void* hostStream,
                     1);
 
     cudaStream_t stream = reinterpret_cast<cudaStream_t>(hostStream);
-    GainKernelRGBA32F<<<grid, block, 0, stream>>>(
-        static_cast<const float*>(src),
-        static_cast<float*>(dst),
-        width,
-        height,
-        static_cast<long long>(srcPitch),
-        static_cast<long long>(dstPitch),
-        make_float4(gain[0], gain[1], gain[2], gain[3]));
+    const float4 g = make_float4(gain[0], gain[1], gain[2], gain[3]);
+    const long long sp = static_cast<long long>(srcPitch);
+    const long long dp = static_cast<long long>(dstPitch);
+
+    // Choose the vector path only when it is actually safe. The host owns these
+    // allocations; nothing in the OFX contract promises more than natural
+    // alignment for the pixel format, and a float4 load from a 4-byte-aligned
+    // buffer is a runtime fault, not a compile error.
+    if (IsVec4Addressable(src, dst, srcPitch, dstPitch)) {
+        GainKernelRGBA32FVec4<<<grid, block, 0, stream>>>(
+            static_cast<const float*>(src),
+            static_cast<float*>(dst),
+            width,
+            height,
+            sp,
+            dp,
+            g);
+    } else {
+        GainKernelRGBA32FScalar<<<grid, block, 0, stream>>>(
+            static_cast<const float*>(src),
+            static_cast<float*>(dst),
+            width,
+            height,
+            sp,
+            dp,
+            g);
+    }
 
     // Immediate launch errors (bad grid, no device, invalid pointer kind).
     // Asynchronous execution errors are only observable at a synchronisation
