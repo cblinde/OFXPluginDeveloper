@@ -59,17 +59,18 @@ OFX_SOURCE_DIR=/path/to/openfx templates/minimal-ofx/build.sh
 
 The deeper check, which drives the whole host protocol through a fake host, is
 [`templates/minimal-ofx/test/run-tests.sh`](templates/minimal-ofx/test/run-tests.sh)
-— 98 checks, exit 0 [V]:
+— 100 checks, exit 0 [V]:
 
 ```
-ok 54 - OfxGetPlugin(0) returns a plug-in
-ok 63 - kOfxActionLoad
-ok 64 - kOfxActionDescribe
-ok 65 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
-ok 73 - kOfxImageEffectActionRender
-ok 95 - render rejects a byte image
-ok 97 - kOfxActionUnload
-contract_test: 98 checks, 0 failed
+ok 55 - OfxGetPlugin(0) returns a plug-in
+ok 64 - kOfxActionLoad
+ok 65 - kOfxActionDescribe
+ok 66 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 74 - kOfxImageEffectActionRender
+ok 96 - render rejects a byte image
+ok 97 - render rejects a window outside the source bounds
+ok 99 - kOfxActionUnload
+contract_test: 100 checks, 0 failed
 ```
 
 ---
@@ -341,7 +342,7 @@ These are the places where building disagreed with prose that already existed.
 | Question | Status |
 |---|---|
 | Does a real host (Resolve/Nuke/Natron/SCRATCH) load, enumerate and instantiate it? | **Unverified.** No host is installed here. |
-| Does `describe`/`describeInContext`/`render` behave under a host's real suite set? | **Partly verified**: the fake host in [`testkit/`](testkit/) drives those actions (98 checks), holds two instances at once and checks their separate values, but it is not a host. |
+| Does `describe`/`describeInContext`/`render` behave under a host's real suite set? | **Partly verified**: the fake host in [`testkit/`](testkit/) drives those actions (100 checks), holds two instances at once and checks their separate values, but it is not a host. |
 | Do the licence texts of the models, fonts and runtimes in the bundle travel with it? | **Not checked by any build.** A bundle can install and render with no notice file; only a file listing proves it. The copy step and the warning are in §3.11. |
 | Does the pixel output match a reference? | **Unverified for this plug-in.** The ONNX template has golden-file tests; the reference gain has no golden. |
 | GPU, Windows/MSVC, macOS/Clang paths | **Unverified.** Only Linux x86-64 with GCC 13.3 was built. |

@@ -171,6 +171,9 @@ struct Spec {
   bool expectIdentity = false;
   bool expectNotIdentityAfterSet = false;
   bool byteDstRejected = false;
+  // --src-bounds-inset: publish a source region of definition inset inside the
+  // buffer, so the render window covers pixels the source does not have.
+  int srcBoundsInset = 0;
   bool negativePitch = false;
   bool topOrigin = false;
   // --set-status-only: render after --set, but assert only the status and that
@@ -656,6 +659,20 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
   }
 
+  if (spec.srcBoundsInset > 0) {
+    // A host may hand a render window the source RoD does not cover (a crop, a
+    // transition, wrong bounds). Image::getPixelAddress() returns nullptr for
+    // those coordinates, so the plug-in has to refuse the window once instead of
+    // dereferencing a null row per pixel.
+    host.setSourceBoundsInset(spec.srcBoundsInset);
+    const OfxStatus st = host.render(0.0, window);
+    host.setSourceBoundsInset(0);
+    if (!check("render rejects a window outside the source bounds",
+               st == kOfxStatErrValue, statusName(st))) {
+      return failCycle(host);
+    }
+  }
+
   const OfxStatus destroyStatus = host.destroyInstance();
   if (!check("kOfxActionDestroyInstance", destroyStatus == kOfxStatOK, statusName(destroyStatus))) {
     return failCycle(host);
@@ -678,7 +695,7 @@ int main(int argc, char** argv) {
                  "       [--clip name]... [--set name=value]... [--context <context>]\n"
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
                  "       [--negative-pitch] [--image-origin top|bottom] [--set-status-only]\n"
-                 "       [--src file --golden file --size WxH]\n"
+                 "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
@@ -747,6 +764,8 @@ int main(int argc, char** argv) {
       spec.expectNotIdentityAfterSet = true;
     } else if (a == "--byte-dst-rejected") {
       spec.byteDstRejected = true;
+    } else if (a == "--src-bounds-inset") {
+      spec.srcBoundsInset = std::atoi(next("--src-bounds-inset").c_str());
     } else if (a == "--set-status-only") {
       spec.setStatusOnly = true;
     } else if (a == "--negative-pitch") {

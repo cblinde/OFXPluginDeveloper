@@ -101,6 +101,11 @@ public:
 
   // Image setup. The default is a 64x48 RGBA32F constant-colour source.
   void setImageSize(int width, int height);
+  // Publishes a source region of definition inset by `pixels` on every side
+  // while the buffer keeps its size, the way a cropped or transition input
+  // arrives. Image::getPixelAddress() then refuses the margin, so a render
+  // window over the full buffer covers pixels the source does not have.
+  void setSourceBoundsInset(int pixels);
   void setSourcePlanar(const float* rgb, int width, int height); // 3 channels
   void setSourceConstant(float r, float g, float b, float a);
   void setPaddedRows(bool on);           // rowBytes > width*16, poisoned margin

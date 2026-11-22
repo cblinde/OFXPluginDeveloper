@@ -70,6 +70,7 @@ struct ImageObj {
   PropSet props;
   int w = 0;
   int h = 0;
+  int boundsInset = 0; // published RoD is inset by this much inside the buffer
   long long rowBytes = 0;
   void* data = nullptr;
   bool isByte = false;
@@ -122,6 +123,7 @@ struct Impl {
   bool negativePitch = false;
   ImageOrigin origin = ImageOrigin::Bottom;
   bool byteDst = false;
+  int srcInset = 0; // see FakeHost::setSourceBoundsInset
   std::vector<float> srcRGBA; // tight, top-down
   ImageObj* srcImage = nullptr;
   ImageObj* dstImage = nullptr;
@@ -634,6 +636,7 @@ ClipObj* clipOf(OfxImageClipHandle c) {
 void buildSourceImage(ImageObj* img) {
   img->w = g->imgW;
   img->h = g->imgH;
+  img->boundsInset = g->srcInset;
   const int pitchPixels = g->padded ? img->w + kPadPixels : img->w;
   const long long bytesPerRow = static_cast<long long>(pitchPixels) * 16;
   const bool negative = g->negativePitch;
@@ -728,12 +731,19 @@ ImageObj* imageFor(ClipObj* clip) {
 }
 
 void publishImageProps(ImageObj* img, ClipObj* clip) {
-  setPointer(&img->props, kOfxImagePropData, 0, img->data);
+  // kOfxImagePropData addresses the pixel at (bounds.x1, bounds.y1), so an inset
+  // source publishes a buffer pointer that moves with the inset. Anything outside
+  // the published bounds is then what Image::getPixelAddress() refuses.
+  const int inset = img->boundsInset;
+  char* data = static_cast<char*>(img->data) +
+               static_cast<long long>(inset) * img->rowBytes +
+               static_cast<long long>(inset) * (img->isByte ? 4 : 16);
+  setPointer(&img->props, kOfxImagePropData, 0, data);
   setInt(&img->props, kOfxImagePropRowBytes, 0, static_cast<int>(img->rowBytes));
-  setInt(&img->props, kOfxImagePropBounds, 0, 0);
-  setInt(&img->props, kOfxImagePropBounds, 1, 0);
-  setInt(&img->props, kOfxImagePropBounds, 2, img->w);
-  setInt(&img->props, kOfxImagePropBounds, 3, img->h);
+  setInt(&img->props, kOfxImagePropBounds, 0, inset);
+  setInt(&img->props, kOfxImagePropBounds, 1, inset);
+  setInt(&img->props, kOfxImagePropBounds, 2, img->w - inset);
+  setInt(&img->props, kOfxImagePropBounds, 3, img->h - inset);
   setString(&img->props, kOfxImageEffectPropPixelDepth, 0,
             img->isByte ? kOfxBitDepthByte : kOfxBitDepthFloat);
   setString(&img->props, kOfxImageEffectPropComponents, 0, kOfxImageComponentRGBA);
@@ -1139,6 +1149,7 @@ void Impl::reset() {
   negativePitch = false;
   origin = ImageOrigin::Bottom;
   byteDst = false;
+  srcInset = 0;
   imgW = 64;
   imgH = 48;
   srcRGBA.assign(static_cast<size_t>(imgW) * imgH * 4, 0.0f);
@@ -1348,6 +1359,11 @@ void FakeHost::setSourceConstant(float r, float g, float b, float a) {
     impl_->srcRGBA[i * 4 + 2] = b;
     impl_->srcRGBA[i * 4 + 3] = a;
   }
+  invalidateImages();
+}
+
+void FakeHost::setSourceBoundsInset(int pixels) {
+  impl_->srcInset = pixels > 0 ? pixels : 0;
   invalidateImages();
 }
 

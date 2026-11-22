@@ -134,6 +134,17 @@ public:
             OFX::throwSuiteStatusException(kOfxStatErrValue);
         }
 
+        // Image::getPixelAddress() returns nullptr outside the image bounds, and
+        // a host may hand over a render window the source region of definition
+        // does not cover (a crop, a transition, wrong bounds). Validate once
+        // here: the destination is checked by ImageProcessor::process(), the
+        // source is not, and the row loop would dereference a null row.
+        const OfxRectI& sb = src->getBounds();
+        if (args.renderWindow.x1 < sb.x1 || args.renderWindow.y1 < sb.y1 ||
+            args.renderWindow.x2 > sb.x2 || args.renderWindow.y2 > sb.y2) {
+            OFX::throwSuiteStatusException(kOfxStatErrValue);
+        }
+
         RefGainProcessor processor(*this);
         processor.setDstImg(dst.get());
         processor.setSrc(src.get());
