@@ -124,10 +124,14 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
   VISIBILITY_INLINES_HIDDEN ON)
 
 # $ORIGIN, so the bundle resolves libonnxruntime placed beside it and nothing
-# records the build machine's path.
-set_target_properties(${PLUGIN_TARGET} PROPERTIES
-  BUILD_WITH_INSTALL_RPATH ON
-  INSTALL_RPATH "$ORIGIN")
+# records the build machine's path. Windows has neither rpath nor RUNPATH; the
+# DLL beside the .ofx is found by the loader's own search, so setting these
+# there would be a no-op that reads like a guarantee.
+if(NOT WIN32)
+  set_target_properties(${PLUGIN_TARGET} PROPERTIES
+    BUILD_WITH_INSTALL_RPATH ON
+    INSTALL_RPATH "$ORIGIN")
+endif()
 
 # The bundle's arch directory is a platform fact, and getting it wrong is
 # silent: the .ofx links, the build reports success, and no host ever scans the
@@ -154,18 +158,23 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
 
+get_filename_component(_onnx_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
+if(WIN32)
+  # The Windows package puts the import library in lib/ and the DLL in bin/.
+  # Copying ${ONNXRUNTIME_LIBRARY} under the name onnxruntime.dll would produce
+  # a file the loader rejects - a bundle that looks complete and fails at load.
+  # Resolved here rather than in the bundling block below: the test executable
+  # needs the same DLL beside it even when OFXPLUGIN_BUNDLE_ONNX_RUNTIME is OFF.
+  find_file(ONNXRUNTIME_DLL NAMES onnxruntime.dll
+    HINTS "${ONNXRUNTIME_ROOT}/bin" "${ONNXRUNTIME_ROOT}/lib" "${_onnx_dir}"
+    NO_DEFAULT_PATH)
+endif()
+
 if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
   # The binary records NEEDED libonnxruntime.so.1 (the SONAME), so ship exactly
   # that name. Globbing libonnxruntime.so* would copy the symlink AND its
   # 34 MB target, which is how a bundle quietly doubles in size.
-  get_filename_component(_onnx_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
   if(WIN32)
-    # The Windows package puts the import library in lib/ and the DLL in bin/.
-    # Copying ${ONNXRUNTIME_LIBRARY} under the name onnxruntime.dll would produce
-    # a file the loader rejects - a bundle that looks complete and fails at load.
-    find_file(ONNXRUNTIME_DLL NAMES onnxruntime.dll
-      HINTS "${ONNXRUNTIME_ROOT}/bin" "${ONNXRUNTIME_ROOT}/lib" "${_onnx_dir}"
-      NO_DEFAULT_PATH)
     if(NOT ONNXRUNTIME_DLL)
       message(FATAL_ERROR
         "OFXPLUGIN_BUNDLE_ONNX_RUNTIME=ON but no onnxruntime.dll under "
@@ -202,6 +211,19 @@ else()
   target_compile_options(ai_pipeline_test PRIVATE -Wall -Wextra)
 endif()
 target_link_libraries(ai_pipeline_test PRIVATE "${ONNXRUNTIME_LIBRARY}" ${CMAKE_DL_LIBS})
+# Windows resolves an import from the executable's own directory first, then
+# System32, then PATH. A machine with another ONNX Runtime installed in System32
+# (1.17 was found in the field) therefore hands this test the wrong DLL, and
+# Session() aborts with "requested API version [20] is not available". Copy ours
+# beside the .exe, for the same reason the bundle carries the DLL beside the
+# .ofx: the build directory is the only place this test is meant to run from.
+if(WIN32 AND ONNXRUNTIME_DLL)
+  add_custom_command(TARGET ai_pipeline_test POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${ONNXRUNTIME_DLL}"
+            "$<TARGET_FILE_DIR:ai_pipeline_test>/onnxruntime.dll"
+    COMMENT "Copying onnxruntime.dll next to ai_pipeline_test.exe")
+endif()
 # No INSTALL_RPATH override here: CMake's build-tree rpath is what lets ctest
 # (and a plain ./ai_pipeline_test) find libonnxruntime before anything is
 # installed or bundled.
