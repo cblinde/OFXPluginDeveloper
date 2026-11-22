@@ -28,7 +28,7 @@ The review ran a mechanical check of the repo against the official sources.
 
 | Check | Result |
 | --- | --- |
-| Every `kOfx*` identifier cited anywhere in the repo (70 of them) exists in OFX 1.5.1 | 68 found; of the 2 not found, **1 was a real error, now fixed** — `ARCHITECTURE_AND_CUDA_PIPELINE.md` cited `kOfxImageEffectActionInstanceChanged`; the real action is `kOfxActionInstanceChanged` (`ofxCore.h:447`). The other, `kOfxImageEffectPropUnmappedComponents` in `SKILL.md`, is a deliberate negative example ("there is no such constant"), so it stays. |
+| Every `kOfx*` identifier cited in the documents, sources and tests exists in OFX 1.5.1 | Checked mechanically by extracting every `kOfx*` token and resolving it against the 1.5.1 tree. Of the 2 that did not resolve, **1 was a real error, now fixed** — `ARCHITECTURE_AND_CUDA_PIPELINE.md` cited `kOfxImageEffectActionInstanceChanged`; the real action is `kOfxActionInstanceChanged` (`ofxCore.h:447`). The other, `kOfxImageEffectPropUnmappedComponents` in `SKILL.md`, is a deliberate negative example ("there is no such constant"), so it stays. |
 | The GPU property table in `SKILL.md` §5 against the headers | 12/12 exist; three descriptions were wrong and are fixed (wrong header for `...OpenCLRenderSupported`, OpenGL declared `C string` not `string`, and the OpenCL Buffers/Images distinction now quoted from the header) |
 | A committed GPU-free test suite (`templates/minimal-cuda-ofx/test/run-tests.sh`) | predicate table + 3,456-launch kernel comparison + CPU-loop comparison + PTX counts, exit-code gated |
 | Every CUDA runtime symbol the template calls (9) is declared in the toolkit headers | all present |

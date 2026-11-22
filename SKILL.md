@@ -437,6 +437,9 @@ kernel.
 - [ ] CUDA flags guarded by `#ifdef OFXPLUGIN_WITH_CUDA`.
 - [ ] `Kernel.cuh` compiles without CUDA headers.
 - [ ] CPU fallback implemented and reachable.
+- [ ] Global accesses go through the host pitch, and the hot path uses one vector
+      load/store per pixel where the pointers allow it (`./test/run-tests.sh` asserts
+      this in PTX).
 
 **Before calling it done**
 
@@ -449,6 +452,8 @@ kernel.
 - [ ] `isEnabledCudaRender` false path tested (force the host to OpenCL/CPU).
 - [ ] No `cudaDeviceSynchronize` anywhere: `grep -rn cudaDeviceSynchronize src/`.
 - [ ] Every error path logs and throws.
+- [ ] `./test/run-tests.sh` passes: predicate, kernel equivalence, CPU loop, PTX
+      counts, bundle hygiene.
 - [ ] Verification status written down honestly (see §12).
 
 ---
