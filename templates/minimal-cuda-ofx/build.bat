@@ -5,10 +5,10 @@ rem
 rem   .\build.bat                  Release, CUDA if a toolkit is found
 rem   .\build.bat Debug            Debug
 rem   .\build.bat Release install  build, then copy the bundle into
+rem                                %COMMONPROGRAMFILES%\OFX\Plugins
 rem
 rem The leading .\ matters when NoDefaultCurrentDirectoryInExePath=1 is set (a
 rem common policy): a bare `build.bat` is then not found, by cmd.exe itself.
-rem                                %%COMMONPROGRAMFILES%%\OFX\Plugins
 rem
 rem Environment overrides:
 rem   CUDA_HOME        toolkit to use; else discovered via CUDA_PATH / PATH
