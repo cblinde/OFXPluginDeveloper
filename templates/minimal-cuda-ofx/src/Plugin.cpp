@@ -16,6 +16,10 @@
 #include <string>
 
 #include "ofxsLog.h"
+// ofxGPURender.h is NOT pulled in by ofxsImageEffect.h. It is the header that
+// defines kOfxImageEffectPropCudaStream and the GPU status codes
+// (kOfxStatGPURenderFailed, kOfxStatGPUOutOfMemory).
+#include "ofxGPURender.h"
 
 #include "Kernel.cuh"
 
@@ -38,13 +42,6 @@ const char* const kParamGainAlpha = "gainAlpha";
 /// RGBA32F only: 4 floats per pixel. Kept as a named constant because every
 /// pointer offset in this file is expressed in terms of it.
 constexpr std::int64_t kPixelBytes = 4 * sizeof(float);
-
-/// Bytes from the start of one scanline to the start of the next, starting at
-/// @p base and offset by @p row. Signed on purpose: rowBytes may be negative.
-inline const char* RowAddress(const void* base, std::int64_t pitch, std::int64_t row)
-{
-    return static_cast<const char*>(base) + row * pitch;
-}
 
 } // namespace
 
@@ -74,6 +71,16 @@ void GainProcessor::setGain(const float gain[4])
 void GainProcessor::processImagesCuda()
 {
 #ifdef OFXPLUGIN_WITH_CUDA
+    // kOfxImageEffectPropCudaEnabled (surfaced as isEnabledCudaRender) is the
+    // only authority on where the pixels live for THIS render. The descriptor's
+    // kOfxImageEffectPropCudaRenderSupported string just says what we can do.
+    // OFX::ImageProcessor already routes on it; assert it so a future refactor
+    // cannot start treating host pointers as device pointers.
+    if (!_isEnabledCudaRender) {
+        OFX::Log::print("%s", "Minimal CUDA Gain: CUDA path entered without kOfxImageEffectPropCudaEnabled");
+        OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
+    }
+
     const OfxRectI window = _renderWindow;
     const int width = window.x2 - window.x1;
     const int height = window.y2 - window.y1;
@@ -87,19 +94,22 @@ void GainProcessor::processImagesCuda()
     // The host hands us base pointers for the WHOLE image, not for the window.
     // Both the row origin (y) and the column origin (x) have to be applied by
     // hand. Doing this on a device pointer is safe: it is integer arithmetic on
-    // the handle, no dereference happens on the CPU.
+    // the handle, no dereference happens on the CPU. rowBytes is signed and may
+    // be negative, hence the int64_t widening of both the pitch and the row.
     const std::int64_t srcPitch = _src->getRowBytes();
     const std::int64_t dstPitch = _dstImg->getRowBytes();
 
-    const char* srcOrigin = RowAddress(_src->getPixelData(), srcPitch, window.y1 - srcBounds.y1)
+    const char* srcOrigin = static_cast<const char*>(_src->getPixelData())
+                          + static_cast<std::int64_t>(window.y1 - srcBounds.y1) * srcPitch
                           + static_cast<std::int64_t>(window.x1 - srcBounds.x1) * kPixelBytes;
-    const char* dstOrigin = RowAddress(_dstImg->getPixelData(), dstPitch, window.y1 - dstBounds.y1)
-                          + static_cast<std::int64_t>(window.x1 - dstBounds.x1) * kPixelBytes;
+    char* dstOrigin = static_cast<char*>(_dstImg->getPixelData())
+                    + static_cast<std::int64_t>(window.y1 - dstBounds.y1) * dstPitch
+                    + static_cast<std::int64_t>(window.x1 - dstBounds.x1) * kPixelBytes;
 
     const int status = LaunchGainRGBA32F(_pCudaStream, srcOrigin, dstOrigin, width, height,
                                          srcPitch, dstPitch, _gain);
     if (status != kLaunchOK) {
-        OFX::Log::print(std::string("Minimal CUDA Gain: kernel launch failed: ") + StatusMessage(status));
+        OFX::Log::print("Minimal CUDA Gain: kernel launch failed: %s", StatusMessage(status));
         OFX::throwSuiteStatusException(kOfxStatGPURenderFailed);
     }
 
@@ -110,7 +120,7 @@ void GainProcessor::processImagesCuda()
     if (_pCudaStream == nullptr) {
         const int sync = WaitForDefaultStream();
         if (sync != 0) {
-            OFX::Log::print(std::string("Minimal CUDA Gain: stream sync failed: ") + StatusMessage(sync));
+            OFX::Log::print("Minimal CUDA Gain: stream sync failed: %s", StatusMessage(sync));
             OFX::throwSuiteStatusException(kOfxStatGPURenderFailed);
         }
     }

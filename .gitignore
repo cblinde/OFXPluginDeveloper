@@ -7,6 +7,9 @@ cmake-build-*/
 # Local reference checkout of the OpenFX standard (never committed)
 .ofx-ref/
 
+# A CUDA toolkit bootstrapped by build.sh --bootstrap-cuda, if pointed here
+.cuda-toolkit/
+
 # IDE / editor
 .vs/
 .vscode/

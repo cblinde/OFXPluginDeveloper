@@ -81,14 +81,14 @@ private:
 
 namespace mcofx {
 
-int LaunchGainRGBA32F(void* hostStream,
-                      const void* src,
-                      void* dst,
-                      int width,
-                      int height,
-                      std::int64_t srcPitch,
-                      std::int64_t dstPitch,
-                      const float gain[4])
+extern "C" int LaunchGainRGBA32F(void* hostStream,
+                                  const void* src,
+                                  void* dst,
+                                  int width,
+                                  int height,
+                                  std::int64_t srcPitch,
+                                  std::int64_t dstPitch,
+                                  const float gain[4])
 {
     if (width <= 0 || height <= 0) {
         return kLaunchOK;
@@ -138,12 +138,12 @@ int LaunchGainRGBA32F(void* hostStream,
     return kLaunchOK;
 }
 
-int WaitForDefaultStream()
+extern "C" int WaitForDefaultStream()
 {
     return static_cast<int>(cudaStreamSynchronize(nullptr));
 }
 
-const char* StatusMessage(int status)
+extern "C" const char* StatusMessage(int status)
 {
     return cudaGetErrorString(static_cast<cudaError_t>(status));
 }

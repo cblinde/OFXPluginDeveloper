@@ -18,6 +18,12 @@ namespace mcofx {
 /// value is a cudaError_t value and can be turned into text with StatusMessage().
 constexpr int kLaunchOK = 0;
 
+// The launcher interface uses C language linkage on purpose. Kernel.cu is
+// compiled by nvcc (C++ host compiler) while Plugin.cpp may be compiled by a
+// different host compiler; C linkage removes any dependence on both sides
+// agreeing about name mangling, and it keeps the symbol greppable in the built
+// module (`nm <bundle>.ofx | grep LaunchGainRGBA32F`).
+
 /// Multiply-premultiplied RGBA32F by a per-channel gain.
 ///
 /// @param hostStream  A cudaStream_t supplied by the OFX host, or nullptr to use
@@ -30,22 +36,22 @@ constexpr int kLaunchOK = 0;
 ///                    negative (flipped images are legal in OFX).
 /// @param dstPitch    Bytes between consecutive scanlines of @p dst. May be negative.
 /// @param gain        Per-channel multipliers, in R,G,B,A order.
-int LaunchGainRGBA32F(void* hostStream,
-                      const void* src,
-                      void* dst,
-                      int width,
-                      int height,
-                      std::int64_t srcPitch,
-                      std::int64_t dstPitch,
-                      const float gain[4]);
+extern "C" int LaunchGainRGBA32F(void* hostStream,
+                                  const void* src,
+                                  void* dst,
+                                  int width,
+                                  int height,
+                                  std::int64_t srcPitch,
+                                  std::int64_t dstPitch,
+                                  const float gain[4]);
 
 /// Blocks until the default stream is idle. Only call this when the host did NOT
 /// hand you a cudaStream_t: the OFX contract then requires the render action to
 /// return with its work complete. See ARCHITECTURE_AND_CUDA_PIPELINE.md.
-int WaitForDefaultStream();
+extern "C" int WaitForDefaultStream();
 
 /// Human readable form of a value returned by the two functions above.
-const char* StatusMessage(int status);
+extern "C" const char* StatusMessage(int status);
 
 } // namespace mcofx
 

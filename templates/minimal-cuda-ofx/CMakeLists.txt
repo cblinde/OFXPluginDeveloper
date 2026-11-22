@@ -53,6 +53,14 @@ file(GLOB OFX_SUPPORT_SOURCES CONFIGURE_DEPENDS
 # ---------------------------------------------------------------------------
 # 2. CUDA detection (optional by design: the plugin keeps a CPU path)
 # ---------------------------------------------------------------------------
+# enable_language(CUDA) itself initialises CMAKE_CUDA_ARCHITECTURES with the
+# compiler's default, so AFTER that point `if(DEFINED CMAKE_CUDA_ARCHITECTURES)`
+# is always true and a curated default list silently never applies (which made
+# nvcc build for its legacy default and emit a deprecated-architecture warning).
+# Capture the user's choice first: a -DCMAKE_CUDA_ARCHITECTURES=... from the
+# command line is already visible here, an auto-initialised value is not.
+set(OFXPLUGIN_USER_CUDA_ARCHS "${CMAKE_CUDA_ARCHITECTURES}")
+
 if(OFXPLUGIN_ENABLE_CUDA)
   include(CheckLanguage)
   check_language(CUDA)
@@ -96,7 +104,20 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
 # OfxGetNumberOfPlugins and OfxGetPlugin.
 set_target_properties(${PLUGIN_TARGET} PROPERTIES
   CXX_VISIBILITY_PRESET hidden
+  # CUDA_VISIBILITY_PRESET is a SEPARATE property. Without it the .cu translation
+  # unit is compiled with default visibility and every extern "C" launcher in
+  # Kernel.cu becomes an exported dynamic symbol, which defeats the point above
+  # (verified: nm -D showed 5 T symbols instead of 2).
+  CUDA_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN ON)
+
+# Never bake an absolute toolkit path into the shipped .ofx. With $ORIGIN the
+# bundle resolves a libcudart placed next to it, and otherwise falls back to the
+# host's own CUDA runtime. (Default behaviour recorded the build machine's
+# toolkit path, e.g. /tmp/cuda-stage/.../lib64, in RUNPATH.)
+set_target_properties(${PLUGIN_TARGET} PROPERTIES
+  BUILD_WITH_INSTALL_RPATH ON
+  INSTALL_RPATH "$ORIGIN")
 
 # Hosts look for the binary by exact name inside Contents/<arch>/, so the
 # extension must be ".ofx" and the prefix must be empty on every platform.
@@ -121,24 +142,38 @@ if(OFXPLUGIN_ENABLE_CUDA)
   target_compile_definitions(${PLUGIN_TARGET} PRIVATE OFXPLUGIN_WITH_CUDA=1)
   target_link_libraries(${PLUGIN_TARGET} PRIVATE CUDA::cudart)
 
-  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  if(OFXPLUGIN_USER_CUDA_ARCHS)
+    set(_ofx_cuda_archs "${OFXPLUGIN_USER_CUDA_ARCHS}")
+  else()
     # Turing .. Hopper is the practical floor for current post houses.
-    set(CMAKE_CUDA_ARCHITECTURES 75 80 86 89 90)
+    set(_ofx_cuda_archs 75 80 86 89 90)
     if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "12.8")
       # Blackwell (RTX 50 / B100 / GB10). Requires CUDA >= 12.8.
-      list(APPEND CMAKE_CUDA_ARCHITECTURES 100 120)
+      list(APPEND _ofx_cuda_archs 100 120)
     endif()
   endif()
+
   # A bare number emits BOTH real SASS and PTX, so the highest architecture
-  # still JIT-compiles on GPUs newer than the build toolchain.
+  # still JIT-compiles on GPUs newer than the build toolchain. Any target below
+  # 75 makes nvcc print a deprecation warning - read that warning as "this list
+  # is stale", not as noise.
   set_target_properties(${PLUGIN_TARGET} PROPERTIES
-    CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}")
+    CUDA_ARCHITECTURES "${_ofx_cuda_archs}")
+  message(STATUS "CUDA architectures: ${_ofx_cuda_archs}")
 
   if(OFXPLUGIN_CUDA_STATIC_RUNTIME)
     set_target_properties(${PLUGIN_TARGET} PROPERTIES CUDA_RUNTIME_LIBRARY Static)
   else()
     set_target_properties(${PLUGIN_TARGET} PROPERTIES CUDA_RUNTIME_LIBRARY Shared)
   endif()
+
+  # Cheap diagnostics worth having on every build:
+  #  -warn-spills  registers spilling to local memory are a real perf cliff and
+  #                the only early warning is this warning.
+  # nvcc also warns about deprecated/removed architecture targets, which is the
+  # signal that CMAKE_CUDA_ARCHITECTURES has gone stale.
+  target_compile_options(${PLUGIN_TARGET} PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:-Xptxas=-warn-spills>)
 endif()
 
 # ---------------------------------------------------------------------------
