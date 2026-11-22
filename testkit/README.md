@@ -38,7 +38,9 @@ testkit/build-contract-test.sh /tmp/contract_test .ofx-ref
   --identity --set gain=2.0 --not-identity-after-set --byte-dst-rejected
 ```
 
-Flags: `--param name:type` (repeatable), `--clip name` (repeatable),
+Flags: `--param name:type` (repeatable; `type` is one of `double`, `int`
+(or `integer`), `string`, `bool` (or `boolean`), `rgb`, `rgba`, `choice`),
+`--clip name` (repeatable),
 `--set name=value` before render, `--identity` (expect `kOfxStatOK` and the
 source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
 answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,

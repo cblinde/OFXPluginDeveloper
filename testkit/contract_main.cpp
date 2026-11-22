@@ -185,6 +185,11 @@ std::string canonicalType(const std::string& t) {
   if (t == "int" || t == "integer") return kOfxParamTypeInteger;
   if (t == "string") return kOfxParamTypeString;
   if (t == "bool" || t == "boolean") return kOfxParamTypeBoolean;
+  // Colour and choice parameters are declared through the same C strings; a
+  // plug-in with a box colour could not get past the type check without these.
+  if (t == "rgb") return kOfxParamTypeRGB;
+  if (t == "rgba") return kOfxParamTypeRGBA;
+  if (t == "choice") return kOfxParamTypeChoice;
   return t;
 }
 
