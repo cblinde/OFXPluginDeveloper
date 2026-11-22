@@ -83,7 +83,7 @@ echo "== test: onnx-inference-ofx =="
 
 echo
 echo "=================================================================="
-echo "all suites passed for both templates:"
+echo "all suites passed, every template:"
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (both)        image/golden      (both)"
 echo "  artifact + fake host (both)     memory            (both)"
