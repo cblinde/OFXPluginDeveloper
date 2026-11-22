@@ -54,6 +54,22 @@ file(GLOB OFX_SUPPORT_SOURCES CONFIGURE_DEPENDS
 # command line is already visible here, an auto-initialised value is not.
 set(OFXPLUGIN_USER_CUDA_ARCHS "${CMAKE_CUDA_ARCHITECTURES}")
 
+# Was that cached value put there by the user (-D, a preset, ccmake) or by
+# enable_language()? CMake stores a user value as an UNINITIALIZED cache entry -
+# 3.31 with the "No help, variable specified on the command line." help string,
+# 4.x with the variable's documentation - and its own initialisation as a STRING
+# whose help is "CUDA architectures". Both versions were checked; read this
+# before enabling the language, which is when the distinction disappears.
+set(OFXPLUGIN_CUDA_ARCHS_USER_SET FALSE)
+if(DEFINED CACHE{CMAKE_CUDA_ARCHITECTURES})
+  get_property(_ofx_archs_cache_type CACHE CMAKE_CUDA_ARCHITECTURES PROPERTY TYPE)
+  get_property(_ofx_archs_cache_help CACHE CMAKE_CUDA_ARCHITECTURES PROPERTY HELPSTRING)
+  if(_ofx_archs_cache_type STREQUAL "UNINITIALIZED" OR
+     _ofx_archs_cache_help MATCHES "command line")
+    set(OFXPLUGIN_CUDA_ARCHS_USER_SET TRUE)
+  endif()
+endif()
+
 if(OFXPLUGIN_ENABLE_CUDA)
   include(CheckLanguage)
   check_language(CUDA)
@@ -68,18 +84,36 @@ if(OFXPLUGIN_ENABLE_CUDA)
     # else dropped, no warning) - which is the failure the comment above claims
     # to prevent.
     #
-    # Only record it when this configure had no user value: a
-    # -DCMAKE_CUDA_ARCHITECTURES=90 is already visible above, so recording the
-    # post-enable_language() value would store the user's list as "the default".
-    # The comparison in section 4 would then see two equal strings and replace
-    # the explicit choice with the curated list. A build tree configured by the
-    # earlier version of this file keeps that stale marker; reconfigure from a
-    # clean directory (or unset OFXPLUGIN_COMPILER_DEFAULT_ARCHS in the cache)
-    # to pick up the fix.
-    if(NOT DEFINED OFXPLUGIN_COMPILER_DEFAULT_ARCHS AND
-       NOT OFXPLUGIN_USER_CUDA_ARCHS)
-      set(OFXPLUGIN_COMPILER_DEFAULT_ARCHS "${CMAKE_CUDA_ARCHITECTURES}"
-          CACHE INTERNAL "nvcc's default architecture list, used to detect an unset user choice")
+    # Three cases, because recording the wrong value here is what made an
+    # explicit -DCMAKE_CUDA_ARCHITECTURES=90 disappear:
+    #   no value      enable_language() just wrote nvcc's default -> record it
+    #   value, not -D a tree from before the marker existed -> the value is
+    #                 nvcc's default, so record it and let the curated list
+    #                 apply again; a STATUS line says so
+    #   value from -D no default to compare with -> record nothing, section 4
+    #                 keeps the choice
+    # A tree configured by the version of this file that recorded a -D value as
+    # the default carries a marker equal to that value; only a clean reconfigure
+    # (or unsetting OFXPLUGIN_COMPILER_DEFAULT_ARCHS) clears it.
+    if(NOT DEFINED OFXPLUGIN_COMPILER_DEFAULT_ARCHS)
+      if(NOT OFXPLUGIN_USER_CUDA_ARCHS)
+        # No value at all: what enable_language() just wrote is nvcc's default.
+        set(OFXPLUGIN_COMPILER_DEFAULT_ARCHS "${CMAKE_CUDA_ARCHITECTURES}"
+            CACHE INTERNAL "nvcc's default architecture list, used to detect an unset user choice")
+      elseif(NOT OFXPLUGIN_CUDA_ARCHS_USER_SET)
+        # A value is cached but no marker exists: this tree was configured before
+        # the marker existed (or before CUDA was enabled in it). enable_language()
+        # wrote that value, so it is nvcc's default - adopt it as the marker and
+        # let the curated list apply. Without this an upgraded tree would keep
+        # building sm_52, with nvcc's deprecation warning as the only clue.
+        set(OFXPLUGIN_COMPILER_DEFAULT_ARCHS "${OFXPLUGIN_USER_CUDA_ARCHS}"
+            CACHE INTERNAL "nvcc's default architecture list, used to detect an unset user choice")
+        message(STATUS
+          "CUDA architectures: cached '${OFXPLUGIN_USER_CUDA_ARCHS}' was not given on the "
+          "command line, so it is nvcc's default; the curated list applies. "
+          "Pass -DCMAKE_CUDA_ARCHITECTURES=... to choose explicitly.")
+      endif()
+      # else: a -D value with no marker to compare against. Section 4 keeps it.
     endif()
   else()
     message(WARNING

@@ -651,6 +651,8 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | CUDA bundle | 2 `T` exports (+5 weak `W`); valgrind `0 errors from 0 contexts` |
 | CUDA architectures, user choice | fresh `-DCMAKE_CUDA_ARCHITECTURES=90` → `-- CUDA architectures: 90`; exactly one `--generate-code=arch=compute_90,code=[compute_90,sm_90]` token; a reconfigure without the flag keeps `90` |
 | CUDA architectures, default list | fresh configure → `75;80;86;89;90;100;120`; a reconfigure keeps the list (nvcc's default `52` recorded once as the marker) |
+| CUDA architectures, pre-marker tree | a tree configured by the pre-marker file (cached `52`, no marker) prints that `52` is nvcc's default and applies `75;80;86;89;90;100;120`; the next configure keeps them. CMake 3.31.6 and 4.4.5 |
+| CUDA architectures, pre-marker tree with `-D 90` | the same tree configured with `-DCMAKE_CUDA_ARCHITECTURES=90` (`UNINITIALIZED` in the cache) stays on `90`, with no default-list notice |
 | Reference build | one command from a tree with no headers/build dir; 2 dynamic symbols total, `dlopen` + `OfxGetPlugin` → 1 plug-in |
 | Inference golden | C++ vs Python max absolute difference = 0 over the frame |
 | Inference tiling | tile 5/13/17/256 and odd 1×1, 7×5, 64×3, 3×48 all `0` |

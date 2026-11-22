@@ -458,9 +458,14 @@ template therefore records nvcc's default once in an internal cache variable —
 and only on a configure that saw no user value: recording it after
 `-DCMAKE_CUDA_ARCHITECTURES=90` would store the user's list as "the default",
 and the comparison would then reject the explicit choice — and treats a
-differing `CMAKE_CUDA_ARCHITECTURES` as a user choice. Any project that ships a
-curated list needs the same trick; "it built" after an incremental reconfigure
-is not evidence the list survived. A configure check needs no GPU and proves
+differing `CMAKE_CUDA_ARCHITECTURES` as a user choice. A tree configured before
+that marker existed has the cached value but no record of where it came from,
+so the template reads the cache entry before `enable_language()` and treats
+`UNINITIALIZED` as a `-D` value (CMake 3.x adds the "specified on the command
+line" help string) and the `STRING` that `enable_language()` writes as nvcc's
+default, then says so in a STATUS line; checked on CMake 3.31.6 and 4.4.5. Any
+project that ships a curated list needs the same trick; "it built" after an
+incremental reconfigure is not evidence the list survived. A configure check needs no GPU and proves
 the selection only: the `-- CUDA architectures:` line and the `--generate-code`
 flags in the generated build files. Whether the cubin is loadable is a host
 question, and whether the kernel runs needs hardware.
