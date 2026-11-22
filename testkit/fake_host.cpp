@@ -541,13 +541,17 @@ OfxStatus paramSetValueFn(OfxParamHandle param, ...) {
   va_list ap;
   va_start(ap, param);
   OfxStatus st = kOfxStatErrUnsupported;
+  // OFX passes scalars by value: Support calls paramSetValue(handle, v) with
+  // the double/int itself, and only strings as a pointer. Reading a `double*`
+  // here interprets the value's bits as an address and crashes on the first
+  // write a plug-in makes (1.0 is 0x3FF0000000000000).
   if (isType(p, kOfxParamTypeDouble)) {
-    p->d = *va_arg(ap, double*);
+    p->d = va_arg(ap, double);
     p->isSet = true;
     st = kOfxStatOK;
   } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean) ||
              isType(p, kOfxParamTypeChoice)) {
-    p->i = *va_arg(ap, int*);
+    p->i = va_arg(ap, int);
     p->isSet = true;
     st = kOfxStatOK;
   } else if (isType(p, kOfxParamTypeString)) {
@@ -577,13 +581,15 @@ OfxStatus paramSetValueAtTimeFn(OfxParamHandle param, OfxTime time, ...) {
   va_list ap;
   va_start(ap, time);
   OfxStatus st = kOfxStatErrUnsupported;
+  // Scalars by value, as in paramSetValueFn above; RGB/RGBA components are
+  // scalars too.
   if (isType(p, kOfxParamTypeDouble)) {
-    p->d = *va_arg(ap, double*);
+    p->d = va_arg(ap, double);
     p->isSet = true;
     st = kOfxStatOK;
   } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean) ||
              isType(p, kOfxParamTypeChoice)) {
-    p->i = *va_arg(ap, int*);
+    p->i = va_arg(ap, int);
     p->isSet = true;
     st = kOfxStatOK;
   } else if (isType(p, kOfxParamTypeString)) {
@@ -1440,28 +1446,92 @@ std::vector<FakeHost::RenderRecord> FakeHost::renderConcurrently(
 bool FakeHost::setParam(const std::string& name, const std::string& value) {
   ParamObj* p = ensureParam(impl_->current, name);
   if (!p) return false;
+  // Go through the parameter suite instead of writing ParamObj's fields. This
+  // is the call Support's OFX::DoubleParam::setValueAtTime makes, so a suite
+  // that reads its arguments wrongly fails a normal --set test instead of
+  // waiting for a plug-in that writes a parameter back.
+  OfxParamHandle handle = reinterpret_cast<OfxParamHandle>(&p->props);
   if (p->type == kOfxParamTypeDouble) {
-    p->d = std::atof(value.c_str());
-    p->isSet = true;
-  } else if (p->type == kOfxParamTypeInteger || p->type == kOfxParamTypeBoolean ||
-             p->type == kOfxParamTypeChoice) {
-    p->i = std::atoi(value.c_str());
-    p->isSet = true;
-  } else if (p->type == kOfxParamTypeString) {
-    p->s = value;
-    p->isSet = true;
-  } else if (p->type == kOfxParamTypeRGB || p->type == kOfxParamTypeRGBA) {
-    const int count = (p->type == kOfxParamTypeRGBA) ? 4 : 3;
+    return paramSetValueAtTimeFn(handle, 0.0, std::atof(value.c_str())) == kOfxStatOK;
+  }
+  if (p->type == kOfxParamTypeInteger || p->type == kOfxParamTypeBoolean ||
+      p->type == kOfxParamTypeChoice) {
+    return paramSetValueAtTimeFn(handle, 0.0, std::atoi(value.c_str())) == kOfxStatOK;
+  }
+  if (p->type == kOfxParamTypeString) {
+    return paramSetValueAtTimeFn(handle, 0.0, value.c_str()) == kOfxStatOK;
+  }
+  if (p->type == kOfxParamTypeRGB || p->type == kOfxParamTypeRGBA) {
+    const bool rgba = p->type == kOfxParamTypeRGBA;
     double c[4] = {0.0, 0.0, 0.0, 0.0};
-    if (std::sscanf(value.c_str(), "%lf,%lf,%lf,%lf", &c[0], &c[1], &c[2], &c[3]) < count) {
+    if (std::sscanf(value.c_str(), "%lf,%lf,%lf,%lf", &c[0], &c[1], &c[2], &c[3]) <
+        (rgba ? 4 : 3)) {
       return false;
     }
-    for (int i = 0; i < count; ++i) p->color[i] = c[i];
-    p->isSet = true;
-  } else {
-    return false;
+    return rgba ? paramSetValueAtTimeFn(handle, 0.0, c[0], c[1], c[2], c[3]) == kOfxStatOK
+                : paramSetValueAtTimeFn(handle, 0.0, c[0], c[1], c[2]) == kOfxStatOK;
   }
-  return true;
+  return false;
+}
+
+bool FakeHost::pressParam(const std::string& name) {
+  if (impl_->instances.empty() || !impl_->current) return false;
+  ParamObj* p = ensureParam(impl_->current, name);
+  if (!p) return false;
+  // The action a host sends when a user clicks a button. The property set is
+  // what Support's InstanceChangedArgs reads: type and name of the changed
+  // object, the reason, the time and the render scale. A push button also has
+  // to be declared with kOfxPropIsInteractive; that is the plug-in's job.
+  PropSet inArgs;
+  setString(&inArgs, kOfxPropType, 0, kOfxTypeParameter);
+  setString(&inArgs, kOfxPropName, 0, name.c_str());
+  setString(&inArgs, kOfxPropChangeReason, 0, kOfxChangeUserEdited);
+  setDouble(&inArgs, kOfxPropTime, 0, 0.0);
+  setDouble(&inArgs, kOfxImageEffectPropRenderScale, 0, 1.0);
+  setDouble(&inArgs, kOfxImageEffectPropRenderScale, 1, 1.0);
+  const OfxStatus st = mainEntry(kOfxActionInstanceChanged, nullptr, &inArgs);
+  // A notification is a success unless the plug-in rejects it; Support answers
+  // kOfxStatReplyDefault when the action was handled.
+  return st != kOfxStatFailed && st != kOfxStatErrBadHandle;
+}
+
+std::string FakeHost::paramValue(const std::string& name) const {
+  const ParamObj* p = nullptr;
+  if (impl_->current) {
+    auto it = impl_->current->params.find(name);
+    if (it != impl_->current->params.end()) p = it->second;
+  }
+  if (!p) {
+    auto tmpl = impl_->pluginDesc.params.find(name);
+    if (tmpl != impl_->pluginDesc.params.end()) p = tmpl->second;
+  }
+  if (!p) return std::string();
+  char text[256];
+  ParamObj* mutableParam = const_cast<ParamObj*>(p);
+  if (p->type == kOfxParamTypeDouble) {
+    std::snprintf(text, sizeof(text), "%g", paramDouble(mutableParam));
+    return text;
+  }
+  if (p->type == kOfxParamTypeInteger || p->type == kOfxParamTypeBoolean ||
+      p->type == kOfxParamTypeChoice) {
+    std::snprintf(text, sizeof(text), "%d", paramInt(mutableParam));
+    return text;
+  }
+  if (p->type == kOfxParamTypeString) {
+    return paramString(mutableParam);
+  }
+  if (p->type == kOfxParamTypeRGB || p->type == kOfxParamTypeRGBA) {
+    const int count = (p->type == kOfxParamTypeRGBA) ? 4 : 3;
+    double c[4] = {0.0, 0.0, 0.0, 0.0};
+    paramColor(mutableParam, c, count);
+    if (count == 4) {
+      std::snprintf(text, sizeof(text), "%g,%g,%g,%g", c[0], c[1], c[2], c[3]);
+    } else {
+      std::snprintf(text, sizeof(text), "%g,%g,%g", c[0], c[1], c[2]);
+    }
+    return text;
+  }
+  return std::string();
 }
 
 std::vector<std::string> FakeHost::paramOptions(const std::string& name) const {

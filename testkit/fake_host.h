@@ -118,6 +118,19 @@ public:
   // same call a host makes through paramSetValueAtTime.
   bool setParam(const std::string& name, const std::string& value);
 
+  // Clicks a parameter the way a host does for a push button: sends
+  // kOfxActionInstanceChanged with kOfxPropType=parameter, the parameter's
+  // name, kOfxChangeUserEdited and the render scale Support reads. Returns
+  // false only when the plug-in rejects the action (kOfxStatFailed or
+  // kOfxStatErrBadHandle); kOfxStatReplyDefault is a handled notification.
+  bool pressParam(const std::string& name);
+
+  // A parameter's current value as text, for a test that has to see what the
+  // plug-in wrote: doubles as %g, ints/booleans/choices as the index, strings
+  // verbatim, colours as r,g,b[,a]. Empty when the name is unknown or the type
+  // has no textual form (push button, group).
+  std::string paramValue(const std::string& name) const;
+
   // The kOfxParamPropChoiceOption strings a parameter was declared with, in
   // order; empty when the name is unknown or the parameter is not a choice.
   std::vector<std::string> paramOptions(const std::string& name) const;

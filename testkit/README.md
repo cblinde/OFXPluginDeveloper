@@ -46,7 +46,25 @@ Flags: `--param name:type` (repeatable; `type` is one of `double`, `int`
 source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
 answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
 `--image-origin top|bottom`,
-`--src`/`--golden`/`--size WxH` for a golden-image render comparison.
+`--src`/`--golden`/`--size WxH` for a golden-image render comparison, and
+`--set-status-only` when the parameter is not a gain.
+
+`--set` itself goes through `paramSetValueAtTime`, the call Support's
+`OFX::DoubleParam::setValueAtTime` makes, so the suite's argument convention is
+exercised by every test that sets a value: doubles, ints, booleans and choices
+are passed **by value**, strings as a pointer, RGB/RGBA as 3 or 4 doubles. A
+harness that reads a `double*` there dereferences the value's bits and crashes on
+the first write a plug-in makes.
+
+A push button is clicked with `FakeHost::pressParam(name)`: it sends
+`kOfxActionInstanceChanged` with `kOfxPropType = kOfxTypeParameter`,
+`kOfxPropChangeReason = kOfxChangeUserEdited`, the parameter name, the time and
+the render scale `InstanceChangedArgs` reads. Only `kOfxStatFailed` and
+`kOfxStatErrBadHandle` count as a rejection; `kOfxStatReplyDefault` is how a
+notification is normally answered. `FakeHost::paramValue(name)` reads back what
+the plug-in wrote (doubles as `%g`, ints and choices as the index, strings
+verbatim, colours as `r,g,b[,a]`), which is how a test asserts that a button
+handler stored something.
 
 A parameter type the harness cannot model is never silent: the fake host records
 `fake host: read of parameter 'boxColor' (OfxParamTypeRGB) is not modelled` in
@@ -96,11 +114,16 @@ Written down because each one is a way for a green run to mean less than it look
   whose value multiplies RGB linearly (e.g. `gain`); the comparison is
   `dst == src × value` per instance, so an effect whose parameter changes
   geometry, a colour matrix or alpha separately cannot use this check as-is.
-- **`--set` means "scale RGB, leave alpha".** The single-instance check asserts
-  exactly that. `templates/minimal-ofx` multiplies *every* channel by `gain` —
-  correct for that effect — so its suite passes no `--set` and relies on the
-  contract's other checks; a plug-in that scales alpha fails that assertion for
-  the right output and the wrong reason.
+- **`--set` means "scale RGB, leave alpha" unless `--set-status-only` is
+  passed.** The single-instance check asserts exactly that. `templates/minimal-ofx`
+  multiplies *every* channel by `gain` — correct for that effect — so its suite
+  passes no `--set` and relies on the contract's other checks; a plug-in that
+  scales alpha fails that assertion for the right output and the wrong reason.
+  For a parameter that is not a gain (a class filter, a font scale) use
+  `--set-status-only`: it renders, asserts `kOfxStatOK` and that the write was
+  accepted, and skips the `src × atof(value)` comparison. The pixels of a
+  parameter that selects *where* something is drawn belong in a plug-in-specific
+  test, not in this one.
 - **Goldens are planar RGB float, compared exactly.** A plug-in allowed any
   tolerance needs its own comparison; this harness reports the worst deviation but
   fails on any non-zero one.

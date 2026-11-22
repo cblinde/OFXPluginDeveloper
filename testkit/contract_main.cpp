@@ -173,6 +173,10 @@ struct Spec {
   bool byteDstRejected = false;
   bool negativePitch = false;
   bool topOrigin = false;
+  // --set-status-only: render after --set, but assert only the status and that
+  // each write was accepted. The default also compares the frame to
+  // src x atof(value), which only holds for a gain-like parameter.
+  bool setStatusOnly = false;
   // Multi-instance and thread-safety checks. `concurrencyThreads == 0` turns
   // them off; `scaleParam` names a numeric parameter that is given a different
   // value on each instance (e.g. "gain").
@@ -609,9 +613,11 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
   }
 
-  if (!spec.sets.empty() && spec.goldenFile.empty()) {
+  if (!spec.sets.empty() && spec.goldenFile.empty() && !spec.setStatusOnly) {
     // The parameter change must have had an effect: exactly one gain-like scale
-    // is assumed by calling this test with a single numeric override.
+    // is assumed by calling this test with a single numeric override. For any
+    // other parameter pass --set-status-only, which asserts the status and the
+    // accepted write but skips this comparison.
     const std::vector<float> dst = host.destination();
     if (!check("destination is readable", dst.size() == srcRGBA.size(),
                std::to_string(dst.size()) + " floats")) {
@@ -671,10 +677,14 @@ int main(int argc, char** argv) {
                  "usage: contract_test <plugin.ofx> --id <identifier> [--param name:type]...\n"
                  "       [--clip name]... [--set name=value]... [--context <context>]\n"
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
-                 "       [--negative-pitch] [--image-origin top|bottom]\n"
+                 "       [--negative-pitch] [--image-origin top|bottom] [--set-status-only]\n"
                  "       [--src file --golden file --size WxH]\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
-                 "       [--concurrency-iterations N] (threads=0 skips the checks)\n");
+                 "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
+                 "\n"
+                 "--set without --set-status-only assumes the parameter scales RGB by\n"
+                 "atof(value) and leaves alpha alone; use --set-status-only for any\n"
+                 "other parameter.\n");
     return 2;
   }
   spec.path = argv[1];
@@ -737,6 +747,8 @@ int main(int argc, char** argv) {
       spec.expectNotIdentityAfterSet = true;
     } else if (a == "--byte-dst-rejected") {
       spec.byteDstRejected = true;
+    } else if (a == "--set-status-only") {
+      spec.setStatusOnly = true;
     } else if (a == "--negative-pitch") {
       spec.negativePitch = true;
     } else if (a == "--image-origin") {
