@@ -646,6 +646,8 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | CUDA CPU loop | 1,464 components compared, 0 failures |
 | CUDA concurrency | 6 threads, 0 failures, TSan-clean |
 | CUDA bundle | 2 `T` exports (+5 weak `W`); valgrind `0 errors from 0 contexts` |
+| CUDA architectures, user choice | fresh `-DCMAKE_CUDA_ARCHITECTURES=90` → `-- CUDA architectures: 90`; exactly one `--generate-code=arch=compute_90,code=[compute_90,sm_90]` token; a reconfigure without the flag keeps `90` |
+| CUDA architectures, default list | fresh configure → `75;80;86;89;90;100;120`; a reconfigure keeps the list (nvcc's default `52` recorded once as the marker) |
 | Reference build | one command from a tree with no headers/build dir; 2 dynamic symbols total, `dlopen` + `OfxGetPlugin` → 1 plug-in |
 | Inference golden | C++ vs Python max absolute difference = 0 over the frame |
 | Inference tiling | tile 5/13/17/256 and odd 1×1, 7×5, 64×3, 3×48 all `0` |
@@ -660,6 +662,43 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | Artifact + fake host (inference) | 116 checks, 0 failed, render matches the Python golden through the OFX API, four instances × three concurrent renders |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | cppcheck clean, shellcheck clean |
+
+### 13.1 nvcc without a GPU
+
+Device code does not need hardware to compile: `nvcc`, `ptxas` and `nvlink` are
+CPU programs, and only loading the cubin and running it needs a GPU. That makes
+the architecture selection checkable on any Linux box and in CI, which is how
+the arch handling in [`SKILL.md`](SKILL.md) §6 was measured.
+
+```bash
+cd templates/minimal-cuda-ofx
+./build.sh --bootstrap-cuda      # no root, no GPU; ~100 MB under ~/.cache
+TK="${OFX_CUDA_TOOLKIT_DIR:-$HOME/.cache/ofx-cuda-toolkit}/home"
+
+cmake -S . -B /tmp/arch-check -G Ninja \
+  -DOFXPLUGIN_ENABLE_CUDA=ON \
+  -DCMAKE_CUDA_COMPILER="$TK/bin/nvcc" -DCUDAToolkit_ROOT="$TK" \
+  -DCMAKE_CUDA_ARCHITECTURES=90   # drop this line to get the curated list
+# add -DOFX_SOURCE_DIR=/path/to/openfx to skip the OpenFX network fetch
+# -- CUDA architectures: 90 (from CMAKE_CUDA_ARCHITECTURES)
+grep -o -- '--generate-code[^ ]*' /tmp/arch-check/build.ninja | tr -d '"'
+# --generate-code=arch=compute_90,code=[compute_90,sm_90]
+cmake --build /tmp/arch-check   # nvcc + link, still no GPU
+```
+
+`--bootstrap-cuda` reads NVIDIA's `Packages.gz` index and unpacks five `.deb`
+files with `ar` and `tar`; the packages, versions and what each contributes are
+listed in [`README.md`](README.md#artifacts-the-build-pulls-in). It needs
+`curl`, `tar`, `gzip`, `awk` and `ar` — no `apt`, no root, and nothing is
+installed outside `$OFX_CUDA_TOOLKIT_DIR`. Verified here with CUDA 12.9.41 on a
+machine with no GPU: configure, a full `Kernel.cu` compile for `sm_90` and the
+link all succeed.
+
+What such a check proves is the **selection**, not execution: the
+`-- CUDA architectures:` line, the `--generate-code` tokens in the generated
+build files, and that nvcc accepts those targets and emits the object. It says
+nothing about a driver loading the cubin or the kernel computing correctly —
+that is what `test/gpu-kernel-test.cu` is for, and it needs hardware (§13).
 
 Not run here, and therefore not claimed: no GPU execution in this environment
 (the CUDA template is built CPU-only for the runs above), no host render (no

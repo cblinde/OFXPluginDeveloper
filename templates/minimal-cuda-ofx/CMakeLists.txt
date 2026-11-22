@@ -67,7 +67,17 @@ if(OFXPLUGIN_ENABLE_CUDA)
     # the binary to nvcc's legacy default (measured here: 75 only, everything
     # else dropped, no warning) - which is the failure the comment above claims
     # to prevent.
-    if(NOT DEFINED OFXPLUGIN_COMPILER_DEFAULT_ARCHS)
+    #
+    # Only record it when this configure had no user value: a
+    # -DCMAKE_CUDA_ARCHITECTURES=90 is already visible above, so recording the
+    # post-enable_language() value would store the user's list as "the default".
+    # The comparison in section 4 would then see two equal strings and replace
+    # the explicit choice with the curated list. A build tree configured by the
+    # earlier version of this file keeps that stale marker; reconfigure from a
+    # clean directory (or unset OFXPLUGIN_COMPILER_DEFAULT_ARCHS in the cache)
+    # to pick up the fix.
+    if(NOT DEFINED OFXPLUGIN_COMPILER_DEFAULT_ARCHS AND
+       NOT OFXPLUGIN_USER_CUDA_ARCHS)
       set(OFXPLUGIN_COMPILER_DEFAULT_ARCHS "${CMAKE_CUDA_ARCHITECTURES}"
           CACHE INTERNAL "nvcc's default architecture list, used to detect an unset user choice")
     endif()
@@ -187,7 +197,10 @@ if(OFXPLUGIN_ENABLE_CUDA)
     target_link_libraries(${PLUGIN_TARGET} PRIVATE CUDA::cudart)
   endif()
 
-  # A user choice is a value that differs from what enable_language() cached.
+  # A user choice is the value captured before enable_language(). The marker in
+  # section 2 only exists when there was none, so a user list never compares
+  # equal to it; a configure check (no GPU needed) proves this selection, the
+  # STATUS line and the generated --generate-code flags, not that SASS runs.
   if(OFXPLUGIN_USER_CUDA_ARCHS AND
      NOT "${OFXPLUGIN_USER_CUDA_ARCHS}" STREQUAL "${OFXPLUGIN_COMPILER_DEFAULT_ARCHS}")
     set(_ofx_cuda_archs "${OFXPLUGIN_USER_CUDA_ARCHS}")

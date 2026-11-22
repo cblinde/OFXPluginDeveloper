@@ -454,10 +454,16 @@ value is now in the cache, so a second configure over the same build tree sees
 measured: the second configure printed `-- CUDA architectures: 75` and
 generated one `--generate-code`, where a clean configure had seven **[B]**
 ([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3). The
-template therefore records nvcc's default once in an internal cache variable and
-treats `CMAKE_CUDA_ARCHITECTURES` as a user choice only when it differs from
-that default. Any project that ships a curated list needs the same trick; "it
-built" after an incremental reconfigure is not evidence the list survived.
+template therefore records nvcc's default once in an internal cache variable —
+and only on a configure that saw no user value: recording it after
+`-DCMAKE_CUDA_ARCHITECTURES=90` would store the user's list as "the default",
+and the comparison would then reject the explicit choice — and treats a
+differing `CMAKE_CUDA_ARCHITECTURES` as a user choice. Any project that ships a
+curated list needs the same trick; "it built" after an incremental reconfigure
+is not evidence the list survived. A configure check needs no GPU and proves
+the selection only: the `-- CUDA architectures:` line and the `--generate-code`
+flags in the generated build files. Whether the cubin is loadable is a host
+question, and whether the kernel runs needs hardware.
 
 **Do not bake the toolkit path into the bundle.** By default CMake records the
 directory it linked `cudart` from in `RUNPATH` — an absolute build-machine path
