@@ -385,6 +385,7 @@ limits of that run are in
 | CUDA ↔ architecture list | `enable_language(CUDA)` caches nvcc's default; a second configure sees a defined variable | `-- CUDA architectures: 75`, one `--generate-code`, SASS only for Volta | record nvcc's default once and treat a differing `CMAKE_CUDA_ARCHITECTURES` as a user choice |
 | CUDA 13 ↔ runtime import | the Windows image does not import `cudart64_*.dll` even with device code present | `dumpbin /dependents` lists no CUDA DLL | say "device code present, runtime resolved at load"; never print the import you expected |
 | ONNX Runtime ↔ import library | the Windows package keeps headers in `include\`, the import library in `lib\onnxruntime.lib` and the DLL in `bin\onnxruntime.dll` | the build succeeds, the bundle carries a file named `onnxruntime.dll` that the loader rejects, and the plug-in fails at load | link the `.lib`, copy the `.dll`; `templates/onnx-inference-ofx/CMakeLists.txt` resolves both and fails the configure when the DLL is missing |
+| `vswhere` ↔ `for /f` | a `for /f` backtick command whose first **and** last characters are quotes loses both before `cmd /c` runs it, so the program path is split at its first space | `Der Befehl "C:\Program" ist entweder falsch geschrieben oder konnte nicht gefunden werden.` — then the checker reports `dumpbin not found` and every `build.bat` aborts after a correct build | end the command with an unquoted argument (`-property installationPath`) and locate the tool with a `for /d` glob; never pass a quoted `-find` pattern there |
 | platform ↔ architecture directory | the directory name is part of the contract: `Linux-x86-64`, `Linux-aarch64`, `MacOS`, `Win64` | an ARM Linux build links, reports success and lands in `Contents/Linux-x86-64`, which no host scans | derive the directory from `WIN32`/`APPLE`/`CMAKE_SYSTEM_PROCESSOR` once, and set both output properties to it |
 
 **Artifact check, Windows side.** `nm -D`, `readelf` and `dlopen` have direct
@@ -399,7 +400,8 @@ cuobjdump -lelf     <Name>.ofx   # cubins for every architecture in the list
 
 All three `build.bat` scripts call it with `--strict` after the build, and the
 checker resolves the tools itself: `dumpbin` from `PATH`, `%VCToolsInstallDir%`,
-`vswhere -find` or the `Program Files\Microsoft Visual Studio\<year>` layout,
+the newest `VC\Tools\MSVC\*` under vswhere's `-property installationPath`, or the
+`Program Files\Microsoft Visual Studio\<year>` layout,
 `cuobjdump` from `PATH`, `%CUDA_PATH%`, `%CUDA_HOME%` or the toolkit roots. That
 lookup is not optional: a Visual Studio generator build never calls `vcvars64`,
 so neither tool is on `PATH` there, and trusting `PATH` turned the artifact check

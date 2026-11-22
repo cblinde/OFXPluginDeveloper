@@ -14,7 +14,7 @@ rem Studio generator never calls vcvars64.bat - MSBuild gets its environment
 rem internally, and the caller's cmd has neither cl.exe nor dumpbin. Trusting
 rem PATH there turns every artifact check into a printed skip.
 rem
-rem   dumpbin    PATH, %VCToolsInstallDir%\bin\Hostx64\x64, vswhere -find
+rem   dumpbin    PATH, %VCToolsInstallDir%\bin\Hostx64\x64, vswhere installationPath
 rem   cuobjdump  PATH, %CUDA_PATH%\bin, %CUDA_HOME%\bin, the toolkit roots
 rem
 rem --strict makes a missing tool a failure, and build.bat passes it: a build
@@ -61,16 +61,26 @@ for /f "delims=" %%D in ('where dumpbin 2^>nul') do if not defined DUMPBIN set "
 if not defined DUMPBIN if defined VCToolsInstallDir if exist "%VCToolsInstallDir%bin\Hostx64\x64\dumpbin.exe" set "DUMPBIN=%VCToolsInstallDir%bin\Hostx64\x64\dumpbin.exe"
 if not defined DUMPBIN (
   set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+  set "VSPATH="
   if exist "!VSWHERE!" (
-    rem -find accepts ** and returns every match; the first is the newest
-    rem instance that actually carries the C++ toolset (-requires filters it).
-    for /f "usebackq delims=" %%P in (`"!VSWHERE!" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe"`) do (
-      if not defined DUMPBIN set "DUMPBIN=%%~P"
+    rem -property installationPath, not -find: a for /f command that begins AND
+    rem ends with a quote loses both before cmd /c runs it, so
+    rem   "C:\Program Files (x86)\...\vswhere.exe" ... -find "VC\..."
+    rem starts with C:\Program and fails on every default install. The -property
+    rem form ends unquoted, which is why build.bat's generator lookup works.
+    for /f "usebackq delims=" %%P in (`"!VSWHERE!" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%P"
+  )
+  if defined VSPATH (
+    rem One wildcard per for /d: FindFirstFile accepts them only in the last
+    rem path element. Version directories sort lexically, and the last one is
+    rem the newest toolset that was actually installed.
+    for /d %%M in ("!VSPATH!\VC\Tools\MSVC\*") do (
+      if exist "%%~fM\bin\Hostx64\x64\dumpbin.exe" set "DUMPBIN=%%~fM\bin\Hostx64\x64\dumpbin.exe"
     )
   )
 )
 if not defined DUMPBIN (
-  rem Fallback for a vswhere too old to support -find: the documented install
+  rem Fallback when vswhere is missing or reports no instance: the documented
   rem layout is Program Files\Microsoft Visual Studio\<year>\<edition>\VC\Tools\MSVC.
   rem One wildcard per for /d, because FindFirstFile takes wildcards only in the
   rem last path element.
@@ -85,9 +95,10 @@ if not defined DUMPBIN (
 if not defined DUMPBIN (
   if "%STRICT%"=="1" (
     echo check-ofx-artifact: FAILED - dumpbin not found
-    echo   looked on PATH, in %%VCToolsInstallDir%%\bin\Hostx64\x64 and through
-    echo   vswhere -find. Install the MSVC C++ toolset ^(Desktop development
-    echo   with C++^), or run this from a Developer Command Prompt.
+    echo   looked on PATH, in %%VCToolsInstallDir%%\bin\Hostx64\x64, under vswhere's
+    echo   installationPath and in the Program Files layout. Install the MSVC C++
+    echo   toolset ^(Desktop development with C++^), or run this from a
+    echo   Developer Command Prompt.
     exit /b 3
   )
   echo   artifact: skipped ^(dumpbin not found on PATH, in VCToolsInstallDir or via vswhere^)
