@@ -42,6 +42,7 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | The questions to answer before shipping, each one settled by a header line or a spec sentence, plus the automated gates that answer half of them |
 | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | Putting a neural network in an OFX plug-in: what six shipped projects do, Python/Rust/C#/JS/Julia embedding hazards, ONNX Runtime's exact API, and when CUDA is worth it |
 | [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | New to OFX: the three implementation tiers, the patterns worth copying, anti-patterns by their tells, and a seven-step reading plan — every claim anchored to a file and line |
+| [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | The lookup table: task → proven pattern → the file that implements it, plus symptom and property routes and what ten shipped AI repositories teach and warn against |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | The buildable template: CMake + OFX host wrapper + CUDA kernel + CPU fallback |
 | [`templates/onnx-inference-ofx/`](templates/onnx-inference-ofx/) | The buildable inference template: ONNX Runtime session, pitch-correct packing, tiled inference, golden-file tests |
 
@@ -370,6 +371,7 @@ HOST_COMPATIBILITY_MATRIX.md         per-host differences
 PREFLIGHT_REVIEW_CHECKLIST.md        pre-ship questions, each with the line that settles it
 AI_MODEL_INTEGRATION.md              model runtimes, language embedding, CUDA decision rules
 REFERENCE_READING_GUIDE.md           how to read OFX code: tiers, patterns, anti-patterns, reading plan
+PATTERN_INDEX.md                     lookup: task -> pattern -> code, symptom, property; external AI repos
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp        OFX host wrapper: params, dispatch, isIdentity

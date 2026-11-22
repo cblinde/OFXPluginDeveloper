@@ -21,29 +21,40 @@ measurement. Where a number appears it is either a size, an exact CPU result fro
 
 ## 1. What shipped plug-ins actually do
 
-Six open-source OFX plug-ins were read for this document. They converge on one
-architecture and disagree on everything else, which is itself the finding.
+Ten repositories were read for this document: eight OFX plug-ins, one Nuke NDK
+node and one set of libtorch examples. They converge on the object model and
+disagree on everything else, which is itself the finding.
 
 | Project | Task | Runtime | Language | How the model is fed |
 |---|---|---|---|---|
 | [`CorridorKey-Runtime`](https://github.com/alexandremendoncaalvaro/CorridorKey-Runtime) | keying / matting | ONNX Runtime + TensorRT RTX EP (Windows), ORT CUDA EP (Linux, experimental), MLX (macOS), TorchScript (one model) | C++20 | thin IPC client + separate runtime server process, shared memory, sessions pooled by a broker (**B**) |
 | [`corridorkey_ofx`](https://github.com/gitcapoom/corridorkey_ofx) | keying / matting | PyTorch (`torch.compile`, Triton) | C++ OFX + Python backend | named pipe for control, shared-memory float32 RGBA frames, 16-byte header (**B**) |
-| [`Flame_LTXAlphaGen_OFX`](https://github.com/allklier/Flame_LTXAlphaGen_OFX) | matting (video diffusion) | PyTorch 2.x, CUDA / MPS | C++ OFX + Python worker | background Python process, per-frame cache, temporal chunks (**B**) |
+| [`Flame_LTXAlphaGen_OFX`](https://github.com/allklier/Flame_LTXAlphaGen_OFX) (forks: `flamelogik`, `tbdpost`) | matting (video diffusion) | PyTorch 2.x, CUDA / MPS | C++ OFX + Python worker | **staged job + disk cache**: the host looks up mattes and never waits on the model; temporal chunks (**B**) |
 | [`MoGe-nuke`](https://github.com/sumitchatterjee13/MoGe-nuke) | depth / normals | PyTorch + Triton daemon | raw OFX C API + Python daemon | localhost TCP, synchronous per frame (**B**) |
 | [`DaVinci-Resolve-DLSS5`](https://github.com/SAOG0721/DaVinci-Resolve-DLSS5) | neural denoise | NVIDIA NGX (DLSS-NR) | C++ | in-process, D3D12 textures, in-tree C++ (**B**) |
 | [`Hush-OpenNR`](https://github.com/amateurmenace/Hush-OpenNR) | denoise | none (classical NLM) | C++ | the useful counter-example: no network at all (**B**) |
+| [`rvmofx`](https://github.com/smunaut/rvmofx) | background removal (RVM) | TorchScript via libtorch, in-process | C++ | models ship in `Contents/Resources/`; proved in Resolve 18.1, but only with the **non-cxx11** libtorch build (**B**) |
+| [`mattclifford1/OFX-plugins`](https://github.com/mattclifford1/OFX-plugins) | libtorch examples (CPU/CUDA) | libtorch, in-process | C++ | the smallest libtorch starting point — and the README records that Resolve cannot load libtorch's CUDA dependencies (**B**) |
+| [`houdini-ofx-plugins`](https://github.com/zhangxiao6776/houdini-ofx-plugins) | depth and 7 creative effects | ORT C++ in-process (session caching) + Python subprocess + `Auto` fallback; CoreML on Apple Silicon | C++ / Python | a real two-backend design with C++/Python cross-verification tests (**B**) |
+| [`Nuke-ONNX`](https://github.com/aaronsmithtv/Nuke-ONNX) | ONNX inference for Nuke | ORT in-process, up to 10 inputs | C++ | **NDK, not OFX**; useful only as a contrast in scope (**B**) |
 
 What to take from them:
 
-- **The model almost never lives in the plug-in binary.** Four of six run the
-  network in a separate process and move frames through shared memory. That buys
-  crash isolation (a bad model kills a worker, not Resolve), a different
-  toolchain per side, and a Python/PyTorch stack the OFX module could not carry.
-  `CorridorKey-Runtime` is the most developed version of this: the `.ofx` is a
-  thin IPC client and sessions are pooled by a broker (**B**).
-- **In-process is viable when the runtime is C and the model is ONNX.**
-  `DaVinci-Resolve-DLSS5` is entirely in-process, but it uses a vendor runtime
-  (NGX) rather than a Python stack (**B**).
+- **The split is decided by the runtime, not by OFX.** Of the eight OFX plug-ins,
+  four run the model out of process, and every one of those needs Python/PyTorch
+  (`CorridorKey-Runtime`, `corridorkey_ofx`, LTX, `MoGe-nuke`). The four that keep
+  it in the binary all use a C/C++ runtime: NGX (`DaVinci-Resolve-DLSS5`),
+  libtorch twice (`rvmofx`, the `mattclifford1` examples) and ONNX Runtime
+  (`houdini-ofx-plugins`). The rule is **Python → sidecar, C runtime →
+  in-process** (**B**).
+- **libtorch is the awkward middle.** It works in-process — `rvmofx` ships
+  TorchScript models in `Contents/Resources/` and ran in Resolve 18.1 — but it
+  demands the non-cxx11 ABI build, and the `mattclifford1` README records that
+  Resolve cannot load libtorch's CUDA dependencies at all (**B**). If you need
+  CUDA torch, that is an argument for the sidecar, not for more `rpath` flags.
+- **In-process is viable when the runtime is C.** `DaVinci-Resolve-DLSS5` uses a
+  vendor runtime (NGX) rather than a Python stack, and `houdini-ofx-plugins` runs
+  ONNX Runtime with a session cache (**B**).
 - **Nobody tiles by accident.** `CorridorKey-Runtime` exposes a model-resolution
   ladder chosen from the input's larger dimension (≤1000→512, ≤2000→1024,
   ≤3000→1536, >3000→2048) plus an explicit "Enable Tiling" toggle with a tile
@@ -69,13 +80,31 @@ found; the AI upscalers in the wild are TouchDesigner, C# or ComfyUI nodes, and
 `NNFlowVector` is commercial. `Nuke-ONNX` exists but is a Nuke NDK op, not OFX,
 and its `use_gpu` knob is disabled (**B**).
 
+### 1.1 What their own documentation says to avoid
+
+1. **A synchronous daemon blocks the host.** `MoGe-nuke` does per-frame TCP and
+   the LTX plug-in explicitly does not ("Flame never waits on the model"); the
+   fix is a job with progress, cancel and a cache, not a faster socket.
+2. **Do not rely on `PATH` for a runtime.** The `mattclifford1` examples require
+   libtorch on `PATH`; users report that as "the plug-in disappeared". Bundle it
+   beside the `.ofx` with `$ORIGIN` instead.
+3. **libtorch + CUDA in-process is a known dead end in Resolve.** Same README.
+4. **ONNX Runtime's CoreML EP fragments the graph.** `houdini-ofx-plugins`
+   reports partition fragmentation and uses native CoreML on Apple Silicon
+   instead. One execution provider is not a portability strategy.
+5. **Licences travel with code.** `rvmofx` is GPL-3.0 and CorridorKey's weights
+   are non-commercial; read those repositories for patterns, do not paste from
+   them into a distributed plug-in.
+6. **Forks drift.** The LTX plug-in exists in at least three repositories; pin a
+   commit and identify upstream before learning from one.
+
 ---
 
 ## 2. The four architectures, and when each is right
 
 | Shape | Latency | Crash isolation | Packaging | Best when |
 |---|---|---|---|---|
-| **In-process C/C++ runtime** (ONNX Runtime, TensorRT, OpenVINO, NGX) | lowest: no IPC, device pointers can be shared | none: a bad model takes the host down | one `.ofx` + one runtime `.so` (~34 MB for ORT CPU, see §8) | the model is ONNX/plan/TensorRT and the runtime ships as C |
+| **In-process C/C++ runtime** (ONNX Runtime, TensorRT, libtorch, OpenVINO, NGX) | lowest: no IPC, device pointers can be shared | none: a bad model takes the host down | one `.ofx` + one runtime `.so` (~34 MB for ORT CPU, see §8) | the model is ONNX/plan/TensorRT and the runtime ships as C |
 | **Sidecar process** (separate binary, shared memory or socket) | one IPC hop per frame; predictable | full: worker dies, host survives | two binaries, a protocol, and a supervisor | Python/PyTorch stack, heavy deps, or a model you do not trust |
 | **Embedded language runtime** (CPython, .NET, V8, Julia) | depends on the language's call overhead and thread rules | none | you ship a runtime inside a plugin | almost never; see §3 |
 | **Host-native API** (CoreML, Metal/MPS, NGX) | lowest on its platform | none | platform-specific | you are already platform-specific and the host supports it |

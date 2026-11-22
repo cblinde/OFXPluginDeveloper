@@ -19,6 +19,7 @@ touches their subject:
 | [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | Before shipping: the questions to answer, each with the header line or spec sentence that settles it |
 | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | A neural network in the plug-in: integration shapes, language-runtime hazards, ONNX Runtime API, CUDA decision rules |
 | [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | New to the codebase: which implementations to trust, patterns to copy, anti-patterns by their tells, and the twelve questions to ask of any plug-in |
+| [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | "I need to do X": the pattern, the file that proves it, the symptom that means you got it wrong, and which shipped AI repository to learn from |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | Starting a new plugin, or needing a known-good reference |
 
 ---
@@ -77,6 +78,7 @@ BEST_PRACTICES_AND_PERFORMANCE.md      performance rules, reference-project less
 PREFLIGHT_REVIEW_CHECKLIST.md          pre-ship questions, each citing the line that settles it
 AI_MODEL_INTEGRATION.md                model integration: runtimes, languages, when CUDA pays
 REFERENCE_READING_GUIDE.md             reading OFX code: tiers, patterns, tells, reading plan
+PATTERN_INDEX.md                       lookup by task, symptom and property; external AI repos
 templates/minimal-cuda-ofx/
   CMakeLists.txt                       bundle-producing build
   src/Plugin.h                         host wrapper declarations
