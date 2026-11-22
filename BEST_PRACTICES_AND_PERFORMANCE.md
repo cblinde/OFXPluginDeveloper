@@ -244,10 +244,11 @@ threads, and the symptom appears in *another* plugin's render.
 ### 5.7 The Support library logs once per render
 
 `process()` calls `OFX::Log::print("processing via CUDA")` (or `... CPU`) on
-every render **[S]**. At 24–60 fps in a host that echoes plugin messages to the
-console, that is a visible stream of lines and a host call you did not ask for.
-Harmless functionally; confusing when you are reading a log for a different
-reason.
+every render **[S]**. `print` appends to `ofxPluginLog.txt`
+(`OFX_PLUGIN_LOGFILE`), and only when Support was built with `DEBUG` — so in
+Release it costs a call that does nothing, and in Debug it grows a file by one
+line per render. Neither reaches the host's UI; see `SKILL.md` §7 for the channel
+that does.
 
 ---
 

@@ -639,10 +639,19 @@ render farm, profile a single-frame render or a still, not a sequence.
 
 ### Logging without a console
 
-`OFX::Log::print()` routes through `OfxMessageSuite`. It is **printf-style** —
+`OFX::Log::print()` does **not** reach the host. It appends to a file named by
+`OFX_PLUGIN_LOGFILE` (default `ofxPluginLog.txt`), and Support opens that file
+only when it was built with `DEBUG` (`Support/Library/ofxsLog.cpp:39-49`), so in
+the Release build a user runs every call is silent. It is **printf-style** —
 `print(const char* format, ...)` — so pass a literal format and arguments
 (`print("launch failed: %s", msg)`), not a `std::string`: concatenating a
 `std::string` and passing it as the format argument does not compile.
+
+For a message the user actually sees, post it through the host's message suite:
+`OFX::ImageEffect::setPersistentMessage(OFX::Message::eMessageError, id, msg)`
+(`Support/include/ofxsImageEffect.h:1067`). It needs message suite v2; when the
+host offers only v1 the Support wrapper throws a host-missing-suite exception, so
+keep the file log as well instead of trading one silent channel for a crash.
 For anything that must survive a crash, also append to a file:
 
 ```cpp

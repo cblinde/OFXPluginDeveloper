@@ -270,7 +270,8 @@ Copy the bundle into the host's plugin directory (§6). Start the host, then:
 
 ### Phase 8 — Debug and profile
 
-See §7. Log through `OfxMessageSuite` (`OFX::Log::print`), never `stdout`.
+See §7. `OFX::Log::print` writes a *file* and only in a `DEBUG` build; the
+host-visible channel is `setPersistentMessage` (§7). `stdout` reaches nothing.
 
 ---
 
@@ -454,8 +455,20 @@ also set `CUDA_RESOLVE_DEVICE_SYMBOLS ON`.
 ## 7. Debugging quick reference
 
 **You cannot see `stdout`.** A GUI host has no console attached; `printf` goes
-nowhere. Use `OFX::Log::print()` (wraps `OfxMessageSuite`), or write your own file
-logger into a temp directory. Every error path must log *and* throw.
+nowhere. Two channels are easily confused:
+
+- `OFX::Log::print()` writes a **file** (`OFX_PLUGIN_LOGFILE`, default
+  `ofxPluginLog.txt`), and Support opens that file only when it was compiled with
+  `DEBUG` (`Support/Library/ofxsLog.cpp:39-49`) — in the Release build a user
+  runs, the call silently does nothing. Keep it as a developer-build trace, or
+  write your own file logger into a temp directory.
+- For a message the user can see in the timeline, post it through the host's
+  message suite: `OFX::ImageEffect::setPersistentMessage(OFX::Message::eMessageError,
+  id, msg)` (`Support/include/ofxsImageEffect.h:1067`). It needs message suite
+  v2, which not every host offers, so pair it with the file log rather than
+  replacing one silent channel with another host-missing exception.
+
+Every error path must report *and* throw a specific code.
 
 **The host blacklists crashing plugins.** Resolve records a plugin that crashed
 or hung and skips it on the next start **[B]**. After fixing a crash, the plugin may
