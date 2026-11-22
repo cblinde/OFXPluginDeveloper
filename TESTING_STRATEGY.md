@@ -48,9 +48,9 @@ column perfectly and never ran the right one.
 | Layer | What it tests | Cost to build | What it catches | Here |
 |---|---|---|---|---|
 | **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | both templates |
-| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | exports checked; dlopen recipe below |
+| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | both templates: `testkit/`, 74 + 80 checks |
 | **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) §1 |
-| **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | **not built here** |
+| **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | both templates: `testkit/fake_host.*` |
 | **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | both templates |
 | **L5** memory | ASan, UBSan, TSan, valgrind | an hour | UB, leaks, data races | both templates |
 | **L6** concurrency | thread-safety claims | an hour | races in per-instance state | kernel reentrancy proven |
@@ -131,13 +131,41 @@ ABI; a mismatch is a crash at load, not a compile error. Add a `static_assert` o
 `sizeof(OfxPlugin)` if you generate bindings by hand (the Rust template's
 approach, if it ever ships, needs exactly this).
 
-**Unload.** Call `dlclose` in a loop (say 50 times) and re-`dlopen`. Static
-destructors, cached sessions and thread-local state all run here; a crash at
-unload looks like "the host crashes on quit" to a user.
+**Unload.** Call `dlclose` and re-`dlopen`. Static destructors, cached sessions
+and thread-local state all run there; a crash at unload looks like "the host
+crashes on quit" to a user.
 
-This repository checks exports in both templates' suites; the dlopen loop is
-**not shipped as a script** — the enumeration was verified on the authoring
-machine (SKILL.md §12) but the guide you are reading is the reason to add it.
+**Built here.** `testkit/contract_main.cpp` is the shipped version of this
+recipe, and both templates run it against the binary their own `build.sh`
+produced — it does not link the plug-in, it `dlopen`s it:
+
+```bash
+./run-tests.sh        # builds both templates, then runs every suite below
+# per template, the step is:
+testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
+/tmp/contract_test build/bundle/<Name>.ofx.bundle/Contents/Linux-x86-64/<Name>.ofx \
+  --id com.ofxplugindeveloper.minimalcudagain \
+  --param gain:double --param gainAlpha:double --clip Source --clip Output \
+  --identity --set gain=2.0 --not-identity-after-set --byte-dst-rejected
+```
+
+Measured (CPU-only build of the CUDA template, this machine): **74 checks, 0
+failed** for `MinimalCudaGain`, **80 checks, 0 failed** for `OnnxInference`. The
+checks are: the two export symbols; `pluginApi`, `apiVersion`, non-empty
+`pluginIdentifier` (stable across a second load), `pluginVersionMajor/Minor`;
+non-null `setHost`/`mainEntry`; and then a whole `describe → describeInContext →
+createInstance → isIdentity → render → destroyInstance → unload` sequence run
+**twice in one process**, each time followed by `dlclose`.
+
+**A finding from building it, worth knowing before you copy the loop:** the OFX
+1.5.1 Support library's `unloadAction()`
+(`.ofx-ref/Support/Library/ofxsImageEffect.cpp:2015`–`:2016`) does
+`gEffectDescriptors.find(id)` and dereferences the iterator **without checking
+for `end()`**. A host that unloads a plug-in it never described therefore crashes
+*inside the library*, not in the plug-in. The harness always describes first, and
+a second cycle must be a full cycle — `load → describe → … → unload` — not just
+`load → unload`. That crash was observed here (SIGSEGV at `mainEntryStr`) before
+the second cycle was made complete.
 
 ---
 
@@ -199,11 +227,106 @@ What a fake host cannot prove, and must not be credited with: real host image
 lifetimes and caching, real thread scheduling, host-specific RoD/proxy behaviour,
 colour management, and anything GPU (a fake host has no device pointers).
 
-**Status in this repository: not built.** The SDK does not give you one —
-`.ofx-ref/Support/` contains the plug-in-side library, the sample plug-ins and
-`PropTester`, which is itself a plug-in (it builds via `add_ofx_plugin`) for
-exercising host features. A fake host is therefore something you write, and the
-templates currently test around it rather than through it.
+**Built here: `testkit/`.** The SDK does not give you a host — `.ofx-ref/Support/`
+contains the plug-in-side library, the sample plug-ins and `PropTester`, which is
+itself a plug-in (it builds via `add_ofx_plugin`). So the host was written, once,
+and both templates share it rather than each carrying a copy.
+
+### 5.1 What is in it
+
+| File | Lines | What it is |
+|---|---|---|
+| `testkit/fake_host.h` | public API | `FakeHost` plus the image options (padding, negative pitch, byte destination) |
+| `testkit/fake_host.cpp` | ~1,100 | the five suites + message suite, the object model (descriptor, instance, clips, parameters, images) |
+| `testkit/contract_main.cpp` | ~500 | the checks, the `dlopen`, and the command line |
+| `testkit/build-contract-test.sh` | ~50 | compiles both into one binary; finds headers from the template's `CMakeCache.txt` |
+| `testkit/negative-controls/` | 2 stubs | deliberately broken plug-ins that prove the harness fails |
+| `testkit/run-negative-controls.sh` | ~70 | builds the controls, asserts each is rejected with the right message |
+
+Coverage, precisely: all **18** `OfxPropertySuiteV1` functions (including the `*N`
+and `propGetDimension` variants), all **13** `OfxImageEffectSuiteV1` functions,
+all **18** `OfxParameterSuiteV1` functions, all **9** `OfxMultiThreadSuiteV1`
+functions (single-threaded `multiThread`, real mutexes), both memory functions,
+and `message`. `fetchSuite` returns `nullptr` for everything else — so a plug-in
+that fetches an optional suite is exercised against a host that does not have it.
+
+It drives, in one process and twice over:
+
+```
+setHost → load → describe → describeInContext → createInstance
+        → isIdentity → [set parameters] → isIdentity → render
+        → destroyInstance → unload → dlclose
+```
+
+and asserts, beyond status codes: the requested context appears in
+`kOfxImageEffectPropSupportedContexts`; `kOfxImageEffectPluginRenderThreadSafety`
+is one of the three legal values; every expected parameter exists **with the
+declared type**; every expected clip exists; `isIdentity` returns the source clip
+at neutral settings and `kOfxStatReplyDefault` once a setting changes the output;
+`render` writes the expected pixels (a scale of the source, or a golden file); and
+a byte destination is rejected with `kOfxStatErrUnsupported`.
+
+### 5.2 How to reuse it for your own plug-in
+
+1. Copy `testkit/` into your repository (it is self-contained; it needs only the
+   OFX headers and `-ldl`).
+2. Build it: `testkit/build-contract-test.sh out/contract_test /path/to/openfx`.
+3. Call it from your test script with your own expectations:
+
+```bash
+out/contract_test out/MyPlugin.ofx \
+  --id com.example.myplugin --version 1.0 \
+  --param gain:double --param mode:string \
+  --clip Source --clip Output \
+  --identity --set gain=2.0 --not-identity-after-set --byte-dst-rejected
+```
+
+4. For an image effect whose output you can compute independently, add
+   `--src input.bin --golden expected.bin --size 640x480` (planar float32,
+   3 channels). The render is then compared bit-for-bit against a file the
+   plug-in did not produce.
+5. Edit the expectations when your declarations change — that edit is the point:
+   a parameter that silently changes type is exactly the bug the harness exists
+   to catch.
+
+### 5.3 Proof that it can fail
+
+A harness that has only ever passed is untested. Two controls, run by
+`testkit/run-negative-controls.sh` (deliberately **not** part of `./run-tests.sh`,
+so the normal run stays green):
+
+```
+--- negative control: describe returns kOfxStatReplyDefault ---
+  ok 14 - kOfxActionLoad
+  FAIL kOfxActionDescribe: kOfxStatReplyDefault
+  contract_test: 15 checks, 1 failed
+  caught (exit 1) with: FAIL kOfxActionDescribe: kOfxStatReplyDefault
+
+--- negative control: parameter declared with the wrong type ---
+  ok 19 - param 'gain' declared
+  FAIL param 'gain' type: OfxParamTypeInteger (expected OfxParamTypeDouble)
+  contract_test: 20 checks, 1 failed
+  caught (exit 1) with: FAIL param 'gain' type: OfxParamTypeInteger (expected OfxParamTypeDouble)
+
+negative controls: both faults detected, harness is not a rubber stamp
+```
+
+The first stub answers `kOfxActionDescribe` with `kOfxStatReplyDefault`; the
+second declares `gain` as `OfxParamTypeInteger`. Neither is caught by a compiler
+and neither crashes — only reading the status code and the declarations catches
+them, which is the difference between this layer and L0.
+
+### 5.4 What the fake host still cannot prove
+
+1. **The multi-resolution and tile protocol.** It never sets
+   `kOfxImageEffectPropTilesRoD` and never slices a render window, so a
+   `setSupportsTiles(true)` path is untested here.
+2. **Clip preferences and host scheduling.** `getClipPreferences`, per-clip depths
+   and PARs, and concurrent renders of several instances are not exercised;
+   `multiThread` runs the function once, on one thread.
+3. **How a real host reports errors.** The message suite only records strings —
+   nothing here proves an error reaches a user, that progress appears, or that
+   cancel works mid-render.
 
 ---
 
@@ -256,11 +379,18 @@ a decision; a bare `EXPECT_NEAR` is not.
 | ASan + UBSan | `SANITIZE=address,undefined ./test/run-tests.sh` | heap overflows, use-after-free, signed overflow, misaligned access | host-visible leaks (images you never released) |
 | TSan | `SANITIZE=thread ./test/run-tests.sh` | data races in your per-instance state | races inside the host |
 | valgrind | `RUN_VALGRIND=1 ./test/run-tests.sh` | uninitialised reads, leaks, invalid frees | CUDA/GPU allocations |
+| valgrind, contract | `RUN_VALGRIND=1 ./test/run-tests.sh` (step 5) | the same, but over `dlopen` + describe + render paths a unit test never reaches | allocations made by the host application |
 | allocation counter | global `operator new` counter around a render | per-frame allocation (a performance bug with a memory symptom) | allocations inside a runtime you link |
 
 Measured here: the CUDA template's suite is clean under ASan/UBSan and under
-valgrind (`ERROR SUMMARY: 0 errors from 0 contexts`). The inference template is
-clean under ASan/UBSan.
+valgrind (`ERROR SUMMARY: 0 errors from 0 contexts`), for the kernel harness
+**and** for the contract harness. The inference template's contract harness is
+clean under ASan/UBSan (74/74 and 80/80 checks, no sanitizer report) and under
+valgrind: `0 errors from 0 contexts`, `definitely lost: 0 bytes`,
+`indirectly lost: 0 bytes`, with 15,965 bytes still reachable in 21 blocks —
+that is ONNX Runtime's process-lifetime arena plus the Support library's static
+descriptors, not a leak, which is why the memcheck step uses
+`--errors-for-leak-kinds=definite`.
 
 Two things ASan will never see, and you must test instead:
 
@@ -404,13 +534,22 @@ does *not* prove; §2–§4 are the questions a reviewer signs off.
 Reproduce all of it from a clean checkout; nothing needs a GPU or a host.
 
 ```bash
-# CUDA template: kernels, CPU loop, concurrency, PTX, bundle, valgrind
-cd templates/minimal-cuda-ofx && ./build.sh && ./test/run-tests.sh
+# Everything, both templates: build, unit, image, artifact, fake host, memcheck
+ONNXRUNTIME_ROOT=/path/to/ort ./run-tests.sh
 
-# Inference template: packing, golden, tiling, negative control, bundle
+# Or one template at a time:
+cd templates/minimal-cuda-ofx && ./build.sh && ./test/run-tests.sh
 cd templates/onnx-inference-ofx && ONNXRUNTIME_ROOT=/path/to/ort \
   ./build.sh && ./test/run-tests.sh
+
+# Proof that the harness detects faults (two deliberate failures, not in the run above)
+testkit/run-negative-controls.sh
 ```
+
+`./run-tests.sh` exits 0 with `RUN_VALGRIND=0` in about two minutes on the
+authoring machine; with memcheck enabled (the default when valgrind is on
+`PATH`) it takes close to five. `CPU_ONLY=1` forces the CUDA template's CPU path
+when no toolkit is installed.
 
 Measured on the machine that wrote this document (Linux x86-64, no GPU, no host):
 
@@ -424,11 +563,15 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | Inference tiling | tile 5/13/17/256 and odd 1×1, 7×5, 64×3, 3×48 all `0` |
 | Inference control | `halo = 0` deviates by `0.263276` (expected) |
 | Inference bundle | 2 exports, `NEEDED libonnxruntime` = 1, `RUNPATH $ORIGIN` = 1 |
+| Artifact + fake host (CUDA) | 74 checks, 0 failed, two load/unload cycles |
+| Artifact + fake host (inference) | 80 checks, 0 failed, render matches the Python golden through the OFX API |
+| Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | cppcheck clean, shellcheck clean |
 
-Not run here, and therefore not claimed: no dlopen script (recipe in §3), no fake
-host (§5), no GPU execution, no host render, no performance numbers, and no
-Windows build.
+Not run here, and therefore not claimed: no GPU execution (the CUDA template was
+built CPU-only for the runs above), no host render (no Resolve/Nuke/Natron in
+this environment), no performance numbers, no Windows build, and no
+multi-resolution/tile-protocol test (the fake host does not speak it — §5.4).
 
 ---
 
@@ -447,9 +590,12 @@ Windows build.
 
 ---
 
-**Honest summary.** The layers in this document are ordered by cost, and this
-repository stops at L6: everything that needs a GPU, a host, or a fake host is
-described rather than demonstrated. That is a real gap, and it is stated in the
-same terms in [`SKILL.md`](SKILL.md) §12 and
-[`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) §9 — a plug-in that has
-never rendered in a host is not verified, no matter how many unit tests pass.
+**Honest summary.** The layers in this document are ordered by cost. This
+repository now demonstrates L0–L6 and the two layers it used to only describe:
+L1 runs as `testkit/contract_main.cpp` and L3 as `testkit/fake_host.cpp`, both
+against the real built binaries, with negative controls proving they can fail.
+What remains genuinely unbuilt is L7 (timings), the GPU execution path, and L8
+(a real host): a plug-in that has never rendered in Resolve, Nuke or Natron is
+not verified, no matter how many unit and contract tests pass. That is stated in
+the same terms in [`SKILL.md`](SKILL.md) §12 and
+[`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) §9.

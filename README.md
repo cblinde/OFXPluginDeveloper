@@ -44,6 +44,7 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | New to OFX: the three implementation tiers, the patterns worth copying, anti-patterns by their tells, and a seven-step reading plan — every claim anchored to a file and line |
 | [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | The lookup table: task → proven pattern → the file that implements it, plus symptom and property routes and what ten shipped AI repositories teach and warn against |
 | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | How to test a plug-in properly: ten layers from pure maths to host acceptance, what each proves and cannot prove, the failure-injection table, and what this repository actually runs |
+| [`testkit/`](testkit/) | The runnable host harness: loads a built `.ofx` with `dlopen`, checks the `OfxPlugin` struct, then drives describe/describeInContext/render through a hand-written host — shared by both templates, with two negative controls proving it can fail |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | The buildable template: CMake + OFX host wrapper + CUDA kernel + CPU fallback |
 | [`templates/onnx-inference-ofx/`](templates/onnx-inference-ofx/) | The buildable inference template: ONNX Runtime session, pitch-correct packing, tiled inference, golden-file tests |
 
@@ -374,6 +375,8 @@ AI_MODEL_INTEGRATION.md              model runtimes, language embedding, CUDA de
 REFERENCE_READING_GUIDE.md           how to read OFX code: tiers, patterns, anti-patterns, reading plan
 PATTERN_INDEX.md                     lookup: task -> pattern -> code, symptom, property; external AI repos
 TESTING_STRATEGY.md                  testing layers, measured results, failure injection, host acceptance
+run-tests.sh                         one command: build both templates, run every suite
+testkit/                             dlopen + fake-host contract harness (shared), negative controls
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp        OFX host wrapper: params, dispatch, isIdentity

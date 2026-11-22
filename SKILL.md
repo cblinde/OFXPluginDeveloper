@@ -21,6 +21,7 @@ touches their subject:
 | [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | New to the codebase: which implementations to trust, patterns to copy, anti-patterns by their tells, and the twelve questions to ask of any plug-in |
 | [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | "I need to do X": the pattern, the file that proves it, the symptom that means you got it wrong, and which shipped AI repository to learn from |
 | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | Testing a plug-in to ship it: ten layers, goldens and negative controls, sanitizers, concurrency, host acceptance, failure injection, CI |
+| [`testkit/`](testkit/) | Running the artifact and fake-host layers: `./run-tests.sh` loads each built `.ofx`, checks the struct, and drives describe/render without a host |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | Starting a new plugin, or needing a known-good reference |
 
 ---
@@ -81,6 +82,8 @@ AI_MODEL_INTEGRATION.md                model integration: runtimes, languages, w
 REFERENCE_READING_GUIDE.md             reading OFX code: tiers, patterns, tells, reading plan
 PATTERN_INDEX.md                       lookup by task, symptom and property; external AI repos
 TESTING_STRATEGY.md                    testing layers, what each proves, host acceptance script
+run-tests.sh                           build both templates + run every suite
+testkit/                               dlopen + fake-host harness, negative controls
 templates/minimal-cuda-ofx/
   CMakeLists.txt                       bundle-producing build
   src/Plugin.h                         host wrapper declarations

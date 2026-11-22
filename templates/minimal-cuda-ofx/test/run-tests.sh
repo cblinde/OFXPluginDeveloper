@@ -9,8 +9,12 @@
 #   2. PTX instruction counts, when nvcc is on PATH - a compile-time check, so
 #      it is unaffected by any runtime sanitizer
 #   3. bundle hygiene (exports, launcher, fatbin), when a build/ tree exists
-#   4. valgrind memcheck, when valgrind is installed and no sanitizer was asked
-#      for (a sanitizer runtime and memcheck cannot be combined)
+#   4. host contract: dlopen the built .ofx and drive it through a fake host
+#      (testkit/), twice, in one process - describe, describeInContext,
+#      createInstance, isIdentity, render, destroyInstance, unload
+#   5. valgrind memcheck over both harnesses, when valgrind is installed and no
+#      sanitizer was asked for (a sanitizer runtime and memcheck cannot be
+#      combined)
 #
 # Environment:
 #   CXX           C++17 compiler                     (default: g++)
@@ -70,13 +74,13 @@ build_harness()
     "${HERE}/kernel_equivalence.cpp" -o "${out}"
 }
 
-echo "== [1/4] host suite (${CXX_BIN}, sanitizer: ${SAN:-none}) =="
+echo "== [1/5] host suite (${CXX_BIN}, sanitizer: ${SAN:-none}) =="
 build_harness "${TMP}/equiv"
 "${TMP}/equiv"
 
 echo
 if command -v nvcc >/dev/null 2>&1; then
-  echo "== [2/4] PTX instruction counts (nvcc, -arch=${ARCH}) =="
+  echo "== [2/5] PTX instruction counts (nvcc, -arch=${ARCH}) =="
   nvcc -DOFXPLUGIN_WITH_CUDA=1 -arch="${ARCH}" -ptx -o "${TMP}/k.ptx" "${SRC}/Kernel.cu"
 
   entry()
@@ -102,11 +106,11 @@ if command -v nvcc >/dev/null 2>&1; then
     exit 1
   fi
 else
-  echo "== [2/4] PTX check skipped: nvcc not on PATH =="
+  echo "== [2/5] PTX check skipped: nvcc not on PATH =="
 fi
 
 echo
-echo "== [3/4] bundle hygiene =="
+echo "== [3/5] bundle hygiene =="
 BUNDLE_OFX="$(find "${ROOT}/build/bundle" -type f -name '*.ofx' 2>/dev/null | head -1 || true)"
 if [[ -n "${BUNDLE_OFX}" ]]; then
   EXPORTS="$(nm -D --defined-only "${BUNDLE_OFX}" | grep -c ' T ' || true)"
@@ -125,7 +129,22 @@ else
 fi
 
 echo
-echo "== [4/4] valgrind memcheck =="
+echo "== [4/5] host contract (dlopen + fake host) =="
+BUNDLE_OFX="$(find "${ROOT}/build/bundle" -type f -name '*.ofx' 2>/dev/null | head -1 || true)"
+if [[ -n "${BUNDLE_OFX}" ]]; then
+  OFX_CHECKOUT="$(sed -n 's/^OFX_SOURCE_DIR:PATH=//p' "${ROOT}/build/CMakeCache.txt" 2>/dev/null | head -1 || true)"
+  "${ROOT}/../../testkit/build-contract-test.sh" "${TMP}/contract_test" ${OFX_CHECKOUT:+"${OFX_CHECKOUT}"}
+  echo "  ${BUNDLE_OFX#"${ROOT}"/}"
+  "${TMP}/contract_test" "${BUNDLE_OFX}" \
+    --id com.ofxplugindeveloper.minimalcudagain \
+    --param gain:double --param gainAlpha:double --clip Source --clip Output \
+    --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected
+else
+  echo "  skipped: no build/ tree yet (run ./build.sh first)"
+fi
+
+echo
+echo "== [5/5] valgrind memcheck =="
 WANT="${RUN_VALGRIND:-auto}"
 if [[ "${WANT}" == "0" ]]; then
   echo "  skipped: RUN_VALGRIND=0"
@@ -155,6 +174,25 @@ else
     }
   grep -E "ERROR SUMMARY|definitely lost|indirectly lost|possibly lost|still reachable" \
     "${TMP}/vg.log" | sed 's/^==[0-9]*== /  /'
+
+  # Same memcheck pass over the contract harness (dlopen + fake host).
+  if [[ -x "${TMP}/contract_test" && -n "${BUNDLE_OFX}" ]]; then
+    valgrind --error-exitcode=1 --leak-check=full --show-leak-kinds=definite \
+      --errors-for-leak-kinds=definite --track-origins=yes \
+      "${TMP}/contract_test" "${BUNDLE_OFX}" \
+      --id com.ofxplugindeveloper.minimalcudagain \
+      --param gain:double --param gainAlpha:double --clip Source --clip Output \
+      --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
+      > "${TMP}/vg-contract.log" 2>&1 || {
+        echo "  FAIL: memcheck reported errors in the contract test" >&2
+        grep -E "ERROR SUMMARY|Invalid|uninitialised|definitely lost" \
+          "${TMP}/vg-contract.log" | head -20 >&2
+        exit 1
+      }
+    echo "  contract harness:"
+    grep -E "ERROR SUMMARY|definitely lost|indirectly lost" "${TMP}/vg-contract.log" \
+      | sed 's/^==[0-9]*== /    /'
+  fi
 fi
 
 echo
