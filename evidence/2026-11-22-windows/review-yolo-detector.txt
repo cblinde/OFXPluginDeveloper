@@ -105,3 +105,35 @@ Environment notes (not skill defects)
 - The Visual Studio 17 2022 CMake generator is unavailable even though
   C:\Program Files\Microsoft Visual Studio\2022 exists (no C++ workload
   registered). This matches BUILD_PLAYBOOK.md section 7's own field test.
+
+Addendum, same report revised
+-----------------------------
+The handover was revised after the first round of fixes. Two items were new:
+
+F3 (part 2, high) - the fake host could not READ a colour parameter either.
+  paramGetValue/paramGetValueAtTime/paramSetValueAtTime handled double, integer,
+  boolean and string only, so a plug-in reading kOfxParamTypeRGB got
+  kOfxStatErrUnsupported from the host, Support turned that into an exception
+  (ofxsParams.cpp:2228-2232), and the whole render action was reported as failed
+  with no message naming the parameter [B].
+  Fixed in testkit/fake_host.cpp: ParamObj stores 4 colour components, get/set
+  return/set RGB (3) and RGBA (4), choice is an integer, FakeHost::setParam
+  parses "r,g,b" / "r,g,b,a", and any still-unmodelled read or write records
+  "fake host: read of parameter 'x' (Type) is not modelled" in messages().
+  Verified here [V]: a copy of templates/minimal-ofx declaring gain, boxColor
+  (RGB), tint (RGBA) and mode (choice), reading all three in render(), driven
+  with --param ...:rgb/rgba/choice and
+  --set gain=1.0 --set boxColor=0.25,0.5,0.75 --set tint=1,0.5,0.25,1 --set mode=1
+  -> "contract_test: 136 checks, 0 failed".
+
+F5 (medium) - OFX::Log::print is silent in Release builds. Support opens the log
+  file only inside #ifdef DEBUG (ofxsLog.cpp:39-49), so every "log the error"
+  recipe in the skill produced nothing in the build a user runs [V].
+  Fixed as documentation: SKILL.md (Phase 8 and section 7),
+  ARCHITECTURE_AND_CUDA_PIPELINE.md (logging), REFERENCE_READING_GUIDE.md and
+  BEST_PRACTICES_AND_PERFORMANCE.md 5.7 now state the DEBUG-only behaviour and
+  point at OFX::ImageEffect::setPersistentMessage (ofxsImageEffect.h:1067) for a
+  message the host shows; they also note that it needs message suite v2.
+
+Also kept from the first revision: the -Wall -Wextra fixture build and the
+documented vocabulary in testkit/README.md.
