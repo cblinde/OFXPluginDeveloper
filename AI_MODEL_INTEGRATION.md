@@ -214,7 +214,10 @@ package references `lib64` while the tarball ships `lib`, so
 `-I<root>/include -L<root>/lib -lonnxruntime` yourself, which is what the
 template does. CPU and GPU are separate tarballs
 (`onnxruntime-linux-x64-gpu_cuda12-*.tgz`); a GPU build pins a cuDNN major
-(mixing 8 and 9 is not supported) (**A**).
+(mixing 8 and 9 is not supported) (**A**). If the release tarball is
+unreachable, `pip download` + unzip supplies the shared library and the headers
+come from the same tag's `include/` tree — the two halves have to be the same
+version.
 
 **Windows, and the NuGet route.** The release zip (`onnxruntime-win-x64-<ver>.zip`)
 has the layout the template expects: `include\` and `bin\onnxruntime.dll`. It
@@ -272,6 +275,7 @@ appear with models.
 | Failure | Symptom | Fix | Settled by |
 |---|---|---|---|
 | Address from `width * 4 * sizeof(float)` instead of `kOfxImagePropRowBytes` | shears on padded or bottom-up images; correct in the host you tested | pack through the byte stride, signed | `ofxImageEffect.h:1347-1351` (**A**) |
+| Treat `kOfxImagePropData` as the top row | a labels-and-boxes overlay comes out mirrored while the pass-through copy still matches, so the output looks like a plate or font bug | `data` addresses `bounds.y1` (the bottom); rebase onto the top row once (`data + (h-1)*rowBytes`, negated stride). The pointer's origin is a separate axis from the stride's sign | field evidence (**B**); `ofxImageEffect.h:1353` (**A**) |
 | Alpha overwritten by the model's 3 channels | matte destroyed, or opaque edges appear | pass alpha through unchanged | the model's shape contract (**A** in the template) |
 | Tiles without halo | visible grid seams; each tile's padding contaminates its border | halo ≥ receptive-field radius, feather-blend the overlap | measured here: halo=0 deviates by **0.263** on a 3×3 conv where halo=1 is exact (**A**) |
 | Wrong channel order | plausible but wrong colours (R/B swap) | know your model: ONNX is usually RGB, OpenCV-trained models are often BGR | model documentation (**B**) |

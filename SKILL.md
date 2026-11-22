@@ -49,6 +49,9 @@ host crash with no stack trace. None of them is stylistic.
    It is a device pointer then. Reading it faults or returns garbage.
 3. **Never assume `rowBytes == width * bytesPerPixel`.** Address with the
    host's pitch. It may be padded *and it may be negative* for flipped images.
+   `kOfxImagePropData` is the row at `bounds.y1` (the bottom) whatever the sign
+   of the stride: rebase a view once onto the top row (`data + (h-1)*rowBytes`,
+   negated stride) instead of scattering flips through the code.
 4. **`cudaDeviceSynchronize()` is forbidden, full stop.** Per the spec: *"the
    plug-in SHOULD NOT wait for final asynchronous operations to complete before
    returning from the render action, and SHOULD NOT call cudaDeviceSynchronize()
@@ -318,7 +321,7 @@ Image handle properties:
 
 | Constant | Type | Meaning |
 | --- | --- | --- |
-| `kOfxImagePropData` | `pointer` | pixel base; device pointer when CUDA/OpenCL/Metal enabled |
+| `kOfxImagePropData` | `pointer` | base of the row at `bounds.y1` (the bottom; its origin is independent of the stride's sign); device pointer when CUDA/OpenCL/Metal enabled |
 | `kOfxImagePropRowBytes` | `int` | scanline stride in bytes; **signed, may be negative** |
 | `kOfxImagePropBounds` | `int × 4` | window of valid pixels in this image |
 | `kOfxImagePropRegionOfDefinition` | `int × 4` | RoD; may exceed bounds |
@@ -526,6 +529,14 @@ If output(x,y) needs input(x±r, y±r):
 `getRegionsOfInterest` gets this wrong in almost every first draft, and the
 failure mode is a visible seam at tile edges, which is easy to blame on the
 kernel.
+
+The tile protocol hides a second mistake: render two offset windows, in both
+pointer origins and with both stride signs, and assert the overlay's *position
+and orientation* - not that bytes changed. A pass-through copy is
+orientation-agnostic, so it matches either way up; a box drawn in the top half of
+the tile catches a mirror, a centred one does not. `testkit`'s
+`setImageOrigin`/`setNegativePitch` build all four layouts, and
+[`testkit/README.md`](testkit/README.md) says what each one can prove.
 
 ---
 

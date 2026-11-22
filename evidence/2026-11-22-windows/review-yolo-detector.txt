@@ -169,3 +169,43 @@ F6 (high, crash) - the ONNX template's Windows bundle crashed in Resolve.
   loader and the CMake branch remain [I] until a Windows run repeats the field
   test. The
   referenced field evidence for the failure itself is [B].
+
+Addendum 2 (2026-11-22, F7 and F8)
+----------------------------------
+Same session, later. Two more harness holes and one bug that reached a user.
+
+F7 (high) - a kOfxParamTypeChoice knob declared fine but could not be read or
+set: paramGetValueAtTime returned kOfxStatErrUnsupported for it, Support threw,
+and render failed after describe/createInstance with no message. FakeHost::setParam
+refused a choice for the same reason, and the declared option list could not be
+read back.
+  Fixed: choice shares the integer path in all four get/set functions and in
+  setParam; FakeHost::paramOptions(name) returns kOfxParamPropChoiceOption in
+  order, so a test can assert what the dropdown offers. [V] here: it compiles and
+  the contract suites still pass; the reporter measured 32/32 on their fixture [B].
+
+F8 (high, shipped) - OFX images are y-up: kOfxImagePropData addresses the row at
+bounds.y1. A plug-in that drew labels and plates assuming the pointer was the top
+row produced a mirrored overlay in Resolve 21 (1088x832, float RGBA, pitch 17408
+positive), while the harness stayed green: every check compared destination to
+source row for row through the same pointer, and a copy is orientation-agnostic.
+  Root cause of the blind spot: the fake host derived the pointer's origin from
+  the stride sign, so the layout that makes a mirror-blind plug-in look right -
+  top-down data with bounds still starting at y1 - could not be built.
+  Fixed in the testkit: setImageOrigin(ImageOrigin::Bottom|Top) and
+  setNegativePitch are separate axes; all four layouts are in-buffer, the default
+  is Bottom+positive (Resolve's layout), and --image-origin top|bottom selects it
+  from the CLI.
+  Documented in SKILL.md rule 3 and section 8, AI_MODEL_INTEGRATION.md section 5,
+  PATTERN_INDEX.md and testkit/README.md (layout table and what each one proves).
+  The plug-in-side fix (rebase to data + (h-1)*rowBytes with a negated stride, and
+  take the view's size from the render window rather than the image bounds) and
+  its 94-check tile_window_test are [B]: they live in the reporter's tree, not
+  here. No drawing plug-in exists in this repository, so the four layouts are
+  constructible but only a plug-in that draws at chosen positions can assert
+  orientation.
+
+Also reported, already covered: the NuGet package as fallback when the GitHub
+release assets 404 (AI_MODEL_INTEGRATION.md section 4), exactly two exports under
+MSVC, and the GPU status codes. One addition made here: the Linux tarball has a
+mirror route too (pip download for the library, headers from the same tag).
