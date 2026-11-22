@@ -25,10 +25,16 @@ namespace {
 /// One process-wide environment. Ort::Env owns the logging and thread-pool
 /// machinery; creating one per session would leak state across session
 /// lifetimes and, on repeated instance creation, grow the process.
+///
+/// Leaked on purpose. A function-local static's destructor runs at
+/// DLL_PROCESS_DETACH - after the host has unloaded the plug-in and while ORT
+/// is winding its thread pool down - and the process segfaults *after*
+/// kOfxActionUnload returned OK. Nothing calls into the runtime during detach
+/// if nothing destroys it.
 Ort::Env& SharedEnv()
 {
-    static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ofx-onnx-inference");
-    return env;
+    static Ort::Env* env = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "ofx-onnx-inference");
+    return *env;
 }
 
 std::string CopyName(const char* name)
