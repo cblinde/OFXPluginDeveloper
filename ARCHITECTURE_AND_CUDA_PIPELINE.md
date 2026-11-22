@@ -687,7 +687,7 @@ Where each invariant lives:
 | Identity short-circuit | `GainPlugin::isIdentity()` |
 
 To adapt it to a new effect, change: the parameter block in `describeInContext`,
-the maths in `multiThreadProcessImages`, the maths in `GainKernelRGBA32F`, and
+the maths in `multiThreadProcessImages`, the maths in `ScalePixel` (shared by both kernels), and
 the argument struct passed to the launcher. Everything else — bundling,
 visibility, stream policy, device binding — should be left alone. Those are the
 parts that took the longest to get right.
