@@ -577,6 +577,10 @@ interface that has been stable for years.
 - `-fvisibility=hidden` plus explicit exports for the two mandated entry points
   (the Support library already marks them). Two plugins with default visibility
   will interpose each other's Support symbols.
+- The visibility flag has to reach the CUDA objects too. In CMake that is a
+  **separate** target property, `CUDA_VISIBILITY_PRESET`: `CXX_VISIBILITY_PRESET`
+  alone leaves every `extern "C"` launcher in `Kernel.cu` exported (measured on
+  this template: 5 `T` symbols instead of 2).
 - `libcudart.so.*` must be findable: either installed by the toolkit, or shipped
   next to the `.ofx` and found via `RPATH=$ORIGIN`. Shipping it is often the
   difference between "works on my machine" and "works on the colourist's".
@@ -609,8 +613,11 @@ render farm, profile a single-frame render or a still, not a sequence.
 
 ### Logging without a console
 
-`OFX::Log::print()` routes through `OfxMessageSuite`. For anything that must
-survive a crash, also append to a file:
+`OFX::Log::print()` routes through `OfxMessageSuite`. It is **printf-style** —
+`print(const char* format, ...)` — so pass a literal format and arguments
+(`print("launch failed: %s", msg)`), not a `std::string`: concatenating a
+`std::string` and passing it as the format argument does not compile.
+For anything that must survive a crash, also append to a file:
 
 ```cpp
 static void LogToFile(const std::string& message)
@@ -674,6 +681,7 @@ Where each invariant lives:
 | Stream contract | `processImagesCuda()` — the `if (_pCudaStream == nullptr)` branch |
 | Device binding | `LaunchGainRGBA32F()` + `DeviceGuard` |
 | Launch error check | `cudaGetLastError()` immediately after `<<<>>>` |
+| Launcher linkage | `extern "C"` in `Kernel.cuh` and `Kernel.cu`, so nvcc and the host compiler cannot disagree about mangling |
 | Resource release | `std::unique_ptr<OFX::Image>` in `setupAndProcess()` |
 | Identity short-circuit | `GainPlugin::isIdentity()` |
 

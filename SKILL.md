@@ -261,7 +261,9 @@ Clip property for the *unmapped* component string is
 `kOfxImageEffectPropUnmappedComponents`; do not invent it.
 
 Error codes worth knowing: `kOfxStatGPUOutOfMemory` = `1001`,
-`kOfxStatGPURenderFailed` = `1002`.
+`kOfxStatGPURenderFailed` = `1002`. Both live in `ofxGPURender.h`, which is
+**not** pulled in by `ofxsImageEffect.h` — include it explicitly or the compiler
+will report them undeclared.
 
 ---
 
@@ -280,12 +282,18 @@ the bundle name*. A plugin named `MinimalCudaGain` must live at
 | Resolve / Nuke / SCRATCH / Natron | `%COMMONPROGRAMFILES%\OFX\Plugins` | `/usr/OFX/Plugins` |
 | User-local | `OFX_PLUGIN_PATH` (semicolon-separated) | `OFX_PLUGIN_PATH` (colon-separated) |
 
-**Firewall your symbols.** Set `CXX_VISIBILITY_PRESET hidden` and
-`VISIBILITY_INLINES_HIDDEN ON`. Every plugin statically links its own copy of the
+**Firewall your symbols.** Set `CXX_VISIBILITY_PRESET hidden`,
+`CUDA_VISIBILITY_PRESET hidden` and `VISIBILITY_INLINES_HIDDEN ON`. The CUDA one
+is separate and easy to miss: `CXX_VISIBILITY_PRESET` does **not** apply to the
+`.cu` translation unit, so every `extern "C"` launcher in `Kernel.cu` stays an
+exported dynamic symbol. Measured on this template: without
+`CUDA_VISIBILITY_PRESET` the built `.ofx` exported 5 `T` symbols, with it 2.
+Every plugin statically links its own copy of the
 Support library; with default visibility, two plugins in one host process export
 identical mangled symbols and the loader binds one plugin's `OFX::PropertySet` to
 the other's. The symptom is a crash that appears only when a *second* plugin is
-installed. With hidden visibility `nm -D` shows two `T` symbols — that is correct.
+installed. With hidden visibility `nm -D` shows two `T` symbols — that is correct,
+and the launcher is still visible in the full symbol table (`nm`, lowercase `t`).
 
 **CUDA runtime linkage.**
 
@@ -298,7 +306,21 @@ installed. With hidden visibility `nm -D` shows two `T` symbols — that is corr
 `75;80;86;89;90` plus `100;120` when the toolkit is ≥ 12.8. A bare number emits
 SASS **and** PTX, so the newest architecture still JITs on newer hardware. CUDA
 13 removed offline compilation for Volta and older; do not target `sm_70` or
-below with a modern toolkit.
+below with a modern toolkit — nvcc warns about deprecated targets, and that
+warning means the list is stale.
+
+One CMake trap: `enable_language(CUDA)` initialises `CMAKE_CUDA_ARCHITECTURES`
+itself with the compiler's default, so by the time a project's own default block
+runs, `if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)` is **always false** and the
+curated list silently never applies (that is how this template first ended up
+building for nvcc's legacy default). Capture the variable before enabling the
+language, as `CMakeLists.txt` does.
+
+**Do not bake the toolkit path into the bundle.** By default CMake records the
+directory it linked `cudart` from in `RUNPATH` — an absolute build-machine path
+for a bootstrapped toolkit. The template sets `INSTALL_RPATH "$ORIGIN"` with
+`BUILD_WITH_INSTALL_RPATH ON`, so the `.ofx` resolves a `libcudart` placed beside
+it and otherwise uses the host's own runtime.
 
 **MSVC.** The CUDA host compiler must use the same runtime library as the rest of
 the binary. CMake propagates this; do not hand-add `-Xcompiler /MD` to a Debug
@@ -452,22 +474,37 @@ Commit types: `feat`, `fix`, `build`, `docs`, `refactor`, `perf`, `test`,
 
 Recorded so nobody mistakes documentation for proof.
 
-**Verified on the authoring machine (Linux x86-64, GCC 13.3, CMake 3.31.6,
-OpenFX `OFX_Release_1.5.1`):**
+**Verified on the authoring machine** (Linux x86-64, Ubuntu 24.04, GCC 13.3.0,
+CUDA 12.9.41 via `./build.sh --bootstrap-cuda`, CMake 3.31.6,
+OpenFX `OFX_Release_1.5.1`):
 
-- `templates/minimal-cuda-ofx` configures and compiles with
-  `-DOFXPLUGIN_ENABLE_CUDA=OFF`.
-- The produced `.ofx` links, and `nm -D` shows exactly two exported `T` symbols.
+- `OFXPLUGIN_ENABLE_CUDA=ON` configures and builds: `nvcc` compiles `Kernel.cu`
+  for `75;80;86;89;90;100;120`, the link pulls `libcudart.so.12`, and the bundle
+  `Contents/Linux-x86-64/MinimalCudaGain.ofx` is produced with no compiler
+  warnings (including `-Xptxas=-warn-spills` and deprecated-architecture checks).
+- That `.ofx` exports exactly two dynamic symbols (`OfxGetNumberOfPlugins`,
+  `OfxGetPlugin`) and contains the CUDA launcher plus a `.nv_fatbin` section with
+  the kernel (`nm`, `readelf -S`, `strings`).
 - `dlopen` + `OfxGetNumberOfPlugins`/`OfxGetPlugin` returns one plugin:
   `OfxImageEffectPluginAPI v1`, id `com.ofxplugindeveloper.minimalcudagain`,
-  version `1.0`, with `setHost` and `mainEntry` set.
+  version `1.0`, `setHost` and `mainEntry` set — for the CUDA build, the
+  `CPU_ONLY=1` build, and the CUDA-requested-but-toolchain-absent build.
+- `CPU_ONLY=1 ./build.sh` builds, exports 2 symbols, and has no launcher symbol.
+- `build.sh` with no toolkit and no `--bootstrap-cuda` exits 2 with actionable
+  instructions; the CMake target still degrades with a warning when CUDA is
+  requested without a compiler.
+- The no-root bootstrap itself was exercised from an empty cache directory:
+  NVIDIA's `cuda-nvcc`/`cudart`/`cudart-dev`/`nvvm`/`crt` 12.9 `.deb` packages
+  unpacked with `ar` + `tar` into a synthetic `CUDA_HOME`.
 - All `kOfx*` constants cited in §5 exist in those headers under those names.
 
-**Not verified here (state this plainly in any downstream report):**
+**Still not verified (state this plainly in any downstream report):**
 
-- The CUDA path was **never compiled** — no `nvcc` on the authoring machine.
-  `Kernel.cu` is syntax-reviewed only.
-- The plugin was **never loaded by a host**. No Resolve, Nuke, SCRATCH or Natron
-  is present, so no pixel has actually been rendered by this template.
-- The Windows/MSVC path was never built.
-- No performance measurement exists for any kernel here.
+- **No GPU.** No kernel has ever executed: no SASS was run, no numerics were
+  validated, and device-dependent behaviour (real `cudaPointerGetAttributes`
+  results, multi-GPU binding, actual stream ordering) is untested.
+- **No host.** No Resolve, Nuke, SCRATCH or Natron is installed, so the plugin
+  has never rendered a pixel, and every host-specific claim in
+  `HOST_COMPATIBILITY_MATRIX.md` remains graded B/C rather than verified.
+- **No Windows/MSVC build.** `build.bat` has never been executed.
+- **No performance measurement** and no Nsight profiling of any kernel here.
