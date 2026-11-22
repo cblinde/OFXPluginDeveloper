@@ -1,0 +1,45 @@
+name: docs
+
+# The documentation is part of the product: it is what an agent reads before it
+# writes code. This job makes the drift checks run without a human remembering
+# to. It is deliberately dependency-free - the checker is stdlib Python.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Documentation drift
+        run: python3 tools/check-docs.py
+
+      - name: Script syntax
+        run: |
+          bash -n run-tests.sh
+          bash -n templates/minimal-ofx/build.sh
+          bash -n templates/minimal-ofx/test/run-tests.sh
+          bash -n templates/minimal-cuda-ofx/build.sh
+          bash -n templates/onnx-inference-ofx/build.sh
+
+  templates:
+    # The suites were runnable only on the author's machine, which is how a
+    # release can pass review with a broken template. CPU_ONLY builds the CUDA
+    # template through its shim; the ONNX template is skipped by name when
+    # ONNXRUNTIME_ROOT is unset, rather than failing the run.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Template suites
+        env:
+          CPU_ONLY: "1"
+          RUN_VALGRIND: "0"
+        run: ./run-tests.sh
+
+      - name: Negative controls
+        run: ./testkit/run-negative-controls.sh
