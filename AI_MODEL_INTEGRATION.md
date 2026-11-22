@@ -334,11 +334,11 @@ parts that are usually untested under test.
 | OFX glue | `src/Plugin.{h,cpp}` | window/origin addressing, alpha pass-through, lazy session load under a mutex, `InstanceSafe`, no CUDA advertised |
 | Fixtures | `models/` | a 611-byte 3×3 conv plus a Python-generated golden tensor (36 KB + 36 KB), committed so tests need no Python |
 | Generator | `tools/make-test-model.py` | rebuilds model and golden (`onnx` + `onnxruntime`) |
-| Tests | `test/run-tests.sh`, `test/ai_pipeline_test.cpp` | 4 stages, exit-code gated, `SANITIZE=` support |
+| Tests | `test/run-tests.sh`, `test/ai_pipeline_test.cpp` | 5 stages, exit-code gated, `SANITIZE=` support |
 
 ```bash
 export ONNXRUNTIME_ROOT=/path/to/onnxruntime-linux-x64-1.32.0
-./build.sh                      # configures, builds, prints exports and bundle
+./build.sh                      # configures, builds, asserts exports and bundle
 ./test/run-tests.sh             # packing, golden, tiling, negative control, bundle
 SANITIZE=address,undefined ./test/run-tests.sh
 ```

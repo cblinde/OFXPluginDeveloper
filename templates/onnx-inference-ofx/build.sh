@@ -81,6 +81,26 @@ if [[ -z "${OFX_BIN}" ]]; then
 fi
 
 EXPORTS="$(nm -D --defined-only "${OFX_BIN}" | grep -c ' T ' || true)"
+if [[ "${EXPORTS}" != "2" ]]; then
+  echo "error: the module exports ${EXPORTS} dynamic symbols, expected exactly 2" >&2
+  nm -D --defined-only "${OFX_BIN}" | grep ' T ' >&2 || true
+  exit 1
+fi
+
+# Same two artifact facts the test asserts, so a plain ./build.sh cannot report
+# success on a bundle a host would reject. readelf ships with the binutils the
+# rest of this build already needs (nm).
+if command -v readelf >/dev/null 2>&1; then
+  NEEDED="$(readelf -d "${OFX_BIN}" | grep -c 'libonnxruntime' || true)"
+  # shellcheck disable=SC2016  # matching the literal text $ORIGIN, not expanding it
+  RUNPATH="$(readelf -d "${OFX_BIN}" | grep -cF '$ORIGIN' || true)"
+  if [[ "${NEEDED}" != "1" || "${RUNPATH}" != "1" ]]; then
+    echo "error: ${OFX_BIN} must need libonnxruntime once and record \$ORIGIN" >&2
+    echo "       (NEEDED=${NEEDED}, \$ORIGIN entries=${RUNPATH})" >&2
+    exit 1
+  fi
+fi
+
 echo
 echo "Bundle: ${BUNDLE}"
 echo "  ${OFX_BIN}"
