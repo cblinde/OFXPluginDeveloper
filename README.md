@@ -40,7 +40,9 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 | [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | Resolve/Nuke/SCRATCH/Natron behaviour and workarounds, every claim graded A/B/C by evidence source |
 | [`BEST_PRACTICES_AND_PERFORMANCE.md`](BEST_PRACTICES_AND_PERFORMANCE.md) | Review-level synthesis: what the reference projects teach, verified header quirks, host- and kernel-side performance rules with measured PTX evidence, anti-patterns by symptom |
 | [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | The questions to answer before shipping, each one settled by a header line or a spec sentence, plus the automated gates that answer half of them |
+| [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | Putting a neural network in an OFX plug-in: what six shipped projects do, Python/Rust/C#/JS/Julia embedding hazards, ONNX Runtime's exact API, and when CUDA is worth it |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | The buildable template: CMake + OFX host wrapper + CUDA kernel + CPU fallback |
+| [`templates/onnx-inference-ofx/`](templates/onnx-inference-ofx/) | The buildable inference template: ONNX Runtime session, pitch-correct packing, tiled inference, golden-file tests |
 
 ---
 
@@ -365,6 +367,7 @@ SKILL.md                            master reference and workflow
 ARCHITECTURE_AND_CUDA_PIPELINE.md    deep dive
 HOST_COMPATIBILITY_MATRIX.md         per-host differences
 PREFLIGHT_REVIEW_CHECKLIST.md        pre-ship questions, each with the line that settles it
+AI_MODEL_INTEGRATION.md              model runtimes, language embedding, CUDA decision rules
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp        OFX host wrapper: params, dispatch, isIdentity
@@ -374,6 +377,16 @@ templates/minimal-cuda-ofx/
   test/kernel_equivalence.cpp          host harness for kernels and CPU loop
   test/shim/                           minimal <cuda_runtime.h> for host builds
   build.sh  build.bat                 toolkit discovery, bootstrap, build
+templates/onnx-inference-ofx/
+  CMakeLists.txt                     bundle build, ONNX Runtime detection + bundling
+  src/Plugin.h  src/Plugin.cpp        OFX wrapper: window addressing, alpha, render
+  src/ModelRunner.h  src/ModelRunner.cpp   one ORT session behind a pimpl
+  src/AiCore.h  src/AiCore.cpp        packing, tiling, whole/tiled inference
+  models/                            committed 611-byte model + golden tensor
+  tools/make-test-model.py           regenerates model and golden
+  test/run-tests.sh                  packing, golden, tiling, negative control, bundle
+  test/ai_pipeline_test.cpp          the harness
+  build.sh                           configure + build + report
 ```
 
 Bundle layout produced by the build:

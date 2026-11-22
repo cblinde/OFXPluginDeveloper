@@ -1,0 +1,195 @@
+cmake_minimum_required(VERSION 3.21)
+
+project(onnx-inference-ofx LANGUAGES CXX)
+
+# See the CUDA template: CMP0169 keeps the explicit FetchContent_Populate() call
+# working on CMake 3.30+.
+if(POLICY CMP0169)
+  cmake_policy(SET CMP0169 OLD)
+endif()
+
+set(PLUGIN_TARGET "OnnxInference")
+set(PLUGIN_BUNDLE "${PLUGIN_TARGET}.ofx.bundle")
+
+option(OFXPLUGIN_BUNDLE_ONNX_RUNTIME
+  "Copy libonnxruntime next to the .ofx so the bundle is self-contained" ON)
+
+# ---------------------------------------------------------------------------
+# 1. OpenFX headers + Support library (same policy as the CUDA template)
+# ---------------------------------------------------------------------------
+set(OFX_SOURCE_DIR "" CACHE PATH "Existing openfx checkout; leave empty to fetch OFX_Release_1.5.1")
+
+if(NOT OFX_SOURCE_DIR)
+  include(FetchContent)
+  FetchContent_Declare(openfx
+    GIT_REPOSITORY https://github.com/AcademySoftwareFoundation/openfx.git
+    GIT_TAG        OFX_Release_1.5.1
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE)
+  FetchContent_GetProperties(openfx)
+  if(NOT openfx_POPULATED)
+    FetchContent_Populate(openfx)
+  endif()
+  set(OFX_SOURCE_DIR "${openfx_SOURCE_DIR}")
+endif()
+
+if(NOT EXISTS "${OFX_SOURCE_DIR}/include/ofxImageEffect.h")
+  message(FATAL_ERROR
+    "OFX_SOURCE_DIR='${OFX_SOURCE_DIR}' is not an openfx checkout "
+    "(include/ofxImageEffect.h not found).")
+endif()
+
+file(GLOB OFX_SUPPORT_SOURCES CONFIGURE_DEPENDS
+  "${OFX_SOURCE_DIR}/Support/Library/*.cpp")
+
+# ---------------------------------------------------------------------------
+# 2. ONNX Runtime
+# ---------------------------------------------------------------------------
+# The tarball and the pip wheel disagree about layout: the tarball is
+# <root>/include + <root>/lib, while the wheel keeps the headers and the .so
+# under onnxruntime/capi. Accept either by looking for the header in both
+# places, and fail with a message that says what to download.
+set(ONNXRUNTIME_ROOT "" CACHE PATH
+  "ONNX Runtime root: contains include/onnxruntime_cxx_api.h and lib/libonnxruntime.so")
+
+if(NOT ONNXRUNTIME_ROOT AND DEFINED ENV{ONNXRUNTIME_ROOT})
+  set(ONNXRUNTIME_ROOT "$ENV{ONNXRUNTIME_ROOT}")
+endif()
+
+find_path(ONNXRUNTIME_INCLUDE_DIR
+  NAMES onnxruntime_cxx_api.h
+  HINTS "${ONNXRUNTIME_ROOT}/include" "${ONNXRUNTIME_ROOT}/onnxruntime/capi"
+  NO_DEFAULT_PATH)
+
+find_library(ONNXRUNTIME_LIBRARY
+  NAMES onnxruntime
+  HINTS "${ONNXRUNTIME_ROOT}/lib" "${ONNXRUNTIME_ROOT}/onnxruntime/capi"
+  NO_DEFAULT_PATH)
+
+if(NOT ONNXRUNTIME_INCLUDE_DIR OR NOT ONNXRUNTIME_LIBRARY)
+  message(FATAL_ERROR
+    "ONNX Runtime not found under ONNXRUNTIME_ROOT='${ONNXRUNTIME_ROOT}'.\n"
+    "  Expected include/onnxruntime_cxx_api.h and lib/libonnxruntime.so.\n"
+    "  CPU build: https://github.com/microsoft/onnxruntime/releases -> "
+    "onnxruntime-linux-x64-<ver>.tgz\n"
+    "  or point ONNXRUNTIME_ROOT at the directory of a pip wheel:\n"
+    "    pip download --no-deps onnxruntime -d /tmp/ort && cd /tmp/ort && "
+    "unzip -q onnxruntime-*.whl\n"
+    "  (a pip wheel ships the .so but not the headers; take them from the same "
+    "release tag)")
+endif()
+
+message(STATUS "ONNX Runtime include: ${ONNXRUNTIME_INCLUDE_DIR}")
+message(STATUS "ONNX Runtime library: ${ONNXRUNTIME_LIBRARY}")
+
+# ---------------------------------------------------------------------------
+# 3. The plug-in module
+# ---------------------------------------------------------------------------
+add_library(${PLUGIN_TARGET} MODULE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/Plugin.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/Plugin.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/AiCore.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/AiCore.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/ModelRunner.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/ModelRunner.h"
+  ${OFX_SUPPORT_SOURCES})
+
+target_include_directories(${PLUGIN_TARGET} PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${OFX_SOURCE_DIR}/include"
+  "${OFX_SOURCE_DIR}/Support/include"
+  "${OFX_SOURCE_DIR}/Support/Library"
+  "${ONNXRUNTIME_INCLUDE_DIR}")
+
+target_compile_features(${PLUGIN_TARGET} PRIVATE cxx_std_17)
+target_compile_options(${PLUGIN_TARGET} PRIVATE -Wall -Wextra)
+target_link_libraries(${PLUGIN_TARGET} PRIVATE "${ONNXRUNTIME_LIBRARY}")
+target_link_libraries(${PLUGIN_TARGET} PRIVATE ${CMAKE_DL_LIBS})
+
+set_target_properties(${PLUGIN_TARGET} PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  CXX_EXTENSIONS OFF)
+
+# Hide everything but the two mandated entry points. Two OFX plug-ins in one
+# host process each link their own copy of the Support library; without this,
+# `nm -D` shows a few thousand symbols and the loader can bind one plug-in's
+# symbols to the other's.
+set_target_properties(${PLUGIN_TARGET} PROPERTIES
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON)
+
+# $ORIGIN, so the bundle resolves libonnxruntime placed beside it and nothing
+# records the build machine's path.
+set_target_properties(${PLUGIN_TARGET} PROPERTIES
+  BUILD_WITH_INSTALL_RPATH ON
+  INSTALL_RPATH "$ORIGIN")
+
+set_target_properties(${PLUGIN_TARGET} PROPERTIES
+  PREFIX ""
+  SUFFIX ".ofx"
+  OUTPUT_NAME "${PLUGIN_TARGET}"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Linux-x86-64"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Win64")
+
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
+
+if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
+  # The binary records NEEDED libonnxruntime.so.1 (the SONAME), so ship exactly
+  # that name. Globbing libonnxruntime.so* would copy the symlink AND its
+  # 34 MB target, which is how a bundle quietly doubles in size.
+  get_filename_component(_onnx_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
+  if(WIN32)
+    set(_onnx_bundled_name "onnxruntime.dll")
+  else()
+    set(_onnx_bundled_name "libonnxruntime.so.1")
+  endif()
+  add_custom_command(TARGET ${PLUGIN_TARGET} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${ONNXRUNTIME_LIBRARY}"
+            "$<TARGET_FILE_DIR:${PLUGIN_TARGET}>/${_onnx_bundled_name}"
+    COMMENT "Bundling ONNX Runtime next to the .ofx as ${_onnx_bundled_name}")
+endif()
+
+# ---------------------------------------------------------------------------
+# 4. Tests: the host harness needs the runtime, not the OFX library
+# ---------------------------------------------------------------------------
+enable_testing()
+add_executable(ai_pipeline_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/test/ai_pipeline_test.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/AiCore.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/ModelRunner.cpp")
+target_include_directories(ai_pipeline_test PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${ONNXRUNTIME_INCLUDE_DIR}")
+target_compile_features(ai_pipeline_test PRIVATE cxx_std_17)
+target_compile_options(ai_pipeline_test PRIVATE -Wall -Wextra)
+target_link_libraries(ai_pipeline_test PRIVATE "${ONNXRUNTIME_LIBRARY}" ${CMAKE_DL_LIBS})
+# No INSTALL_RPATH override here: CMake's build-tree rpath is what lets ctest
+# (and a plain ./ai_pipeline_test) find libonnxruntime before anything is
+# installed or bundled.
+set_target_properties(ai_pipeline_test PROPERTIES
+  BUILD_RPATH "${_onnx_dir}")
+add_test(NAME ai_pipeline
+  COMMAND ai_pipeline_test "${CMAKE_CURRENT_SOURCE_DIR}/models")
+
+# ---------------------------------------------------------------------------
+# 5. Install
+# ---------------------------------------------------------------------------
+if(WIN32)
+  set(_ofx_default_dir "$ENV{COMMONPROGRAMFILES}/OFX/Plugins")
+elseif(APPLE)
+  set(_ofx_default_dir "/Library/OFX/Plugins")
+else()
+  set(_ofx_default_dir "/usr/OFX/Plugins")
+endif()
+set(OFX_INSTALL_DIR "${_ofx_default_dir}" CACHE PATH "Host OFX plugin directory")
+
+add_custom_target(install-bundle
+  COMMAND "${CMAKE_COMMAND}" -E copy_directory
+          "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}"
+          "${OFX_INSTALL_DIR}/${PLUGIN_BUNDLE}"
+  COMMENT "Installing ${PLUGIN_BUNDLE} into ${OFX_INSTALL_DIR}"
+  DEPENDS ${PLUGIN_TARGET})
+
+message(STATUS "OFX plugin : ${PLUGIN_TARGET}")
+message(STATUS "Bundle     : ${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}")

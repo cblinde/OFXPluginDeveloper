@@ -17,6 +17,7 @@ touches their subject:
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, streams, memory layout, RoD/RoI, colour/alpha, TensorRT/ORT, profiling |
 | [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | A behaviour differs between hosts, or a host-specific workaround is needed |
 | [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | Before shipping: the questions to answer, each with the header line or spec sentence that settles it |
+| [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | A neural network in the plug-in: integration shapes, language-runtime hazards, ONNX Runtime API, CUDA decision rules |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | Starting a new plugin, or needing a known-good reference |
 
 ---
@@ -73,6 +74,7 @@ ARCHITECTURE_AND_CUDA_PIPELINE.md      the deep dive
 HOST_COMPATIBILITY_MATRIX.md           per-host behaviour and workarounds
 BEST_PRACTICES_AND_PERFORMANCE.md      performance rules, reference-project lessons, graded evidence
 PREFLIGHT_REVIEW_CHECKLIST.md          pre-ship questions, each citing the line that settles it
+AI_MODEL_INTEGRATION.md                model integration: runtimes, languages, when CUDA pays
 templates/minimal-cuda-ofx/
   CMakeLists.txt                       bundle-producing build
   src/Plugin.h                         host wrapper declarations

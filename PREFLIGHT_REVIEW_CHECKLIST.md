@@ -105,6 +105,18 @@ Stated plainly, because a checklist that overclaims is worse than none:
 
 ---
 
+### E. Inference (only if the plug-in runs a model)
+
+| # | Question | Settled by | How to confirm |
+|---|---|---|---|
+| E1 | Is `intra_op_num_threads` set explicitly? | ONNX Runtime threading docs: the default is `0`, which means "one thread per physical core" **per session**, with affinity; an explicit value disables the affinity. Hosts call `render()` on several threads, so the default multiplies. | `grep -n "SetIntraOpNumThreads" src/` — it must be there with a deliberate number, and the comment must say which assumption it encodes. |
+| E2 | If you use a GPU execution provider, is the launch on `kOfxImageEffectPropCudaStream`, with EP synchronisation disabled? | `ofxGPURender.h:608-610` ("SHOULD NOT wait … SHOULD NOT call `cudaDeviceSynchronize()` at any time") plus ORT's `user_compute_stream` / `disable_synchronize_execution_providers` options. | `grep -rn "user_compute_stream\|disable_synchronize" src/`. Either both are present, or the plug-in does not advertise a GPU path. |
+| E3 | Do you advertise CUDA only when every op in the model runs on the GPU provider? | `ofxGPURender.h:547-553`: the capability is opt-in ("Default - `"false"` for a plug-in") and the host's descriptor is read-only. | Check the provider's supported-op list for the exact ops in your graph; a single CPU fallback op makes the "GPU" path slower than the CPU one, and the host cannot see that. |
+| E4 | Is the tile halo at least the model's receptive-field radius? | Measured in `templates/onnx-inference-ofx`: `halo=0` differs from whole-frame inference by 0.263 on a single 3×3 convolution; `halo=1` is bit-identical. | Run `./test/run-tests.sh` in that template with your model and your tile size; the negative control tells you whether your halo is doing anything. |
+| E5 | Are channel order, value range and colour space documented next to the model? | The model's training contract, not OFX: see `AI_MODEL_INTEGRATION.md` §5. The LTX plug-in converts through OCIO before inference for exactly this reason. | Put the three facts in the parameter hint or a README beside the weights. A wrong range is a silent grade error, not a crash. |
+
+---
+
 ## 3. The five failures this checklist exists to prevent
 
 Each of these has been observed in a real open-source OFX plug-in, and each one
