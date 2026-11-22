@@ -25,7 +25,6 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
-CXX_BIN="${CXX:-g++}"
 SAN="${SANITIZE:-}"
 
 TMP="$(mktemp -d)"
@@ -36,32 +35,41 @@ if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
   exit 2
 fi
 
-ORT_INC="${ONNXRUNTIME_ROOT}/include"
-[[ -f "${ORT_INC}/onnxruntime_cxx_api.h" ]] || ORT_INC="${ONNXRUNTIME_ROOT}/onnxruntime/capi"
-ORT_LIB="${ONNXRUNTIME_ROOT}/lib"
-[[ -f "${ORT_LIB}/libonnxruntime.so" || -f "${ORT_LIB}/libonnxruntime.so.1" ]] || \
-  ORT_LIB="${ONNXRUNTIME_ROOT}/onnxruntime/capi"
-
-FLAGS=(-std=c++17 -Wall -Wextra -pthread)
 if [[ -n "${SAN}" ]]; then
-  FLAGS+=(-O1 -g -fno-omit-frame-pointer "-fsanitize=${SAN}")
   case ",${SAN}," in
     *,address,*) export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:strict_string_checks=1}" ;;
   esac
   case ",${SAN}," in
     *,undefined,*) export UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}" ;;
   esac
-else
-  FLAGS+=(-O2)
 fi
 
-echo "== [1/5] inference pipeline (${CXX_BIN}, sanitizer: ${SAN:-none}) =="
-"${CXX_BIN}" "${FLAGS[@]}" \
-  -I "${ROOT}/src" -I "${ORT_INC}" \
-  "${HERE}/ai_pipeline_test.cpp" "${ROOT}/src/AiCore.cpp" "${ROOT}/src/ModelRunner.cpp" \
-  -o "${TMP}/ai_pipeline_test" \
-  -L "${ORT_LIB}" -lonnxruntime -Wl,-rpath,"${ORT_LIB}"
-"${TMP}/ai_pipeline_test" "${ROOT}/models"
+echo "== [1/5] inference pipeline (cmake target ai_pipeline_test, sanitizer: ${SAN:-none}) =="
+# Built by the CMake target, not by a second hard-coded compiler line: the
+# source list and the ONNX Runtime flags live in CMakeLists.txt once. A
+# sanitizer needs its own tree because the flags are baked in at configure time,
+# and reconfiguring build/ would leave it sanitized for every later run.
+if [[ -n "${SAN}" ]]; then
+  TEST_BUILD="${ROOT}/build-sanitize"
+  CMAKE_EXTRA=(-DONNXRUNTIME_ROOT="${ONNXRUNTIME_ROOT}")
+  if [[ -n "${OFX_SOURCE_DIR:-}" ]]; then
+    CMAKE_EXTRA+=(-DOFX_SOURCE_DIR="${OFX_SOURCE_DIR}")
+  fi
+  cmake -S "${ROOT}" -B "${TEST_BUILD}" "${CMAKE_EXTRA[@]}" \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_CXX_FLAGS="-fsanitize=${SAN} -fno-omit-frame-pointer -O1 -g" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=${SAN}"
+  cmake --build "${TEST_BUILD}" --target ai_pipeline_test --parallel
+  TEST_BIN="${TEST_BUILD}/ai_pipeline_test"
+else
+  if [[ ! -f "${ROOT}/build/CMakeCache.txt" ]]; then
+    echo "error: ${ROOT}/build is not configured; run ./build.sh first" >&2
+    exit 2
+  fi
+  cmake --build "${ROOT}/build" --target ai_pipeline_test --parallel
+  TEST_BIN="${ROOT}/build/ai_pipeline_test"
+fi
+"${TEST_BIN}" "${ROOT}/models"
 
 echo
 echo "== [2/5] host contract (dlopen + fake host) =="
@@ -78,7 +86,8 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     --set "modelPath=${ROOT}/models/test_conv.onnx" \
     --not-identity-after-set --negative-pitch --byte-dst-rejected
 else
-  echo "  skipped: no build/ tree yet (run ./build.sh first)"
+  echo "  FAIL: no .ofx under build/bundle; run ./build.sh first" >&2
+  exit 1
 fi
 
 echo
@@ -108,7 +117,8 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     exit 1
   fi
 else
-  echo "  skipped: no build/ tree yet (run ./build.sh first)"
+  echo "  FAIL: no .ofx under build/bundle; run ./build.sh first" >&2
+  exit 1
 fi
 
 echo
