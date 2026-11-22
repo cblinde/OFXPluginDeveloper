@@ -270,8 +270,10 @@ Copy the bundle into the host's plugin directory (§6). Start the host, then:
 
 ### Phase 8 — Debug and profile
 
-See §7. `OFX::Log::print` writes a *file* and only in a `DEBUG` build; the
-host-visible channel is `setPersistentMessage` (§7). `stdout` reaches nothing.
+See §7. `OFX::Log::print` writes a *file* only when the translation unit was
+compiled with `DEBUG` (neither CMake's `Debug` configuration nor these templates
+define it); the host-visible channel is `setPersistentMessage` (§7). `stdout`
+reaches nothing.
 
 ---
 
@@ -458,10 +460,12 @@ also set `CUDA_RESOLVE_DEVICE_SYMBOLS ON`.
 nowhere. Two channels are easily confused:
 
 - `OFX::Log::print()` writes a **file** (`OFX_PLUGIN_LOGFILE`, default
-  `ofxPluginLog.txt`), and Support opens that file only when it was compiled with
-  `DEBUG` (`Support/Library/ofxsLog.cpp:39-49`) — in the Release build a user
-  runs, the call silently does nothing. Keep it as a developer-build trace, or
-  write your own file logger into a temp directory.
+  `ofxPluginLog.txt`, relative to the host's working directory), and Support
+  guards the `fopen` with `#ifdef DEBUG` (`Support/Library/ofxsLog.cpp:40-47`).
+  CMake's `Debug` configuration does **not** define `DEBUG` and neither do these
+  templates, so the call writes nothing in any build unless you add `-DDEBUG`
+  yourself. Keep it as an opt-in trace, or write your own file logger into a
+  temp directory.
 - For a message the user can see in the timeline, post it through the host's
   message suite: `OFX::ImageEffect::setPersistentMessage(OFX::Message::eMessageError,
   id, msg)` (`Support/include/ofxsImageEffect.h:1067`). It needs message suite

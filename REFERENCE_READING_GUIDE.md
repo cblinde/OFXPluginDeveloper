@@ -244,8 +244,9 @@ Four rules, and the header sentence that settles them:
   `kOfxStatOK` produces a black frame with no diagnostic, and Resolve blacklists
   plug-ins that crash, so the next launch looks like "the plug-in vanished".
 - **`stdout` is invisible in every GUI host.** `OFX::Log::print` is not the
-  host channel either: it appends to a file and is compiled out unless Support
-  was built with `DEBUG` (`ofxsLog.cpp:39-49`). The templates use it on every
+  host channel either: it appends to a file, and Support guards the `fopen` with
+  `#ifdef DEBUG` (`ofxsLog.cpp:40-47`) — which CMake's `Debug` configuration and
+  the templates do not define. The templates use it on every
   failure path, so treat it as a developer-build trace; a user-visible error
   needs the host's message suite (`setPersistentMessage`, `SKILL.md` §7).
 

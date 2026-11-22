@@ -245,10 +245,10 @@ threads, and the symptom appears in *another* plugin's render.
 
 `process()` calls `OFX::Log::print("processing via CUDA")` (or `... CPU`) on
 every render **[S]**. `print` appends to `ofxPluginLog.txt`
-(`OFX_PLUGIN_LOGFILE`), and only when Support was built with `DEBUG` — so in
-Release it costs a call that does nothing, and in Debug it grows a file by one
-line per render. Neither reaches the host's UI; see `SKILL.md` §7 for the channel
-that does.
+(`OFX_PLUGIN_LOGFILE`), and only when the code was compiled with `DEBUG`, which
+neither CMake's `Debug` configuration nor the templates define — so the call
+always costs nothing and never grows the file unless you opt in. It does not
+reach the host's UI; see `SKILL.md` §7 for the channel that does.
 
 ---
 

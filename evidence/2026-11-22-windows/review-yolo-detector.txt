@@ -127,8 +127,10 @@ F3 (part 2, high) - the fake host could not READ a colour parameter either.
   -> "contract_test: 136 checks, 0 failed".
 
 F5 (medium) - OFX::Log::print is silent in Release builds. Support opens the log
-  file only inside #ifdef DEBUG (ofxsLog.cpp:39-49), so every "log the error"
-  recipe in the skill produced nothing in the build a user runs [V].
+  file only inside #ifdef DEBUG (ofxsLog.cpp:40-47), so every "log the error"
+  recipe in the skill produced nothing in the build a user runs [V]. A review
+  pass here added the sharper fact: CMake's Debug configuration does not define
+  DEBUG either, so the call writes nothing in any build without -DDEBUG.
   Fixed as documentation: SKILL.md (Phase 8 and section 7),
   ARCHITECTURE_AND_CUDA_PIPELINE.md (logging), REFERENCE_READING_GUIDE.md and
   BEST_PRACTICES_AND_PERFORMANCE.md 5.7 now state the DEBUG-only behaviour and

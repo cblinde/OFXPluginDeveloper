@@ -640,9 +640,10 @@ render farm, profile a single-frame render or a still, not a sequence.
 ### Logging without a console
 
 `OFX::Log::print()` does **not** reach the host. It appends to a file named by
-`OFX_PLUGIN_LOGFILE` (default `ofxPluginLog.txt`), and Support opens that file
-only when it was built with `DEBUG` (`Support/Library/ofxsLog.cpp:39-49`), so in
-the Release build a user runs every call is silent. It is **printf-style** —
+`OFX_PLUGIN_LOGFILE` (default `ofxPluginLog.txt`), and Support guards the
+`fopen` with `#ifdef DEBUG` (`Support/Library/ofxsLog.cpp:40-47`). CMake's
+`Debug` configuration does not define `DEBUG` and neither do these templates, so
+the call is silent in every build unless you add `-DDEBUG`. It is **printf-style** —
 `print(const char* format, ...)` — so pass a literal format and arguments
 (`print("launch failed: %s", msg)`), not a `std::string`: concatenating a
 `std::string` and passing it as the format argument does not compile.
