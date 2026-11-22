@@ -89,11 +89,13 @@ is deliberately not part of `./run-tests.sh`: a normal run has to stay green.
    `kOfxImageEffectPropTilesRoD` or slice render windows, so `setSupportsTiles(true)`
    paths are untested.
 2. **Clip preferences and host scheduling.** `getClipPreferences` and per-clip
-   depths/PARs are not exercised, and `multiThread` runs the function once on one
-   thread. Concurrent renders of different instances *are* exercised; on one
-   instance only for a plug-in that declares `eRenderFullySafe`. The workers start
-   together, which is harder than a host's scheduler, but the harness does not
-   prove the absence of races — build the plug-in with TSan for that.
+   depths/PARs are not exercised. `multiThread` does run real workers (up to
+   four), so a pixel loop is split into bands and executed concurrently; that is
+   a host-shaped thread pool, not a scheduler test. Concurrent renders of
+   different instances *are* exercised; on one instance only for a plug-in that
+   declares `eRenderFullySafe`. The workers start together, which is harder than
+   a host's scheduler, but the harness does not prove the absence of races —
+   build the plug-in with TSan for that.
 3. **How a real host reports errors.** The message suite here only records
    strings; nothing checks that an error reaches a user, that a progress bar
    appears, or that abort/cancel works mid-render.

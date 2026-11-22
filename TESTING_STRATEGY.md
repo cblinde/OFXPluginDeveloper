@@ -284,7 +284,7 @@ and the templates share it rather than each carrying a copy.
 Coverage, precisely: all **18** `OfxPropertySuiteV1` functions (including the `*N`
 and `propGetDimension` variants), all **13** `OfxImageEffectSuiteV1` functions,
 all **18** `OfxParameterSuiteV1` functions, all **9** `OfxMultiThreadSuiteV1`
-functions (single-threaded `multiThread`, real mutexes), both memory functions,
+functions (`multiThread` with real workers, real mutexes), both memory functions,
 and `message`. `fetchSuite` returns `nullptr` for everything else — so a plug-in
 that fetches an optional suite is exercised against a host that does not have it.
 
@@ -360,9 +360,10 @@ them, which is the difference between this layer and L0.
    `kOfxImageEffectPropTilesRoD` and never slices a render window, so a
    `setSupportsTiles(true)` path is untested here.
 2. **Clip preferences and host scheduling.** `getClipPreferences` and per-clip
-   depths/PARs are not exercised, `multiThread` still runs the function once on
-   one thread, and the worker threads of `renderConcurrently` start together by
-   construction rather than with a host's scheduling. Concurrent renders of
+   depths/PARs are not exercised; `multiThread` runs real workers (up to four),
+   which is a host-shaped pool rather than a scheduler, and the worker threads
+   of `renderConcurrently` start together by construction rather than with a
+   host's scheduling. Concurrent renders of
    **different instances** are exercised (§8); the same instance from several
    threads is only run for a plug-in that declares `eRenderFullySafe`.
 3. **How a real host reports errors.** The message suite only records strings —

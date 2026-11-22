@@ -759,20 +759,50 @@ OfxStatus imageMemoryUnlockFn(OfxImageMemoryHandle) { return kOfxStatOK; }
 
 // ------------------------------------------------------------- thread / memory
 
+// The OFX multi-thread suite is what ImageProcessor's row splitting rides on.
+// Returning 1 CPU made every plug-in run its pixel loop single-threaded, so a
+// race in multiThreadProcessImages could never show up here. These are real
+// worker threads, and the TLS index is what the Support library asks for.
+thread_local unsigned int t_threadIndex = 0;
+thread_local bool t_isSpawned = false;
+
 OfxStatus multiThreadFn(OfxThreadFunctionV1 func, unsigned int nThreads, void* data) {
   if (!func) return kOfxStatErrBadHandle;
-  func(0, nThreads ? nThreads : 1, data);
+  if (nThreads <= 1) {
+    t_threadIndex = 0;
+    t_isSpawned = false;
+    func(0, 1, data);
+    return kOfxStatOK;
+  }
+  std::vector<std::thread> workers;
+  workers.reserve(nThreads);
+  for (unsigned int i = 0; i < nThreads; ++i) {
+    workers.emplace_back([func, nThreads, data, i]() {
+      t_threadIndex = i;
+      t_isSpawned = true;
+      func(i, nThreads, data);
+    });
+  }
+  for (std::thread& worker : workers) {
+    worker.join();
+  }
+  t_isSpawned = false;
   return kOfxStatOK;
 }
 OfxStatus numCPUsFn(unsigned int* n) {
-  if (n) *n = 1;
+  if (!n) return kOfxStatErrBadHandle;
+  // Enough threads to split an image into slices, few enough that a CI box
+  // with many cores does not spend the test in thread setup.
+  const unsigned int hardware = std::thread::hardware_concurrency();
+  *n = hardware >= 2 ? (hardware > 4 ? 4u : hardware) : 1u;
   return kOfxStatOK;
 }
 OfxStatus threadIndexFn(unsigned int* i) {
-  if (i) *i = 0;
+  if (!i) return kOfxStatErrBadHandle;
+  *i = t_threadIndex;
   return kOfxStatOK;
 }
-int isSpawnedFn(void) { return 0; }
+int isSpawnedFn(void) { return t_isSpawned ? 1 : 0; }
 OfxStatus mutexCreateFn(OfxMutexHandle* mutex, int /*lockCount*/) {
   if (!mutex) return kOfxStatErrBadHandle;
   *mutex = reinterpret_cast<OfxMutexHandle>(new std::mutex());
