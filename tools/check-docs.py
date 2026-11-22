@@ -13,7 +13,8 @@ What it checks, and why each one exists:
 
 1. Links and anchors. A `[x](file.md#anchor)` whose file or heading is gone is
    indistinguishable from prose to a reader and to an agent.
-2. Cross-references of the form `` `FILE.md` §12 ``. These are not links, so no
+2. Cross-references of the form `` `FILE.md` §12 `` (and `§3.5`, checked
+   against a heading that starts with that number). These are not links, so no
    renderer catches them; they rot silently when sections are renumbered.
 3. Count drift. The number of templates, testing layers and AI repositories is
    derived from the tree at run time and compared with the prose that counts
@@ -25,7 +26,9 @@ What it checks, and why each one exists:
    and correctness docs, `[S]/[M]/[D]/[R]/[A]/[U]` for the performance synthesis)
    and must define every label they use.
 6. `path:123` anchors. A backticked file:line is a promise to an agent that the
-   symbol is there. The file must exist and must still be that long.
+   symbol is there: inside this tree the file must exist and must still be that
+   long. A bare header name or a path whose first segment is not in this
+   repository points into an external checkout and is skipped.
 7. AGENTS.md shape: present, and a router rather than an essay.
 """
 
@@ -173,15 +176,17 @@ def check_links(root, files, texts, report):
 
 
 def check_section_refs(root, files, texts, report):
-    """`FILE.md` §12 - a cross-reference no renderer validates."""
+    """`FILE.md` §12 / §3.5 - a cross-reference no renderer validates."""
     for path in files:
         text = texts[path]
-        for match in re.finditer(r"([A-Za-z0-9_./-]+\.md)`?\s*§\s*(\d+)", text):
-            target, number = match.group(1), int(match.group(2))
+        for match in re.finditer(r"([A-Za-z0-9_./-]+\.md)`?\s*§\s*(\d+(?:\.\d+)*)", text):
+            target, dotted = match.group(1), match.group(2)
+            parts = dotted.split(".")
+            number = int(parts[0])
             line = text.count("\n", 0, match.start()) + 1
             resolved = os.path.normpath(os.path.join(root, os.path.dirname(path), target))
             if not os.path.exists(resolved):
-                report.error(path, line, f"{target} does not exist (referenced as §{number})")
+                report.error(path, line, f"{target} does not exist (referenced as §{dotted})")
                 continue
             relative = os.path.relpath(resolved, root)
             if relative not in texts:
@@ -189,6 +194,15 @@ def check_section_refs(root, files, texts, report):
             if number not in section_numbers(texts[relative]):
                 have = sorted(section_numbers(texts[relative]))
                 report.error(path, line, f"{target} has no §{number} (sections: {have})")
+                continue
+            if len(parts) > 1:
+                # A subsection is a heading whose text starts with N.M; the
+                # parent section exists, so §3.5 could otherwise point at a
+                # heading that was renumbered to 3.6.
+                prefix = re.escape(".".join(parts))
+                if not any(re.match(rf"^\s*{prefix}(?![\d.])", title)
+                           for title in headings(texts[relative]).values()):
+                    report.error(path, line, f"{target} has no §{dotted} heading")
 
 
 def check_counts(root, files, texts, report):
@@ -295,6 +309,17 @@ def check_anchors(root, files, texts, report):
                 relative = os.path.normpath(
                     os.path.join(root, os.path.dirname(path), target))
                 if not os.path.exists(relative):
+                    # Distinguish a promise about this tree from a pointer into an
+                    # external checkout: `Support/Library/...`, `Merge/Merge.cpp`
+                    # and a bare `ofxImageEffect.h` all live in the OpenFX or
+                    # Resolve trees. A target whose first segment exists in this
+                    # repository is a claim about this repository, and a file
+                    # that is gone is exactly the drift this check catches.
+                    first = target.split("/", 1)[0]
+                    internal = "/" in target and first in os.listdir(root)
+                    if internal and not target.startswith(".ofx-ref/"):
+                        report.error(path, line_number,
+                                     f"anchor {target}:{number} names a file that does not exist")
                     continue
                 resolved = relative
             total = sum(1 for _ in open(resolved, encoding="utf-8", errors="replace"))
