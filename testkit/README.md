@@ -52,6 +52,13 @@ A parameter type the harness cannot model is never silent: the fake host records
 its messages, so a failed action names the parameter instead of looking like a
 plug-in defect.
 
+The fake host serves message suite **v1 and v2**. `setPersistentMessage(...)` is
+recorded as `[persistent:<type>] text (id)` and `clearPersistentMessage` as
+`[persistent] cleared`, so the channel recommended in
+[`SKILL.md`](../SKILL.md) §7 can be
+exercised — Support throws a host-missing-suite exception when only v1 exists,
+which is what a v1-only harness used to do.
+
 Thread safety: `--concurrency-param name` names a numeric parameter (e.g. `gain`)
 that is given a different value on each instance, so a frame produced with a
 neighbour's value fails on the pixels, not on a crash; `--concurrency-threads N`

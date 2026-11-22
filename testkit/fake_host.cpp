@@ -102,6 +102,7 @@ struct Impl {
   OfxMultiThreadSuiteV1 threadSuite{};
   OfxMemorySuiteV1 memorySuite{};
   OfxMessageSuiteV1 messageSuite{};
+  OfxMessageSuiteV2 messageSuiteV2{};
 
   EffectObj pluginDesc;
   std::vector<EffectObj*> instances;
@@ -928,6 +929,37 @@ OfxStatus messageFn(void*, const char* messageType, const char* messageId, const
   return kOfxStatOK;
 }
 
+// Message suite v2: the channel a plug-in uses for a user-visible error, and the
+// reason Support's setPersistentMessage throws when the host offers only v1.
+OfxStatus persistentMessageFn(void*, const char* messageType, const char* messageId,
+                              const char* format, ...) {
+  char buffer[4096];
+  va_list ap;
+  va_start(ap, format);
+  std::vsnprintf(buffer, sizeof(buffer), format ? format : "", ap);
+  va_end(ap);
+  std::string line = "[persistent:";
+  line += messageType ? messageType : "message";
+  line += "] ";
+  line += buffer;
+  if (messageId && *messageId) {
+    line += " (";
+    line += messageId;
+    line += ")";
+  }
+  {
+    std::lock_guard<std::mutex> lock(gMessageMutex);
+    g->messages.push_back(line);
+  }
+  return kOfxStatOK;
+}
+
+OfxStatus clearPersistentMessageFn(void*) {
+  std::lock_guard<std::mutex> lock(gMessageMutex);
+  g->messages.push_back("[persistent] cleared");
+  return kOfxStatOK;
+}
+
 // -------------------------------------------------------------------- the host
 
 const void* fetchSuite(OfxPropertySetHandle, const char* suiteName, int suiteVersion) {
@@ -939,6 +971,7 @@ const void* fetchSuite(OfxPropertySetHandle, const char* suiteName, int suiteVer
   if (name == kOfxMultiThreadSuite && suiteVersion == 1) return &g->threadSuite;
   if (name == kOfxMemorySuite && suiteVersion == 1) return &g->memorySuite;
   if (name == kOfxMessageSuite && suiteVersion == 1) return &g->messageSuite;
+  if (name == kOfxMessageSuite && suiteVersion == 2) return &g->messageSuiteV2;
   return nullptr; // every optional suite: the plug-in must cope with nullptr
 }
 
@@ -1051,6 +1084,9 @@ Impl::Impl() {
   memorySuite.memoryFree = memoryFreeFn;
 
   messageSuite.message = messageFn;
+  messageSuiteV2.message = messageFn;
+  messageSuiteV2.setPersistentMessage = persistentMessageFn;
+  messageSuiteV2.clearPersistentMessage = clearPersistentMessageFn;
 
   initHostProps(&hostProps);
   pluginDesc.props.owner = &pluginDesc;
