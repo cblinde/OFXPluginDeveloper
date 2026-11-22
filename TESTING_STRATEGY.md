@@ -47,12 +47,12 @@ column perfectly and never ran the right one.
 
 | Layer | What it tests | Cost to build | What it catches | Here |
 |---|---|---|---|---|
-| **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | both templates |
-| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | both templates: `testkit/`, 74 + 80 checks |
+| **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | the templates |
+| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 98 + 124 + 116 checks |
 | **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) §1 |
-| **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | both templates: `testkit/fake_host.*` |
-| **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | both templates |
-| **L5** memory | ASan, UBSan, TSan, valgrind | an hour | UB, leaks, data races | both templates |
+| **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | the templates: `testkit/fake_host.*` |
+| **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | the templates |
+| **L5** memory | ASan, UBSan, TSan, valgrind | an hour | UB, leaks, data races | the templates |
 | **L6** concurrency | thread-safety claims | an hour | races in per-instance state | kernel reentrancy proven |
 | **L7** performance | ms/frame, allocations, peak memory | a day | per-frame allocation, sync stalls | **not measured here** |
 | **L8** host | real host behaviour | hours, repeatedly | everything that only a host reveals | **not possible here** |
@@ -132,6 +132,22 @@ OfxPlugin* (*g)(int) = dlsym(h, "OfxGetPlugin");
 /*   setHost != NULL && mainEntry != NULL                              */
 ```
 
+On Windows the same twenty lines are `LoadLibraryExW` + `GetProcAddress`, and the
+path is built in the same translation unit (`#ifdef _WIN32`), not in a second
+copy of the checks:
+
+```c
+HMODULE h = LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+int (*n)(void) = (int (*)(void))GetProcAddress(h, "OfxGetNumberOfPlugins");
+OfxPlugin* (*g)(int) = (OfxPlugin* (*)(int))GetProcAddress(h, "OfxGetPlugin");
+/* same assertions; FreeLibrary instead of dlclose */
+```
+
+`LOAD_WITH_ALTERED_SEARCH_PATH` is the Windows equivalent of `$ORIGIN`: it makes
+the loader look next to the `.ofx` first, which is how a plug-in finds a runtime
+it ships. Measured externally: the ported harness drove a Windows bundle through
+the whole protocol with 0 failures **[B]**.
+
 The `OfxPlugin` fields are the ones a host reads before it calls anything
 (`api`, `apiVersion`, `pluginIdentifier`, `pluginVersionMajor`,
 `pluginVersionMinor`, `setHost`, `mainEntry`). A null `setHost` or `mainEntry`
@@ -147,27 +163,36 @@ and thread-local state all run there; a crash at unload looks like "the host
 crashes on quit" to a user.
 
 **Built here.** `testkit/contract_main.cpp` is the shipped version of this
-recipe, and both templates run it against the binary their own `build.sh`
+recipe, and the templates run it against the binary their own `build.sh`
 produced — it does not link the plug-in, it `dlopen`s it:
 
 ```bash
-./run-tests.sh        # builds both templates, then runs every suite below
+./run-tests.sh        # builds the templates, then runs every suite below
 # per template, the step is:
 testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
 /tmp/contract_test build/bundle/<Name>.ofx.bundle/Contents/Linux-x86-64/<Name>.ofx \
   --id com.ofxplugindeveloper.minimalcudagain \
   --param gain:double --param gainAlpha:double --clip Source --clip Output \
-  --identity --set gain=2.0 --not-identity-after-set --byte-dst-rejected
+  --identity --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
+  --concurrency-param gain
 ```
 
-Measured (CPU-only build of the CUDA template, this machine): **56 checks, 0
-failed** for `ReferenceGain`, **74 checks, 0 failed** for `MinimalCudaGain`,
-**80 checks, 0 failed** for `OnnxInference`. The
+Measured (CPU-only build of the CUDA template, this machine): **98 checks, 0
+failed** for `ReferenceGain`, **124 checks, 0 failed** for `MinimalCudaGain`,
+**116 checks, 0 failed** for `OnnxInference`. The
 checks are: the two export symbols; `pluginApi`, `apiVersion`, non-empty
 `pluginIdentifier` (stable across a second load), `pluginVersionMajor/Minor`;
-non-null `setHost`/`mainEntry`; and then a whole `describe → describeInContext →
+non-null `setHost`/`mainEntry`; then a whole `describe → describeInContext →
 createInstance → isIdentity → render → destroyInstance → unload` sequence run
-**twice in one process**, each time followed by `dlclose`.
+**twice in one process**, each time followed by `dlclose`; and finally the
+multi-instance block from §8 — a second live instance with a different
+parameter value, and one render thread per instance compared against its own
+settings.
+
+`--concurrency-param gain` is what makes that last block able to prove isolation:
+it gives instance *n* its own `gain`, so pixels that used a neighbour's value fail
+by the difference, not by a crash. Without the flag the block still runs, but can
+only compare instances that were configured identically.
 
 **A finding from building it, worth knowing before you copy the loop:** the OFX
 1.5.1 Support library's `unloadAction()`
@@ -242,7 +267,7 @@ colour management, and anything GPU (a fake host has no device pointers).
 **Built here: `testkit/`.** The SDK does not give you a host — `.ofx-ref/Support/`
 contains the plug-in-side library, the sample plug-ins and `PropTester`, which is
 itself a plug-in (it builds via `add_ofx_plugin`). So the host was written, once,
-and both templates share it rather than each carrying a copy.
+and the templates share it rather than each carrying a copy.
 
 ### 5.1 What is in it
 
@@ -333,9 +358,12 @@ them, which is the difference between this layer and L0.
 1. **The multi-resolution and tile protocol.** It never sets
    `kOfxImageEffectPropTilesRoD` and never slices a render window, so a
    `setSupportsTiles(true)` path is untested here.
-2. **Clip preferences and host scheduling.** `getClipPreferences`, per-clip depths
-   and PARs, and concurrent renders of several instances are not exercised;
-   `multiThread` runs the function once, on one thread.
+2. **Clip preferences and host scheduling.** `getClipPreferences` and per-clip
+   depths/PARs are not exercised, `multiThread` still runs the function once on
+   one thread, and the worker threads of `renderConcurrently` start together by
+   construction rather than with a host's scheduling. Concurrent renders of
+   **different instances** are exercised (§8); the same instance from several
+   threads is only run for a plug-in that declares `eRenderFullySafe`.
 3. **How a real host reports errors.** The message suite only records strings —
    nothing here proves an error reaches a user, that progress appears, or that
    cancel works mid-render.
@@ -397,7 +425,7 @@ a decision; a bare `EXPECT_NEAR` is not.
 Measured here: the CUDA template's suite is clean under ASan/UBSan and under
 valgrind (`ERROR SUMMARY: 0 errors from 0 contexts`), for the kernel harness
 **and** for the contract harness. The inference template's contract harness is
-clean under ASan/UBSan (74/74 and 80/80 checks, no sanitizer report) and under
+clean under ASan/UBSan (every check, no sanitizer report) and under
 valgrind: `0 errors from 0 contexts`, `definitely lost: 0 bytes`,
 `indirectly lost: 0 bytes`, with 15,965 bytes still reachable in 21 blocks —
 that is ONNX Runtime's process-lifetime arena plus the Support library's static
@@ -427,7 +455,36 @@ a test:
 | `eRenderInstanceSafe` | per-instance state is safe, instances are independent | N instances rendered on N threads; output byte-identical to serial |
 | `eRenderFullySafe` | the **same** instance may render concurrently | all buffers keyed per render; TSan clean under that load |
 
-Measured here at the kernel level: 6 threads running the real kernel body on
+The first two rows are now code, not advice. `contract_test` creates a second
+instance while the first is live, gives each its own value for
+`--concurrency-param`, renders both, and compares each frame with its own
+settings; then it renders one frame per instance from one thread per instance
+(`renderConcurrently`) and repeats the comparison, with a worker's own
+source/destination images so a race found there belongs to the plug-in.
+`eRenderFullySafe` selects the same instance for every worker instead. An
+`eRenderUnsafe` plug-in gets a named skip, not a silent pass.
+
+Measured here: `ReferenceGain`, `MinimalCudaGain` and `OnnxInference` (all
+declaring `eRenderInstanceSafe`) pass four instances × three concurrent renders,
+each frame matching its own parameter value, **0 failures**; the harness is
+TSan-clean. The plug-in binaries are not TSan-instrumented in that run, so it
+proves behaviour, not the absence of races. A TSan build of the reference plug-in
+does report one, and it is worth knowing where: every action calls
+`OFX::Log::indent()` (`ofxsImageEffect.cpp:2569`), which increments a plain global
+`gIndent` (`ofxsLog.cpp:63`), so **two concurrent renders race inside the Support
+library** before any plug-in code matters. The counter is cosmetic, but the claim
+"instance-safe" is only as true as the library under it — a session or cache with
+the same shape would be a real bug.
+
+The check bites: a copy of the reference that multiplies by a constant instead of
+reading `gain` fails `instance 0 used its own value, not its neighbour's` with
+`max deviation 0.375` **[V]** — that is the shape of the bug the check exists to
+catch, and the failure names the instance, not just a pixel. What it still does
+not cover: a plug-in that declares `eRenderFullySafe` (no template does, so that
+branch is written but unexercised here), and races in code that was not built with
+TSan (see §7).
+
+Measured at the kernel level: 6 threads running the real kernel body on
 disjoint buffers, **0 failures**, TSan-clean — which is what reentrancy of a
 function means. That is *not* a plug-in-level thread-safety test, and the
 difference matters: a plug-in also has parameters, sessions and caches.
@@ -548,6 +605,9 @@ Reproduce all of it from a clean checkout; nothing needs a GPU or a host.
 ```bash
 # Everything, every template: reference build, unit, image, artifact, fake host, memcheck
 ONNXRUNTIME_ROOT=/path/to/ort ./run-tests.sh
+# Without ONNXRUNTIME_ROOT the inference template is skipped by name (not an
+# error): the reference and CUDA suites still build and run.
+./run-tests.sh
 
 # Or one template at a time:
 cd templates/minimal-ofx && ./build.sh && ./test/run-tests.sh
@@ -577,16 +637,29 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | Inference tiling | tile 5/13/17/256 and odd 1×1, 7×5, 64×3, 3×48 all `0` |
 | Inference control | `halo = 0` deviates by `0.263276` (expected) |
 | Inference bundle | 2 `T` exports (+6 weak `W`), `NEEDED libonnxruntime` = 1, `RUNPATH $ORIGIN` = 1 |
-| Artifact + fake host (reference) | 56 checks, 0 failed, two load/unload cycles |
-| Artifact + fake host (CUDA) | 74 checks, 0 failed, two load/unload cycles |
-| Artifact + fake host (inference) | 80 checks, 0 failed, render matches the Python golden through the OFX API |
+| Windows artifact | 2 exports (`dumpbin /exports`), 7 cubins `sm_75`…`sm_120` (`cuobjdump -lelf`), no CUDA runtime import **[B]** |
+| Windows contract | whole host protocol, 0 failures, through `LoadLibraryExW` **[B]** |
+| GPU kernels, hardware | 28/28 launcher cases bit-exact on RTX 3060 sm_86; 200 queued launches, 8 host threads, zero-copy **[B]** |
+| GPU throughput | 1920×1080: vec4 0.212 ms / scalar 0.222 ms, ~312/300 GB/s **[B]** |
+| Artifact + fake host (reference) | 98 checks, 0 failed, two load/unload cycles, two live instances with separate values |
+| Artifact + fake host (CUDA) | 124 checks, 0 failed, two load/unload cycles, four instances × three concurrent renders |
+| Artifact + fake host (inference) | 116 checks, 0 failed, render matches the Python golden through the OFX API, four instances × three concurrent renders |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | cppcheck clean, shellcheck clean |
 
-Not run here, and therefore not claimed: no GPU execution (the CUDA template was
-built CPU-only for the runs above), no host render (no Resolve/Nuke/Natron in
-this environment), no performance numbers, no Windows build, and no
+Not run here, and therefore not claimed: no GPU execution in this environment
+(the CUDA template is built CPU-only for the runs above), no host render (no
+Resolve/Nuke/Natron anywhere in these tests), no timing measured here, and no
 multi-resolution/tile-protocol test (the fake host does not speak it — §5.4).
+The Windows build, the Windows contract run, the hardware kernel cases and the
+throughput numbers come from a 2026-11-22 field test on another machine and are
+marked **[B]**; `test/gpu-kernel-test.cu` is the harness that produced them and
+ships so they can be repeated on any GPU:
+
+```bash
+nvcc -arch=sm_86 -O2 -std=c++17 test/gpu-kernel-test.cu -o build/gpu-kernel-test.exe
+build/gpu-kernel-test.exe        # 28 cases, hardware only
+```
 
 ---
 
@@ -602,6 +675,9 @@ multi-resolution/tile-protocol test (the fake host does not speak it — §5.4).
 | Sanitizer build skipped "because it is slow" | the only check that sees UB | run it on every PR; it is seconds |
 | Test disabled "flaky" without a cause | a race, usually | TSan, then fix it; flaky is a diagnosis, not a status |
 | Numbers in a commit message | unreproducible within a week | a benchmark file with the command, the machine and the distribution |
+| A "broken" control that passes | the control was built from a copied tree whose `build/` still held the old artefact, so CMake had nothing to rebuild — measured here while proving the instance check: the deliberately "fixed gain" plug-in passed until `build/` was deleted | copy sources only, or delete `build/` first; a negative control is only a control when the binary demonstrably changed |
+| A flag that encodes an assumption nobody wrote down | `--set gain=2.0 --not-identity-after-set` checks "render == source × value, alpha unchanged", which only holds for a parameter that scales RGB alone; `templates/minimal-ofx` scales *every* channel, so passing `--set` there fails on alpha even though the plug-in is right | state the assumption beside the flag, or assert only what the spec fixes (RGB); use a separate alpha parameter when alpha is meant to be independent |
+| "Declared thread-safe" treated as tested | a serial render exercises none of it, and an uninstrumented TSan run says nothing about the plug-in image | render several instances from several threads (§8), and build the plug-in with `-fsanitize=thread` to see races inside it |
 
 ---
 

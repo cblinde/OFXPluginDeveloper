@@ -144,9 +144,9 @@ function needs no neighbours) and a bug for anything with a kernel radius.
 - **Bundle layout is a path convention, not a build detail.**
   `Name.ofx.bundle/Contents/Linux-x86-64/Name.ofx` (or `Contents/Win64/` for
   Windows). The bundle folder name, the binary stem and the `.ofx` suffix must
-  agree; hosts scan that path and report nothing when it is wrong. Both templates
+  agree; hosts scan that path and report nothing when it is wrong. The templates
   write their module into exactly that directory.
-- **`RUNPATH` must not contain the build machine's paths.** Both templates set
+- **`RUNPATH` must not contain the build machine's paths.** The templates set
   `INSTALL_RPATH "$ORIGIN"` with `BUILD_WITH_INSTALL_RPATH ON`, so a bundled
   runtime next to the `.ofx` resolves and nothing else is baked in.
 
@@ -183,14 +183,14 @@ their defaults are the opposite of what they assume:
   output images can contain pixel data that is only a subset of their full RoD",
   and if you say `false` the host "should supply full RoD images"
   (`.ofx-ref/include/ofxImageEffect.h:849`–`:857`). So `false` is the *deliberate* statement, and
-  both templates make it: `templates/minimal-cuda-ofx/src/Plugin.cpp:289` and
+  the templates make it: `templates/minimal-cuda-ofx/src/Plugin.cpp:289` and
   `templates/onnx-inference-ofx/src/Plugin.cpp:241` (`setSupportsTiles(false)`
   in `describe()`). `GPUGain` makes the same opt-out with a compile-time constant:
   `#define kSupportsTiles false` at `.ofx-ref/Support/Plugins/GPUGain/GPUGain.cpp:20`, applied at `:361`,
   `:411` and `:418`.
 - **`kOfxImageEffectPluginRenderThreadSafety` defaults to
   `kOfxImageEffectRenderInstanceSafe`** (`.ofx-ref/include/ofxImageEffect.h:623`–`:629`), not to
-  `Unsafe`. Both templates set it anyway (`templates/minimal-cuda-ofx/src/Plugin.cpp:303`,
+  `Unsafe`. The templates set it anyway (`templates/minimal-cuda-ofx/src/Plugin.cpp:303`,
   `templates/onnx-inference-ofx/src/Plugin.cpp:251`) because the value is a promise a
   reviewer must be able to check; the CUDA template's comment above `:303` states
   exactly what `InstanceSafe` buys and why `FullySafe` would be a lie for its
@@ -215,7 +215,7 @@ Four rules, and the header sentence that settles them:
    the handle and dereferences nothing on the CPU — the CUDA template says so in
    the comment above the expression.
 3. **Widen the pitch before you multiply.** `int * int` overflows for large
-   images; both templates cast `rowBytes` to `std::int64_t`/`long long` before
+   images; the templates cast `rowBytes` to `std::int64_t`/`long long` before
    multiplying by a row index.
 4. **`getPixelAddress()` is defined out of line in the Support library.** Calling
    it once per pixel is a function call per pixel. `multiThreadProcessImages()` in
@@ -288,7 +288,7 @@ further rules the template teaches by construction:
   images as images that "contain pixel data that is only a subset of their full
   RoD" (`.ofx-ref/include/ofxImageEffect.h:849`–`:857`). Saying `true` means you accept partial
   images and must produce correct output for them; saying `false` asks the host
-  for full-RoD fetches. Both templates do their own tiling and therefore say
+  for full-RoD fetches. The templates do their own tiling and therefore say
   `false` (`templates/minimal-cuda-ofx/src/Plugin.cpp:289`), with a comment that spells out
   the difference.
 - **Internal tiling requires a halo at least as large as the model's or kernel's
@@ -419,6 +419,10 @@ shipped projects each leave partly unanswered.
 
 ## 8. How the numbers here are reproduced
 
+Figures marked **[V]** were produced in this repository (compiled or measured);
+the commands are in `TESTING_STRATEGY.md` §13. Figures marked **[I]** are
+inferred and have not been reproduced.
+
 Every number in this guide was produced on the machine that wrote it. These are
 the exact commands; all of them are read-only apart from building inside
 `templates/*/build`.
@@ -432,7 +436,7 @@ nm -D --defined-only templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx
 
 The same command on the inference template prints 2. With the visibility block
 removed from `CMakeLists.txt` (and a CPU-only build), the same check prints
-**663**, because the static Support library's symbols become visible — which is
+**663** **[V]**, because the static Support library's symbols become visible — which is
 the failure mode the hidden-visibility rules exist to prevent. That variant was
 built from a copy outside the tree, so the shipped `CMakeLists.txt` is unchanged.
 
@@ -478,9 +482,10 @@ Nine of the ten sources include `OFX::ImageProcessor`:
   through Resolve, Nuke, SCRATCH or Natron; host-specific behaviour lives in
   [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) at evidence
   grade B/C.
-- **No GPU was available.** No kernel or CUDA execution provider has executed on
-  hardware here, so every GPU statement above is derived from headers,
-  documentation or host-side emulation, never from a device run.
+- **No GPU was available here.** No kernel or CUDA execution provider executes
+  in this environment's suites, so the GPU statements above are derived from
+  headers, documentation or host-side emulation — except where `SKILL.md` §12
+  quotes the external 2026-11-22 hardware run **[B]**.
 - **The SDK samples were read, not executed.** Their line numbers are for tag
   `OFX_Release_1.5.1` and will drift on other tags; re-grep the symbol if a line
   looks wrong.

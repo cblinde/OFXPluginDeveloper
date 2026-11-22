@@ -4,6 +4,12 @@ Deep-dive companion to [`SKILL.md`](SKILL.md). Everything here assumes the
 OpenFX 1.5-era headers (`ofxImageEffect.h`, `ofxGPURender.h`, `ofxParam.h`), the
 C++ Support library (`OFX::ImageEffect`, `OFX::ImageProcessor`), and CUDA 12/13.
 
+**Provenance.** **[V]** verified in this repository (compiled, measured, or
+quoted from the pinned 1.5.1 headers); **[I]** inferred from a header or from the
+API contract, not demonstrated; **[B]** external evidence — a vendor document or
+a shipped project, grade B in `HOST_COMPATIBILITY_MATRIX.md`. Unmarked text is
+design guidance.
+
 ---
 
 ## 1. Object model in one page
@@ -103,6 +109,23 @@ stateless kernel. Claiming `FullySafe` without auditing shared allocations is a
 race inside the host process — it will not be caught by sanitizers you cannot
 run on the host.
 
+The claim is now exercised, not assumed: `testkit/` holds several live instances
+with separate parameter values and renders one frame per instance from one thread
+per instance, repeating the comparison for a `FullySafe` plug-in on a single
+instance **[V]**. Two caveats that measurement produced:
+
+1. **The declaration is only as true as the library under it.** Every OFX action
+   calls `OFX::Log::indent()` (`Support/Library/ofxsImageEffect.cpp:2569`), which
+   increments a plain global counter (`ofxsLog.cpp:63`) with no lock. A TSan build
+   of a template therefore reports a race between two concurrent renders *inside
+   the Support library*, before any plug-in code runs **[V]**. The counter is
+   cosmetic, but the same shape in a session cache or a lazily built graph would
+   be a real bug — audit what you add, not what you declare.
+2. **TSan only sees instrumented code.** The suite's TSan pass covers the harness;
+   to see races in the plug-in image, build the plug-in with `-fsanitize=thread`
+   as well. A clean functional run with an uninstrumented binary proves behaviour,
+   never the absence of races.
+
 ---
 
 ## 3. The GPU negotiation handshake
@@ -135,7 +158,7 @@ ordering against the host's own work: the host may read the image buffer before
 your kernel writes it.
 
 **Step 2 — decision.** At render time, read `kOfxImageEffectPropCudaEnabled`
-(the Support library exposes it as `args.isEnabledCudaRender`). If it is 0, the
+(the Support library exposes it as `args.isEnabledCudaRender`) **[V]**. If it is 0, the
 pointers are **host** pointers, whatever the descriptor said. This is the single
 most common source of "invalid device pointer" errors: a plugin that advertised
 CUDA and then assumed it was always on.
@@ -228,7 +251,8 @@ The specification is short and unambiguous (`ofxGPURender.h`,
 > If not set: the plug-in SHOULD ensure that any asynchronous operations it
 > enqueues have completed before returning from the render action.
 
-Read that as two modes:
+Quoted verbatim from `ofxGPURender.h` lines 608–617 **[V]**. Read that as two
+modes:
 
 | Host supplied a stream | Plugin behaviour |
 | --- | --- |
@@ -468,7 +492,7 @@ inference session, and a binding layer that must not copy.
 ### Where the pointers go
 
 Both runtimes accept device pointers directly, which is what makes zero-copy
-possible:
+possible **[B]** — their published APIs, not a measurement here:
 
 | Runtime | API | What you pass |
 | --- | --- | --- |
@@ -576,11 +600,11 @@ interface that has been stable for years.
 - Shared objects must be PIC (`POSITION_INDEPENDENT_CODE ON`); CUDA objects too.
 - `-fvisibility=hidden` plus explicit exports for the two mandated entry points
   (the Support library already marks them). Two plugins with default visibility
-  will interpose each other's Support symbols.
+  will interpose each other's Support symbols **[I]**.
 - The visibility flag has to reach the CUDA objects too. In CMake that is a
   **separate** target property, `CUDA_VISIBILITY_PRESET`: `CXX_VISIBILITY_PRESET`
   alone leaves every `extern "C"` launcher in `Kernel.cu` exported (measured on
-  this template: 5 `T` symbols instead of 2).
+  this template: 5 `T` symbols instead of 2) **[V]**.
 - `libcudart.so.*` must be findable: either installed by the toolkit, or shipped
   next to the `.ofx` and found via `RPATH=$ORIGIN`. Shipping it is often the
   difference between "works on my machine" and "works on the colourist's".
@@ -646,11 +670,15 @@ rowBytes, and every non-success `cudaError_t` with `cudaGetErrorString`.
 5. **Host refuses to start** — your plugin crashed during `kOfxActionLoad` or a
    static initialiser. No CUDA calls outside actions, and no static CUDA objects.
 
+These five are the observed failure classes in the host reports cited in
+`HOST_COMPATIBILITY_MATRIX.md` **[B]**; none of them was reproduced here.
+
 ---
 
 ## 12. End-to-end walkthrough of the template
 
-`templates/minimal-cuda-ofx` implements every rule above in ~450 lines.
+`templates/minimal-cuda-ofx` implements every rule above in ~450 lines **[V]**
+(it builds, and its artifact is inspected by `build.sh`).
 
 ```
 render(args)

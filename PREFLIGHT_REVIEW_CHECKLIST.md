@@ -28,7 +28,8 @@ All of these run without a GPU and without a host. They live in the template's
 |---|---|---|
 | Host suite | `./test/run-tests.sh` | Kernel bodies match a reference byte for byte, the alignment predicate decides the documented cases, the CPU loop is unchanged after hoisting, and concurrent runs do not interfere. |
 | Memory safety | `SANITIZE=address,undefined ./test/run-tests.sh` | No out-of-bounds access, no use-after-free, no uninitialised read, no signed-overflow or misaligned-access undefined behaviour **in the code the harness exercises**. |
-| Data races | `SANITIZE=thread ./test/run-tests.sh` | The `[4/4]` concurrent test runs clean: the kernels touch only their arguments and their own indices. |
+| Data races | `SANITIZE=thread ./test/run-tests.sh` | The `[4/4]` concurrent test runs clean: the kernels touch only their arguments and their own indices. Build the plug-in with `-fsanitize=thread` too, or this says nothing about the plug-in image. |
+| Thread-safety claim | `contract_test … --concurrency-param <numeric>` | Two live instances keep separate values and the declared level holds: `InstanceSafe` renders different instances in parallel, `FullySafe` also one instance across threads, `Unsafe` is skipped **by name**. A pass without the flag proves only that serial renders work. |
 | Leaks | `RUN_VALGRIND=1 ./test/run-tests.sh` | memcheck: `0 errors from 0 contexts`, all heap blocks freed. |
 | Static analysis | `./test/run-analysis.sh` | cppcheck and shellcheck report nothing unresolved over `src/Plugin.cpp`, `test/` and the scripts. |
 | ABI | `nm -D --defined-only <bundle>/*.ofx \| grep ' T '` | Exactly two dynamic exports (see [D2](#d-hosts-and-packaging)). |
@@ -138,6 +139,7 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 [ ] ./test/run-tests.sh                          pass / fail
 [ ] SANITIZE=address,undefined ./test/run-tests.sh   pass / fail
 [ ] SANITIZE=thread ./test/run-tests.sh           pass / fail / no concurrent path
+[ ] contract_test --concurrency-param <name>     pass / fail / declared Unsafe
 [ ] RUN_VALGRIND=1 ./test/run-tests.sh            pass / fail
 [ ] ./test/run-analysis.sh                        pass / fail
 [ ] A1-A6 render path                             answered in this PR

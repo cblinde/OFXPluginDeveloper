@@ -35,17 +35,18 @@ rendered by a host — see [What has actually been verified](#what-has-actually-
 
 | File | What it is |
 | --- | --- |
+| [`AGENTS.md`](AGENTS.md) | The 30-line router for generic coding agents: commands, read order per task type, hard rules — points into the documents below rather than restating them |
 | [`SKILL.md`](SKILL.md) | Master reference: ground rules, generation workflow, verified constants, build standards, anti-patterns, checklists, mandatory git workflow |
 | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, the stream contract, pitch arithmetic, RoD/RoI, colour/alpha, TensorRT/ONNX zero-copy, toolchain, profiling |
 | [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) | The build proved by a compile: one command from a clean checkout, the artifact's measured contract (`nm`, `readelf`, `dlopen`), and every compile-level requirement with file:line evidence and a verified/inferred label |
 | [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | Resolve/Nuke/SCRATCH/Natron behaviour and workarounds, every claim graded A/B/C by evidence source |
 | [`BEST_PRACTICES_AND_PERFORMANCE.md`](BEST_PRACTICES_AND_PERFORMANCE.md) | Review-level synthesis: what the reference projects teach, verified header quirks, host- and kernel-side performance rules with measured PTX evidence, anti-patterns by symptom |
 | [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | The questions to answer before shipping, each one settled by a header line or a spec sentence, plus the automated gates that answer half of them |
-| [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | Putting a neural network in an OFX plug-in: what six shipped projects do, Python/Rust/C#/JS/Julia embedding hazards, ONNX Runtime's exact API, and when CUDA is worth it |
+| [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | Putting a neural network in an OFX plug-in: what ten shipped AI repositories do, Python/Rust/C#/JS/Julia embedding hazards, ONNX Runtime's exact API, and when CUDA is worth it |
 | [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | New to OFX: the three implementation tiers, the patterns worth copying, anti-patterns by their tells, and a seven-step reading plan — every claim anchored to a file and line |
 | [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | The lookup table: task → proven pattern → the file that implements it, plus symptom and property routes, what ten shipped AI repositories teach and warn against, and which general-purpose OFX suite to read for a mechanic |
-| [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | How to test a plug-in properly: ten layers from pure maths to host acceptance, what each proves and cannot prove, the failure-injection table, and what this repository actually runs |
-| [`testkit/`](testkit/) | The runnable host harness: loads a built `.ofx` with `dlopen`, checks the `OfxPlugin` struct, then drives describe/describeInContext/render through a hand-written host — shared by both templates, with two negative controls proving it can fail |
+| [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | How to test a plug-in properly: eleven layers (L0–L10) from pure maths to CI, what each proves and cannot prove, the failure-injection table, and what this repository actually runs |
+| [`testkit/`](testkit/) | The runnable host harness: loads a built `.ofx` with `dlopen`, checks the `OfxPlugin` struct, then drives describe/describeInContext/render through a hand-written host — shared by the templates, with two negative controls proving it can fail |
 | [`templates/minimal-ofx/`](templates/minimal-ofx/) | The reference plug-in: one RGBA gain, no CUDA and no model, built and verified from a clean checkout by one command — the scaffold to copy |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | The buildable template: CMake + OFX host wrapper + CUDA kernel + CPU fallback |
 | [`templates/onnx-inference-ofx/`](templates/onnx-inference-ofx/) | The buildable inference template: ONNX Runtime session, pitch-correct packing, tiled inference, golden-file tests |
@@ -193,7 +194,7 @@ cd templates/minimal-cuda-ofx
 CPU_ONLY=1 ./build.sh            # CPU path only (no CUDA compile at all)
 ```
 
-Windows:
+Windows (the leading `.\` matters when `NoDefaultCurrentDirectoryInExePath=1`):
 
 ```bat
 cd templates\minimal-cuda-ofx
@@ -219,8 +220,10 @@ before failing, so a CPU-only build is never produced silently.
 | `build.bat` | `%2` equal to `install` | Runs the `install-bundle` target. |
 
 `build.sh` accepts these in any order and rejects anything else with exit code 2.
-`build.bat` uses the `Visual Studio 17 2022` generator with `-A x64`; edit it or
-pass `-G` for another toolchain.
+`build.bat` picks the newest Visual Studio instance that actually has the C++
+toolset (through `vswhere`), reuses the generator a previous run left in
+`build\CMakeCache.txt`, and falls back to Ninja when that instance has no NVIDIA
+CUDA build customisations. Set `CMAKE_GENERATOR` to override it.
 
 #### Options and environment variables
 
@@ -261,8 +264,10 @@ Documented rather than hidden, because each one is a trap for the next reader:
 
 1. **No top-level `LICENSE` file.** The per-file SPDX headers are the operative
    licence statement (see [Licensing](#licensing-and-provenance)).
-2. **`build.bat` has never been executed** — it is syntax-reviewed only. Until it
-   is run under MSVC, treat the Windows path as unproven.
+2. **The Windows path was executed on another machine, not here.** The 2026-11-22
+   field test built, loaded and rendered through `.\build.bat`; this checkout can
+   only syntax-review it, so treat the Windows build as externally verified **[B]**
+   rather than as a check `./run-tests.sh` performs.
 3. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
    `/usr/OFX/Plugins` is root-owned on most Linux systems, so run that step with
    `sudo` or point `OFX_INSTALL_DIR` at a writable host plugin directory.
@@ -292,7 +297,7 @@ The repository also ships a host test suite that needs no GPU:
 ```
 
 It compiles the real `Kernel.cu` with a shim, checks the alignment predicate,
-compares both kernels over 3,240 emulated grid launches, compares the hoisted CPU
+compares both kernels over 3,240 emulated grid launches **[V]**, compares the hoisted CPU
 loop against the per-pixel form, runs both kernels concurrently from six threads
 on disjoint buffers, and — when `nvcc` is on `PATH` — asserts the PTX instruction
 counts. Exit status is non-zero on any mismatch.
@@ -330,7 +335,9 @@ Plugins. Details in `SKILL.md` §7.
 ## What has actually been verified
 
 Built and checked on Linux x86-64 with GCC 13.3.0, CUDA 12.9.41, CMake 3.31.6 and
-OpenFX `OFX_Release_1.5.1`:
+OpenFX `OFX_Release_1.5.1`. Lines marked **[V]** are measurements or artifact
+inspections from that machine; the commands and the full results are in
+`TESTING_STRATEGY.md` §13.
 
 - CUDA-enabled configure + build compiles `Kernel.cu` with real `nvcc` for
   `75;80;86;89;90;100;120`, links `libcudart.so.12`, and produces
@@ -348,11 +355,11 @@ OpenFX `OFX_Release_1.5.1`:
 - The vectorized kernel emits one 16-byte load and one 16-byte store per pixel
   at PTX level (`-arch=sm_89`), with 14 registers, no spills and no stack, the
   same register count as the scalar fallback.
-- Both kernels produce byte-identical output to a scalar reference across 3,240
+- Both kernels produce byte-identical output to a scalar reference across 3,240 **[V]**
   host-emulated grid launches covering widths 0–63, all four `width % 4` classes,
   odd origins, padded pitches and 4-byte-misaligned bases, and neither writes
   outside the render window.
-- `./test/run-tests.sh` passes end to end (predicate table, 3,240 launches, CPU-loop
+- `./test/run-tests.sh` passes end to end (predicate table, 3,240 launches **[V]**, CPU-loop
   comparison, six concurrent kernel runs, PTX instruction counts, bundle hygiene).
   Those checks are committed, not just run once.
 - The same harness is clean under AddressSanitizer + UndefinedBehaviorSanitizer,
@@ -368,13 +375,40 @@ OpenFX `OFX_Release_1.5.1`:
   the same registration check.
 - The no-root bootstrap was exercised from an empty cache directory.
 
-**Not verified:** no GPU is present, so no kernel has ever executed; no host is
-installed, so no pixel has ever been rendered; the Windows/MSVC path has not been
-compiled; and no performance numbers exist. See `SKILL.md` §12.
+A 2026-11-22 field test on Windows 11 (RTX 3060, sm_86; CUDA 13.0 toolkit on a
+13.5 driver; MSVC 19.44 and 19.50; CMake 4.4.4) executed what this machine could
+not. Those results are **[B]** — external evidence, not reproduced in this
+checkout; the measurements themselves are quoted with their logs in the field
+test report.
+
+- `.\build.bat` now configures and builds: generator from `vswhere`, canonical
+  CUDA paths, Ninja fallback when the installed Visual Studio has no NVIDIA CUDA
+  build customisations, and the cached generator reused on a second run.
+- The Windows `.ofx` lands in `Contents\Win64`, exports exactly the two entry
+  names (`dumpbin /exports`), and carries seven cubins, `sm_75`…`sm_120`
+  (`cuobjdump -lelf`). `CPU_ONLY=1` builds through the Visual Studio generator
+  without a `Release` subdirectory.
+- The shared contract harness, ported to `LoadLibraryExW`, drives the Windows
+  bundle through the whole host protocol with 0 failures (that run predates the
+  multi-instance checks this checkout adds, so its check count is not comparable
+  with the ones in `TESTING_STRATEGY.md` §13).
+- `test/gpu-kernel-test.cu` ran the real kernels on the RTX 3060: **28/28 cases
+  bit-exact** against the host reference, covering padded and negative pitches,
+  4-byte-misaligned bases, render-window offsets, 0-width/0-height, overrun
+  guards, 200 queued launches, eight host threads and zero-copy.
+- 1920×1080 RGBA32F, 100 iterations: vec4 **0.212 ms** (~312 GB/s), scalar
+  **0.222 ms** (~300 GB/s) — both bandwidth-bound, a ~4% difference.
+
+**Not verified here:** no GPU is present in this environment, so no kernel runs
+in `./run-tests.sh`; no host is installed, so no pixel has ever been rendered by
+Resolve, Nuke, SCRATCH or Natron; the Windows path was executed on another
+machine, not this one; and no performance number was measured here. See
+`SKILL.md` §12.
 
 ## Repository layout
 
 ```
+AGENTS.md                           router for agents: commands, read order, hard rules
 SKILL.md                            master reference and workflow
 ARCHITECTURE_AND_CUDA_PIPELINE.md    deep dive
 BUILD_PLAYBOOK.md                    clean-checkout build, artifact contract, compile rules
@@ -384,13 +418,15 @@ AI_MODEL_INTEGRATION.md              model runtimes, language embedding, CUDA de
 REFERENCE_READING_GUIDE.md           how to read OFX code: tiers, patterns, anti-patterns, reading plan
 PATTERN_INDEX.md                     lookup: task -> pattern -> code, symptom, property; external repos
 TESTING_STRATEGY.md                  testing layers, measured results, failure injection, host acceptance
-run-tests.sh                         one command: build every template, run every suite
-testkit/                             dlopen + fake-host contract harness (shared), negative controls
+run-tests.sh                         one command: docs check, build every template, run every suite
+tools/check-docs.py                  documentation drift check (links, counts, provenance)
+testkit/                             dlopen/LoadLibraryExW + fake-host contract harness (shared),
+                                     Windows artifact check, negative controls
 templates/minimal-ofx/
   CMakeLists.txt                     reference build: module, support sources, export list
   src/Plugin.cpp                     the smallest host-loadable plug-in
   exports.map                        version script: exactly two dynamic symbols
-  build.sh                           fetch headers, build, inspect the artifact
+  build.sh / build.bat               fetch headers, build, inspect the artifact
   test/run-tests.sh                    contract harness against the reference plug-in
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
@@ -400,7 +436,8 @@ templates/minimal-cuda-ofx/
   test/run-analysis.sh                 cppcheck + shellcheck over sources and scripts
   test/kernel_equivalence.cpp          host harness for kernels and CPU loop
   test/shim/                           minimal <cuda_runtime.h> for host builds
-  build.sh  build.bat                 toolkit discovery, bootstrap, build
+  test/gpu-kernel-test.cu              hardware harness: 28 cases, streams, zero-copy, throughput
+  build.sh  build.bat                 toolkit discovery, bootstrap, build + artifact check
 templates/onnx-inference-ofx/
   CMakeLists.txt                     bundle build, ONNX Runtime detection + bundling
   src/Plugin.h  src/Plugin.cpp        OFX wrapper: window addressing, alpha, render
@@ -410,7 +447,8 @@ templates/onnx-inference-ofx/
   tools/make-test-model.py           regenerates model and golden
   test/run-tests.sh                  packing, golden, tiling, negative control, bundle
   test/ai_pipeline_test.cpp          the harness
-  build.sh                           configure + build + report
+  build.sh  build.bat                configure + build + report (Windows needs
+                                     ONNXRUNTIME_ROOT; the DLL is bundled)
 ```
 
 Bundle layout produced by the build:

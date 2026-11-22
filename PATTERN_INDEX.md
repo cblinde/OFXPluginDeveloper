@@ -31,7 +31,7 @@ what shipped, graded **B**, and are never presented as verified here.
 | I need to… | Pattern | Proven code here | First failure if done naively |
 |---|---|---|---|
 | Register one plug-in, or several from one module | One `OFX::Plugin::getPluginIDs`, factories with static storage; the Support library generates the two exports | `templates/minimal-ofx/src/Plugin.cpp` (the whole hook, 3 lines); `templates/minimal-cuda-ofx/src/Plugin.cpp` (`getPluginIDs`); `.ofx-ref/Support/Plugins/MultiBundle/PluginRegistration.cpp:12`–`:15` shows two factories in one module | Factories that die with the module; a bundle that does not enumerate |
-| Produce a `.ofx` a host will actually load | Module named `<Name>.ofx`, the 8 Support TUs compiled in, `-fPIC`, hidden visibility **plus** a version script exporting only the two entry points | `templates/minimal-ofx/build.sh` (builds and then asserts the artifact: two dynamic symbols, no `Ofx*` undefined, no build-path RUNPATH, `dlopen` + `OfxGetPlugin`) | `-fvisibility=hidden` alone leaves 647 exports with default visibility / 7 with hidden — measured in `BUILD_PLAYBOOK.md` §3.5 |
+| Produce a `.ofx` a host will actually load | Module named `<Name>.ofx`, the 8 Support TUs compiled in, `-fPIC`, hidden visibility **plus** a version script exporting only the two entry points | `templates/minimal-ofx/build.sh` (builds and then asserts the artifact: two dynamic symbols, no `Ofx*` undefined, no build-path RUNPATH, `dlopen` + `OfxGetPlugin`) | `-fvisibility=hidden` alone still exports the weak `std::` helpers, and without it hundreds of symbols — measured in `BUILD_PLAYBOOK.md` §3.5 |
 | Know whether the pixels are device or host pointers | Read `kOfxImageEffectPropCudaEnabled` **at render time**; never infer it from what you advertised | `templates/minimal-cuda-ofx/src/Plugin.cpp:79` (throws if the CUDA path is entered without it) | Treating a host pointer as device memory → fault or garbage |
 | Run on the host's stream | Two branches: stream present → return immediately; absent → finish the work | `templates/minimal-cuda-ofx/src/Plugin.cpp:120`–`:126` | Blocking the host's pipeline; or returning before the work is done |
 | Ship a CPU fallback | Compile-time split (`#ifdef`), and advertise the capability **only** when the path exists | `templates/minimal-cuda-ofx/src/Plugin.cpp:308`; `templates/minimal-cuda-ofx/src/Kernel.cuh` stays CUDA-free | Advertising CUDA in a build that has no CUDA path → black frames |
@@ -70,11 +70,36 @@ performance ones. This is the short route to the likely row above.
 | Image shifted on a crop / RoD render | base pointer used as the window origin | §1 row 5 |
 | Seam or grid at tile edges | halo smaller than the receptive field | §1 row 8 |
 | Crash only when a second plug-in is installed | symbol visibility (Support library symbols exported) | [`SKILL.md`](SKILL.md) §6 |
-| Plug-in missing from the host's list | bundle name vs binary stem, wrong `Contents/<ARCH>/` | [`SKILL.md`](SKILL.md) §6 |
+| Plug-in missing from the host's list | bundle name vs binary stem, wrong `Contents/<ARCH>/` — on Windows also the generator-dependent output property, which puts a "successful" build into `Contents\Linux-x86-64` | [`SKILL.md`](SKILL.md) §6, [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) §7 |
+| Windows build succeeds, `.ofx` is in `Contents\Win64\Release\` | multi-config generator appended the configuration; both output properties need `$<1:…>` | [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) §7 |
+| Ampere/Ada cards JIT-compile a plug-in that targeted 7 architectures | second configure over the same build tree dropped the curated `CMAKE_CUDA_ARCHITECTURES` (nvcc's default is cached) | [`SKILL.md`](SKILL.md) §6 "Architecture targets", `templates/minimal-cuda-ofx/CMakeLists.txt` |
 | Viewer hangs while scrubbing | synchronous inference inside `render()` | §1 rows 10 and 11 |
 | Host dies on shutdown or on a bad frame | runtime called during finalisation; uncaught exception across the ABI | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §3 |
 | Result is plausible but wrong (colour, range) | channel order, value range, colour space | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §5 |
 | Same frame differs between machines | silent Python/CPU fallback, or default thread count | §1 rows 12 and 9 |
+| Second instance of the effect shows the first instance's setting | a parameter cached in a static/global instead of read per instance | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) §8 (`contract_test --concurrency-param`); [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) "Thread safety" |
+| TSan: data race in `OFX::Log::indent` with two concurrent renders | not your code: every action increments a plain global counter in the Support library (`ofxsLog.cpp:63`, called from `ofxsImageEffect.cpp:2569`) | [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) "Thread safety"; audit your own shared state, the counter is cosmetic |
+| `onnxruntime.dll` not found at load, though the bundle has a file by that name | the import library (`onnxruntime.lib`) was copied and renamed; Windows keeps the DLL in `bin\` | [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) §7 |
+| ARM Linux build lands in `Contents/Linux-x86-64` | the arch directory was hard-coded instead of derived from the target | [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) §7 |
+| Contract test passes a plug-in that is known to be wrong | the "broken" binary was never rebuilt (copied `build/` tree) or the check needs a flag (`--concurrency-param`) that was not passed | [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) §14 |
+
+### Compile and link symptoms
+
+All five were reproduced against this repository's template and the pinned
+`OFX_Release_1.5.1` headers. Two are listed with the stage they really appear
+at: a shared module links with undefined symbols by default, so a missing
+registration hook or Support translation unit fails at `dlopen`, not at `ld`.
+
+| Message | Likely cause | Fix |
+|---|---|---|
+| `error: expected class-name before '{' token` on `public OFX::ImageProcessor` | `ofxsImageEffect.h` includes `ofxsParam.h`, `ofxsInteract.h`, `ofxsMessage.h` and the OFX C headers — never the processor header; `ImageProcessor` is declared at `Support/include/ofxsProcessing.h:28` | `#include "ofxsProcessing.h"` beside `ofxsImageEffect.h`. The message then changes to the real error (an `override` or constructor mismatch), which is progress, not a new problem |
+| `relocation R_X86_64_PC32 against symbol ... can not be used when making a shared object; recompile with -fPIC` | an object in the module was compiled without position-independent code — a Support TU or a `.cu`. Reproduced by compiling `Support/Library/ofxsImageEffect.cpp` without `-fPIC` and linking it into a `.so` | `POSITION_INDEPENDENT_CODE ON` / `-fPIC` on the module and every translation unit, then rebuild from a clean directory |
+| `nm -D --defined-only` shows 5 weak `W void std::vector<OFX::…>::_M_realloc_insert<…>` helpers beside the two entry points, and `build.sh` stops with `FAIL: the dynamic symbol table has 7 defined symbols, expected exactly 2` | `-fvisibility=hidden` does not reach weak template instantiations | pin the export list with a version script — `templates/minimal-ofx/exports.map`; `BUILD_PLAYBOOK.md` §3.5 |
+| `dlopen` fails with `undefined symbol: _ZN3OFX6Plugin12getPluginIDsERSt6vectorIPNS_13PluginFactoryESaIS3_EE`, and the host enumerates zero plug-ins. The module itself links; add `-Wl,--no-undefined` (`-z defs`) and it becomes `undefined reference to 'OFX::Plugin::getPluginIDs(std::vector<OFX::PluginFactory*, std::allocator<OFX::PluginFactory*> >&)'` | the hook is missing, has the wrong signature, or sits in an anonymous namespace; Support calls it at `Support/Library/ofxsImageEffect.cpp:3039` | define `void OFX::Plugin::getPluginIDs(OFX::PluginFactoryArray&)` at namespace scope and push a factory with static storage — working example at `templates/minimal-ofx/src/Plugin.cpp:236` |
+| `undefined symbol: OFX::…` at `dlopen`, or the same names as `undefined reference` once you link with `-z defs` | a Support translation unit is missing from the target, or one of your helpers is not in the source list | compile all eight `Support/Library/*.cpp` into the module (`file(GLOB …)`) and add every new file to `add_library` |
+| `CMake Error … No CUDA toolset found.` | a Visual Studio generator compiles `.cu` only through NVIDIA's `BuildCustomizations` for that exact VS version; CUDA 13.0 ships none for VS 2026 | `build.bat` probes for them and falls back to Ninja + `vcvars64.bat`; see [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) §7 |
+| `fatal error C1189: -- unsupported Microsoft Visual Studio version!` | the toolkit's `host_config.h` predates the installed MSVC | `vcvars64.bat -vcvars_ver=14.44` (newest accepted), or `-allow-unsupported-compiler`; matrix in [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) §7 |
+| `Error: generator … Does not match the generator used previously` on the second Windows build | the cache in `build\CMakeCache.txt` records a different generator than this run chose | read `CMAKE_GENERATOR:INTERNAL` and reuse it, or delete `build\`; `build.bat` does the former |
 
 ---
 

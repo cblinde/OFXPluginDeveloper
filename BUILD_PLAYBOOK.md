@@ -59,17 +59,17 @@ OFX_SOURCE_DIR=/path/to/openfx templates/minimal-ofx/build.sh
 
 The deeper check, which drives the whole host protocol through a fake host, is
 [`templates/minimal-ofx/test/run-tests.sh`](templates/minimal-ofx/test/run-tests.sh)
-— 56 checks, exit 0 [V]:
+— 98 checks, exit 0 [V]:
 
 ```
-ok 33 - OfxGetPlugin(0) returns a plug-in
-ok 42 - kOfxActionLoad
-ok 43 - kOfxActionDescribe
-ok 44 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
-ok 52 - kOfxImageEffectActionRender
-ok 53 - render rejects a byte image
-ok 55 - kOfxActionUnload
-contract_test: 56 checks, 0 failed
+ok 54 - OfxGetPlugin(0) returns a plug-in
+ok 63 - kOfxActionLoad
+ok 64 - kOfxActionDescribe
+ok 65 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 73 - kOfxImageEffectActionRender
+ok 95 - render rejects a byte image
+ok 97 - kOfxActionUnload
+contract_test: 98 checks, 0 failed
 ```
 
 ---
@@ -331,7 +331,7 @@ These are the places where building disagreed with prose that already existed.
 | Question | Status |
 |---|---|
 | Does a real host (Resolve/Nuke/Natron/SCRATCH) load, enumerate and instantiate it? | **Unverified.** No host is installed here. |
-| Does `describe`/`describeInContext`/`render` behave under a host's real suite set? | **Partly verified**: the fake host in [`testkit/`](testkit/) drives those actions (56 checks) and checks status codes, but it is not a host. |
+| Does `describe`/`describeInContext`/`render` behave under a host's real suite set? | **Partly verified**: the fake host in [`testkit/`](testkit/) drives those actions (98 checks), holds two instances at once and checks their separate values, but it is not a host. |
 | Does the pixel output match a reference? | **Unverified for this plug-in.** The ONNX template has golden-file tests; the reference gain has no golden. |
 | GPU, Windows/MSVC, macOS/Clang paths | **Unverified.** Only Linux x86-64 with GCC 13.3 was built. |
 | Host-specific quirks (blacklist behaviour, bundle caching, install-time locking) | **Unverified.** See [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md), graded B there. |
@@ -363,3 +363,60 @@ For the host-side rules that a compile cannot check (streams, RoD/RoI, threads,
 alpha), continue with
 [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) and
 [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md).
+
+---
+
+## 7. Windows: the toolchain matrix that decides whether the build works
+
+The Linux build is a compiler and CMake. The Windows build is a **three-way
+match** between CUDA, MSVC and the generator, and each pair can fail on its own.
+Every row below was reproduced on a machine with VS 2026 (MSVC 19.50) and VS 2022
+Build Tools installed without the C++ workload **[B]** (2026‑11‑22 field test,
+Windows 11, RTX 3060, CUDA 13.0.48, CMake 4.4.4).
+
+| Pair | What breaks | Symptom | Fix |
+|---|---|---|---|
+| VS generator ↔ NVIDIA customisations | A `.cu` file needs NVIDIA's MSBuild `BuildCustomizations` for that exact VS version; CUDA 13.0 ships none for VS 2026 | `CMake Error … No CUDA toolset found.` | Use Ninja and call `vcvars64.bat` first; `build.bat` probes `…\BuildCustomizations\CUDA *.props` and falls back automatically |
+| nvcc ↔ MSVC | `cuda\include\crt\host_config.h` rejects compilers newer than the toolkit knows | `fatal error C1189: -- unsupported Microsoft Visual Studio version!` | `vcvars64.bat -vcvars_ver=14.44` (the newest accepted), or `-allow-unsupported-compiler` if you accept the risk |
+| generator ↔ output property | `MODULE` targets use `RUNTIME_OUTPUT_DIRECTORY` under MSVC multi-config and `LIBRARY_OUTPUT_DIRECTORY` under Ninja | build succeeds, `.ofx` lands in `Contents\Linux-x86-64\` (or `Win64\Release\`) and no host scans it | set both properties to the same `$<1:…>`-wrapped arch directory, chosen from `WIN32`/`APPLE` |
+| generator ↔ cached build tree | the second run may pick a different generator than the cache records | `Error: generator … Does not match the generator used previously` | reuse `CMAKE_GENERATOR:INTERNAL` from `build\CMakeCache.txt`, refuse loudly when that generator cannot build CUDA |
+| CUDA ↔ architecture list | `enable_language(CUDA)` caches nvcc's default; a second configure sees a defined variable | `-- CUDA architectures: 75`, one `--generate-code`, SASS only for Volta | record nvcc's default once and treat a differing `CMAKE_CUDA_ARCHITECTURES` as a user choice |
+| CUDA 13 ↔ runtime import | the Windows image does not import `cudart64_*.dll` even with device code present | `dumpbin /dependents` lists no CUDA DLL | say "device code present, runtime resolved at load"; never print the import you expected |
+| ONNX Runtime ↔ import library | the Windows package keeps headers in `include\`, the import library in `lib\onnxruntime.lib` and the DLL in `bin\onnxruntime.dll` | the build succeeds, the bundle carries a file named `onnxruntime.dll` that the loader rejects, and the plug-in fails at load | link the `.lib`, copy the `.dll`; `templates/onnx-inference-ofx/CMakeLists.txt` resolves both and fails the configure when the DLL is missing |
+| platform ↔ architecture directory | the directory name is part of the contract: `Linux-x86-64`, `Linux-aarch64`, `MacOS`, `Win64` | an ARM Linux build links, reports success and lands in `Contents/Linux-x86-64`, which no host scans | derive the directory from `WIN32`/`APPLE`/`CMAKE_SYSTEM_PROCESSOR` once, and set both output properties to it |
+
+**Artifact check, Windows side.** `nm -D`, `readelf` and `dlopen` have direct
+equivalents, and `testkit/check-ofx-artifact.bat` runs them so the claim is a
+measurement:
+
+```
+dumpbin /exports    <Name>.ofx   # exactly OfxGetNumberOfPlugins + OfxGetPlugin
+dumpbin /dependents <Name>.ofx   # what the loader must find
+cuobjdump -lelf     <Name>.ofx   # cubins for every architecture in the list
+```
+
+Both `build.bat` scripts call it after the build; missing tools are a printed
+skip, never a pass. From the field test: 2 exports, 7 cubins
+`sm_75`…`sm_120`, and no CUDA runtime import **[B]**.
+
+**Start the script with `.\build.bat`.** With `NoDefaultCurrentDirectoryInExePath=1`
+set (a common policy), `cmd.exe` will not find a bare `build.bat` in the current
+directory; the failure text says "misspelled or could not be found" and names
+nothing else.
+
+**The ONNX template is a bundle of two binaries.** `templates/onnx-inference-ofx/build.bat`
+requires `ONNXRUNTIME_ROOT` with `include\onnxruntime_cxx_api.h`,
+`lib\onnxruntime.lib` and `bin\onnxruntime.dll`; it asserts both the `.ofx` in
+`Contents\Win64` and the DLL beside it, then runs the artifact check. That second
+assertion is the F8 lesson in another form: a plug-in that imports
+`onnxruntime.dll` and ships a renamed import library instead loads nowhere, while
+the build reports success. The Linux script has the equivalent check via `readelf -d` (`NEEDED libonnxruntime.so.1`). The `.ofx` here is also the one template whose
+failure mode is *two* files, so the contract harness needs the bundle directory,
+not just the `.ofx` path.
+
+**What stays Linux-only.** The CPU-emulated kernel suite
+(`test/kernel_equivalence.cpp`) calls `posix_memalign`, which MSVC does not have,
+and the shell suites need `g++`, `nm`, `readelf` and `valgrind`. On Windows the
+real checks are the contract harness (`testkit/build-contract-test.bat`) and the
+hardware harness (`test/gpu-kernel-test.cu`); the emulated suite is not ported,
+so its evidence remains Linux-only.

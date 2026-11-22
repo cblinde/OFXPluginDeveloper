@@ -9,6 +9,11 @@ Master reference and agent workflow for producing CUDA-accelerated OpenFX image
 effects that render correctly in DaVinci Resolve Studio, Nuke, SCRATCH and
 Natron, on Windows (MSVC + CUDA Toolkit) and Linux (GCC/Clang + CUDA Toolkit).
 
+**Provenance.** **[V]** verified in this repository (compiled, measured or run);
+**[I]** inferred from a header or documented behaviour, not demonstrated;
+**[B]** external evidence, grade B in `HOST_COMPATIBILITY_MATRIX.md`. Unmarked
+statements are design guidance that follows from the model, not measurements.
+
 Read this file first. Then read the deep-dive companion documents when the task
 touches their subject:
 
@@ -21,7 +26,7 @@ touches their subject:
 | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | A neural network in the plug-in: integration shapes, language-runtime hazards, ONNX Runtime API, CUDA decision rules |
 | [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | New to the codebase: which implementations to trust, patterns to copy, anti-patterns by their tells, and the twelve questions to ask of any plug-in |
 | [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | "I need to do X": the pattern, the file that proves it, the symptom that means you got it wrong, which shipped AI repository to learn from, and which general-purpose suite to read for a mechanic |
-| [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | Testing a plug-in to ship it: ten layers, goldens and negative controls, sanitizers, concurrency, host acceptance, failure injection, CI |
+| [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | Testing a plug-in to ship it: eleven layers (L0–L10), goldens and negative controls, sanitizers, concurrency, host acceptance, failure injection, CI |
 | [`testkit/`](testkit/) | Running the artifact and fake-host layers: `./run-tests.sh` loads each built `.ofx`, checks the struct, and drives describe/render without a host |
 | [`templates/minimal-ofx/`](templates/minimal-ofx/) | Starting a new plug-in from the smallest scaffold a host will load, built and verified by one command |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | Starting a new plugin, or needing a known-good reference |
@@ -75,6 +80,7 @@ host crash with no stack trace. None of them is stylistic.
 ## 2. Repository map
 
 ```
+AGENTS.md                             router for agents: commands, read order, rules
 SKILL.md                              this file
 ARCHITECTURE_AND_CUDA_PIPELINE.md      the deep dive
 BUILD_PLAYBOOK.md                      clean-checkout build, artifact contract, compile rules
@@ -85,13 +91,14 @@ AI_MODEL_INTEGRATION.md                model integration: runtimes, languages, w
 REFERENCE_READING_GUIDE.md             reading OFX code: tiers, patterns, tells, reading plan
 PATTERN_INDEX.md                       lookup by task, symptom, property; external repos
 TESTING_STRATEGY.md                    testing layers, what each proves, host acceptance script
-run-tests.sh                           build every template + run every suite
+run-tests.sh                           docs check + build every template + every suite
+tools/check-docs.py                    documentation drift check (also in CI)
 testkit/                               dlopen + fake-host harness, negative controls
 templates/minimal-ofx/
   CMakeLists.txt                       reference build: module, support sources, exports
   src/Plugin.cpp                       the smallest host-loadable plug-in
   exports.map                          version script: exactly two dynamic symbols
-  build.sh                             fetch headers, build, inspect the artifact
+  build.sh / build.bat                 fetch headers, build, inspect the artifact
   test/run-tests.sh                    contract harness against the reference plug-in
 templates/minimal-cuda-ofx/
   CMakeLists.txt                       bundle-producing build
@@ -101,6 +108,9 @@ templates/minimal-cuda-ofx/
   src/Kernel.cu                        vec4 + scalar kernels, device-guarded launcher
   test/run-tests.sh                    GPU-free test suite (equivalence, PTX, bundle)
   build.sh / build.bat                 portable out-of-source builds
+templates/onnx-inference-ofx/
+  build.sh / build.bat                 needs ONNXRUNTIME_ROOT; the Windows bundle
+                                       carries bin\onnxruntime.dll next to the .ofx
 ```
 
 The template is the reference implementation for this skill. When generating a
@@ -219,7 +229,7 @@ Requirements for every kernel in this skill:
 ### Phase 6 — Build
 
 Linux: `./build.sh` → `build/bundle/<Name>.ofx.bundle/Contents/Linux-x86-64/<Name>.ofx`
-Windows: `build.bat` → `build\bundle\<Name>.ofx.bundle\Contents\Win64\<Name>.ofx`
+Windows: `.\build.bat` → `build\bundle\<Name>.ofx.bundle\Contents\Win64\<Name>.ofx`
 
 Before claiming success, check the binary is where the host will look:
 
@@ -254,7 +264,8 @@ See §7. Log through `OfxMessageSuite` (`OFX::Log::print`), never `stdout`.
 ## 5. OFX constant reference (verified against OFX 1.5.1 headers)
 
 GPU capability properties, set on the plugin descriptor. All are `string × 1`
-except the OpenGL one, which the header declares as **`C string × 1`**:
+except the OpenGL one, which the header declares as **`C string × 1`**. Every row
+was resolved against the pinned 1.5.1 tree **[V]**:
 
 | Constant | Header | Notes |
 | --- | --- | --- |
@@ -330,7 +341,7 @@ the bundle name*. A plugin named `MinimalCudaGain` must live at
 is separate and easy to miss: `CXX_VISIBILITY_PRESET` does **not** apply to the
 `.cu` translation unit, so every `extern "C"` launcher in `Kernel.cu` stays an
 exported dynamic symbol. Measured on this template: without
-`CUDA_VISIBILITY_PRESET` the built `.ofx` exported 5 `T` symbols, with it 2.
+`CUDA_VISIBILITY_PRESET` the built `.ofx` exported 5 `T` symbols, with it 2 **[V]**.
 Every plugin statically links its own copy of the
 Support library; with default visibility, two plugins in one host process export
 identical mangled symbols and the loader binds one plugin's `OFX::PropertySet` to
@@ -338,12 +349,26 @@ the other's. The symptom is a crash that appears only when a *second* plugin is
 installed. With hidden visibility `nm -D` shows two `T` symbols — that is correct,
 and the launcher is still visible in the full symbol table (`nm`, lowercase `t`).
 
-**CUDA runtime linkage.**
+Visibility attributes are an ELF mechanism: under MSVC `CXX_VISIBILITY_PRESET`
+and `CUDA_VISIBILITY_PRESET` are no-ops, and the Windows export set comes from
+the Support library's `OfxExport`, which expands to `__declspec(dllexport)`.
+That still yields exactly two exported names, verified with `dumpbin /exports`
+on a built Windows bundle **[B]**; the version script in
+`templates/minimal-ofx/exports.map` is guarded by `if(UNIX AND NOT APPLE)` for
+the same reason — on Windows there is nothing for it to do.
 
-| Choice | Effect |
-| --- | --- |
-| `CUDA::cudart` (default, `CUDA_RUNTIME_LIBRARY Shared`) | Depends on `cudart64_*.dll` / `libcudart.so.*` at load. Hosts already have a GPU stack, so this is normally fine. |
-| `cudart_static` | Self-contained, but each plugin gets its own CUDA runtime instance and its own lazy initialisation; larger binary, and mixing static and dynamic cudart in one process is undefined. Use only when shipping to machines without a toolkit runtime. |
+**CUDA runtime linkage.** Default to `CUDA::cudart` (shared): the host already
+has a GPU stack. `cudart_static` removes the load-time dependency but gives each
+plug-in its own runtime instance, and mixing the two in one process is undefined
+— see `ARCHITECTURE_AND_CUDA_PIPELINE.md` §10.
+
+On **Windows with CUDA 13**, do not claim a `cudart64_*.dll` import without
+checking it: `dumpbin /dependents` on a built template lists only KERNEL32,
+MSVCP140, VCRUNTIME140 and the UCRT, no CUDA runtime DLL, while the device code
+is present (seven cubins) and the module loads. The runtime is resolved through
+the hybrid runtime, and the string in the image is `cudart_hybrid64.dll` **[B]**.
+The portable statement is "device code present, runtime resolved at load"; the
+import list, not the intent, is what a host depends on.
 
 **Architecture targets.** `CMAKE_CUDA_ARCHITECTURES` defaults to
 `75;80;86;89;90` plus `100;120` when the toolkit is ≥ 12.8. A bare number emits
@@ -352,12 +377,19 @@ SASS **and** PTX, so the newest architecture still JITs on newer hardware. CUDA
 below with a modern toolkit — nvcc warns about deprecated targets, and that
 warning means the list is stale.
 
-One CMake trap: `enable_language(CUDA)` initialises `CMAKE_CUDA_ARCHITECTURES`
-itself with the compiler's default, so by the time a project's own default block
-runs, `if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)` is **always false** and the
-curated list silently never applies (that is how this template first ended up
-building for nvcc's legacy default). Capture the variable before enabling the
-language, as `CMakeLists.txt` does.
+One CMake trap, and it has two halves: `enable_language(CUDA)` initialises
+`CMAKE_CUDA_ARCHITECTURES` itself with the compiler's default, so by the time a
+project's own default block runs, `if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)` is
+**always false** and the curated list silently never applies. Capturing the
+variable before enabling the language fixes the **first** configure only: the
+value is now in the cache, so a second configure over the same build tree sees
+`if(NOT DEFINED …)` as false again and keeps nvcc's single architecture —
+measured: the second configure printed `-- CUDA architectures: 75` and
+generated one `--generate-code`, where a clean configure had seven **[B]**. The
+template therefore records nvcc's default once in an internal cache variable and
+treats `CMAKE_CUDA_ARCHITECTURES` as a user choice only when it differs from
+that default. Any project that ships a curated list needs the same trick; "it
+built" after an incremental reconfigure is not evidence the list survived.
 
 **Do not bake the toolkit path into the bundle.** By default CMake records the
 directory it linked `cudart` from in `RUNPATH` — an absolute build-machine path
@@ -369,9 +401,8 @@ it and otherwise uses the host's own runtime.
 the binary. CMake propagates this; do not hand-add `-Xcompiler /MD` to a Debug
 build (it must be `/MDd` there).
 
-**Separable compilation.** Not needed for a single `.cu` translation unit.
-Enable `CUDA_SEPARABLE_COMPILATION` only when device functions are called across
-`.cu` files, and then also set `CUDA_RESOLVE_DEVICE_SYMBOLS ON` for the module.
+**Separable compilation.** Only when device functions cross `.cu` files; then
+also set `CUDA_RESOLVE_DEVICE_SYMBOLS ON`.
 
 ---
 
@@ -382,7 +413,7 @@ nowhere. Use `OFX::Log::print()` (wraps `OfxMessageSuite`), or write your own fi
 logger into a temp directory. Every error path must log *and* throw.
 
 **The host blacklists crashing plugins.** Resolve records a plugin that crashed
-or hung and skips it on the next start. After fixing a crash, the plugin may
+or hung and skips it on the next start **[B]**. After fixing a crash, the plugin may
 still not load. Clear it:
 
 - Windows: `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\OFXPluginCacheV2.xml`
@@ -412,7 +443,7 @@ attaching to a render farm. Details in `ARCHITECTURE_AND_CUDA_PIPELINE.md` §9.
 expects another is mostly harmless (properties are string-keyed), but the
 `OfxPlugin` struct layout and the C++ class layouts of the *Support library* are
 not. Never link two different Support library versions into one binary, and never
-share C++ objects across a plugin boundary.
+share C++ objects across a plugin boundary **[I]**.
 
 ---
 
@@ -470,10 +501,14 @@ kernel.
 **Before calling it done**
 
 - [ ] Compiles clean on the intended toolchain(s); warnings read, not ignored.
-- [ ] `nm -D --defined-only | grep ' T '` shows only the two entry points. Weak
-      `W` template helpers may remain; a version script removes those too
-      (`templates/minimal-ofx/exports.map`).
-- [ ] `dlopen`/load succeeds and the plugin enumerates (id, version, mainEntry).
+- [ ] Linux: `nm -D --defined-only | grep ' T '` shows only the two entry
+      points. Weak `W` template helpers may remain; a version script removes
+      those too (`templates/minimal-ofx/exports.map`).
+- [ ] Windows: `dumpbin /exports <Name>.ofx` shows the same two names and
+      nothing else; `cuobjdump -lelf` lists the cubins when CUDA is on. Both are
+      checked by `testkit/check-ofx-artifact.bat`, which `build.bat` calls.
+- [ ] `dlopen`/`LoadLibraryEx` succeeds and the plugin enumerates (id, version,
+      mainEntry).
 - [ ] Rendered in at least one real host, in both GPU and CPU modes.
 - [ ] Identity path verified (no render when params are neutral).
 - [ ] Non-square PAR and odd resolutions tested.
@@ -482,6 +517,8 @@ kernel.
 - [ ] Every error path logs and throws.
 - [ ] `./test/run-tests.sh` passes: predicate, kernel equivalence, CPU loop,
       concurrency, PTX counts, bundle hygiene.
+- [ ] Windows: `test/gpu-kernel-test.cu` run on the target GPU (`nvcc
+      -arch=sm_XX`, 28 cases) — the only check that executes real SASS.
 - [ ] It is also clean under `SANITIZE=address,undefined`, `SANITIZE=thread` and
       `RUN_VALGRIND=1`, and `./test/run-analysis.sh` reports nothing.
 - [ ] Every `kOfx*` property you read is read with its declared type, and every
@@ -492,35 +529,21 @@ kernel.
 
 ## 11. Mandatory git workflow
 
-Every plugin built with this skill is committed and pushed continuously. This is
-not optional and not deferred to the end of the task.
-
-After **each** of these events — a new file that compiles, a working build, a
-behaviour fix, a doc milestone — do all three steps:
+Commit and push continuously — after a new file compiles, after a working build,
+after a behaviour fix, after a doc milestone:
 
 ```bash
-git add <only the files belonging to this change>
+git add <only the files in this change>
 git commit -m "<type>(<scope>): <imperative summary>"
 git push
 ```
 
-Rules:
-
-1. **One logical change per commit.** Never bundle "kernel works" with "docs
-   rewritten". If a commit needs the word "and" in its subject, split it.
-2. **Never commit a broken build** to `main`. If a change is exploratory, commit
-   it on a branch.
-3. **Never commit build output.** `build/`, `*.ofx`, `*.ptx`, `*.cubin` belong in
-   `.gitignore`. The bundle is produced by `build.sh`/`build.bat`.
-4. **Never commit secrets or machine paths.** No absolute-path `OFX_SOURCE_DIR`
-   in `CMakeLists.txt`; it is a cache variable for exactly this reason.
-5. **Write the body for the next reader.** State *why* the change was made and
-   what failure it prevents. "Fix stride" is not a message; "use rowBytes so
-   padded Resolve thumbnails do not shear" is.
-6. **Verify before pushing**, not after. A push is a claim that the tree builds.
-
-Commit types: `feat`, `fix`, `build`, `docs`, `refactor`, `perf`, `test`,
-`chore`. Scopes for this repo: `template`, `kernel`, `cmake`, `skill`, `hosts`.
+One logical change per commit (if the subject needs "and", split it); never a
+broken build on `main`; never build output or machine paths; write the body for
+the next reader ("use rowBytes so padded thumbnails do not shear", not "fix
+stride"); verify before pushing, not after. Types: `feat`, `fix`, `build`,
+`docs`, `refactor`, `perf`, `test`, `chore`; scopes: `template`, `kernel`,
+`cmake`, `skill`, `hosts`.
 
 ---
 
@@ -528,60 +551,51 @@ Commit types: `feat`, `fix`, `build`, `docs`, `refactor`, `perf`, `test`,
 
 Recorded so nobody mistakes documentation for proof.
 
-**Verified on the authoring machine** (Linux x86-64, Ubuntu 24.04, GCC 13.3.0,
-CUDA 12.9.41 via `./build.sh --bootstrap-cuda`, CMake 3.31.6,
+**Verified on the authoring machine** **[V]** (Linux x86-64, Ubuntu 24.04,
+GCC 13.3.0, CUDA 12.9.41 via `./build.sh --bootstrap-cuda`, CMake 3.31.6,
 OpenFX `OFX_Release_1.5.1`):
 
-- `OFXPLUGIN_ENABLE_CUDA=ON` configures and builds: `nvcc` compiles `Kernel.cu`
-  for `75;80;86;89;90;100;120`, the link pulls `libcudart.so.12`, and the bundle
-  `Contents/Linux-x86-64/MinimalCudaGain.ofx` is produced with no compiler
-  warnings (including `-Xptxas=-warn-spills` and deprecated-architecture checks).
-- That `.ofx` exports exactly two strong (`T`) symbols (`OfxGetNumberOfPlugins`,
-  `OfxGetPlugin`), plus five weak `W` template helpers, and contains the CUDA
-  launcher plus a `.nv_fatbin` section with
-  the kernel (`nm`, `readelf -S`, `strings`).
-- Kernel PTX measured (`-arch=sm_89`): the vectorized kernel emits one 16-byte
-  load and one 16-byte store per pixel with 14 registers, 0 spills, 0 stack; the
-  scalar fallback is unchanged. Both kernels were executed on the host over
-  3,240 emulated grid launches (widths 0–63 covering every `width % 4`, odd origins,
-  padded and misaligned pitches) with 0 mismatches.
-- `dlopen` + `OfxGetNumberOfPlugins`/`OfxGetPlugin` returns one plugin:
-  `OfxImageEffectPluginAPI v1`, id `com.ofxplugindeveloper.minimalcudagain`,
-  version `1.0`, `setHost` and `mainEntry` set — for the CUDA build, the
-  `CPU_ONLY=1` build, and the CUDA-requested-but-toolchain-absent build.
-- `CPU_ONLY=1 ./build.sh` builds, exports 2 symbols, and has no launcher symbol.
-- `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` builds: the bundle drops `libcudart.so.12`
-  from `NEEDED` and has zero undefined `cuda*` symbols.
-- `./test/run-tests.sh` passes: the alignment predicate, 3,240 emulated grid
-  launches, the CPU loop comparison, six concurrent kernel runs on disjoint
-  buffers, and (with `nvcc` on `PATH`) the PTX instruction-count assertions.
-- The same harness is clean under `SANITIZE=address,undefined`,
-  `SANITIZE=thread` (the concurrent test gives TSan real threads; a deliberately
-  racy control program is caught, so the check has teeth) and
-  `RUN_VALGRIND=1` (`0 errors from 0 contexts`, all heap blocks freed).
-- `test/run-analysis.sh` is clean: cppcheck over `src/Plugin.cpp` + `test/` and
-  shellcheck over every script, with two justified `invalidPointerCast`
-  suppressions in the harness (the byte↔float accessors that reproduce OFX's
-  `void*` + row-bytes contract). clang-tidy is not used here: the verification
-  machine has no clang toolchain, and no finding is expected to need a
-  suppression under it.
-- `build.sh` with no toolkit and no `--bootstrap-cuda` exits 2 with actionable
-  instructions; the CMake target still degrades with a warning when CUDA is
-  requested without a compiler.
-- The no-root bootstrap itself was exercised from an empty cache directory:
-  NVIDIA's `cuda-nvcc`/`cudart`/`cudart-dev`/`nvvm`/`crt` 12.9 `.deb` packages
-  unpacked with `ar` + `tar` into a synthetic `CUDA_HOME`.
-- All `kOfx*` constants cited in §5 exist in those headers under those names.
+- CUDA and `CPU_ONLY=1` builds both produce
+  `Contents/Linux-x86-64/MinimalCudaGain.ofx` with no compiler warnings; the CUDA
+  build links `libcudart.so.12`, and `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` drops it
+  from `NEEDED`.
+- The artifact exports exactly two strong `T` symbols plus five weak `W` helpers,
+  and contains the launcher, both kernels and a `.nv_fatbin` section.
+- Kernel PTX (`-arch=sm_89`): one 16-byte load and one 16-byte store per pixel,
+  14 registers, 0 spills, 0 stack. Both kernels ran over 3,240 **[V]** emulated
+  grid launches with 0 mismatches; the hoisted CPU loop is bit-identical.
+- `dlopen` returns one plug-in: `OfxImageEffectPluginAPI` v1,
+  `com.ofxplugindeveloper.minimalcudagain` 1.0, `setHost` and `mainEntry` set.
+- `./test/run-tests.sh`, ASan+UBSan, TSan and `RUN_VALGRIND=1` are clean;
+  `test/run-analysis.sh` (cppcheck + shellcheck) is clean.
+- Every `kOfx*` constant cited in §5 exists in the pinned headers.
 
 **Still not verified (state this plainly in any downstream report):**
 
-- **No GPU.** No kernel has ever executed on hardware: no SASS was run, and
-  device-dependent behaviour (real `cudaPointerGetAttributes` results, multi-GPU
-  binding, actual stream ordering) is untested. Numerics were validated on the
-  host only, by emulating the thread mapping over the real kernel source
-  (`BEST_PRACTICES_AND_PERFORMANCE.md` §6.1).
+- **No GPU in this environment.** Nothing in `./run-tests.sh` executes SASS here:
+  numerics are validated on the host by emulating the thread mapping over the
+  real kernel source (`BEST_PRACTICES_AND_PERFORMANCE.md` §6.1). Device behaviour
+  beyond the single external run below — multi-GPU binding, real async ordering
+  across many streams — remains unverified.
 - **No host.** No Resolve, Nuke, SCRATCH or Natron is installed, so the plugin
   has never rendered a pixel, and every host-specific claim in
   `HOST_COMPATIBILITY_MATRIX.md` remains graded B/C rather than verified.
-- **No Windows/MSVC build.** `build.bat` has never been executed.
-- **No performance measurement** and no Nsight profiling of any kernel here.
+**Executed elsewhere, not here [B]** (2026-11-22 field test: Windows 11, RTX 3060
+sm_86, CUDA 13.0 toolkit on a 13.5 driver, MSVC 19.44/19.50):
+
+- `.\build.bat` configures and builds; the result is
+  `Contents\Win64\<Name>.ofx` with exactly two exports (`dumpbin /exports`) and
+  seven cubins (`cuobjdump -lelf`). The contract harness, ported to
+  `LoadLibraryExW`, drove it through the whole host protocol with 0 failures
+  (before this checkout's multi-instance checks existed).
+- The real kernels executed on the GPU: 28/28 bit-exact versus the host
+  reference, including padded and negative pitches, misaligned bases, window
+  offsets, zero-size windows and overrun guards.
+- First throughput measurement: 1920×1080 RGBA32F, vec4 0.212 ms (~312 GB/s),
+  scalar 0.222 ms (~300 GB/s) — bandwidth-bound, ~4% apart, which is why the
+  PTX instruction count must not be read as a speed claim.
+
+**Still not verified:** no OFX host anywhere in that test either, so no pixel has
+been rendered by Resolve, Nuke, SCRATCH or Natron; only one GPU was available;
+no Windows sanitizer or valgrind pass; and no Nsight capture or multi-resolution
+performance work.
