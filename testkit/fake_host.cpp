@@ -63,6 +63,7 @@ struct ParamObj {
   double d = 0.0;
   int i = 0;
   std::string s;
+  double color[4] = {0.0, 0.0, 0.0, 0.0};
 };
 
 struct ImageObj {
@@ -363,7 +364,32 @@ std::string paramString(ParamObj* p) {
   return (def && def->kind == kString) ? def->s : std::string();
 }
 
+// Colour components: the value once set, otherwise the descriptor's default
+// slots (kOfxParamPropDefault is dimension 3 for RGB and 4 for RGBA).
+void paramColor(ParamObj* p, double* out, int count) {
+  for (int c = 0; c < count; ++c) {
+    if (p->isSet) {
+      out[c] = p->color[c];
+    } else {
+      const Value* def = slotConst(&p->props, kOfxParamPropDefault, c);
+      out[c] = (def && def->kind == kDouble) ? def->d : 0.0;
+    }
+  }
+}
+
 bool isType(const ParamObj* p, const char* t) { return p->type == t; }
+
+// A host that silently refuses a parameter type makes the harness blame the
+// plug-in: the failing action is render and nothing names the parameter. Say
+// which parameter and type, and put it in messages() so a test can assert it.
+void reportUnsupportedParam(const ParamObj* p, const char* action) {
+  char line[512];
+  std::snprintf(line, sizeof(line), "fake host: %s of parameter '%s' (%s) is not modelled",
+                action, p->name.c_str(), p->type.c_str());
+  std::fprintf(stderr, "%s\n", line);
+  std::lock_guard<std::mutex> lock(gMessageMutex);
+  g->messages.push_back(std::string("[host] ") + line);
+}
 
 OfxStatus paramDefineFn(OfxParamSetHandle paramSet, const char* paramType, const char* name,
                         OfxPropertySetHandle* propertySet) {
@@ -416,7 +442,8 @@ OfxStatus paramGetValueFn(OfxParamHandle param, ...) {
   if (isType(p, kOfxParamTypeDouble)) {
     *va_arg(ap, double*) = paramDouble(p);
     st = kOfxStatOK;
-  } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean)) {
+  } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean) ||
+             isType(p, kOfxParamTypeChoice)) {
     *va_arg(ap, int*) = paramInt(p);
     st = kOfxStatOK;
   } else if (isType(p, kOfxParamTypeString)) {
@@ -424,8 +451,19 @@ OfxStatus paramGetValueFn(OfxParamHandle param, ...) {
     s = paramString(p);
     *va_arg(ap, char**) = const_cast<char*>(s.c_str());
     st = kOfxStatOK;
+  } else if (isType(p, kOfxParamTypeRGB)) {
+    double c[3];
+    paramColor(p, c, 3);
+    for (double v : c) *va_arg(ap, double*) = v;
+    st = kOfxStatOK;
+  } else if (isType(p, kOfxParamTypeRGBA)) {
+    double c[4];
+    paramColor(p, c, 4);
+    for (double v : c) *va_arg(ap, double*) = v;
+    st = kOfxStatOK;
   }
   va_end(ap);
+  if (st != kOfxStatOK) reportUnsupportedParam(p, "read");
   return st;
 }
 
@@ -439,7 +477,8 @@ OfxStatus paramGetValueAtTimeFn(OfxParamHandle param, OfxTime time, ...) {
   if (isType(p, kOfxParamTypeDouble)) {
     *va_arg(ap, double*) = paramDouble(p);
     st = kOfxStatOK;
-  } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean)) {
+  } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean) ||
+             isType(p, kOfxParamTypeChoice)) {
     *va_arg(ap, int*) = paramInt(p);
     st = kOfxStatOK;
   } else if (isType(p, kOfxParamTypeString)) {
@@ -447,8 +486,19 @@ OfxStatus paramGetValueAtTimeFn(OfxParamHandle param, OfxTime time, ...) {
     s = paramString(p);
     *va_arg(ap, char**) = const_cast<char*>(s.c_str());
     st = kOfxStatOK;
+  } else if (isType(p, kOfxParamTypeRGB)) {
+    double c[3];
+    paramColor(p, c, 3);
+    for (double v : c) *va_arg(ap, double*) = v;
+    st = kOfxStatOK;
+  } else if (isType(p, kOfxParamTypeRGBA)) {
+    double c[4];
+    paramColor(p, c, 4);
+    for (double v : c) *va_arg(ap, double*) = v;
+    st = kOfxStatOK;
   }
   va_end(ap);
+  if (st != kOfxStatOK) reportUnsupportedParam(p, "read at time");
   return st;
 }
 
@@ -493,7 +543,8 @@ OfxStatus paramSetValueFn(OfxParamHandle param, ...) {
     p->d = *va_arg(ap, double*);
     p->isSet = true;
     st = kOfxStatOK;
-  } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean)) {
+  } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean) ||
+             isType(p, kOfxParamTypeChoice)) {
     p->i = *va_arg(ap, int*);
     p->isSet = true;
     st = kOfxStatOK;
@@ -502,8 +553,18 @@ OfxStatus paramSetValueFn(OfxParamHandle param, ...) {
     p->s = v ? v : "";
     p->isSet = true;
     st = kOfxStatOK;
+  } else if (isType(p, kOfxParamTypeRGB)) {
+    // Support passes colour components by value, not by pointer.
+    for (int c = 0; c < 3; ++c) p->color[c] = va_arg(ap, double);
+    p->isSet = true;
+    st = kOfxStatOK;
+  } else if (isType(p, kOfxParamTypeRGBA)) {
+    for (int c = 0; c < 4; ++c) p->color[c] = va_arg(ap, double);
+    p->isSet = true;
+    st = kOfxStatOK;
   }
   va_end(ap);
+  if (st != kOfxStatOK) reportUnsupportedParam(p, "write");
   return st;
 }
 
@@ -518,7 +579,8 @@ OfxStatus paramSetValueAtTimeFn(OfxParamHandle param, OfxTime time, ...) {
     p->d = *va_arg(ap, double*);
     p->isSet = true;
     st = kOfxStatOK;
-  } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean)) {
+  } else if (isType(p, kOfxParamTypeInteger) || isType(p, kOfxParamTypeBoolean) ||
+             isType(p, kOfxParamTypeChoice)) {
     p->i = *va_arg(ap, int*);
     p->isSet = true;
     st = kOfxStatOK;
@@ -527,8 +589,17 @@ OfxStatus paramSetValueAtTimeFn(OfxParamHandle param, OfxTime time, ...) {
     p->s = v ? v : "";
     p->isSet = true;
     st = kOfxStatOK;
+  } else if (isType(p, kOfxParamTypeRGB)) {
+    for (int c = 0; c < 3; ++c) p->color[c] = va_arg(ap, double);
+    p->isSet = true;
+    st = kOfxStatOK;
+  } else if (isType(p, kOfxParamTypeRGBA)) {
+    for (int c = 0; c < 4; ++c) p->color[c] = va_arg(ap, double);
+    p->isSet = true;
+    st = kOfxStatOK;
   }
   va_end(ap);
+  if (st != kOfxStatOK) reportUnsupportedParam(p, "write at time");
   return st;
 }
 
@@ -1325,11 +1396,20 @@ bool FakeHost::setParam(const std::string& name, const std::string& value) {
   if (p->type == kOfxParamTypeDouble) {
     p->d = std::atof(value.c_str());
     p->isSet = true;
-  } else if (p->type == kOfxParamTypeInteger || p->type == kOfxParamTypeBoolean) {
+  } else if (p->type == kOfxParamTypeInteger || p->type == kOfxParamTypeBoolean ||
+             p->type == kOfxParamTypeChoice) {
     p->i = std::atoi(value.c_str());
     p->isSet = true;
   } else if (p->type == kOfxParamTypeString) {
     p->s = value;
+    p->isSet = true;
+  } else if (p->type == kOfxParamTypeRGB || p->type == kOfxParamTypeRGBA) {
+    const int count = (p->type == kOfxParamTypeRGBA) ? 4 : 3;
+    double c[4] = {0.0, 0.0, 0.0, 0.0};
+    if (std::sscanf(value.c_str(), "%lf,%lf,%lf,%lf", &c[0], &c[1], &c[2], &c[3]) < count) {
+      return false;
+    }
+    for (int i = 0; i < count; ++i) p->color[i] = c[i];
     p->isSet = true;
   } else {
     return false;

@@ -41,10 +41,16 @@ testkit/build-contract-test.sh /tmp/contract_test .ofx-ref
 Flags: `--param name:type` (repeatable; `type` is one of `double`, `int`
 (or `integer`), `string`, `bool` (or `boolean`), `rgb`, `rgba`, `choice`),
 `--clip name` (repeatable),
-`--set name=value` before render, `--identity` (expect `kOfxStatOK` and the
+`--set name=value` before render (`rgb` values are `r,g,b`, `rgba` values
+`r,g,b,a`), `--identity` (expect `kOfxStatOK` and the
 source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
 answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
 `--src`/`--golden`/`--size WxH` for a golden-image render comparison.
+
+A parameter type the harness cannot model is never silent: the fake host records
+`fake host: read of parameter 'boxColor' (OfxParamTypeRGB) is not modelled` in
+its messages, so a failed action names the parameter instead of looking like a
+plug-in defect.
 
 Thread safety: `--concurrency-param name` names a numeric parameter (e.g. `gain`)
 that is given a different value on each instance, so a frame produced with a
