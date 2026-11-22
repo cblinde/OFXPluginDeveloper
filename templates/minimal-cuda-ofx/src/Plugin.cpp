@@ -84,7 +84,10 @@ void GainProcessor::processImagesCuda()
     const OfxRectI window = _renderWindow;
     const int width = window.x2 - window.x1;
     const int height = window.y2 - window.y1;
-    if (width <= 0 || height <= 0 || _src == nullptr || _dstImg == nullptr) {
+    // render() rejects an unconnected source before it gets here, so _src is
+    // never null. Checking for it and returning would leave the destination
+    // unwritten - the failure mode the silent-image bugs are made of.
+    if (width <= 0 || height <= 0 || _dstImg == nullptr) {
         return;
     }
 
@@ -149,22 +152,14 @@ void GainProcessor::multiThreadProcessImages(OfxRectI window)
         if (dstRow == nullptr) {
             continue;
         }
-        const float* srcRow = _src
-                                  ? static_cast<const float*>(_src->getPixelAddress(window.x1, y))
-                                  : nullptr;
+        // render() rejects an unconnected source, so _src is always set here.
+        const float* srcRow = static_cast<const float*>(_src->getPixelAddress(window.x1, y));
 
-        if (srcRow != nullptr) {
-            for (int x = window.x1; x < window.x2; ++x, dstRow += 4, srcRow += 4) {
-                dstRow[0] = srcRow[0] * _gain[0];
-                dstRow[1] = srcRow[1] * _gain[1];
-                dstRow[2] = srcRow[2] * _gain[2];
-                dstRow[3] = srcRow[3] * _gain[3];
-            }
-        } else {
-            // Unconnected source: the row is opaque-free, exactly as before.
-            for (int x = window.x1; x < window.x2; ++x, dstRow += 4) {
-                dstRow[0] = dstRow[1] = dstRow[2] = dstRow[3] = 0.0f;
-            }
+        for (int x = window.x1; x < window.x2; ++x, dstRow += 4, srcRow += 4) {
+            dstRow[0] = srcRow[0] * _gain[0];
+            dstRow[1] = srcRow[1] * _gain[1];
+            dstRow[2] = srcRow[2] * _gain[2];
+            dstRow[3] = srcRow[3] * _gain[3];
         }
     }
 }

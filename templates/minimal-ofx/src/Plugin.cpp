@@ -59,20 +59,14 @@ public:
             if (dstRow == nullptr) {
                 continue;
             }
-            const float* srcRow = _src
-                                      ? static_cast<const float*>(_src->getPixelAddress(window.x1, y))
-                                      : nullptr;
+            // render() rejects an unconnected source, so _src is always set
+            // here: a missing source is a host error, not a black frame.
+            const float* srcRow = static_cast<const float*>(_src->getPixelAddress(window.x1, y));
 
-            for (int x = window.x1; x < window.x2; ++x, dstRow += kComponents) {
-                if (srcRow == nullptr) {
-                    for (int c = 0; c < kComponents; ++c) {
-                        dstRow[c] = 0.0f;
-                    }
-                } else {
-                    for (int c = 0; c < kComponents; ++c) {
-                        dstRow[c] = srcRow[c] * _gain;
-                    }
-                    srcRow += kComponents;
+            for (int x = window.x1; x < window.x2;
+                 ++x, dstRow += kComponents, srcRow += kComponents) {
+                for (int c = 0; c < kComponents; ++c) {
+                    dstRow[c] = srcRow[c] * _gain;
                 }
             }
         }
@@ -146,6 +140,19 @@ public:
         processor.setGain(static_cast<float>(_gain->getValueAtTime(args.time)));
         processor.setRenderWindow(args.renderWindow);
         processor.process();
+    }
+
+    bool isIdentity(const OFX::IsIdentityArguments& args, OFX::Clip*& identityClip,
+                    double& identityTime) override
+    {
+        // A gain of exactly 1.0 is a passthrough, and the host can skip this
+        // plug-in entirely. The CUDA template does the same for both gains.
+        if (_gain->getValueAtTime(args.time) == 1.0) {
+            identityClip = _srcClip;
+            identityTime = args.time;
+            return true;
+        }
+        return false;
     }
 
 private:
