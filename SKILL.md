@@ -20,6 +20,7 @@ touches their subject:
 | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | A neural network in the plug-in: integration shapes, language-runtime hazards, ONNX Runtime API, CUDA decision rules |
 | [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | New to the codebase: which implementations to trust, patterns to copy, anti-patterns by their tells, and the twelve questions to ask of any plug-in |
 | [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | "I need to do X": the pattern, the file that proves it, the symptom that means you got it wrong, and which shipped AI repository to learn from |
+| [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | Testing a plug-in to ship it: ten layers, goldens and negative controls, sanitizers, concurrency, host acceptance, failure injection, CI |
 | [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | Starting a new plugin, or needing a known-good reference |
 
 ---
@@ -79,6 +80,7 @@ PREFLIGHT_REVIEW_CHECKLIST.md          pre-ship questions, each citing the line 
 AI_MODEL_INTEGRATION.md                model integration: runtimes, languages, when CUDA pays
 REFERENCE_READING_GUIDE.md             reading OFX code: tiers, patterns, tells, reading plan
 PATTERN_INDEX.md                       lookup by task, symptom and property; external AI repos
+TESTING_STRATEGY.md                    testing layers, what each proves, host acceptance script
 templates/minimal-cuda-ofx/
   CMakeLists.txt                       bundle-producing build
   src/Plugin.h                         host wrapper declarations
