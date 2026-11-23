@@ -1568,6 +1568,23 @@ std::vector<FakeHost::RenderRecord> FakeHost::renderConcurrently(
   return out;
 }
 
+bool FakeHost::setClipProperty(const std::string& clip, const std::string& name,
+                               const std::string& value) {
+  auto it = impl_->clipByName.find(clip);
+  if (it == impl_->clipByName.end() || !it->second) return false;
+  return setString(&it->second->props, name.c_str(), 0, value.c_str()) == kOfxStatOK;
+}
+
+std::string FakeHost::clipProperty(const std::string& clip, const std::string& name) const {
+  auto it = impl_->clipByName.find(clip);
+  if (it == impl_->clipByName.end() || !it->second) return std::string();
+  char* value = nullptr;
+  if (getString(&it->second->props, name.c_str(), 0, &value) != kOfxStatOK || !value) {
+    return std::string();
+  }
+  return std::string(value);
+}
+
 bool FakeHost::setParam(const std::string& name, const std::string& value) {
   ParamObj* p = ensureParam(impl_->current, name);
   if (!p) return false;

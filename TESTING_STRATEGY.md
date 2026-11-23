@@ -303,7 +303,7 @@ and the templates share it rather than each carrying a copy.
 | `testkit/contract_main.cpp` | ~500 | the checks, the `dlopen`, and the command line |
 | `testkit/build-contract-test.sh` | ~50 | compiles both into one binary; finds headers from the template's `CMakeCache.txt` |
 | `testkit/negative-controls/` | 2 stubs + 1 seven-way | deliberately broken plug-ins that prove the harness fails, plus one ROI stub built plain or internally tiled with the context read or ignored, twice more for the label check (`-DNO_LABEL` never writes it, `-DWITH_LABEL` does), and once that draws a mark (`-DDRAW_MARK`) |
-| `testkit/run-negative-controls.sh` | ~197 | builds the twelve controls, asserts each fault is rejected with the right message **and** that the context-reading and label-writing builds pass while the mark build passes only in the bottom-up layouts |
+| `testkit/run-negative-controls.sh` | ~217 | builds the fourteen controls, asserts each fault is rejected with the right message **and** that the context-reading, label-writing and clip-re-reading builds pass while the mark build passes only in the bottom-up layouts and the clip-caching build fails on the second media id |
 
 Coverage, precisely: all **18** `OfxPropertySuiteV1` functions (including the `*N`
 and `propGetDimension` variants), all **13** `OfxImageEffectSuiteV1` functions,

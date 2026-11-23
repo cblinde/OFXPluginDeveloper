@@ -35,6 +35,14 @@
  * harness must accept that, so the rejection above is about the missing write
  * and not about the parameter.
  *
+ * A pair for the clip-property change, which is how a host says the same clip
+ * handle now carries other media. -DCLIP_ECHO reads the source clip's `mediaID`
+ * property on every render and puts it in the read-only `mediaId` label, so the
+ * harness can see what the plug-in actually read. -DCLIP_ECHO_ONCE reads it the
+ * first time and keeps that answer, which is what a cache keyed on the clip
+ * handle does when nobody invalidates it: the harness must reject the stale
+ * second value and name the check that caught it.
+ *
  * The render window is read with -1 pixel of context on every side and no
  * intermediate rounding, so the arithmetic per pixel does not depend on where
  * the tile or window starts.
@@ -49,7 +57,11 @@
 /* Four builds come out of this one file: plain and internally tiled, each in a
  * context-reading and a context-ignoring form. The ids have to differ because
  * the harness is told which plug-in to expect. */
-#if defined(DRAW_MARK)
+#if defined(CLIP_ECHO)
+#define PLUGIN_ID "com.testkit.control.clipecho"
+#elif defined(CLIP_ECHO_ONCE)
+#define PLUGIN_ID "com.testkit.negative.clipstale"
+#elif defined(DRAW_MARK)
 #define PLUGIN_ID "com.testkit.control.mark"
 #elif defined(NO_LABEL)
 #define PLUGIN_ID "com.testkit.negative.nolabel"
@@ -68,7 +80,8 @@
 static OfxHost* g_host = 0;
 static const OfxPropertySuiteV1* g_props = 0;
 static const OfxImageEffectSuiteV1* g_effects = 0;
-#if defined(NO_LABEL) || defined(WITH_LABEL)
+#if defined(NO_LABEL) || defined(WITH_LABEL) || defined(CLIP_ECHO) || defined(CLIP_ECHO_ONCE)
+#define HAS_LABEL 1
 static const OfxParameterSuiteV1* g_params = 0;
 #endif
 
@@ -84,7 +97,7 @@ static void fetchSuites(void)
     g_effects = (const OfxImageEffectSuiteV1*)g_host->fetchSuite(g_host->host,
                                                                 kOfxImageEffectSuite, 1);
   }
-#if defined(NO_LABEL) || defined(WITH_LABEL)
+#ifdef HAS_LABEL
   if (!g_params) {
     g_params = (const OfxParameterSuiteV1*)g_host->fetchSuite(g_host->host,
                                                               kOfxParameterSuite, 1);
@@ -254,6 +267,36 @@ static OfxStatus render(void* handle, OfxPropertySetHandle inArgs)
   OfxStatus stat = g_effects->clipGetHandle((OfxImageEffectHandle)handle,
                                             kOfxImageEffectSimpleSourceClipName, &srcClip, 0);
   if (stat != kOfxStatOK) return stat;
+#if defined(CLIP_ECHO) || defined(CLIP_ECHO_ONCE)
+  /* The media the host says this clip currently carries. Read through the clip's
+   * property set, per render, because that is the only signal a plug-in gets
+   * when the same handle starts pointing at different media. */
+  {
+    static char s_media[256];
+#ifdef CLIP_ECHO_ONCE
+    /* The fault: read once, cached for the lifetime of the module, keyed on
+     * nothing. The harness's second render must see the stale value. */
+    if (s_media[0] == 0)
+#endif
+    {
+      OfxPropertySetHandle clipProps = 0;
+      char* media = 0;
+      s_media[0] = 0;
+      if (g_effects->clipGetPropertySet(srcClip, &clipProps) == kOfxStatOK && clipProps &&
+          g_props->propGetString(clipProps, "mediaID", 0, &media) == kOfxStatOK && media) {
+        strncpy(s_media, media, sizeof s_media - 1);
+        s_media[sizeof s_media - 1] = 0;
+      }
+    }
+    if (g_params && s_media[0]) {
+      OfxParamHandle label = 0;
+      if (g_params->paramGetHandle((OfxParamSetHandle)handle, "mediaId", &label, 0) ==
+              kOfxStatOK && label) {
+        g_params->paramSetValue(label, s_media);
+      }
+    }
+  }
+#endif
   stat = g_effects->clipGetHandle((OfxImageEffectHandle)handle, kOfxImageEffectOutputClipName,
                                   &dstClip, 0);
   if (stat != kOfxStatOK) return stat;
@@ -301,17 +344,23 @@ static OfxStatus mainEntry(const char* action, const void* handle, OfxPropertySe
                            kOfxImageComponentRGBA);
     g_props->propSetString(dstProps, kOfxImageEffectPropSupportedPixelDepths, 0,
                            kOfxBitDepthFloat);
-#if defined(NO_LABEL) || defined(WITH_LABEL)
-    /* Declared and given a default in both builds. The difference the controls
-     * test is whether render() ever writes it; the default is what makes
+#ifdef HAS_LABEL
+    /* Declared and given a default in every label build. The difference the
+     * controls test is whether render() ever writes it; the default is what makes
      * "non-empty" the wrong question. */
     if (g_params) {
       OfxPropertySetHandle label = 0;
-      if (g_params->paramDefine((OfxParamSetHandle)handle, kOfxParamTypeString,
-                                "provider", &label) == kOfxStatOK && label) {
+#if defined(CLIP_ECHO) || defined(CLIP_ECHO_ONCE)
+      const char* name = "mediaId";
+      const char* fallback = "(no media id read)";
+#else
+      const char* name = "provider";
+      const char* fallback = "CPU (declared, never written)";
+#endif
+      if (g_params->paramDefine((OfxParamSetHandle)handle, kOfxParamTypeString, name,
+                                &label) == kOfxStatOK && label) {
         g_props->propSetString(label, kOfxParamPropStringMode, 0, kOfxParamStringIsLabel);
-        g_props->propSetString(label, kOfxParamPropDefault, 0,
-                               "CPU (declared, never written)");
+        g_props->propSetString(label, kOfxParamPropDefault, 0, fallback);
       }
     }
 #endif

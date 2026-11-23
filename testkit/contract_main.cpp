@@ -202,11 +202,23 @@ struct Spec {
   // weights; the declaration still has to keep the window within T of the
   // whole-frame render, and losing it has to push it beyond T.
   double roiContextTolerance = 0.0;
-  // --label-param NAME: a string parameter the plug-in fills in itself (a
-  // read-only label). Checked after the first render: it must be set, and the
+  // --label-param NAME[=VALUE]: a string parameter the plug-in fills in itself
+  // (a read-only label). Checked after the first render: it must be set, and the
   // check's name carries the value, because a script has no other way to read
-  // what the plug-in wrote.
+  // what the plug-in wrote. With =VALUE the value must also match, which is how
+  // a run asserts what the plug-in read rather than only that it read something.
   std::string labelParam;
+  std::string labelExpected;
+  // --clip-prop NAME=VALUE: a string property on the source clip's property set,
+  // the way a host names the media a clip currently carries. Repeatable.
+  std::vector<std::pair<std::string, std::string>> clipProps;
+  // --clip-prop-change NAME=VALUE: the same property written again after the
+  // first render, followed by a second render on the same clip handle. A plug-in
+  // that keys a cache on the handle and never re-reads keeps answering with the
+  // old media, which the follow-up label check names.
+  bool hasClipPropChange = false;
+  std::string clipPropChangeName;
+  std::string clipPropChangeValue;
   bool negativePitch = false;
   bool topOrigin = false;
   // --mark X,Y: the plug-in draws a mark at this image position. Asserted in
@@ -717,6 +729,17 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
   }
 
+  for (const auto& clipProp : spec.clipProps) {
+    const bool set = host.setClipProperty(kOfxImageEffectSimpleSourceClipName,
+                                          clipProp.first, clipProp.second);
+    if (!check("clip property '" + clipProp.first + "' = \"" + flatValue(clipProp.second) + "\"",
+               set && host.clipProperty(kOfxImageEffectSimpleSourceClipName,
+                                        clipProp.first) == clipProp.second,
+               "the source clip does not carry it")) {
+      return failCycle(host);
+    }
+  }
+
   // A hung harness is unreadable: the last stage line before silence says which
   // phase it never finished.
   stage("render");
@@ -731,11 +754,41 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     // the suite can assert which provider was chosen without a second channel.
     const std::string value = host.paramValue(spec.labelParam);
     const bool written = host.paramIsSet(spec.labelParam);
+    const bool matches = spec.labelExpected.empty() || value == spec.labelExpected;
     if (!check("label parameter '" + spec.labelParam + "' = \"" + flatValue(value) + "\"",
-               written && !value.empty(),
-               written ? "written, but empty"
-                       : "the plug-in never wrote it; what is shown is the declared "
-                         "default, which is not evidence that anything ran")) {
+               written && !value.empty() && matches,
+               !written ? "the plug-in never wrote it; what is shown is the declared "
+                          "default, which is not evidence that anything ran"
+                        : value.empty() ? "written, but empty"
+                                        : "expected \"" + flatValue(spec.labelExpected) + "\"")) {
+      return failCycle(host);
+    }
+  }
+
+  if (spec.hasClipPropChange) {
+    // The same clip handle, a different string: how a host says the clip now
+    // carries other media. What the plug-in read is visible through the label it
+    // writes, so the second render has to be followed by reading it again.
+    stage("clip property change");
+    const std::string& name = spec.clipPropChangeName;
+    const bool set = host.setClipProperty(kOfxImageEffectSimpleSourceClipName, name,
+                                          spec.clipPropChangeValue);
+    if (!check("clip property '" + name + "' = \"" + flatValue(spec.clipPropChangeValue) + "\"",
+               set && host.clipProperty(kOfxImageEffectSimpleSourceClipName, name) ==
+                          spec.clipPropChangeValue,
+               "the source clip does not carry it")) {
+      return failCycle(host);
+    }
+    const OfxStatus again = host.render(0.0, window);
+    if (!check("kOfxImageEffectActionRender after the clip property changed",
+               again == kOfxStatOK, statusName(again))) {
+      return failCycle(host);
+    }
+    const std::string seen = host.paramValue(spec.labelParam);
+    if (!check("label parameter '" + spec.labelParam + "' follows the clip property",
+               seen == spec.clipPropChangeValue,
+               "= \"" + flatValue(seen) + "\" (expected \"" +
+                   flatValue(spec.clipPropChangeValue) + "\")")) {
       return failCycle(host);
     }
   }
@@ -1067,7 +1120,11 @@ int main(int argc, char** argv) {
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
                  "       [--dst-bounds-inset N] [--roi-expand N] [--roi-context]\n"
                  "       [--roi-context-tolerance T] (tiled render: bound, not bit-equality)\n"
-                 "       [--label-param NAME] (a string the plug-in sets itself)\n"
+                 "       [--label-param NAME[=VALUE]] (a string the plug-in sets itself)\n"
+                 "       [--clip-prop NAME=VALUE] [--clip-prop-change NAME=VALUE]\n"
+                 "         (string properties on the source clip; the change is written\n"
+                 "          after the first render and rendered again, so a plug-in\n"
+                 "          that caches on the clip handle has to re-read)\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
@@ -1150,7 +1207,24 @@ int main(int argc, char** argv) {
     } else if (a == "--set-status-only") {
       spec.setStatusOnly = true;
     } else if (a == "--label-param") {
-      spec.labelParam = next("--label-param");
+      const std::string v = next("--label-param");
+      const size_t eq = v.find('=');
+      spec.labelParam = v.substr(0, eq);
+      if (eq != std::string::npos) spec.labelExpected = v.substr(eq + 1);
+    } else if (a == "--clip-prop" || a == "--clip-prop-change") {
+      const std::string v = next(a.c_str());
+      const size_t eq = v.find('=');
+      if (eq == std::string::npos || eq == 0) {
+        std::fprintf(stderr, "error: %s wants NAME=VALUE\n", a.c_str());
+        return 2;
+      }
+      if (a == "--clip-prop") {
+        spec.clipProps.emplace_back(v.substr(0, eq), v.substr(eq + 1));
+      } else {
+        spec.hasClipPropChange = true;
+        spec.clipPropChangeName = v.substr(0, eq);
+        spec.clipPropChangeValue = v.substr(eq + 1);
+      }
     } else if (a == "--mark") {
       const std::string where = next("--mark");
       const size_t comma = where.find(',');
@@ -1183,6 +1257,11 @@ int main(int argc, char** argv) {
   }
   if (spec.id.empty()) {
     std::fprintf(stderr, "error: --id is required\n");
+    return 2;
+  }
+  if (spec.hasClipPropChange && spec.labelParam.empty()) {
+    std::fprintf(stderr, "error: --clip-prop-change needs --label-param to read what the "
+                         "plug-in saw\n");
     return 2;
   }
 

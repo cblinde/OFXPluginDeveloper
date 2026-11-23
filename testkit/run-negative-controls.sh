@@ -3,11 +3,12 @@
 #
 # Proves that contract_test detects faults instead of merely passing.
 #
-# Six controls are fed to the same harness the templates use. Two are separate
-# broken plug-ins (stub_bad_status.c answers describe with ReplyDefault,
-# stub_bad_type.c declares the wrong parameter type). The other four are one ROI
-# stub built four ways: plain or internally tiled, with the declared context
-# read or ignored.
+# Fourteen controls are fed to the same harness the templates use. Two are
+# separate broken plug-ins (stub_bad_status.c answers describe with ReplyDefault,
+# stub_bad_type.c declares the wrong parameter type). The rest are one stub built
+# several ways: plain or internally tiled with the declared context read or
+# ignored, a label that is never written and one that is, a mark in the four
+# pointer layouts, and a clip property that is re-read or cached.
 #
 # The script succeeds only if every broken build exits non-zero *and* names the
 # assertion, and every context-reading build passes. Those pairs are what make
@@ -61,6 +62,13 @@ cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_no_label.ofx" -DNO_LABEL "${HERE}/negative-controls/stub_roi_context.c"
 cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_label_ok.ofx" -DWITH_LABEL "${HERE}/negative-controls/stub_roi_context.c"
+# And the clip-property pair: the stub writes what it read from the source
+# clip's `mediaID` into a label. Re-reading it passes; caching the first answer
+# on the clip handle must fail, which is the invalidation bug the handover names.
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/clip_echo.ofx" -DCLIP_ECHO "${HERE}/negative-controls/stub_roi_context.c"
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/clip_stale.ofx" -DCLIP_ECHO_ONCE "${HERE}/negative-controls/stub_roi_context.c"
 # And the drawing control: a box filter plus one mark at a fixed image position,
 # so the four pointer-origin/stride layouts stop being a claim in a README.
 cc -shared -fPIC -std=c99 -I "${INC}" \
@@ -170,6 +178,18 @@ run_control "label parameter declared and never written" \
 run_pass "label parameter written by the plug-in" \
   "${TMP}/roi_label_ok.ofx" --id com.testkit.control.labelok \
   --label-param provider "${LABEL_ARGS[@]}"
+
+CLIP_ARGS=(--clip Source --clip Output --concurrency-threads 0
+           --size 64x48 --src "${TMP}/roi_source.bin"
+           --label-param "mediaId=take1" --clip-prop mediaID=take1
+           --clip-prop-change mediaID=take2)
+
+run_pass "clip property change reaches a plug-in that re-reads it" \
+  "${TMP}/clip_echo.ofx" --id com.testkit.control.clipecho "${CLIP_ARGS[@]}"
+
+run_control "plug-in caches the clip property on the handle" \
+  "FAIL label parameter 'mediaId' follows the clip property" \
+  "${TMP}/clip_stale.ofx" --id com.testkit.negative.clipstale "${CLIP_ARGS[@]}"
 
 MARK_ARGS=(--clip Source --clip Output --concurrency-threads 0
            --size 64x48 --src "${TMP}/roi_source.bin" --mark "24,8")

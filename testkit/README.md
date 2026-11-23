@@ -29,8 +29,8 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `build-contract-test.sh` | compiles the two files into one binary, finding the OFX headers from the template's CMake cache |
 | `build-contract-test.bat` | the same build under MSVC; the loader path in `contract_main.cpp` is `LoadLibraryExW` there |
 | `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping |
-| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built seven ways (plain or internally tiled with the context read or ignored, two for the label check — one that never writes the label, one that does — and one that draws a mark at a fixed position), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
-| `run-negative-controls.sh` | builds those twelve controls, asserts each fault is rejected with the right message, and that the context-reading and label-writing builds pass and the mark build passes in both bottom-up layouts while failing in both top-down ones |
+| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built nine ways (plain or internally tiled with the context read or ignored, two for the label check — one that never writes the label, one that does — one that draws a mark at a fixed position, and two that echo the source clip's `mediaID` label, one re-reading it per render and one caching the first answer), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
+| `run-negative-controls.sh` | builds those fourteen controls, asserts each fault is rejected with the right message, and that the context-reading, label-writing and clip-re-reading builds pass while the mark build passes only in both bottom-up layouts and the clip-caching build fails on the second media id |
 
 ## Running it
 
@@ -57,14 +57,27 @@ answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
 position; asserted in frame coordinates, so a mirrored one fails with the row it
 landed on; full frame only, since an inset destination moves the row origin),
 `--src`/`--golden`/`--size WxH` for a golden-image render comparison,
-`--set-status-only` when the parameter is not a gain, and `--label-param NAME`
-for a string the plug-in sets itself (a read-only label): read after the first
-render, the value must be **written by the plug-in** and non-empty, and the
-check's name carries it — `label parameter 'provider' = "CPU (fallback: ...)"` —
-which is how a suite asserts what the plug-in wrote without a second output
-channel. A declared default does not count: it is what a label that was never
-set shows, so `FakeHost::paramIsSet()` is part of the check rather than a
-non-empty string being enough.
+`--set-status-only` when the parameter is not a gain, and `--label-param
+NAME[=VALUE]` for a string the plug-in sets itself (a read-only label): read
+after the first render, the value must be **written by the plug-in** and
+non-empty, and the check's name carries it — `label parameter 'provider' =
+"CPU (fallback: ...)"` — which is how a suite asserts what the plug-in wrote
+without a second output channel. A declared default does not count: it is what a
+label that was never set shows, so `FakeHost::paramIsSet()` is part of the check
+rather than a non-empty string being enough. With `=VALUE` the value must also
+match, which turns the label into a readback of something the plug-in fetched
+rather than only a proof that it wrote at all.
+
+`--clip-prop NAME=VALUE` sets a string property on the source clip's property
+set — the way a host names the media a clip currently carries — and reads it back
+through the property suite (`FakeHost::setClipProperty()` /
+`FakeHost::clipProperty()`). `--clip-prop-change NAME=VALUE` writes the same
+property again after the first render and renders once more on the **same clip
+handle**, then requires the label named by `--label-param` to carry the new
+value: a plug-in that keys a cache on the clip handle and never re-reads the
+property fails with the value it kept. The two together are how a media change
+under a stable handle is tested — `mediaID` is the name the controls use; a real
+host picks its own.
 
 `--roi-expand N` asks `kOfxImageEffectActionGetRegionsOfInterest` twice — for a
 region inside the frame and for the frame itself — and requires the source RoI to

@@ -145,6 +145,17 @@ public:
   int imageHeight() const;
   long long destinationRowBytes() const;
 
+  // Sets a string property on a declared clip's property set, the way a host
+  // names the media a clip currently carries (a file name, a media id). The clip
+  // handle stays the same; only the string changes, which is what a plug-in has
+  // to notice to invalidate a cache keyed on the handle. Returns false when the
+  // clip name is unknown.
+  bool setClipProperty(const std::string& clip, const std::string& name,
+                       const std::string& value);
+  // Reads that property back through the property suite; empty when the clip or
+  // the property is unknown.
+  std::string clipProperty(const std::string& clip, const std::string& name) const;
+
   // Sets a parameter's value from its declared type (numeric or string), the
   // same call a host makes through paramSetValueAtTime.
   bool setParam(const std::string& name, const std::string& value);
