@@ -10,6 +10,7 @@ reasoning lives in the documents it points at. Keep it a router.
 templates/minimal-ofx/build.sh              # one plug-in, from a clean checkout
 templates/minimal-ofx/test/run-tests.sh     # artifact inspection + fake-host contract
 python3 tools/check-docs.py                 # documentation drift, ~1 s
+tools/measure-halo.sh model.onnx            # tile overlap per model, writes <model>.halo.json
 ```
 
 `./run-tests.sh` needs `ONNXRUNTIME_ROOT` for the inference template, and

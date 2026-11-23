@@ -1,0 +1,21 @@
+{
+  "model": "test_conv.onnx",
+  "bytes": 611,
+  "sha256": "87f145d8da98f00dece8341999f81b6e5ddaf4a1738f5166a55451aa98a6f46f",
+  "frame": "256x192",
+  "tile": 128,
+  "border": 16,
+  "threshold": 0.02,
+  "tilable": true,
+  "halo": 1,
+  "ladder": [
+    {"halo": 0, "max_deviation": 0.174503498, "at": "128,127,c0", "compared_pixels": 35840},
+    {"halo": 1, "max_deviation": 0, "at": "-,-,-", "compared_pixels": 35840},
+    {"halo": 2, "max_deviation": 0, "at": "-,-,-", "compared_pixels": 35840},
+    {"halo": 4, "max_deviation": 0, "at": "-,-,-", "compared_pixels": 35840},
+    {"halo": 8, "max_deviation": 0, "at": "-,-,-", "compared_pixels": 35840},
+    {"halo": 16, "max_deviation": 0, "at": "-,-,-", "compared_pixels": 35840}
+  ],
+  "measured": "2026-11-23",
+  "tool": "tools/measure-halo.sh"
+}

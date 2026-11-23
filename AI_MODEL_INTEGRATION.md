@@ -465,7 +465,14 @@ at load, not per frame:
 #### The halo is measured, not guessed
 
 Item 2 above gives the principle. For a real model nobody prints the receptive
-radius, so measure it — five minutes, no host:
+radius, so measure it — five minutes, no host. `tools/measure-halo.sh` is that
+measurement as a command: it walks the ladder through the plug-in's own tiling
+code (`AiCore::RunTiled`, not a reimplementation), drops a border band at the
+frame edge, refuses to report a number when the frame has no interior tile edge
+to test, and writes `<model>.halo.json` beside the model — byte count, SHA-256,
+frame, tile, border, threshold and the deviation of every rung. `--check` then
+fails when the model no longer matches that file, so a replaced model cannot
+inherit a stale halo. The five rules it implements:
 
 1. Render the whole frame and the tiled frame through the **same** function; a
    benchmark that reimplements the tiling proves nothing about the plug-in.
@@ -482,6 +489,14 @@ radius, so measure it — five minutes, no host:
    held unchanged from a small frame to 1080p (**B**), so measure once per model
    and store the number (a file beside the model, keyed by name **and** file
    size, is enough; a replaced file must not inherit a stale value).
+
+Recorded, not remembered: the repository's own fixture carries its measurement
+in `templates/onnx-inference-ofx/models/test_conv.onnx.halo.json`. On a 256×192
+frame with 128-pixel tiles, `halo=0` deviates by 0.1745 at the interior tile
+boundary (128,127) and `halo=1` is exact — the same story as the `halo=0`
+control in §5, from a second witness, and the reason the ladder may include 0:
+a measurement that cannot produce the failure cannot be trusted to recognise
+success.
 
 The price, so "more context is safer" is not free: a tile of `T` with overlap
 `H` makes the model see `(T + 2H)²` pixels instead of `T²`. At `T = 512`,
