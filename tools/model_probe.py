@@ -8,7 +8,9 @@ Reports what a plug-in has to know before it packs a frame: the input and
 output tensor shapes and which of their dimensions are dynamic, how many
 channels the model expects, whether the output is the same size as the input
 (and by which factor it is not), whether H/W accept arbitrary sizes or need a
-multiple of 8/16/32, and which execution providers can load the file.
+multiple of 8/16/32, and which execution providers this runtime has. It loads the
+model once, on the CPU: whether a provider can run the file is
+`tools/bench_ep.py`'s question, not this one.
 
 The alignment probe is the one `AI_MODEL_INTEGRATION.md` §7 describes: one run
 at 63, 72, 80 and 96 pixels square. A model that reshapes to H/8, H/16 or H/32
@@ -30,60 +32,23 @@ import json
 import sys
 from pathlib import Path
 
-try:
-    import numpy as np
-    import onnxruntime as ort
-except ImportError:  # pragma: no cover - the message is the point
-    sys.stderr.write(
-        "error: this tool needs onnxruntime and numpy: pip install onnxruntime numpy\n"
-    )
-    raise SystemExit(2)
+from _ort_common import first_line, make_input, ort, parse_size, session_options
 
 # The ladder from AI_MODEL_INTEGRATION.md section 7, in pixels square.
 LADDER = (63, 72, 80, 96)
 
 
-def parse_size(text):
-    parts = text.lower().split("x")
-    try:
-        width, height = int(parts[0]), int(parts[-1])
-    except ValueError:
-        raise SystemExit("error: --size wants WxH, e.g. 64x64")
-    if width <= 0 or height <= 0:
-        raise SystemExit("error: --size wants positive numbers")
-    return width, height
-
-
 def describe_shape(shape):
-    """(rendered shape, names of the dynamic dimensions)."""
+    """`[batch, 3, height, width]`, with a `?` for a dimension with no name."""
     rendered = []
-    dynamic = []
     for dim in shape:
         if isinstance(dim, int):
             rendered.append(str(dim))
         elif isinstance(dim, str):
             rendered.append(dim)
-            dynamic.append(dim)
-        else:  # None, seen when a dimension is not even symbolically named
+        else:  # None: a dimension that is not even symbolically named
             rendered.append("?")
-            dynamic.append("?")
-    return "[" + ", ".join(rendered) + "]", dynamic
-
-
-def static_dim(shape, index):
-    if index < len(shape) and isinstance(shape[index], int):
-        return shape[index]
-    return None
-
-
-def make_input(size, channels):
-    """A deterministic pattern: a constant frame has no structure to compare."""
-    width, height = size
-    y, x = np.mgrid[0:height, 0:width]
-    planes = np.empty((channels, height, width), dtype=np.float32)
-    for c in range(channels):
-        planes[c] = ((x * (7 + c) + y * (13 + 3 * c)) % 101) / 101.0
-    return planes.reshape(1, channels, height, width)
+    return "[" + ", ".join(rendered) + "]"
 
 
 def probe_once(session, size, channels):
@@ -92,7 +57,7 @@ def probe_once(session, size, channels):
     try:
         out = session.run(None, {session.get_inputs()[0].name: x})[0]
     except Exception as exc:  # noqa: BLE001 - the message is the result
-        return None, str(exc).strip().splitlines()[0][:160]
+        return None, first_line(exc)
     return list(out.shape), None
 
 
@@ -147,13 +112,9 @@ def main():
         return 2
 
     size = parse_size(args.size)
-    # The ladder is meant to fail on purpose; keep the runtime's own error out of
-    # the output - this tool prints the message it captured, once.
-    options = ort.SessionOptions()
-    options.log_severity_level = 3
     try:
         session = ort.InferenceSession(
-            str(path), sess_options=options, providers=["CPUExecutionProvider"]
+            str(path), sess_options=session_options(), providers=["CPUExecutionProvider"]
         )
     except Exception as exc:  # noqa: BLE001 - the message is the result
         sys.stderr.write(
@@ -171,9 +132,14 @@ def main():
         return 1
     in_shape = inputs[0].shape
     out_shape = outputs[0].shape
-    channels = static_dim(in_shape, 1) or args.channels
-    height_dynamic = not isinstance(in_shape[2], int) if len(in_shape) > 2 else True
-    width_dynamic = not isinstance(in_shape[3], int) if len(in_shape) > 3 else True
+    if len(in_shape) != 4:
+        sys.stderr.write(
+            "error: {} has a {}-dimensional input; this tool probes NCHW models, "
+            "which is what an image plug-in packs\n".format(path.name, len(in_shape))
+        )
+        return 1
+    channels = in_shape[1] if isinstance(in_shape[1], int) else args.channels
+    dynamic_size = not (isinstance(in_shape[2], int) and isinstance(in_shape[3], int))
 
     base_shape, base_error = probe_once(session, size, channels)
     if base_shape is None:
@@ -184,8 +150,14 @@ def main():
         )
         return 1
 
-    factor_y = base_shape[2] / float(size[1]) if len(base_shape) > 2 else None
-    factor_x = base_shape[3] / float(size[0]) if len(base_shape) > 3 else None
+    if len(base_shape) != 4:
+        sys.stderr.write(
+            "error: the output at {}x{} is {}-dimensional, not NCHW; a size factor "
+            "has no meaning for it\n".format(size[0], size[1], len(base_shape))
+        )
+        return 1
+    factor_y = base_shape[2] / float(size[1])
+    factor_x = base_shape[3] / float(size[0])
 
     report = {
         "model": str(path),
@@ -206,9 +178,8 @@ def main():
             "dynamic": [d for d in out_shape if not isinstance(d, int)],
         },
         "channels": channels,
-        "probe": {"width": size[0], "height": size[1], "output_shape": base_shape},
         "factor": {"x": factor_x, "y": factor_y},
-        "dynamic_size": bool(height_dynamic or width_dynamic),
+        "dynamic_size": dynamic_size,
         "alignment": None,
         "providers": session.get_providers(),
         "available_providers": ort.get_available_providers(),
@@ -223,7 +194,7 @@ def main():
     except Exception:  # noqa: BLE001 - optional detail, never a failure
         pass
 
-    if report["dynamic_size"] and not args.no_alignment:
+    if dynamic_size and not args.no_alignment:
         runs, factor = alignment(session, channels)
         report["alignment"] = {"ladder": runs, "factor": factor}
 
@@ -231,8 +202,8 @@ def main():
         print(json.dumps(report, indent=2))
         return 0
 
-    in_text, _ = describe_shape(in_shape)
-    out_text, _ = describe_shape(out_shape)
+    in_text = describe_shape(in_shape)
+    out_text = describe_shape(out_shape)
     print("model        {}  ({} B, sha256 {}{})".format(
         path.name,
         report["bytes"],
@@ -248,17 +219,17 @@ def main():
     print("channels     {}".format(channels))
     if factor_x == 1 and factor_y == 1:
         print("size         1x1 - output matches the input")
-    elif factor_x is not None and factor_y is not None:
+    else:
         print(
             "size         {}x{} - output is {}x{} of the input at {}x{}".format(
                 factor_x, factor_y, factor_x, factor_y, size[0], size[1]
             )
         )
-    if report["dynamic_size"]:
+    if dynamic_size:
         print("dynamic H/W  yes - sizes are not fixed by the export")
     else:
-        fixed = "{}x{}".format(in_shape[3], in_shape[2]) if len(in_shape) > 3 else "?"
-        print("dynamic H/W  no - this model only runs at {}".format(fixed))
+        print("dynamic H/W  no - this model only runs at {}x{}".format(
+            in_shape[3], in_shape[2]))
 
     if report["alignment"]:
         ladder = report["alignment"]["ladder"]

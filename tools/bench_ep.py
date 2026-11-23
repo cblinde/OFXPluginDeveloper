@@ -30,71 +30,42 @@ import sys
 import time
 from pathlib import Path
 
-try:
-    import numpy as np
-    import onnxruntime as ort
-except ImportError:  # pragma: no cover - the message is the point
-    sys.stderr.write(
-        "error: this tool needs onnxruntime and numpy: pip install onnxruntime numpy\n"
-    )
-    raise SystemExit(2)
-
-
-def parse_size(text):
-    parts = text.lower().split("x")
-    try:
-        width, height = int(parts[0]), int(parts[-1])
-    except ValueError:
-        raise SystemExit("error: --size wants WxH, e.g. 64x64")
-    if width <= 0 or height <= 0:
-        raise SystemExit("error: --size wants positive numbers")
-    return width, height
-
-
-def make_input(size, channels):
-    width, height = size
-    y, x = np.mgrid[0:height, 0:width]
-    planes = np.empty((channels, height, width), dtype=np.float32)
-    for c in range(channels):
-        planes[c] = ((x * (7 + c) + y * (13 + 3 * c)) % 101) / 101.0
-    return planes.reshape(1, channels, height, width)
+from _ort_common import first_line, make_input, ort, parse_size, session_options
 
 
 def percentile(sorted_values, fraction):
-    if not sorted_values:
-        return 0.0
+    """Nearest-rank on a list that is already sorted; it is never empty here,
+    because a run that fails returns an error row instead of times."""
     index = min(len(sorted_values) - 1, int(round(fraction * (len(sorted_values) - 1))))
     return sorted_values[index]
 
 
 def bench(path, provider, size, channels, iterations, warmup):
     """Return a result row. A provider that cannot run the model is an error row."""
-    row = {"provider": provider, "available": True, "error": None}
-    options = ort.SessionOptions()
-    options.log_severity_level = 3
+    row = {"provider": provider, "error": None}
     try:
-        session = ort.InferenceSession(str(path), sess_options=options, providers=[provider])
+        session = ort.InferenceSession(
+            str(path), sess_options=session_options(), providers=[provider]
+        )
     except Exception as exc:  # noqa: BLE001 - the message is the result
-        row["available"] = False
-        row["error"] = str(exc).strip().splitlines()[0][:160]
+        row["error"] = first_line(exc)
         return row
 
-    x = make_input(size, channels)
-    feed = {session.get_inputs()[0].name: x}
-    for _ in range(max(0, warmup)):
+    feed = {session.get_inputs()[0].name: make_input(size, channels)}
+    for _ in range(warmup):
         try:
             session.run(None, feed)
         except Exception as exc:  # noqa: BLE001 - the message is the result
-            row["error"] = str(exc).strip().splitlines()[0][:160]
+            row["error"] = first_line(exc)
             return row
 
     times = []
-    for _ in range(max(1, iterations)):
+    for _ in range(iterations):
         started = time.perf_counter()
         try:
             session.run(None, feed)
         except Exception as exc:  # noqa: BLE001 - the message is the result
-            row["error"] = str(exc).strip().splitlines()[0][:160]
+            row["error"] = first_line(exc)
             return row
         times.append(time.perf_counter() - started)
 
@@ -102,19 +73,15 @@ def bench(path, provider, size, channels, iterations, warmup):
     median = percentile(times, 0.5)
     row.update(
         {
+            # The providers the session really used: a silent fallback is a fact
+            # the reader has to see next to the timing, not a failure.
             "session_providers": session.get_providers(),
             "iterations": len(times),
             "median_ms": round(median * 1000.0, 3),
             "p90_ms": round(percentile(times, 0.9) * 1000.0, 3),
-            "min_ms": round(times[0] * 1000.0, 3),
-            "max_ms": round(times[-1] * 1000.0, 3),
-            "fps": round(1.0 / median, 2) if median > 0 else None,
+            "fps": round(1.0 / median, 2),
         }
     )
-    if row["session_providers"] != [provider]:
-        # Not a failure: a host may hand over ops this provider does not
-        # implement. It is a fact the reader has to see next to the timing.
-        row["fell_back"] = True
     return row
 
 
@@ -154,6 +121,9 @@ def main():
     if args.iterations <= 0:
         sys.stderr.write("error: --iterations wants a positive number\n")
         return 2
+    if args.warmup < 0:
+        sys.stderr.write("error: --warmup wants zero or more runs\n")
+        return 2
     if args.channels <= 0:
         sys.stderr.write("error: --channels wants a positive number\n")
         return 2
@@ -168,13 +138,7 @@ def main():
     rows = []
     for provider in wanted:
         if provider not in available:
-            rows.append(
-                {
-                    "provider": provider,
-                    "available": False,
-                    "error": "not installed",
-                }
-            )
+            rows.append({"provider": provider, "error": "not installed"})
             continue
         rows.append(
             bench(path, provider, size, args.channels, args.iterations, args.warmup)
@@ -203,17 +167,13 @@ def main():
             "provider", "median ms", "p90 ms", "fps", "session used"
         ))
         for row in rows:
-            if row.get("error"):
+            if row["error"]:
                 print("{:<26} {:>10} {:>10} {:>9}  {}".format(
-                    row["provider"],
-                    "-",
-                    "-",
-                    "-",
-                    "not installed" if row["error"] == "not installed" else row["error"],
+                    row["provider"], "-", "-", "-", row["error"]
                 ))
                 continue
             used = ", ".join(row["session_providers"])
-            if row.get("fell_back"):
+            if row["session_providers"] != [row["provider"]]:
                 used += "  (requested {}, fell back)".format(row["provider"])
             print("{:<26} {:>10.3f} {:>10.3f} {:>9.2f}  {}".format(
                 row["provider"], row["median_ms"], row["p90_ms"], row["fps"], used
