@@ -47,7 +47,9 @@ testkit/build-contract-test.sh /tmp/contract_test .ofx-ref
 ```
 
 Flags: `--param name:type` (repeatable; `type` is one of `double`, `int`
-(or `integer`), `string`, `bool` (or `boolean`), `rgb`, `rgba`, `choice`),
+(or `integer`), `string`, `bool` (or `boolean`), `rgb`, `rgba`, `choice` — any
+other spelling exits 2 and lists these, instead of failing later as a descriptor
+mismatch that reads like a plug-in defect),
 `--clip name` (repeatable),
 `--set name=value` before render (`rgb` values are `r,g,b`, `rgba` values
 `r,g,b,a`), `--identity` (expect `kOfxStatOK` and the

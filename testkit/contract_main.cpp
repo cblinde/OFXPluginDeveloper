@@ -257,6 +257,17 @@ std::string canonicalType(const std::string& t) {
   return t;
 }
 
+// True for a string canonicalType() recognises. An unrecognised spelling used to
+// be passed through verbatim, so `--param modelChoice:int` for a choice
+// parameter failed as `OfxParamTypeChoice (expected OfxParamTypeInteger)` - a
+// message that blames the plug-in for a typo in the command line.
+bool isKnownType(const std::string& type) {
+  return type == kOfxParamTypeDouble || type == kOfxParamTypeInteger ||
+         type == kOfxParamTypeString || type == kOfxParamTypeBoolean ||
+         type == kOfxParamTypeRGB || type == kOfxParamTypeRGBA ||
+         type == kOfxParamTypeChoice;
+}
+
 // A value from the plug-in, flattened for a check name. The harness reports a
 // check by name, so the name is also how a script reads a label the plug-in
 // wrote; quotes and newlines would break both the log and the grep.
@@ -919,8 +930,12 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
       }
       if (dst[i + 3] != srcRGBA[i + 3]) alphaPreserved = false;
     }
+    // The assumption is part of the failure: without it, this reads as "the
+    // plug-in ignored the parameter" and sends the reader into the plug-in.
     if (!check("render applied the parameter value", worst == 0.0,
-               "max deviation " + std::to_string(worst) + " at " + where)) {
+               "max deviation " + std::to_string(worst) + " at " + where +
+                   " (--set is read as a gain, dst == src * atof(value); pass "
+                   "--set-status-only to check only that the write was accepted)")) {
       return failCycle(host);
     }
     if (!check("alpha is unchanged", alphaPreserved)) return failCycle(host);
@@ -1199,7 +1214,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "error: --param wants name:type\n");
         return 2;
       }
-      spec.params.emplace_back(v.substr(0, colon), canonicalType(v.substr(colon + 1)));
+      const std::string type = canonicalType(v.substr(colon + 1));
+      if (!isKnownType(type)) {
+        std::fprintf(stderr,
+                     "error: --param type '%s' is not one of: int (integer), double, "
+                     "bool (boolean), string, rgb, rgba, choice\n",
+                     v.substr(colon + 1).c_str());
+        return 2;
+      }
+      spec.params.emplace_back(v.substr(0, colon), type);
     } else if (a == "--clip") {
       spec.clips.push_back(next("--clip"));
     } else if (a == "--set") {
