@@ -14,6 +14,7 @@ tools/measure-halo.sh model.onnx            # tile overlap per model, writes <mo
 python3 tools/make-testmodels.py --out build/testmodels   # synthetic 1/3/4-channel and 2x models
 python3 tools/model_probe.py model.onnx     # shapes, dynamic dims, size factor, alignment
 python3 tools/bench_ep.py model.onnx        # median/p90 per execution provider
+tools/sweep-vram.sh model.onnx              # largest tile before ORT OOM (needs a GPU)
 ```
 
 `./run-tests.sh` needs `ONNXRUNTIME_ROOT` for the inference template, and

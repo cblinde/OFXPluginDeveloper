@@ -630,6 +630,12 @@ make the choice visible — and the consequence is packaging, not a second build
 - **Tile size is VRAM-bound, not model-bound.** The same 4x transformer held
   7.25 GB at a 384² tile and crossed 11.8 GB at 640², at which point the driver
   fell into its slower path: halving the tile beats enlarging it (**B**).
+  `tools/sweep-vram.sh` is that measurement as a command: it ramps the core tile
+  until ONNX Runtime reports an allocation failure, grows every tile by the halo
+  it reads from `ONNXLoader.profiles`, and stops at the first failure with that
+  failure's first line — a size that fails for another reason is named as such,
+  so a reshape limit is never mistaken for a memory ceiling. It needs the GPU;
+  without one it exits 3 instead of printing an empty table.
 
 The request itself is compiled and its failure path is verified here: this
 machine links the CPU package of ONNX Runtime, `AppendExecutionProvider_CUDA`

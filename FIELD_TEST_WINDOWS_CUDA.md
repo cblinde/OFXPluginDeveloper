@@ -266,7 +266,7 @@ corpus that this checkout cannot measure, only read.
 | H2-4.2 | no progress output, so a hang was not attributable to a phase | covered: `[stage] render`, `mark`, `compare golden`, `compare parameter`, `concurrency`, `byte destination`, `roi region`, `roi context`, `unload`, all on stderr (`9b8cfd5`, `47aca13`) **[V]** |
 | H2-4.3 | `--concurrency-threads` defaults to 4×3, which is minutes of silence for a slow model | covered as advice: `testkit/README.md` says to pass `--concurrency-threads 0` for a model slower than ~1 s/frame. A `--time-budget` flag is **open** |
 | H2-4.4 | the fake host cannot set a string property on a clip, so a plug-in that must notice new media behind the same clip handle (cache invalidation) is untestable | covered: `FakeHost::setClipProperty()` / `clipProperty()`, `--clip-prop NAME=VALUE`, and `--clip-prop-change NAME=VALUE`, which re-renders on the same handle and asserts through the plug-in's label that it re-read the value. The control pair proves both directions: the re-reading build passes, the one that caches the first answer fails with `= "take1" (expected "take2")` **[V]** |
-| H2-§7 | ship `model_probe`, `bench_ep`, `make-testmodels.py`, `sweep-vram.sh` and `test.bat` as source, not prose | **mostly covered**: `tools/make-testmodels.py` writes 1/3/4-channel 1×1-`AveragePool` identities and a nearest-`Resize` 2× model and self-tests them through ONNX Runtime's CPU provider; `tools/model_probe.py` reports shapes, dynamic H/W, channels, the output/input ratio and the 63/72/80/96 alignment ladder (verified against a model that needs a multiple of 64: `63 fails, 72 ok` → `multiple of 8`); `tools/bench_ep.py` times each available provider and prints the provider the session really used. All three run without a model download and without a GPU **[V]**. Still open: `sweep-vram.sh` and `test.bat`, which need an NVIDIA GPU and Windows respectively |
+| H2-§7 | ship `model_probe`, `bench_ep`, `make-testmodels.py`, `sweep-vram.sh` and `test.bat` as source, not prose | **mostly covered**: `tools/make-testmodels.py` writes 1/3/4-channel 1×1-`AveragePool` identities and a nearest-`Resize` 2× model and self-tests them through ONNX Runtime's CPU provider; `tools/model_probe.py` reports shapes, dynamic H/W, channels, the output/input ratio and the 63/72/80/96 alignment ladder (verified against a model that needs a multiple of 64: `63 fails, 72 ok` → `multiple of 8`); `tools/bench_ep.py` times each available provider and prints the provider the session really used. All three run without a model download and without a GPU **[V]**. `tools/sweep-vram.sh` exists and its no-GPU path is verified — no `nvidia-smi` exits 3 with the reason, a CPU ramp prints the table and stops at the first failure with its message **[V]** — but the OOM ceiling itself is **unverified**: no GPU here. Still open: `test.bat` (Windows) |
 | P1 | `FetchContent_Populate()` with `CMP0169 OLD` in all three templates | all three use `FetchContent_MakeAvailable()` with `SOURCE_SUBDIR cmake/do-not-build`; verified here by a real network clone and `./run-tests.sh` **[V]**, and again on Linux with CMake 4.4.5 — the ≥ 3.30 case P1 names — where a fresh configure from the network clone printed no CMP0169 warning and the suite passed 160 + 82 **[V]** |
 
 The `H2-` rows are the *second* handover (ONNX Loader, 22.–23.11.2026, German):
@@ -275,8 +275,9 @@ prefix keeps them apart from the F-numbers above, which are a different report o
 a different plug-in. What stays open is deliberate: the template is a 1x float
 filter, so upscaling, alignment/padding and premultiplied input need a runner of
 their own even though the rules are written down, and the tool suite the second
-handover asks to ship (`model_probe`, `bench_ep`, `make-testmodels.py`,
-`sweep-vram.sh`, `test.bat`) is not built here.
+handover asks to ship is built here except `test.bat`: `make-testmodels.py`,
+`model_probe`, `bench_ep` and `sweep-vram.sh` exist, the first three run without a
+GPU, and the sweep's own GPU ceiling is the one part no machine here can prove.
 
 What that run confirms, and this checkout could not have produced:
 
