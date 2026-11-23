@@ -40,6 +40,7 @@ column perfectly and never ran the right one.
 - [12. L10: CI and the release gate](#12-l10-ci-and-the-release-gate)
 - [13. What this repository actually runs](#13-what-this-repository-actually-runs)
 - [14. Test smells: passing for the wrong reason](#14-test-smells-passing-for-the-wrong-reason)
+- [15. L3b: observing a feature that leaves no trace](#15-l3b-observing-a-feature-that-leaves-no-trace)
 
 ---
 
@@ -850,6 +851,57 @@ build/gpu-kernel-test.exe        # 28 cases, hardware only
 | A "broken" control that passes | the control was built from a copied tree whose `build/` still held the old artefact, so CMake had nothing to rebuild — measured here while proving the instance check: the deliberately "fixed gain" plug-in passed until `build/` was deleted | copy sources only, or delete `build/` first; a negative control is only a control when the binary demonstrably changed |
 | A flag that encodes an assumption nobody wrote down | `--set gain=2.0 --not-identity-after-set` checks "render == source × value, alpha unchanged", which only holds for a parameter that scales RGB alone; `templates/minimal-ofx` scales *every* channel, so passing `--set` there fails on alpha even though the plug-in is right | state the assumption beside the flag, or assert only what the spec fixes (RGB); use a separate alpha parameter when alpha is meant to be independent |
 | "Declared thread-safe" treated as tested | a serial render exercises none of it, and an uninstrumented TSan run says nothing about the plug-in image | render several instances from several threads (§8), and build the plug-in with `-fsanitize=thread` to see races inside it |
+
+## 15. L3b: observing a feature that leaves no trace
+
+(Open feedback point F16.) A detection cache, a skipped inference, an early-out
+when the model's answer has not changed: none of them shows up in pixels. The
+frame is identical whether the shortcut ran or the full path did, so a golden
+comparison — or any assertion on the output — is satisfied by both. These paths
+need an observation the plug-in publishes, and the observation needs its own
+rules, because a log line is easy to assert on and easy to assert on wrongly.
+
+There is no cache in this repository's templates (`[I]`, design only). What does
+run here (`[V]`) is the shape the rules rest on: the `provider` label publishes
+an invisible fact — which execution provider the instance actually got — and
+`--label-param` asserts on it, down to refusing a declared default that the
+plug-in never wrote (§5.3). The contract test also already collects the plug-in's
+messages (`host.messageText()`, printed under `--- plug-in messages ---`), so a
+message is available to assert on; nothing asserts on it yet.
+
+1. **The log line is the contract, not a debugging aid.** Once a test depends on
+   a message, its wording, its level and its presence are test surface: write it
+   down, keep it stable, and make each line identify *which* decision it reports
+   (`cache hit key=...`, `inference skipped`) rather than a bare "ok". A line that
+   can only be read by a human is a feature without a test; a line the test
+   asserts on is exercised by the test. Deleting or rephrasing it is a test
+   change, which is the point.
+2. **Assert deltas, never absolute counts.** A host and a warm-up render decide
+   how many times the plug-in is called, so `hits == 3` encodes the harness, not
+   the plug-in. Take the count before and after the frames under test and assert
+   the difference: N frames of unchanged input, N-1 hits. Pair the delta with its
+   complement — with the cache disabled by a switch, the same N frames must give
+   zero hits and a higher inference count — or the count alone proves only that a
+   counter exists.
+3. **Know the log's lifetime, and its end.** A per-instance buffer cannot show
+   that a *second* instance reused the cache; a process-global logger mixes
+   instances and threads, so a delta taken around one render includes other
+   threads' lines. Decide which of the two the feature needs and say so. A ring
+   buffer keeps the *newest* lines and drops the oldest silently, so an assertion
+   on an early line passes only while little else was logged — assert on the last
+   line, or size the buffer and assert that nothing was dropped.
+4. **A probe in the image counts only if it belongs to one code path.** Marking
+   the frame to prove the short path ran works exactly when nothing else can draw
+   that mark — and then the negative control must show the mark *absent* with the
+   cache bypassed. Otherwise "the frame changed" is true for any path that draws,
+   which is the overlay smell in §14: the probe tests a second feature, not this
+   one. Prefer the log line, and keep the pixel probe for what only pixels can
+   prove.
+
+What this still does not establish: that the cache is *correct* (same answer as
+the full path on the frame that follows a hit), only that it was taken. That
+comparison is a golden test of its own, and it is the one that catches a cache
+keyed on the wrong thing.
 
 ---
 
