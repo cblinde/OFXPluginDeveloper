@@ -71,7 +71,7 @@ Three things the samples deliberately do not show, and where to look instead:
 | Missing from the samples | Look at |
 |---|---|
 | Packaging (bundle layout, exported symbols, `RUNPATH`) | `templates/minimal-cuda-ofx/CMakeLists.txt`, [`SKILL.md`](SKILL.md) §6 |
-| A render-thread-safety statement | `templates/minimal-cuda-ofx/src/Plugin.cpp:303` and the header default quoted in §3.2 |
+| A render-thread-safety statement | `templates/minimal-cuda-ofx/src/Plugin.cpp:317` and the header default quoted in §3.2 |
 | Tests that fail when the pitch, alpha or tiling is wrong | `templates/*/test/`, [§8](#8-how-the-numbers-here-are-reproduced) |
 
 One negative finding is worth recording because it is commonly assumed
@@ -183,16 +183,16 @@ their defaults are the opposite of what they assume:
   output images can contain pixel data that is only a subset of their full RoD",
   and if you say `false` the host "should supply full RoD images"
   (`.ofx-ref/include/ofxImageEffect.h:849`–`:857`). So `false` is the *deliberate* statement, and
-  the templates make it: `templates/minimal-cuda-ofx/src/Plugin.cpp:289` and
-  `templates/onnx-inference-ofx/src/Plugin.cpp:241` (`setSupportsTiles(false)`
+  the templates make it: `templates/minimal-cuda-ofx/src/Plugin.cpp:303` and
+  `templates/onnx-inference-ofx/src/Plugin.cpp:365` (`setSupportsTiles(false)`
   in `describe()`). `GPUGain` makes the same opt-out with a compile-time constant:
   `#define kSupportsTiles false` at `.ofx-ref/Support/Plugins/GPUGain/GPUGain.cpp:20`, applied at `:361`,
   `:411` and `:418`.
 - **`kOfxImageEffectPluginRenderThreadSafety` defaults to
   `kOfxImageEffectRenderInstanceSafe`** (`.ofx-ref/include/ofxImageEffect.h:623`–`:629`), not to
-  `Unsafe`. The templates set it anyway (`templates/minimal-cuda-ofx/src/Plugin.cpp:303`,
-  `templates/onnx-inference-ofx/src/Plugin.cpp:251`) because the value is a promise a
-  reviewer must be able to check; the CUDA template's comment above `:303` states
+  `Unsafe`. The templates set it anyway (`templates/minimal-cuda-ofx/src/Plugin.cpp:317`,
+  `templates/onnx-inference-ofx/src/Plugin.cpp:375`) because the value is a promise a
+  reviewer must be able to check; the CUDA template's comment above `:317` states
   exactly what `InstanceSafe` buys and why `FullySafe` would be a lie for its
   per-render state.
 
@@ -224,7 +224,7 @@ Four rules, and the header sentence that settles them:
    `getPixelAddress` inside the `x` loop.
 5. **Alpha is not yours to overwrite unless the effect is about alpha.** The
    inference template copies it through explicitly — `CopyAlpha` is defined at
-   `templates/onnx-inference-ofx/src/Plugin.cpp:50` and called at `:152` before
+   `templates/onnx-inference-ofx/src/Plugin.cpp:55` and called at `:243` before
    inference — and its test asserts the alpha channel is untouched on tight,
    padded and negative-stride images.
 
@@ -239,7 +239,7 @@ Four rules, and the header sentence that settles them:
   effect must return promptly when the user scrubs.
 - **Every error path logs and throws a specific code.** The inference template
   rejects an unsupported format with `kOfxStatErrUnsupported`
-  (`templates/onnx-inference-ofx/src/Plugin.cpp:109`, `:118`, `:168`); the CUDA template
+  (`templates/onnx-inference-ofx/src/Plugin.cpp:174`, `:198`); the CUDA template
   throws `kOfxStatGPURenderFailed` when a launch or sync fails. Silently returning
   `kOfxStatOK` produces a black frame with no diagnostic, and Resolve blacklists
   plug-ins that crash, so the next launch looks like "the plug-in vanished".
@@ -266,7 +266,7 @@ if (_pCudaStream == nullptr) { /* finish the work: sync the stream you used */ }
 // else: return immediately and let the host order its work
 ```
 
-It is implemented at `templates/minimal-cuda-ofx/src/Plugin.cpp:120`–`:126`
+It is implemented at `templates/minimal-cuda-ofx/src/Plugin.cpp:119`–`:127`
 (the `WaitForDefaultStream()` call is guarded by `_pCudaStream == nullptr`). Three
 further rules the template teaches by construction:
 
@@ -278,7 +278,7 @@ further rules the template teaches by construction:
   errors are invisible until a synchronisation point, which is precisely why the
   sync policy above matters.
 - **Advertise the capability only when the path exists.** The whole block is
-  behind `#ifdef OFXPLUGIN_WITH_CUDA` (`templates/minimal-cuda-ofx/src/Plugin.cpp:308`);
+  behind `#ifdef OFXPLUGIN_WITH_CUDA` (`templates/minimal-cuda-ofx/src/Plugin.cpp:319`);
   a build without a toolkit must not tell the host it can take device pointers.
 
 ### 3.6 Region of interest and tiling
@@ -292,14 +292,14 @@ further rules the template teaches by construction:
   RoD" (`.ofx-ref/include/ofxImageEffect.h:849`–`:857`). Saying `true` means you accept partial
   images and must produce correct output for them; saying `false` asks the host
   for full-RoD fetches. The templates do their own tiling and therefore say
-  `false` (`templates/minimal-cuda-ofx/src/Plugin.cpp:289`), with a comment that spells out
+  `false` (`templates/minimal-cuda-ofx/src/Plugin.cpp:303`), with a comment that spells out
   the difference.
 - **Internal tiling requires a halo at least as large as the model's or kernel's
   receptive field radius.** The contract is documented at
-  `templates/onnx-inference-ofx/src/AiCore.h:83`–`:85` ("1 for a single 3×3
+  `templates/onnx-inference-ofx/src/AiCore.h:87`–`:89` ("1 for a single 3×3
   convolution, more for a stack of them"), and it is enforced by a *negative
   control*: the same tiled render with `halo = 0` must disagree with whole-frame
-  inference (`templates/onnx-inference-ofx/test/ai_pipeline_test.cpp:273`).
+  inference (`templates/onnx-inference-ofx/test/ai_pipeline_test.cpp:300`).
   Without that control, a tiled-vs-tiled comparison passes for the wrong reason.
 
 ### 3.7 Model and tensor plumbing
@@ -381,9 +381,9 @@ evidence grade B and the architectures — not the numbers — are what transfer
 | 1 | `.ofx-ref/Support/Plugins/Invert/invert.cpp` | The minimum viable plug-in: registration (`:253`), describe, render, nothing else | 15 min |
 | 2 | `.ofx-ref/Support/Plugins/Basic/basic.cpp` | `getRegionsOfInterest` (`:334`), `isIdentity`, a mask clip, several params | 30 min |
 | 3 | `.ofx-ref/Support/Plugins/GPUGain/GPUGain.cpp` | GPU negotiation, OpenCL dispatch, `setGPURenderArgs` (`:322`), tiles off (`:20`) | 30 min |
-| 4 | `templates/minimal-cuda-ofx/src/Plugin.cpp` | What the samples omit: per-render int vs descriptor string (`:79`), stream asymmetry (`:120`–`:126`), `InstanceSafe` (`:303`) | 45 min |
+| 4 | `templates/minimal-cuda-ofx/src/Plugin.cpp` | What the samples omit: per-render int vs descriptor string (`:79`), stream asymmetry (`:119`–`:127`), `InstanceSafe` (`:317`) | 45 min |
 | 5 | `templates/minimal-cuda-ofx/test/run-tests.sh` | How the invariants are proven without a GPU | 20 min |
-| 6 | `templates/onnx-inference-ofx/src/AiCore.cpp` + `templates/onnx-inference-ofx/test/ai_pipeline_test.cpp` | Packing, tiling, golden fixtures, the halo negative control (`:273`) | 45 min |
+| 6 | `templates/onnx-inference-ofx/src/AiCore.cpp` + `templates/onnx-inference-ofx/test/ai_pipeline_test.cpp` | Packing, tiling, golden fixtures, the halo negative control (`:300`) | 45 min |
 | 7 | [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §1 and §6 | What production inference plug-ins do; when CUDA pays | 20 min |
 
 Steps 1–3 need the `.ofx-ref` checkout (see the top of this file). Steps 4–7 need
