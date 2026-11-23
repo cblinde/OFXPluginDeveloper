@@ -171,6 +171,17 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
         OFX::throwSuiteStatusException(kOfxStatErrValue);
     }
 
+    // Image::getPixelAddress() returns nullptr outside the image bounds, and the
+    // addressing below is raw arithmetic on (window - bounds). A host may hand
+    // over a window the source region of definition does not cover (a crop, a
+    // transition, wrong bounds), so validate it once here instead of reading
+    // where there is no pixel.
+    const OfxRectI& sb = src->getBounds();
+    if (args.renderWindow.x1 < sb.x1 || args.renderWindow.y1 < sb.y1 ||
+        args.renderWindow.x2 > sb.x2 || args.renderWindow.y2 > sb.y2) {
+        OFX::throwSuiteStatusException(kOfxStatErrValue);
+    }
+
     const OfxRectI window = args.renderWindow;
     const int width = window.x2 - window.x1;
     const int height = window.y2 - window.y1;
@@ -200,7 +211,6 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
         OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
     }
 
-    const OfxRectI& sb = src->getBounds();
     const OfxRectI& db = dst->getBounds();
     const long long srcPitch = src->getRowBytes();
     const long long dstPitch = dst->getRowBytes();
