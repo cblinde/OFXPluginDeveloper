@@ -64,6 +64,13 @@ bool check(const std::string& what, bool condition, const std::string& detail = 
   return false;
 }
 
+// Phase markers for a run that stops answering. stderr on purpose: stdout is the
+// check stream a script compares, and a stage line must never look like a result.
+void stage(const char* what) {
+  std::fprintf(stderr, "[stage] %s\n", what);
+  std::fflush(stderr);
+}
+
 std::string statusName(OfxStatus s) {
   switch (s) {
     case kOfxStatOK: return "kOfxStatOK";
@@ -298,6 +305,7 @@ bool runMultiInstance(const Spec& spec, testkit::FakeHost& host, const std::stri
     ok("multi-instance and thread-safety checks skipped (--concurrency-threads 0)");
     return true;
   }
+  stage("concurrency");
   const OfxRectI window = {0, 0, spec.width, spec.height};
 
   // A host gives every instance the same baseline configuration (model path,
@@ -710,9 +718,8 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   }
 
   // A hung harness is unreadable: the last stage line before silence says which
-  // phase it never finished. stderr, so the check stream on stdout stays exactly
-  // what a script compares.
-  std::fprintf(stderr, "[stage] render\n");
+  // phase it never finished.
+  stage("render");
   const OfxStatus renderStatus = host.render(0.0, window);
   if (!check("kOfxImageEffectActionRender", renderStatus == kOfxStatOK, statusName(renderStatus))) {
     return failCycle(host);
@@ -734,6 +741,7 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   }
 
   if (spec.hasMark) {
+    stage("mark");
     // Frame coordinates, not buffer coordinates. destination() is the host's
     // own read-back: it always walks frame rows upward from bounds.y1, whatever
     // the pointer handed to the plug-in and the stride sign do. So this check
@@ -789,6 +797,7 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   }
 
   if (!spec.goldenFile.empty()) {
+    stage("compare golden");
     std::vector<float> golden;
     const size_t pixels = static_cast<size_t>(spec.width) * spec.height;
     if (!check("read golden " + spec.goldenFile, readFloats(spec.goldenFile, &golden, pixels * 3),
@@ -819,6 +828,7 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   }
 
   if (!spec.sets.empty() && spec.goldenFile.empty() && !spec.setStatusOnly) {
+    stage("compare parameter");
     // The parameter change must have had an effect: exactly one gain-like scale
     // is assumed by calling this test with a single numeric override. For any
     // other parameter pass --set-status-only, which asserts the status and the
@@ -853,6 +863,7 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   if (!runMultiInstance(spec, host, safety, srcRGBA)) return failCycle(host);
 
   if (spec.byteDstRejected) {
+    stage("byte destination");
     host.setDestinationByteImage(true);
     const OfxStatus st = host.render(0.0, window);
     host.setDestinationByteImage(false);
@@ -862,6 +873,7 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   }
 
   if (spec.roiExpand >= 0) {
+    stage("roi region");
     // A plug-in that reports a source region smaller than it reads loses the
     // pixels its edge tiles needed, and the host cannot notice: the frame still
     // renders, only its border is computed from padding. Ask with a region
@@ -899,6 +911,7 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   }
 
   if (spec.roiContext) {
+    stage("roi context");
     // GetRegionsOfInterest is a promise about pixels, not about a rectangle. Ask
     // for a window inset inside the frame and compare it with the whole-frame
     // render: the pixels there must agree, because the plug-in said which
@@ -1032,7 +1045,7 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   }
   // The unload is where a runtime-owned static bites: a destructor that calls
   // into a half-unmapped module hangs here with the last check already green.
-  std::fprintf(stderr, "[stage] unload\n");
+  stage("unload");
   const OfxStatus unloadStatus = host.unload();
   if (!check("kOfxActionUnload", unloadStatus == kOfxStatOK, statusName(unloadStatus))) {
     return failCycle(host);
