@@ -246,7 +246,7 @@ corpus that this checkout cannot measure, only read.
 | G2 | the routing table sent every per-frame model to the ONNX template, whose runner requires `out shape == in shape`; a detection head cannot use it | `SKILL.md` §4 row, `AI_MODEL_INTEGRATION.md` §7 item 6, `PATTERN_INDEX.md` |
 | G3 | no guidance for drawing into the frame: destination pitch, bounds vs render window, premultiplied overlay, font | `ARCHITECTURE_AND_CUDA_PIPELINE.md` §13 and a `PATTERN_INDEX.md` row |
 | G4 | no detection-model guidance: letterbox mapping, `[1, 4+N, anchors]` vs transposed, per-class NMS, end-to-end exports | `AI_MODEL_INTEGRATION.md` §7, "Detection heads" |
-| P1 | `FetchContent_Populate()` with `CMP0169 OLD` in all three templates | all three use `FetchContent_MakeAvailable()` with `SOURCE_SUBDIR cmake/do-not-build`; verified here by a real network clone and `./run-tests.sh` **[V]** |
+| P1 | `FetchContent_Populate()` with `CMP0169 OLD` in all three templates | all three use `FetchContent_MakeAvailable()` with `SOURCE_SUBDIR cmake/do-not-build`; verified here by a real network clone and `./run-tests.sh` **[V]**, and again on Linux with CMake 4.4.5 — the ≥ 3.30 case P1 names — where a fresh configure from the network clone printed no CMP0169 warning and the suite passed 160 + 82 **[V]** |
 
 What that run confirms, and this checkout could not have produced:
 
