@@ -73,6 +73,13 @@ leave `T` when it is not. Use it with a small `tileSize` to exercise the tiled
 path; pick `T` from measurement, below the no-context deviation and above any
 feather rounding (the ONNX template uses 0.02 against a measured 0.1875).
 
+Both flags are one measurement, not four checks: `maxRectDifference()` returns
+whether the overlap is bit-identical, the largest absolute difference and the
+pixel it sits at, and the bound is read in exactly one place — `T == 0` means
+"identical to the bit", so the exact flag is the tolerance flag with a bound of
+zero. Equality is compared on the bits rather than with `==`, which keeps a
+signed zero distinct and a NaN identical to itself.
+
 `FakeHost::setSourceCroppedToWindow(true)` is the host side of that second
 render: the source image is published cropped to the window, and its origin and
 size come from the window the host asked for, so a plug-in that reads past its

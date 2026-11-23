@@ -35,6 +35,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -456,65 +457,53 @@ bool checkDestinationUnchanged(const std::vector<float>& before,
                          std::to_string(after.size()) + " floats");
 }
 
-// Bitwise comparison of one rectangle of two tightly packed RGBA destinations.
-// Empty when every float there is bit-identical, otherwise the first difference
-// as text. Exact on purpose: a render that reads the pixels its host was told to
-// hand over produces the same bits as the whole-frame render, and one that reads
-// a border it did not get produces a seam - a tolerance would hide the seam it
-// is meant to find.
-std::string firstBitDifference(const std::vector<float>& a, const std::vector<float>& b, int stride,
-                               const OfxRectI& rect) {
+// What one rectangle of two densely packed RGBA destinations looks like when it
+// is compared: whether it is bit-identical, the largest absolute difference, and
+// the pixel where that difference sits. One measurement serves both of the
+// roi-context checks, because a tolerance of 0 is the demand for bit-equality:
+// a render that reads the pixels its host was told to hand over reproduces the
+// whole-frame render exactly, and one that reads a border it did not get leaves
+// a seam, which is precisely what a bound of 0 refuses to smooth over.
+struct Deviation {
+  bool identical = true;
+  double worst = 0.0;
+  std::string where;
+};
+
+// Equality is on the bits, not on ==: that keeps a signed zero distinct (0.0 vs
+// -0.0 compares equal but is not the same render) and keeps a NaN identical to
+// itself. Both destinations come from FakeHost::destination(), which snapshots
+// one frame-sized allocation, so no index below can fall outside them - the
+// "destination is readable" check in the caller is what pins that size down.
+Deviation maxRectDifference(const std::vector<float>& a, const std::vector<float>& b,
+                            int stride, const OfxRectI& rect) {
+  Deviation d;
   for (int y = rect.y1; y < rect.y2; ++y) {
     for (int x = rect.x1; x < rect.x2; ++x) {
       const size_t base = (static_cast<size_t>(y) * static_cast<size_t>(stride) +
                            static_cast<size_t>(x)) * 4;
       for (int c = 0; c < 4; ++c) {
-        if (a.size() <= base + c || b.size() <= base + c) return "destination shorter than the frame";
         std::uint32_t ba = 0;
         std::uint32_t bb = 0;
         std::memcpy(&ba, &a[base + c], sizeof ba);
         std::memcpy(&bb, &b[base + c], sizeof bb);
-        if (ba != bb) {
-          return "pixel (" + std::to_string(x) + "," + std::to_string(y) + ") channel " +
-                 std::to_string(c) + ": " + std::to_string(a[base + c]) + " vs " +
-                 std::to_string(b[base + c]);
+        if (ba == bb) continue;
+        d.identical = false;
+        double diff = std::abs(static_cast<double>(a[base + c]) -
+                               static_cast<double>(b[base + c]));
+        // A different NaN has no magnitude to report; treat it as unbounded so
+        // the comparison below cannot call it small.
+        if (!(diff == diff)) diff = std::numeric_limits<double>::infinity();
+        if (diff > d.worst || d.where.empty()) {
+          d.worst = diff;
+          d.where = "pixel (" + std::to_string(x) + "," + std::to_string(y) + ") channel " +
+                    std::to_string(c) + ": " + std::to_string(a[base + c]) + " vs " +
+                    std::to_string(b[base + c]);
         }
       }
     }
   }
-  return std::string();
-}
-
-// Worst absolute difference over one rectangle of two tightly packed RGBA
-// destinations, with the pixel it sits at. Used where bit-equality is the wrong
-// question - a render the plug-in splits into tiles is blended from overlapping
-// tiles, so the same neighbourhood reaches a different rounding.
-std::string maxRectDifference(const std::vector<float>& a, const std::vector<float>& b,
-                              int stride, const OfxRectI& rect, double* worst) {
-  double peak = 0.0;
-  std::string where;
-  for (int y = rect.y1; y < rect.y2; ++y) {
-    for (int x = rect.x1; x < rect.x2; ++x) {
-      const size_t base = (static_cast<size_t>(y) * static_cast<size_t>(stride) +
-                           static_cast<size_t>(x)) * 4;
-      for (int c = 0; c < 4; ++c) {
-        if (a.size() <= base + c || b.size() <= base + c) {
-          *worst = peak;
-          return "destination shorter than the frame";
-        }
-        const double diff = std::abs(static_cast<double>(a[base + c]) -
-                                     static_cast<double>(b[base + c]));
-        if (diff > peak) {
-          peak = diff;
-          where = "pixel (" + std::to_string(x) + "," + std::to_string(y) + ") channel " +
-                  std::to_string(c) + ": " + std::to_string(a[base + c]) + " vs " +
-                  std::to_string(b[base + c]);
-        }
-      }
-    }
-  }
-  *worst = peak;
-  return where;
+  return d;
 }
 
 bool sameRect(const OfxRectD& a, const OfxRectD& b) {
@@ -810,14 +799,32 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   if (spec.roiContext) {
     // GetRegionsOfInterest is a promise about pixels, not about a rectangle. Ask
     // for a window inset inside the frame and compare it with the whole-frame
-    // render: every pixel there must be identical to the bit, because the plug-in
-    // said which neighbours it reads and the host handed them over. Then repeat
-    // the render against a host that ignores the declaration and supplies only the
-    // window - the same pixels must now differ, or the declared region was never
-    // used and the two checks would pass for the wrong reason.
+    // render: the pixels there must agree, because the plug-in said which
+    // neighbours it reads and the host handed them over. Then repeat the render
+    // against a host that ignores the declaration and supplies only the window -
+    // the same pixels must now disagree, or the declared region was never used
+    // and the checks would pass for the wrong reason. "Agree" is bit-equality by
+    // default and a bound when --roi-context-tolerance is given, for a render
+    // that feathers overlapping tiles and so reaches the same neighbourhood
+    // through a different rounding.
+    //
+    // A tolerance of 0 *is* the exact check, so both modes are one measurement
+    // with two names: sameEnough() is the only place the bound is interpreted,
+    // and a bound of 0 asks for bit-equality.
     const int margin = 3;
     const OfxRectI inner{window.x1 + margin, window.y1 + margin, window.x2 - margin,
                         window.y2 - margin};
+    const double tolerance = spec.roiContextTolerance;
+    const bool exact = tolerance == 0.0;
+    const auto sameEnough = [exact, tolerance](const Deviation& d) {
+      return exact ? d.identical : d.worst <= tolerance;
+    };
+    const auto deviationText = [exact, tolerance](const Deviation& d) {
+      if (d.identical) return std::string("no difference inside the window");
+      return "max deviation " + std::to_string(d.worst) + " at " + d.where +
+             (exact ? std::string(", which the exact check does not allow")
+                    : " (tolerance " + std::to_string(tolerance) + ")");
+    };
     OfxStatus st = host.render(0.0, window);
     if (!check("roi context: whole-frame render", st == kOfxStatOK, statusName(st))) {
       return failCycle(host);
@@ -833,21 +840,11 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
       return failCycle(host);
     }
     const std::vector<float> withContext = host.destination();
-    if (spec.roiContextTolerance > 0.0) {
-      double worst = 0.0;
-      const std::string at = maxRectDifference(whole, withContext, spec.width, inner, &worst);
-      if (!check("roi context: the inset window stays within the tolerance of the whole frame",
-                 worst <= spec.roiContextTolerance,
-                 "max deviation " + std::to_string(worst) + " at " + at + " (tolerance " +
-                     std::to_string(spec.roiContextTolerance) + ")")) {
-        return failCycle(host);
-      }
-    } else {
-      const std::string same = firstBitDifference(whole, withContext, spec.width, inner);
-      if (!check("roi context: the inset window matches the whole frame bit for bit",
-                 same.empty(), same)) {
-        return failCycle(host);
-      }
+    const Deviation within = maxRectDifference(whole, withContext, spec.width, inner);
+    if (!check(exact ? "roi context: the inset window matches the whole frame bit for bit"
+                     : "roi context: the inset window stays within the tolerance of the whole frame",
+               sameEnough(within), deviationText(within))) {
+      return failCycle(host);
     }
     host.setSourceCroppedToWindow(true);
     st = host.render(0.0, inner);
@@ -858,22 +855,17 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
                st == kOfxStatOK, statusName(st))) {
       return failCycle(host);
     }
-    if (spec.roiContextTolerance > 0.0) {
-      double worst = 0.0;
-      const std::string at = maxRectDifference(whole, withoutContext, spec.width, inner, &worst);
-      if (!check("roi context: without a context region the same window leaves the tolerance",
-                 worst > spec.roiContextTolerance,
-                 "max deviation " + std::to_string(worst) + " at " + at + ", inside the tolerance " +
-                     std::to_string(spec.roiContextTolerance) +
-                     ", so nothing outside the window was read")) {
-        return failCycle(host);
-      }
-    } else {
-      const std::string differs = firstBitDifference(whole, withoutContext, spec.width, inner);
-      if (!check("roi context: without a context region the same window differs", !differs.empty(),
-                 "the window is bit-identical to the whole frame, so nothing outside it was read")) {
-        return failCycle(host);
-      }
+    const Deviation outside = maxRectDifference(whole, withoutContext, spec.width, inner);
+    if (!check(exact ? "roi context: without a context region the same window differs"
+                     : "roi context: without a context region the same window leaves the tolerance",
+               !sameEnough(outside),
+               outside.identical
+                   ? std::string("the window is bit-identical to the whole frame, so nothing "
+                                 "outside it was read")
+                   : "max deviation " + std::to_string(outside.worst) + " at " + outside.where +
+                         ", inside the tolerance " + std::to_string(tolerance) +
+                         ", so nothing outside the window was read")) {
+      return failCycle(host);
     }
   }
 

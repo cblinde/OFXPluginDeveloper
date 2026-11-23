@@ -417,7 +417,8 @@ so the normal run stays green):
   ok 26 - roi context: destination is readable
   ok 27 - roi context: render of an inset window
   FAIL roi context: the inset window matches the whole frame bit for bit:
-       pixel (3,3) channel 0: 0.618557 vs 0.687285
+       max deviation 0.201604 at pixel (60,3) channel 1: 0.475372 vs 0.273769,
+       which the exact check does not allow
   contract_test: 28 checks, 1 failed
   caught (exit 1) with: FAIL roi context: the inset window matches the whole frame bit for bit
 
