@@ -175,6 +175,10 @@ struct Spec {
   std::vector<std::pair<std::string, std::string>> sets;
   std::string srcFile;
   std::string goldenFile;
+  // --golden-tolerance T: a golden rendered on the CPU cannot be bit-exact to a
+  // GPU run (a CUDA model differs in the last bits), so the comparison may be a
+  // bound. Default 0 keeps the exact check.
+  double goldenTolerance = 0.0;
   int width = 64;
   int height = 48;
   bool expectIdentity = false;
@@ -833,9 +837,12 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
     auto isMark = [&](int frameY) {
       const float* px = &dst[(static_cast<size_t>(frameY) * spec.width + spec.markX) * 4];
-      auto near = [](float a, float b) { return std::abs(a - b) < 1e-6f; };
-      return near(px[0], 0.9375f) && near(px[1], 0.0625f) && near(px[2], 0.5f) &&
-             near(px[3], 1.0f);
+      // Not `near`: <windows.h> pulls minwindef.h, where `near` is a macro that
+      // expands to nothing, and MSVC then reads `auto = [...]` (C2513). `far` is
+      // the other identifier the SDK defines away.
+      auto nearPx = [](float a, float b) { return std::abs(a - b) < 1e-6f; };
+      return nearPx(px[0], 0.9375f) && nearPx(px[1], 0.0625f) && nearPx(px[2], 0.5f) &&
+             nearPx(px[3], 1.0f);
     };
     const bool atFrame = isMark(spec.markY);
     const bool atMirror = isMark(spec.height - 1 - spec.markY);
@@ -874,8 +881,14 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
         }
       }
     }
-    if (!check("render matches the golden", worst == 0.0,
-               "max deviation " + std::to_string(worst) + " at " + where)) {
+    const double tolerance = spec.goldenTolerance;
+    const bool exact = tolerance == 0.0;
+    if (!check(exact ? std::string("render matches the golden")
+                     : "render matches the golden within " + std::to_string(tolerance),
+               exact ? worst == 0.0 : worst <= tolerance,
+               "max deviation " + std::to_string(worst) + " at " + where +
+                   (exact ? std::string()
+                          : ", tolerance " + std::to_string(tolerance)))) {
       return failCycle(host);
     }
   }
@@ -1014,26 +1027,47 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
                sameEnough(within), deviationText(within))) {
       return failCycle(host);
     }
-    host.setSourceCroppedToWindow(true);
-    st = host.render(0.0, inner);
-    // Reset before reading back: the cropped image is freed with the mode.
-    const std::vector<float> withoutContext = host.destination();
-    host.setSourceCroppedToWindow(false);
-    if (!check("roi context: render of the same window without a context region",
-               st == kOfxStatOK, statusName(st))) {
-      return failCycle(host);
-    }
-    const Deviation outside = maxRectDifference(whole, withoutContext, spec.width, inner);
-    if (!check(exact ? "roi context: without a context region the same window differs"
+    // The second half is a property of a local effect: it asks whether the
+    // plug-in read anything outside the window. An effect that declares no
+    // context - it answers GetRegionsOfInterest with the region it was asked
+    // about - legitimately produces the same picture twice, and failing it would
+    // report "nothing outside it was read" about a plug-in that never claimed to
+    // read outside. Skip that half when the plug-in says exactly that. A plug-in
+    // that leaves the action at ReplyDefault is still checked: "no answer" is not
+    // "no context".
+    const OfxRectD requested{static_cast<double>(inner.x1), static_cast<double>(inner.y1),
+                             static_cast<double>(inner.x2), static_cast<double>(inner.y2)};
+    OfxRectD declared{};
+    const bool declaresNoContext =
+        host.getRegionsOfInterest(0.0, requested, &declared) == kOfxStatOK &&
+        declared.x1 == requested.x1 && declared.y1 == requested.y1 &&
+        declared.x2 == requested.x2 && declared.y2 == requested.y2;
+    if (declaresNoContext) {
+      ok("roi context: second half skipped - the plug-in declares no context region "
+         "(it answers with the region it was asked about)");
+    } else {
+      host.setSourceCroppedToWindow(true);
+      st = host.render(0.0, inner);
+      // Reset before reading back: the cropped image is freed with the mode.
+      const std::vector<float> withoutContext = host.destination();
+      host.setSourceCroppedToWindow(false);
+      if (!check("roi context: render of the same window without a context region",
+                 st == kOfxStatOK, statusName(st))) {
+        return failCycle(host);
+      }
+      const Deviation outside = maxRectDifference(whole, withoutContext, spec.width, inner);
+      if (!check(exact
+                     ? "roi context: without a context region the same window differs"
                      : "roi context: without a context region the same window leaves the tolerance",
-               !sameEnough(outside),
-               outside.identical
-                   ? std::string("the window is bit-identical to the whole frame, so nothing "
-                                 "outside it was read")
-                   : "max deviation " + std::to_string(outside.worst) + " at " + outside.where +
-                         ", inside the tolerance " + std::to_string(tolerance) +
-                         ", so nothing outside the window was read")) {
-      return failCycle(host);
+                 !sameEnough(outside),
+                 outside.identical
+                     ? std::string("the window is bit-identical to the whole frame, so nothing "
+                                   "outside it was read")
+                     : "max deviation " + std::to_string(outside.worst) + " at " +
+                           outside.where + ", inside the tolerance " +
+                           std::to_string(tolerance) + ", so nothing outside the window was read")) {
+        return failCycle(host);
+      }
     }
   }
 
@@ -1120,6 +1154,8 @@ int main(int argc, char** argv) {
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
                  "       [--dst-bounds-inset N] [--roi-expand N] [--roi-context]\n"
                  "       [--roi-context-tolerance T] (tiled render: bound, not bit-equality)\n"
+                 "       [--golden-tolerance T] (a bound instead of bit-equality, for a\n"
+                 "        golden rendered by another provider)\n"
                  "       [--label-param NAME[=VALUE]] (a string the plug-in sets itself)\n"
                  "       [--clip-prop NAME=VALUE] [--clip-prop-change NAME=VALUE]\n"
                  "         (string properties on the source clip; the change is written\n"
@@ -1178,6 +1214,8 @@ int main(int argc, char** argv) {
       spec.srcFile = next("--src");
     } else if (a == "--golden") {
       spec.goldenFile = next("--golden");
+    } else if (a == "--golden-tolerance") {
+      spec.goldenTolerance = std::atof(next("--golden-tolerance").c_str());
     } else if (a == "--size") {
       const std::string v = next("--size");
       const size_t x = v.find('x');

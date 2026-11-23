@@ -29,8 +29,8 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `build-contract-test.sh` | compiles the two files into one binary, finding the OFX headers from the template's CMake cache |
 | `build-contract-test.bat` | the same build under MSVC; the loader path in `contract_main.cpp` is `LoadLibraryExW` there |
 | `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping |
-| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built nine ways (plain or internally tiled with the context read or ignored, two for the label check — one that never writes the label, one that does — one that draws a mark at a fixed position, and two that echo the source clip's `mediaID` label, one re-reading it per render and one caching the first answer), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
-| `run-negative-controls.sh` | builds those fourteen controls, asserts each fault is rejected with the right message, and that the context-reading, label-writing and clip-re-reading builds pass while the mark build passes only in both bottom-up layouts and the clip-caching build fails on the second media id |
+| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built ten ways (plain or internally tiled with the context read or ignored, two for the label check — one that never writes the label, one that does — one that draws a mark at a fixed position, and two that echo the source clip's `mediaID` label, one re-reading it per render and one caching the first answer, and one that declares no context region at all), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
+| `run-negative-controls.sh` | builds those fifteen controls, asserts each fault is rejected with the right message, and that the context-reading, label-writing and clip-re-reading builds pass while the mark build passes only in both bottom-up layouts and the clip-caching build fails on the second media id |
 
 ## Running it
 
@@ -94,7 +94,13 @@ frame, then a window inset by three pixels, and requires the overlap to be
 bit-identical to the whole-frame render; then it renders that window again
 against a host that ignores the declaration, and requires the pixels to differ.
 The second render is what gives the first one teeth: if nothing outside the
-window were read, both renders would agree.
+window were read, both renders would agree. That second half is a property of a
+*local* effect, so it is skipped - and the skip is named in the check stream -
+when the plug-in answers `GetRegionsOfInterest` with exactly the region it was
+asked about: a global effect that reads only its window would otherwise fail a
+check about a context it never declared. A plug-in that leaves the action at
+`kOfxStatReplyDefault` is still checked, because "no answer" is not "no
+context".
 
 `--roi-context-tolerance T` is the same pair with a bound instead of
 bit-equality, for a render the plug-in splits into tiles: the window must stay
@@ -222,13 +228,21 @@ and fails the second. `--no-self-test` writes the files without loading them.
 
 Point `modelPath` at `id_1x_3ch.onnx` and the check stream proves a pass-through:
 with the same file as `--src` and `--golden`, `render matches the golden` is
-exact. `up_2x_3ch.onnx` is the fixture for the other behaviour — a runner that
+exact. `--golden-tolerance T` turns that check into a bound (`render matches the
+golden within T`), for a golden rendered by a different execution provider: a
+CUDA session computes the same graph with different rounding, so bit-equality
+would fail a correct pipeline. Default 0 keeps the exact check; the ONNX
+template's suite retries with `1e-5` only after the exact comparison failed. `up_2x_3ch.onnx` is the fixture for the other behaviour — a runner that
 only accepts shape-preserving models must refuse it, not quietly crop.
 
 ## Assumptions the checks encode
 
 Written down because each one is a way for a green run to mean less than it looks:
 
+- **The check count follows the flags.** A run only checks what its arguments
+  name, so two reports with different check counts can describe the same harness:
+  compare the check *names* (which is what a control greps), and quote the flags
+  with the number.
 - **One numeric scale parameter.** `--concurrency-param` must name a parameter
   whose value multiplies RGB linearly (e.g. `gain`); the comparison is
   `dst == src × value` per instance, so an effect whose parameter changes

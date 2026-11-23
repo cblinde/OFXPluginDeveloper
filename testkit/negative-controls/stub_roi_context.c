@@ -35,6 +35,13 @@
  * harness must accept that, so the rejection above is about the missing write
  * and not about the parameter.
  *
+ * -DROI_SELF is the other half of `--roi-context`: a global effect, which reads
+ * exactly the window it is asked to render. It answers GetRegionsOfInterest with
+ * the region it was asked about, and the harness must then skip that check's
+ * second half - "the cropped window differs" is a property of a local effect,
+ * and demanding it of a plug-in that never declared a context is a false
+ * failure.
+ *
  * A pair for the clip-property change, which is how a host says the same clip
  * handle now carries other media. -DCLIP_ECHO reads the source clip's `mediaID`
  * property on every render and puts it in the read-only `mediaId` label, so the
@@ -47,6 +54,7 @@
  * intermediate rounding, so the arithmetic per pixel does not depend on where
  * the tile or window starts.
  */
+#include <stdio.h>
 #include <string.h>
 
 #include "ofxCore.h"
@@ -57,7 +65,9 @@
 /* Four builds come out of this one file: plain and internally tiled, each in a
  * context-reading and a context-ignoring form. The ids have to differ because
  * the harness is told which plug-in to expect. */
-#if defined(CLIP_ECHO)
+#if defined(ROI_SELF)
+#define PLUGIN_ID "com.testkit.control.globalroi"
+#elif defined(CLIP_ECHO)
 #define PLUGIN_ID "com.testkit.control.clipecho"
 #elif defined(CLIP_ECHO_ONCE)
 #define PLUGIN_ID "com.testkit.negative.clipstale"
@@ -240,6 +250,21 @@ static void drawMark(OfxPropertySetHandle dstProps)
 }
 #endif
 
+#ifdef ROI_SELF
+/* What a global effect answers: the region it was asked about, per clip, under
+ * the name Support uses for the outArgs entry. */
+static OfxStatus answerRoi(OfxPropertySetHandle inArgs, OfxPropertySetHandle outArgs)
+{
+  double roi[4] = {0.0, 0.0, 0.0, 0.0};
+  char prop[64];
+  g_props->propGetDoubleN(inArgs, kOfxImageEffectPropRegionOfInterest, 4, roi);
+  snprintf(prop, sizeof prop, "OfxImageClipPropRoI_%s",
+           kOfxImageEffectSimpleSourceClipName);
+  g_props->propSetDoubleN(outArgs, prop, 4, roi);
+  return kOfxStatOK;
+}
+#endif
+
 static OfxStatus render(void* handle, OfxPropertySetHandle inArgs)
 {
 #ifdef WITH_LABEL
@@ -327,6 +352,10 @@ static OfxStatus mainEntry(const char* action, const void* handle, OfxPropertySe
                            kOfxImageEffectContextFilter);
     g_props->propSetString(props, kOfxImageEffectPluginRenderThreadSafety, 0,
                            kOfxImageEffectRenderInstanceSafe);
+#ifdef ROI_SELF
+    /* A global effect: it does not need the host to cut it into tiles. */
+    g_props->propSetInt(props, kOfxImageEffectPropSupportsTiles, 0, 0);
+#endif
     return kOfxStatOK;
   }
 
@@ -366,6 +395,12 @@ static OfxStatus mainEntry(const char* action, const void* handle, OfxPropertySe
 #endif
     return kOfxStatOK;
   }
+
+#ifdef ROI_SELF
+  if (strcmp(action, kOfxImageEffectActionGetRegionsOfInterest) == 0) {
+    return answerRoi(inArgs, (OfxPropertySetHandle)outArgs);
+  }
+#endif
 
   if (strcmp(action, kOfxImageEffectActionRender) == 0) {
     return render((void*)handle, inArgs);

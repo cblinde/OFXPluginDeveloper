@@ -3,12 +3,13 @@
 #
 # Proves that contract_test detects faults instead of merely passing.
 #
-# Fourteen controls are fed to the same harness the templates use. Two are
+# Fifteen controls are fed to the same harness the templates use. Two are
 # separate broken plug-ins (stub_bad_status.c answers describe with ReplyDefault,
 # stub_bad_type.c declares the wrong parameter type). The rest are one stub built
 # several ways: plain or internally tiled with the declared context read or
-# ignored, a label that is never written and one that is, a mark in the four
-# pointer layouts, and a clip property that is re-read or cached.
+# ignored, a global effect that declares no context at all, a label that is never
+# written and one that is, a mark in the four pointer layouts, and a clip
+# property that is re-read or cached.
 #
 # The script succeeds only if every broken build exits non-zero *and* names the
 # assertion, and every context-reading build passes. Those pairs are what make
@@ -62,6 +63,11 @@ cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_no_label.ofx" -DNO_LABEL "${HERE}/negative-controls/stub_roi_context.c"
 cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_label_ok.ofx" -DWITH_LABEL "${HERE}/negative-controls/stub_roi_context.c"
+# And the other half of --roi-context: a global effect answers
+# GetRegionsOfInterest with the region it was asked about, and the harness has to
+# skip the "cropped window must differ" half instead of failing it.
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/roi_global.ofx" -DROI_SELF "${HERE}/negative-controls/stub_roi_context.c"
 # And the clip-property pair: the stub writes what it read from the source
 # clip's `mediaID` into a label. Re-reading it passes; caching the first answer
 # on the clip handle must fail, which is the invalidation bug the handover names.
@@ -142,6 +148,30 @@ run_pass()
   echo "  passed, as a plug-in following the pattern must"
 }
 
+# A pass that also has to name a line: without that, a check could pass because it
+# silently did something else - which is exactly the failure a skip is meant to
+# prevent.
+run_pass_mentioning()
+{
+  local title="$1" needle="$2"; shift 2
+  local output status
+  output="$("${BIN}" "$@" 2>&1)"
+  status=$?
+  printf '\n--- negative control: %s ---\n' "${title}"
+  printf '%s\n' "${output}" | sed 's/^/  /'
+  if [[ ${status} -ne 0 ]]; then
+    echo "  CONTROL FAILED: the harness rejected a plug-in that follows the pattern" >&2
+    fail=1
+    return
+  fi
+  if [[ "${output}" != *"${needle}"* ]]; then
+    echo "  CONTROL FAILED: passed without naming '${needle}'" >&2
+    fail=1
+    return
+  fi
+  echo "  passed and named: ${needle}"
+}
+
 run_control "describe returns kOfxStatReplyDefault" "FAIL kOfxActionDescribe: kOfxStatReplyDefault" \
   "${TMP}/bad_status.ofx" --id com.testkit.negative.badstatus --param gain:double
 
@@ -155,6 +185,12 @@ run_control "declared context region ignored by render" \
   --size 64x48 --src "${TMP}/roi_source.bin"
 
 run_pass "declared context region honoured by render" "${ROI_ARGS[@]}"
+
+run_pass_mentioning "global effect declares no context" \
+  "second half skipped - the plug-in declares no context region" \
+  "${TMP}/roi_global.ofx" --id com.testkit.control.globalroi \
+  --clip Source --clip Output --concurrency-threads 0 --roi-context \
+  --size 64x48 --src "${TMP}/roi_source.bin"
 
 TILED_ARGS=(--clip Source --clip Output --concurrency-threads 0
             --roi-context-tolerance 0.02 --size 64x48 --src "${TMP}/roi_source.bin")
