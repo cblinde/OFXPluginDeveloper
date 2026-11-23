@@ -174,6 +174,10 @@ struct Spec {
   // --src-bounds-inset: publish a source region of definition inset inside the
   // buffer, so the render window covers pixels the source does not have.
   int srcBoundsInset = 0;
+  // --dst-bounds-inset: publish a destination region of definition inset inside
+  // its buffer, so the render window covers pixels the destination does not
+  // have.
+  int dstBoundsInset = 0;
   bool negativePitch = false;
   bool topOrigin = false;
   // --set-status-only: render after --set, but assert only the status and that
@@ -414,6 +418,26 @@ bool failCycle(const testkit::FakeHost& host) {
     std::printf("--- plug-in messages ---\n%s------------------------\n", messages.c_str());
   }
   return false;
+}
+
+// An error status alone does not prove the frame survived: a plug-in can write
+// part of it and then throw. Every float the host owns must be what the last
+// successful render left there.
+bool checkDestinationUnchanged(const std::vector<float>& before,
+                               const std::vector<float>& after) {
+  bool unchanged = !before.empty() && before.size() == after.size();
+  size_t firstDiff = 0;
+  for (size_t i = 0; unchanged && i < before.size(); ++i) {
+    if (before[i] != after[i]) {
+      unchanged = false;
+      firstDiff = i;
+    }
+  }
+  return check("destination is unchanged after the rejected render", unchanged,
+               before.size() == after.size()
+                   ? "first difference at float " + std::to_string(firstDiff)
+                   : std::to_string(before.size()) + " -> " +
+                         std::to_string(after.size()) + " floats");
 }
 
 bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
@@ -681,25 +705,37 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
                st == kOfxStatErrValue, statusName(st))) {
       return failCycle(host);
     }
-    // An error status alone does not prove the frame survived: a plug-in can
-    // write part of it and then throw. Every pixel must be what the last
-    // successful render left there.
     const std::vector<float> after = host.destination();
-    bool unchanged = !before.empty() && before.size() == after.size();
-    size_t firstDiff = 0;
-    for (size_t i = 0; unchanged && i < before.size(); ++i) {
-      if (before[i] != after[i]) {
-        unchanged = false;
-        firstDiff = i;
-      }
-    }
-    if (!check("destination is unchanged after the rejected render", unchanged,
-               before.size() == after.size()
-                   ? "first difference at float " + std::to_string(firstDiff)
-                   : std::to_string(before.size()) + " -> " +
-                         std::to_string(after.size()) + " floats")) {
+    if (!checkDestinationUnchanged(before, after)) return failCycle(host);
+  }
+
+  if (spec.dstBoundsInset > 0) {
+    // The write-side mirror of the check above. A host may publish a
+    // destination whose region of definition is smaller than the window it asks
+    // for (a proxy, a crop, wrong bounds); addressing the destination through
+    // data + (window - bounds) then writes outside the pixels the host handed
+    // over, and nothing in the host reports that afterwards.
+    host.setDestinationBoundsInset(spec.dstBoundsInset);
+    // A valid render inside the inset bounds first: it leaves a filled frame in
+    // the destination, so "unchanged" compares against real pixels and not
+    // against the zero-initialised buffer.
+    const int n = spec.dstBoundsInset;
+    const OfxRectI inner{window.x1 + n, window.y1 + n, window.x2 - n, window.y2 - n};
+    const OfxStatus baseline = host.render(0.0, inner);
+    if (!check("baseline render inside the destination bounds", baseline == kOfxStatOK,
+               statusName(baseline))) {
       return failCycle(host);
     }
+    const std::vector<float> before = host.destinationBuffer();
+    const OfxStatus st = host.render(0.0, window);
+    // Read back before resetting the inset: the reset frees the image.
+    const std::vector<float> after = host.destinationBuffer();
+    host.setDestinationBoundsInset(0);
+    if (!check("render rejects a window outside the destination bounds",
+               st == kOfxStatErrValue, statusName(st))) {
+      return failCycle(host);
+    }
+    if (!checkDestinationUnchanged(before, after)) return failCycle(host);
   }
 
   const OfxStatus destroyStatus = host.destroyInstance();
@@ -725,6 +761,7 @@ int main(int argc, char** argv) {
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
                  "       [--negative-pitch] [--image-origin top|bottom] [--set-status-only]\n"
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
+                 "       [--dst-bounds-inset N]\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
@@ -795,6 +832,8 @@ int main(int argc, char** argv) {
       spec.byteDstRejected = true;
     } else if (a == "--src-bounds-inset") {
       spec.srcBoundsInset = std::atoi(next("--src-bounds-inset").c_str());
+    } else if (a == "--dst-bounds-inset") {
+      spec.dstBoundsInset = std::atoi(next("--dst-bounds-inset").c_str());
     } else if (a == "--set-status-only") {
       spec.setStatusOnly = true;
     } else if (a == "--negative-pitch") {

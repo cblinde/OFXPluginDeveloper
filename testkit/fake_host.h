@@ -108,6 +108,13 @@ public:
   // destination image is left alone, so a test can compare its pixels across a
   // rejected render.
   void setSourceBoundsInset(int pixels);
+  // Publishes a destination region of definition inset by `pixels` on every
+  // side while the render window still covers the full frame, the way a proxy or
+  // wrong bounds looks from the write side. A plug-in that addresses the
+  // destination through (window - bounds) then writes outside the pixels it was
+  // given; the buffer carries a margin, so that write is a pixel change the test
+  // can see instead of a heap overflow. destinationBuffer() reads it back.
+  void setDestinationBoundsInset(int pixels);
   void setSourcePlanar(const float* rgb, int width, int height); // 3 channels
   void setSourceConstant(float r, float g, float b, float a);
   void setPaddedRows(bool on);           // rowBytes > width*16, poisoned margin
@@ -117,6 +124,9 @@ public:
 
   // Destination read back tightly packed, top-down, RGBA float.
   std::vector<float> destination() const;
+  // The whole destination allocation in memory order, margins included; use it
+  // to prove that nothing was written outside the declared bounds.
+  std::vector<float> destinationBuffer() const;
   int imageWidth() const;
   int imageHeight() const;
   long long destinationRowBytes() const;

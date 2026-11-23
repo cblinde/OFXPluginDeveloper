@@ -49,6 +49,16 @@ answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
 `--src`/`--golden`/`--size WxH` for a golden-image render comparison, and
 `--set-status-only` when the parameter is not a gain.
 
+`--src-bounds-inset N` publishes a source region of definition inset by `N`
+inside its buffer, `--dst-bounds-inset N` the same for the destination. Each one
+adds a baseline render, a render the plug-in has to reject with
+`kOfxStatErrValue`, and a pixel comparison that proves the rejected render wrote
+nothing. Reading outside the source bounds and writing outside the destination
+bounds both stay inside the allocation on purpose (the destination gains a
+margin in that mode), so the failure is `first difference at float N` rather
+than a crash: the question is whether the plug-in touched pixels it was not
+given, and a sanitizer build would only answer a different one.
+
 `--set` itself goes through `paramSetValueAtTime`, the call Support's
 `OFX::DoubleParam::setValueAtTime` makes, so the suite's argument convention is
 exercised by every test that sets a value: doubles, ints, booleans and choices

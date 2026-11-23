@@ -124,6 +124,7 @@ struct Impl {
   ImageOrigin origin = ImageOrigin::Bottom;
   bool byteDst = false;
   int srcInset = 0; // see FakeHost::setSourceBoundsInset
+  int dstInset = 0; // see FakeHost::setDestinationBoundsInset
   std::vector<float> srcRGBA; // tight, top-down
   ImageObj* srcImage = nullptr;
   ImageObj* dstImage = nullptr;
@@ -676,7 +677,16 @@ void buildDstImage(ImageObj* img) {
   img->w = g->imgW;
   img->h = g->imgH;
   img->isByte = g->byteDst;
-  const int pitchPixels = g->padded ? img->w + kPadPixels : img->w;
+  img->boundsInset = g->dstInset;
+  const int inset = img->boundsInset;
+  // An inset destination is smaller than the window a test asks for, and a
+  // plug-in that ignores the inset addresses before the declared region. Give
+  // the buffer that margin on every side, so that write stays inside the
+  // allocation: the check is "was anything written outside the bounds", which a
+  // readback can see, and not "did the heap survive", which needs a sanitizer
+  // and a coin flip.
+  const int rows = img->h + 2 * inset;
+  const int pitchPixels = img->w + 2 * inset + (g->padded ? kPadPixels : 0);
   const long long bytesPerPixel = img->isByte ? 4 : 16;
   const long long bytesPerRow = static_cast<long long>(pitchPixels) * bytesPerPixel;
   const bool negative = g->negativePitch;
@@ -685,19 +695,23 @@ void buildDstImage(ImageObj* img) {
   img->pitchFloats = 0;
   char* base = nullptr;
   if (img->isByte) {
-    img->bytes.assign(static_cast<size_t>(pitchPixels) * img->h * 4, 0);
+    img->bytes.assign(static_cast<size_t>(pitchPixels) * rows * 4, 0);
     base = reinterpret_cast<char*>(img->bytes.data());
   } else {
-    img->floats.assign(static_cast<size_t>(pitchPixels) * img->h * 4, 0.0f);
+    img->floats.assign(static_cast<size_t>(pitchPixels) * rows * 4, 0.0f);
     base = reinterpret_cast<char*>(img->floats.data());
   }
-  const int dataRow = negative ? (img->h - 1) : 0;
+  const int dataRow = negative ? (rows - 1) : 0;
   img->data = base + static_cast<size_t>(dataRow) * bytesPerRow;
   img->rowBytes = negative ? -bytesPerRow : bytesPerRow;
   if (!img->isByte) {
+    // Read-back starts on the same memory row it always did, moved inwards by
+    // the margin: the declared region occupies rows [inset, inset + h), so the
+    // row that holds image row 0 is `inset + readRow` from the base pointer.
+    // At inset 0 this is the expression it replaced.
     const int readRow = reversed ? (img->h - 1) : 0;
-    img->floatData =
-        reinterpret_cast<const float*>(base + static_cast<size_t>(readRow) * bytesPerRow);
+    img->floatData = reinterpret_cast<const float*>(
+        base + static_cast<long long>(readRow + inset) * bytesPerRow);
     img->pitchFloats = static_cast<long long>(pitchPixels) * 4 * (reversed ? -1 : 1);
   }
 }
@@ -1150,6 +1164,7 @@ void Impl::reset() {
   origin = ImageOrigin::Bottom;
   byteDst = false;
   srcInset = 0;
+  dstInset = 0;
   imgW = 64;
   imgH = 48;
   srcRGBA.assign(static_cast<size_t>(imgW) * imgH * 4, 0.0f);
@@ -1369,6 +1384,22 @@ void FakeHost::setSourceBoundsInset(int pixels) {
   // rejected render, which is how "half written, then an error" shows up.
   delete impl_->srcImage;
   impl_->srcImage = nullptr;
+}
+
+void FakeHost::setDestinationBoundsInset(int pixels) {
+  impl_->dstInset = pixels > 0 ? pixels : 0;
+  // Only the destination changes shape, mirroring the source case: the source
+  // image stays, and the buffer is rebuilt with a margin so a plug-in that
+  // writes outside the declared bounds stays inside the allocation.
+  delete impl_->dstImage;
+  impl_->dstImage = nullptr;
+}
+
+std::vector<float> FakeHost::destinationBuffer() const {
+  if (!impl_->dstImage || impl_->dstImage->isByte) return {};
+  // The whole allocation in memory order, margins included. destination() walks
+  // the declared bounds; this one shows a write that landed outside them.
+  return impl_->dstImage->floats;
 }
 
 void FakeHost::setPaddedRows(bool on) {
