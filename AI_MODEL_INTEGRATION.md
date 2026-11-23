@@ -259,14 +259,20 @@ name is mandatory: `LoadLibrary` matches an already-loaded module by base name,
 so even the full path to a file called `onnxruntime.dll` returns the host's copy.
 Never `FreeLibrary` it; an `Ort::Env` created afterwards outlives the call.
 
-**The C++ header is only half header-only.** `Ort::GetVersionString()` and
-`Ort::GetAvailableProviders()` are declared in `onnxruntime_cxx_api.h` and
-implemented in the runtime's import library, so calling either pulls
-`OrtGetApiBase` into the module — exactly the link-time import the load-by-path
-design exists to avoid — and the link *succeeds*, which is why nothing warns
-(**B**, and the plug-in that did it crashed in its constructor). Go through the
-table you loaded: `GetAvailableProviders` on that `OrtApi`, and `OrtGetApiBase`
-resolved with `GetProcAddress` on your own handle for the version.
+**The C++ header is only half header-only, and only one half is dangerous.**
+Both are *declared* in `onnxruntime_cxx_api.h`, but their bodies are in
+`onnxruntime_cxx_inline.h`: `Ort::GetVersionString()` calls `OrtGetApiBase()`
+directly, so calling it pulls the import-library symbol into the module —
+exactly the link-time import the load-by-path design exists to avoid — and the
+link *succeeds*, which is why nothing warns (**B**, and the plug-in that did it
+crashed in its constructor; the two bodies are in the 1.20.1 headers **[V]**).
+`Ort::GetAvailableProviders()` is the other shape: it calls
+`GetApi().GetAvailableProviders(...)`, i.e. the table `Ort::InitApi()` installed,
+so it is safe *after* that call. Go through the table you loaded either way —
+`GetAvailableProviders` on that `OrtApi`, and `OrtGetApiBase` resolved with
+`GetProcAddress` on your own handle for the version — and read the inline header
+of your own ORT version rather than this paragraph: the two functions have
+already differed once.
 `dumpbin /dependents` on the finished `.ofx` is the check: no `onnxruntime.dll`
 may appear. The names that call returns are the runtime's strings — copy them and
 do **not** free them through `Ort::AllocatorWithDefaultOptions` (**B**: the first
@@ -546,7 +552,11 @@ inherit a stale halo. The five rules it implements:
    size, is enough; a replaced file must not inherit a stale value).
 
 Recorded, not remembered: the repository's own fixture carries its measurement
-in `templates/onnx-inference-ofx/models/test_conv.onnx.halo.json`. On a 256×192
+in `templates/onnx-inference-ofx/models/test_conv.onnx.halo.json`. Nothing in the
+template *reads* that file at run time — `halo` is a parameter the user sets, and
+the JSON is what tells you which value to pass and what `--check` compares a
+re-measurement against. A plug-in that loaded it during `render` would be reading
+a build artefact per frame; keep the reader in the build, not in the effect. On a 256×192
 frame with 128-pixel tiles, `halo=0` deviates by 0.1745 at the interior tile
 boundary (128,127) and `halo=1` is exact — the same story as the `halo=0`
 control in §5, from a second witness, and the reason the ladder may include 0:
@@ -595,6 +605,17 @@ make the choice visible — and the consequence is packaging, not a second build
   `DllMain` needs the mailbox that only the ORT core sets; ORT finds the provider
   beside the core by itself. Preload only what the provider imports — cuDNN,
   cuBLAS/cuBLASLt, cuFFT, cudart — or the load fails with **126** (**B**).
+- **cuDNN 9 on Windows is not one file, and the preload has to be a loop.** The
+  provider imports the dispatcher (`cudnn64_9.dll`); the dispatcher loads its
+  components (`cudnn_graph64_9.dll`, `cudnn_ops64_9.dll`, `cudnn_heuristic64_9.dll`,
+  …) by base name at run time, and a plug-in directory is not on the default
+  search path. A bundle that copied only the dispatcher did not fall back to the
+  CPU: the process **exited 127** inside the provider (**B**). The template now
+  copies `cudnn*64_*.dll` and `ModelRunner` loads every non-`onnxruntime*` DLL
+  beside the module by absolute path before asking for `OrtGetApiBase` — that
+  load is what makes the later name-based lookups find what is already in the
+  process (**[B]** for the failure and the fix in the handover; the preload itself
+  is **[I]** here — no Windows machine compiles it).
 - **Budget the size.** The provider imports `cufft64_*` even for a model with no
   FFT in it; with cuDNN 9 + cuBLAS 12 + cuFFT a bundle was 2.4–2.7 GB, of which
   the provider alone was 643 MB (**B**). That is a product decision — one
@@ -605,16 +626,20 @@ make the choice visible — and the consequence is packaging, not a second build
   provider library and cuDNN/cuBLAS/cuBLASLt/cuFFT/cudart beside the `.ofx`,
   names every missing file as a `CMake Warning` with the load error it causes
   (126), prints the total size at configure time, and never fails a configure
-  for a machine without a CUDA runtime. On Windows the option is **refused** at
-  configure time (`FATAL_ERROR`), not warned about: the provider DLL imports
-  `onnxruntime.dll` by base name, and the Windows bundle ships the core as
-  `onnxruntime-ofx.dll` because that private name is what keeps a host's own
-  runtime (Resolve 21: 1.13) from capturing the import (§4). Renamed, the
-  provider has nothing to bind to; unrenamed, the host's runtime is what it binds
-  to — either way the copy is a bundle that fails at load, so the switch does not
-  exist there. The working shape on Windows is a sidecar process that owns ORT
-  and the provider (§2, §3), or the option off with the CPU fallback naming
-  itself in the label. macOS gets no copy for a simpler reason — CUDA does not
+  for a machine without a CUDA runtime. The option works on Windows too, and what
+  decides whether it can is the provider's **import table**, not the platform:
+  the Windows bundle ships the core as `onnxruntime-ofx.dll`, because that private
+  name is what keeps a host's own runtime (Resolve 21: 1.13) from capturing the
+  import (§4), so a provider that imports `onnxruntime.dll` by base name would
+  bind to nothing (or to the host's runtime). For ORT **1.20.1** the CUDA provider
+  does not: `dumpbin /dependents onnxruntime_providers_cuda.dll` lists cublas,
+  cublasLt, cufft, cudart, cuDNN and `onnxruntime_providers_shared` only, and a
+  bundle with all 30 files (2.8 GB) ran on a RTX 3060 and passed the contract test
+  (**B**). That is a property of one binary, not a documented contract, so the
+  check belongs in the build notes of a Windows GPU bundle: run `dumpbin
+  /dependents` on the provider you ship and look for `onnxruntime.dll`. If a later
+  version imports it, the copy is a bundle that fails at load and the working
+  shape is a sidecar process that owns ORT and the provider (§2, §3). macOS gets no copy for a simpler reason — CUDA does not
   exist there — so the bundle ships the core and the CPU path, and a Mac user who
   needs the GPU has two routes this template does not implement: ONNX Runtime's
   CoreML EP, with the partition-fragmentation caveat in §1, or a sidecar running
@@ -635,7 +660,12 @@ make the choice visible — and the consequence is packaging, not a second build
   it reads from `ONNXLoader.profiles`, and stops at the first failure with that
   failure's first line — a size that fails for another reason is named as such,
   so a reshape limit is never mistaken for a memory ceiling. It needs the GPU;
-  without one it exits 3 instead of printing an empty table.
+  without one it exits 3 instead of printing an empty table. On Windows the
+  ceiling frequently cannot be provoked at all: one handover ramped to 39 GB of
+  process RSS without an allocation failure, because WDDM pages video memory into
+  system memory instead of refusing (**B**). A window that never fails is "no
+  ceiling found", not "fits", and the number that matters on such a machine is
+  measured frame time at the sizes you ship.
 
 The request itself is compiled and its failure path is verified here: this
 machine links the CPU package of ONNX Runtime, `AppendExecutionProvider_CUDA`
