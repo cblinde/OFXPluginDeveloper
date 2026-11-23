@@ -162,6 +162,12 @@ public:
   // has no textual form (push button, group).
   std::string paramValue(const std::string& name) const;
 
+  // True once the plug-in itself wrote this parameter. A declared default is
+  // not evidence: a label that still carries it has never been set by anyone,
+  // which is exactly the failure a "the label must name the provider" check is
+  // meant to catch.
+  bool paramIsSet(const std::string& name) const;
+
   // The kOfxParamPropChoiceOption strings a parameter was declared with, in
   // order; empty when the name is unknown or the parameter is not a choice.
   std::vector<std::string> paramOptions(const std::string& name) const;

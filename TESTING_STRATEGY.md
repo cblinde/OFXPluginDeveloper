@@ -301,8 +301,8 @@ and the templates share it rather than each carrying a copy.
 | `testkit/fake_host.cpp` | ~1,100 | the five suites + message suite, the object model (descriptor, instance, clips, parameters, images) |
 | `testkit/contract_main.cpp` | ~500 | the checks, the `dlopen`, and the command line |
 | `testkit/build-contract-test.sh` | ~50 | compiles both into one binary; finds headers from the template's `CMakeCache.txt` |
-| `testkit/negative-controls/` | 2 stubs + 1 four-way | deliberately broken plug-ins that prove the harness fails, plus an ROI stub built plain or internally tiled, each with the context read or ignored |
-| `testkit/run-negative-controls.sh` | ~155 | builds the six controls, asserts each fault is rejected with the right message **and** that both context-reading builds pass |
+| `testkit/negative-controls/` | 2 stubs + 1 six-way | deliberately broken plug-ins that prove the harness fails, plus one ROI stub built plain or internally tiled with the context read or ignored, and twice more for the label check (`-DNO_LABEL` never writes it, `-DWITH_LABEL` does) |
+| `testkit/run-negative-controls.sh` | ~175 | builds the eight controls, asserts each fault is rejected with the right message **and** that the context-reading and label-writing builds pass |
 
 Coverage, precisely: all **18** `OfxPropertySuiteV1` functions (including the `*N`
 and `propGetDimension` variants), all **13** `OfxImageEffectSuiteV1` functions,
@@ -395,7 +395,7 @@ out/contract_test out/MyPlugin.ofx \
 
 ### 5.3 Proof that it can fail
 
-A harness that has only ever passed is untested. Six controls, run by
+A harness that has only ever passed is untested. Eight controls, run by
 `testkit/run-negative-controls.sh` (deliberately **not** part of `./run-tests.sh`,
 so the normal run stays green):
 
@@ -444,6 +444,20 @@ so the normal run stays green):
   ok 62 - roi context: render of the same window without a context region
   ok 63 - roi context: without a context region the same window leaves the tolerance
   contract_test: 66 checks, 0 failed
+  passed, as a plug-in following the pattern must
+
+--- negative control: label parameter declared and never written ---
+  ok 23 - kOfxImageEffectActionRender
+  FAIL label parameter 'provider' = "CPU (declared, never written)": the plug-in
+       never wrote it; what is shown is the declared default, which is not
+       evidence that anything ran
+  contract_test: 24 checks, 1 failed
+  caught (exit 1) with: FAIL label parameter 'provider' =
+
+--- negative control: label parameter written by the plug-in ---
+  ok 24 - label parameter 'provider' = "CPU (stub, written by render)"
+  ok 52 - label parameter 'provider' = "CPU (stub, written by render)"
+  contract_test: 52 checks, 0 failed
   passed, as a plug-in following the pattern must
 
 negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp

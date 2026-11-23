@@ -54,6 +54,13 @@ cc -shared -fPIC -std=c99 -I "${INC}" \
    "${HERE}/negative-controls/stub_roi_context.c"
 cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_tiled_ok.ofx" -DTILED "${HERE}/negative-controls/stub_roi_context.c"
+# And the label control: the same stub declares the read-only `provider` label,
+# gives it a default, and never writes it. If the harness accepted a default as
+# proof, every plug-in that declared the label would pass without running.
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/roi_no_label.ofx" -DNO_LABEL "${HERE}/negative-controls/stub_roi_context.c"
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/roi_label_ok.ofx" -DWITH_LABEL "${HERE}/negative-controls/stub_roi_context.c"
 
 # The harness's default source is one constant colour, and a box filter over a
 # constant image has no seam to find: every window would agree no matter what
@@ -147,6 +154,18 @@ run_control "internally tiled render ignores the declared context" \
 
 run_pass "internally tiled render honours the declared context" \
   "${TMP}/roi_tiled_ok.ofx" --id com.testkit.control.roioktiled "${TILED_ARGS[@]}"
+
+LABEL_ARGS=(--clip Source --clip Output --concurrency-threads 0
+            --size 64x48 --src "${TMP}/roi_source.bin")
+
+run_control "label parameter declared and never written" \
+  "FAIL label parameter 'provider' = " \
+  "${TMP}/roi_no_label.ofx" --id com.testkit.negative.nolabel \
+  --label-param provider "${LABEL_ARGS[@]}"
+
+run_pass "label parameter written by the plug-in" \
+  "${TMP}/roi_label_ok.ofx" --id com.testkit.control.labelok \
+  --label-param provider "${LABEL_ARGS[@]}"
 
 echo
 if [[ ${fail} -ne 0 ]]; then

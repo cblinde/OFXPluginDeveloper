@@ -21,6 +21,14 @@
  * dependency, so the filter has to be small enough to read in one sitting and
  * reproducible to the bit (same nine floats in the same order for every pixel).
  *
+ * Two more controls come out of this file for the label check that
+ * `--label-param` makes. -DNO_LABEL declares the read-only `provider` label,
+ * gives it a default, and never writes it: the harness must reject that, or
+ * "the plug-in says which provider it got" would be satisfied by a default on
+ * its own. -DWITH_LABEL declares the same label and writes it from render: the
+ * harness must accept that, so the rejection above is about the missing write
+ * and not about the parameter.
+ *
  * The render window is read with -1 pixel of context on every side and no
  * intermediate rounding, so the arithmetic per pixel does not depend on where
  * the tile or window starts.
@@ -29,12 +37,17 @@
 
 #include "ofxCore.h"
 #include "ofxImageEffect.h"
+#include "ofxParam.h"
 #include "ofxProperty.h"
 
 /* Four builds come out of this one file: plain and internally tiled, each in a
  * context-reading and a context-ignoring form. The ids have to differ because
  * the harness is told which plug-in to expect. */
-#if defined(TILED) && defined(IGNORE_CONTEXT)
+#if defined(NO_LABEL)
+#define PLUGIN_ID "com.testkit.negative.nolabel"
+#elif defined(WITH_LABEL)
+#define PLUGIN_ID "com.testkit.control.labelok"
+#elif defined(TILED) && defined(IGNORE_CONTEXT)
 #define PLUGIN_ID "com.testkit.negative.roiignoredtiled"
 #elif defined(TILED)
 #define PLUGIN_ID "com.testkit.control.roioktiled"
@@ -47,6 +60,9 @@
 static OfxHost* g_host = 0;
 static const OfxPropertySuiteV1* g_props = 0;
 static const OfxImageEffectSuiteV1* g_effects = 0;
+#if defined(NO_LABEL) || defined(WITH_LABEL)
+static const OfxParameterSuiteV1* g_params = 0;
+#endif
 
 static void setHost(OfxHost* host) { g_host = host; }
 
@@ -60,6 +76,12 @@ static void fetchSuites(void)
     g_effects = (const OfxImageEffectSuiteV1*)g_host->fetchSuite(g_host->host,
                                                                 kOfxImageEffectSuite, 1);
   }
+#if defined(NO_LABEL) || defined(WITH_LABEL)
+  if (!g_params) {
+    g_params = (const OfxParameterSuiteV1*)g_host->fetchSuite(g_host->host,
+                                                              kOfxParameterSuite, 1);
+  }
+#endif
 }
 
 /* A 3x3 box filter: radius 1, so the context region is one pixel. */
@@ -168,6 +190,18 @@ static void filterWindow(OfxPropertySetHandle srcProps, OfxPropertySetHandle dst
 
 static OfxStatus render(void* handle, OfxPropertySetHandle inArgs)
 {
+#ifdef WITH_LABEL
+  /* The one thing this build does that the label control does not: write the
+   * label. Through the parameter suite, as a real plug-in does, so the value the
+   * harness reads had to travel the same path. */
+  if (g_params) {
+    OfxParamHandle label = 0;
+    if (g_params->paramGetHandle((OfxParamSetHandle)handle, "provider", &label, 0) ==
+            kOfxStatOK && label) {
+      g_params->paramSetValue(label, "CPU (stub, written by render)");
+    }
+  }
+#endif
   OfxImageClipHandle srcClip = 0;
   OfxImageClipHandle dstClip = 0;
   OfxPropertySetHandle srcProps = 0;
@@ -225,6 +259,20 @@ static OfxStatus mainEntry(const char* action, const void* handle, OfxPropertySe
                            kOfxImageComponentRGBA);
     g_props->propSetString(dstProps, kOfxImageEffectPropSupportedPixelDepths, 0,
                            kOfxBitDepthFloat);
+#if defined(NO_LABEL) || defined(WITH_LABEL)
+    /* Declared and given a default in both builds. The difference the controls
+     * test is whether render() ever writes it; the default is what makes
+     * "non-empty" the wrong question. */
+    if (g_params) {
+      OfxPropertySetHandle label = 0;
+      if (g_params->paramDefine((OfxParamSetHandle)handle, kOfxParamTypeString,
+                                "provider", &label) == kOfxStatOK && label) {
+        g_props->propSetString(label, kOfxParamPropStringMode, 0, kOfxParamStringIsLabel);
+        g_props->propSetString(label, kOfxParamPropDefault, 0,
+                               "CPU (declared, never written)");
+      }
+    }
+#endif
     return kOfxStatOK;
   }
 

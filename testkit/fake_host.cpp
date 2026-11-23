@@ -1620,6 +1620,19 @@ bool FakeHost::pressParam(const std::string& name) {
   return st != kOfxStatFailed && st != kOfxStatErrBadHandle;
 }
 
+bool FakeHost::paramIsSet(const std::string& name) const {
+  const ParamObj* p = nullptr;
+  if (impl_->current) {
+    auto it = impl_->current->params.find(name);
+    if (it != impl_->current->params.end()) p = it->second;
+  }
+  if (!p) {
+    auto tmpl = impl_->pluginDesc.params.find(name);
+    if (tmpl != impl_->pluginDesc.params.end()) p = tmpl->second;
+  }
+  return p != nullptr && p->isSet;
+}
+
 std::string FakeHost::paramValue(const std::string& name) const {
   const ParamObj* p = nullptr;
   if (impl_->current) {

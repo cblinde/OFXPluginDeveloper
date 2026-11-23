@@ -712,8 +712,12 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     // its session, which is the first render. The name carries it verbatim so
     // the suite can assert which provider was chosen without a second channel.
     const std::string value = host.paramValue(spec.labelParam);
+    const bool written = host.paramIsSet(spec.labelParam);
     if (!check("label parameter '" + spec.labelParam + "' = \"" + flatValue(value) + "\"",
-               !value.empty(), "empty: the instance never set it")) {
+               written && !value.empty(),
+               written ? "written, but empty"
+                       : "the plug-in never wrote it; what is shown is the declared "
+                         "default, which is not evidence that anything ran")) {
       return failCycle(host);
     }
   }

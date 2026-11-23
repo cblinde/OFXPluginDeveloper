@@ -21,8 +21,8 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `build-contract-test.sh` | compiles the two files into one binary, finding the OFX headers from the template's CMake cache |
 | `build-contract-test.bat` | the same build under MSVC; the loader path in `contract_main.cpp` is `LoadLibraryExW` there |
 | `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping |
-| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built four ways (plain or internally tiled, context read or ignored), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
-| `run-negative-controls.sh` | builds those six controls, asserts each fault is rejected with the right message, and that the two context-reading builds pass |
+| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built six ways (plain or internally tiled with the context read or ignored, and two more for the label check: one that never writes the label, one that does), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
+| `run-negative-controls.sh` | builds those eight controls, asserts each fault is rejected with the right message, and that the context-reading and label-writing builds pass |
 
 ## Running it
 
@@ -49,9 +49,12 @@ answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
 `--src`/`--golden`/`--size WxH` for a golden-image render comparison,
 `--set-status-only` when the parameter is not a gain, and `--label-param NAME`
 for a string the plug-in sets itself (a read-only label): read after the first
-render, it must be non-empty, and the check's name carries the value —
-`label parameter 'provider' = "CPU (fallback: ...)"` — which is how a suite
-asserts what the plug-in wrote without a second output channel.
+render, the value must be **written by the plug-in** and non-empty, and the
+check's name carries it — `label parameter 'provider' = "CPU (fallback: ...)"` —
+which is how a suite asserts what the plug-in wrote without a second output
+channel. A declared default does not count: it is what a label that was never
+set shows, so `FakeHost::paramIsSet()` is part of the check rather than a
+non-empty string being enough.
 
 `--roi-expand N` asks `kOfxImageEffectActionGetRegionsOfInterest` twice — for a
 region inside the frame and for the frame itself — and requires the source RoI to
@@ -205,6 +208,14 @@ window into 32-pixel cores and gives each one two pixels of context. The ignored
 build then fails at a tile boundary *inside* the window (`max deviation 0.376 at
 pixel (31,31)` against a 0.02 bound), and the reading build passes - so the
 tolerance variant is covered without the ONNX template's model or bundle.
+
+`--label-param` has its own pair, because "the plug-in wrote it" is a claim a
+default can fake. `-DNO_LABEL` declares the `provider` label, gives it a default
+and never writes it: the harness fails with `the plug-in never wrote it; what is
+shown is the declared default`. `-DWITH_LABEL` writes the same label from
+`render()` through the parameter suite, and the harness passes with
+`label parameter 'provider' = "CPU (stub, written by render)"`. Together they
+pin the predicate: the check is about the write, not about the parameter.
 
 ## What this host cannot prove
 
