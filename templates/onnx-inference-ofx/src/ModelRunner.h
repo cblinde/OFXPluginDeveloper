@@ -22,6 +22,14 @@
 //    false, and no device pointer is ever asked for. Provider and reason are
 //    reported so the plug-in can show them - a fallback nobody sees is a 25x
 //    slowdown that looks like a working frame.
+//  * On Windows the bundle's CUDA DLLs are preloaded only where the host does
+//    not already own that base name: an import resolves by base name, so a
+//    second copy of cudnn64_9.dll next to the host's puts two minor versions in
+//    one process. cuFFTW is skipped - the provider never imports it, and loading
+//    it is what took the whole GPU path down (AI_MODEL_INTEGRATION.md section 7).
+//  * The provider label names the thread count and, on Windows, whether the CUDA
+//    stack is the bundle's or the host's: the only evidence that a setting
+//    reached the session.
 //  * The CUDA branch has never run on a GPU. This repository builds against the
 //    CPU package of ONNX Runtime, where the request throws; that path is
 //    compiled and reviewed here, not measured. See AI_MODEL_INTEGRATION.md
@@ -57,8 +65,9 @@ public:
     const std::string& InputName() const;
     const std::string& OutputName() const;
 
-    /// The provider the session was created with: "CUDA (device 0)" when the
-    /// request succeeded, "CPU" otherwise.
+    /// The provider the session was created with, with the thread count:
+    /// "CUDA (device 0, 1 thread, host CUDA stack)" when the request succeeded
+    /// (the last part is Windows only), "CPU (1 thread)" otherwise.
     const std::string& Provider() const;
 
     /// Why the CUDA request failed - the runtime's own first line, clipped.
