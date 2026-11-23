@@ -310,6 +310,14 @@ No GPU was available for this work, so this section contains **no measured
 speedups** — only the decision procedure and the structural costs, each of which
 is verifiable on your own hardware in about ten minutes.
 
+**The order is fixed: CUDA first, CPU as the fallback.** A plug-in whose model
+runs per frame is a plug-in whose speed the user feels, so the first path is the
+CUDA execution provider and the CPU session is what keeps the frame coming when
+the provider cannot load. What the costs below decide is *how much* that is
+worth and what has to be true for it to pay — not whether to write the provider
+path. A CPU default is a decision to justify (a tiny model, a proxy render, a
+host with no device), not the neutral starting point.
+
 ### The three costs CUDA adds, independent of FLOPs
 
 1. **A transfer, unless the host gives you device pointers.** CUDA render is
@@ -350,25 +358,31 @@ is verifiable on your own hardware in about ten minutes.
 | Workload | Verdict |
 |---|---|
 | LUT / gain / colour matrix / curves | **CPU.** No model, no GPU. A kernel is a handful of flops per byte; the copy dominates. |
-| Small CNN (a few layers, ≤ 64 channels) on 1080p | **CPU first.** Measure; a GPU path needs zero-copy device pointers to win. |
-| Large CNN / transformer per frame | **GPU**, and only with host device pointers + IO binding + no per-frame allocation. |
+| Small CNN (a few layers, ≤ 64 channels) on 1080p | **CUDA first, then check the copy.** The provider is the first attempt; if moving the frame outweighs the maths on your resolution, the CPU session is the fallback — and you now have the number that says so. |
+| Large CNN / transformer per frame | **CUDA**, and only with host device pointers + IO binding + no per-frame allocation. |
 | Diffusion / video model | **GPU, and a sidecar**: the runtime is PyTorch, the VRAM is gigabytes, and blocking the host is unacceptable — this is what the LTX plug-in does (**B**). |
 | Model with ops the GPU EP does not implement | **Neither wins**: expect silent CPU fallbacks and copies in both directions. Check the provider's supported-op list before shipping. |
 | Resolve on macOS | **No CUDA at all.** Apple hosts expose Metal/OpenCL, not CUDA; the same project ships an MLX/Metal path instead (**B**). |
-| Quick previews / proxies / thumbnails | **CPU**, or a smaller model. Session startup and transfer will dominate. |
+| Quick previews / proxies / thumbnails | **CUDA with a smaller model**, or the CPU session where session startup and the transfer dominate. Measure the pair once; do not assume the proxy case is the CPU case. |
 
-The honest summary: CUDA is *necessary* when the model is compute-bound and the
-host already owns the pixels on the device; it is *helpful* when both of those
-are true and the frame is large; and it is *not worth it* whenever you would have
-to copy the frame yourself, allocate per render, or synchronise a stream the host
-gave you.
+The honest summary: **CUDA first, CPU as the fallback.** CUDA is *necessary*
+when the model is compute-bound and the host already owns the pixels on the
+device; it is *helpful* whenever the model runs per frame and the frame is large
+(28× on a 4x model, 11× on a denoiser, measured elsewhere (**B**)); and it is
+*not worth it* whenever you would have to copy the frame yourself, allocate per
+render, or synchronise a stream the host gave you. Three of those four are
+things a plug-in can arrange — that is the work, and it belongs on the first
+path rather than on a second one.
 
 ---
 
 ## 7. The template: `templates/onnx-inference-ofx`
 
-A complete, building OFX plug-in that runs an ONNX model on the CPU, with the
-parts that are usually untested under test.
+A complete, building OFX plug-in that runs an ONNX model, with the parts that
+are usually untested under test. The session this template creates is a CPU
+session, because no GPU exists in the environment it was built in; for a plug-in
+that ships, the CUDA provider is the first path ("The provider belongs in the
+same bundle" below) — that is a change to this template, not a second one.
 
 | Piece | File | What it is |
 |---|---|---|
@@ -393,8 +407,11 @@ versioned `.dylib` name), ships one copy of the runtime, and `dlopen` enumerates
 plugin (`com.ofxplugindeveloper.onnxinference` v1.0).
 
 What it does **not** prove: no host has rendered through it, no GPU execution
-provider is compiled in, and no timing is claimed. The CUDA EP recipe in §4 is
-documented from the ORT API, not compiled here.
+provider is compiled in, and no timing is claimed — there is no GPU here, so the
+CPU session is what could be built and run. That is a limit of this repository,
+not a recommendation: the CUDA EP is the first path for a plug-in that ships,
+the recipe below is documented from the ORT API, and its numbers are external
+(**B**).
 
 ### Adapting it to a real model
 
@@ -503,10 +520,11 @@ The price, so "more context is safer" is not free: a tile of `T` with overlap
 `H = 64` is +56 % and `H = 32` is +27 % — halving the overlap saves 19 % of
 model time (**A**: arithmetic from the formula).
 
-#### The provider belongs in the same bundle
+#### The provider belongs in the same bundle, and it is the first path
 
-§6 answers *whether* CUDA is worth it. For a per-frame inference plug-in it
-usually is, and the consequence is packaging, not a second build:
+§6 answers *how much* CUDA is worth. For a per-frame inference plug-in the order
+is fixed — request the CUDA provider first, keep a CPU session as the fallback,
+make the choice visible — and the consequence is packaging, not a second build:
 
 - **One bundle, request the provider, fall back silently.** Create the session
   with `AppendExecutionProvider_CUDA` inside a `try`; every failure — no device,

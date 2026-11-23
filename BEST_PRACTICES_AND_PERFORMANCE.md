@@ -122,6 +122,13 @@ Found by reading the headers during this pass. Each one has bitten somebody.
 
 ## 4. The cost model: what actually costs time
 
+**The GPU path is the first path, not the fallback.** For anything
+compute-bound — a convolution, a model run per frame, an iterative solver —
+write the GPU path first and keep the CPU path as its comparison and as what
+runs when the host gives no device. The table below decides whether the GPU path
+pays on your frame; it does not decide whether to have one. The model case, with
+the provider and its packaging, is `AI_MODEL_INTEGRATION.md` §6–§7.
+
 Before optimising, know the shape of the budget. One render action, 1920×1080
 RGBA32F, one thread per pixel:
 
@@ -189,8 +196,21 @@ multiply launches by the CPU count for no gain. The GPU is already parallel.
 With `setSupportsTiles(false)` **[S]** in the template, the host should hand you
 a whole-image render window. With tiles *on*, the same effect is called many
 times with small windows, and your per-launch overhead becomes the dominant cost.
-Turn tiles on only when an effect genuinely cannot be computed for a window
-without the rest of the image — and then budget for the launch count.
+
+Which setting is right is a property of the *effect*, not of the GPU:
+
+- a **local** effect (blur, upscale, denoise) is computable for one window plus
+  a halo, and the halo is what tiling costs. That is the trade; declare the halo
+  the render actually reads (the templates' `halo` parameter plus the
+  `--roi-expand` check are that pair) and budget for the launch count.
+- a **global** effect (object detection, NMS, a letterbox scale taken from the
+  window's aspect, a frame-wide statistic) has no finite halo that makes a
+  window self-sufficient. Turning tiles on does not merely make it slower, it
+  makes it inconsistent: the scale changes between windows, an object on a tile
+  border is seen twice, half each time, and any per-window state multiplies.
+  `setSupportsTiles(false)` — and `setSupportsMultiResolution(false)` with it,
+  because a proxy render is a different scale — is then the only setting under
+  which the output is defined.
 
 Also note: `process()` silently returns when the render window is not inside the
 destination bounds **[S]**. A plugin that "does nothing" is often being handed a

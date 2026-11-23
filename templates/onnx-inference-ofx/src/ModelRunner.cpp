@@ -181,9 +181,13 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
     // Full graph optimisation is the default, but state it: a plugin built with
     // ORT_ENABLE_BASIC can be several times slower with no visible difference.
     options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
-    // CPU EP is the only provider this template links. If the ORT build has
-    // others (a -gpu package), they are NOT enabled implicitly: a plug-in must
-    // opt in deliberately, see AI_MODEL_INTEGRATION.md.
+    // CPU EP is the only provider this template links, because no GPU exists in
+    // the environment it was built in. If the ORT build has others (a -gpu
+    // package), they are NOT enabled implicitly: a plug-in must opt in
+    // deliberately, and for a plug-in that ships that is the first path, not an
+    // afterthought - AppendExecutionProvider_CUDA first, this CPU session as the
+    // fallback, provider and reason visible in a parameter. See
+    // AI_MODEL_INTEGRATION.md section 7.
     //
     // Memory patterns stay on (the ORT default). They cache the per-shape
     // allocations a session reuses on every Run(), which is exactly this

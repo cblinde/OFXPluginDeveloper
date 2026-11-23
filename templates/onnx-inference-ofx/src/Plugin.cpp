@@ -40,7 +40,9 @@ const char* const kPluginIdentifier = "com.ofxplugindeveloper.onnxinference";
 const char* const kPluginName = "ONNX Inference";
 const char* const kPluginGrouping = "OFX Plugin Developer";
 const char* const kPluginDescription =
-    "Runs an ONNX model over the frame with ONNX Runtime (CPU execution provider). "
+    "Runs an ONNX model over the frame with ONNX Runtime (CPU execution provider "
+    "here; a shipping plug-in requests the CUDA provider first, "
+    "AI_MODEL_INTEGRATION.md section 7). "
     "Reference implementation for tiled, pitch-accurate inference plug-ins.";
 
 const char* const kParamModelPath = "modelPath";
