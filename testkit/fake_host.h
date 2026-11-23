@@ -104,7 +104,9 @@ public:
   // Publishes a source region of definition inset by `pixels` on every side
   // while the buffer keeps its size, the way a cropped or transition input
   // arrives. Image::getPixelAddress() then refuses the margin, so a render
-  // window over the full buffer covers pixels the source does not have.
+  // window over the full buffer covers pixels the source does not have. The
+  // destination image is left alone, so a test can compare its pixels across a
+  // rejected render.
   void setSourceBoundsInset(int pixels);
   void setSourcePlanar(const float* rgb, int width, int height); // 3 channels
   void setSourceConstant(float r, float g, float b, float a);

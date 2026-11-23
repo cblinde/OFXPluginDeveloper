@@ -1364,7 +1364,11 @@ void FakeHost::setSourceConstant(float r, float g, float b, float a) {
 
 void FakeHost::setSourceBoundsInset(int pixels) {
   impl_->srcInset = pixels > 0 ? pixels : 0;
-  invalidateImages();
+  // Only the source changes shape. The destination image and the pixels a
+  // previous render left in it stay: a test compares them before and after a
+  // rejected render, which is how "half written, then an error" shows up.
+  delete impl_->srcImage;
+  impl_->srcImage = nullptr;
 }
 
 void FakeHost::setPaddedRows(bool on) {

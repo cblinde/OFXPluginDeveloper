@@ -664,11 +664,40 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     // transition, wrong bounds). Image::getPixelAddress() returns nullptr for
     // those coordinates, so the plug-in has to refuse the window once instead of
     // dereferencing a null row per pixel.
+    // A baseline frame through the valid window. The byte-destination option
+    // above drops the destination image, so an older render cannot be relied on
+    // to have left pixels behind; setSourceBoundsInset() leaves this one in
+    // place, which makes it the reference for "nothing was written".
+    const OfxStatus baseline = host.render(0.0, window);
+    if (!check("baseline render before the rejected window", baseline == kOfxStatOK,
+               statusName(baseline))) {
+      return failCycle(host);
+    }
+    const std::vector<float> before = host.destination();
     host.setSourceBoundsInset(spec.srcBoundsInset);
     const OfxStatus st = host.render(0.0, window);
     host.setSourceBoundsInset(0);
     if (!check("render rejects a window outside the source bounds",
                st == kOfxStatErrValue, statusName(st))) {
+      return failCycle(host);
+    }
+    // An error status alone does not prove the frame survived: a plug-in can
+    // write part of it and then throw. Every pixel must be what the last
+    // successful render left there.
+    const std::vector<float> after = host.destination();
+    bool unchanged = !before.empty() && before.size() == after.size();
+    size_t firstDiff = 0;
+    for (size_t i = 0; unchanged && i < before.size(); ++i) {
+      if (before[i] != after[i]) {
+        unchanged = false;
+        firstDiff = i;
+      }
+    }
+    if (!check("destination is unchanged after the rejected render", unchanged,
+               before.size() == after.size()
+                   ? "first difference at float " + std::to_string(firstDiff)
+                   : std::to_string(before.size()) + " -> " +
+                         std::to_string(after.size()) + " floats")) {
       return failCycle(host);
     }
   }
