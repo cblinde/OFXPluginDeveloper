@@ -139,8 +139,11 @@ public:
         // a transition, wrong bounds). ImageProcessor::process() does compare the
         // window with the destination bounds, but it answers with a bare return
         // and its assert is compiled out of a release build: the host would get
-        // kOfxStatOK and an untouched frame. Refuse both windows here, where the
-        // status is ours to choose, and before any row arithmetic runs.
+        // kOfxStatOK and an untouched frame. The branch is
+        // .ofx-ref/Support/include/ofxsProcessing.h:150-157 - assert first,
+        // then `return` before preProcess(), so no status leaves the process.
+        // Refuse both windows here, where the status is ours to choose, and
+        // before any row arithmetic runs.
         const OfxRectI& sb = src->getBounds();
         if (args.renderWindow.x1 < sb.x1 || args.renderWindow.y1 < sb.y1 ||
             args.renderWindow.x2 > sb.x2 || args.renderWindow.y2 > sb.y2) {
