@@ -655,8 +655,7 @@ What the model finds is drawn on top of the frame that was just rendered, and
 the pass-through copy that makes a filter correct is orientation-agnostic while
 the drawing is not: an overlay ships mirrored or on the wrong side of its box and
 every copy check stays green (**B** — labels beside their boxes and mirrored text
-in a host). The four rules that matter; the full set is
-[`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
+in a host). The four rules that matter:
 
 - **Write through the destination's pitch, never `width * 16`.** The output image
   has its own base pointer, its own signed `kOfxImagePropRowBytes` and its own
@@ -680,8 +679,21 @@ in a host). The four rules that matter; the full set is
 Test it as a bound, not as a pixel value: "ink stays inside the plate", "nothing
 past the right edge", "the box outline is in the top half of the tile". A centred
 probe hides a mirror, and "bytes changed" hides everything else
-([`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) §5, L3;
-`testkit/tile_window_test.cpp` is the worked example, 94 checks).
+([`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) §5, L3). The checking side is in
+[`testkit/README.md`](testkit/README.md): `--image-origin top|bottom` and
+`--negative-pitch` set the two axes independently, the two top-down layouts are
+negative controls, and a pass-through copy satisfies all four while a mark drawn
+at a chosen position does not. (A 94-check `tile_window_test` that draws per
+layout exists in the reporting tree, not in this repository **[B]**.)
+
+Cited back from where the question arises: [`SKILL.md`](SKILL.md) §5 (writing
+back is the same pitch arithmetic against the destination) and
+[`SKILL.md`](SKILL.md) §8 (a tiled plug-in that draws has a seam bug and a
+placement bug, and they are different), and
+[`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) §3.3 and §3.6, which
+teach the addressing rules and the tile protocol this section extends. The full rules — clipping to window and
+bounds, premultiplied compositing, and `stb_easy_font` for glyphs without a GUI —
+are [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
 
 ---
 
