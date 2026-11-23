@@ -46,8 +46,12 @@ Flags: `--param name:type` (repeatable; `type` is one of `double`, `int`
 source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
 answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
 `--image-origin top|bottom`,
-`--src`/`--golden`/`--size WxH` for a golden-image render comparison, and
-`--set-status-only` when the parameter is not a gain.
+`--src`/`--golden`/`--size WxH` for a golden-image render comparison,
+`--set-status-only` when the parameter is not a gain, and `--label-param NAME`
+for a string the plug-in sets itself (a read-only label): read after the first
+render, it must be non-empty, and the check's name carries the value —
+`label parameter 'provider' = "CPU (fallback: ...)"` — which is how a suite
+asserts what the plug-in wrote without a second output channel.
 
 `--roi-expand N` asks `kOfxImageEffectActionGetRegionsOfInterest` twice — for a
 region inside the frame and for the frame itself — and requires the source RoI to

@@ -195,6 +195,11 @@ struct Spec {
   // weights; the declaration still has to keep the window within T of the
   // whole-frame render, and losing it has to push it beyond T.
   double roiContextTolerance = 0.0;
+  // --label-param NAME: a string parameter the plug-in fills in itself (a
+  // read-only label). Checked after the first render: it must be set, and the
+  // check's name carries the value, because a script has no other way to read
+  // what the plug-in wrote.
+  std::string labelParam;
   bool negativePitch = false;
   bool topOrigin = false;
   // --set-status-only: render after --set, but assert only the status and that
@@ -220,6 +225,22 @@ std::string canonicalType(const std::string& t) {
   if (t == "rgba") return kOfxParamTypeRGBA;
   if (t == "choice") return kOfxParamTypeChoice;
   return t;
+}
+
+// A value from the plug-in, flattened for a check name. The harness reports a
+// check by name, so the name is also how a script reads a label the plug-in
+// wrote; quotes and newlines would break both the log and the grep.
+std::string flatValue(const std::string& value) {
+  std::string out;
+  out.reserve(value.size());
+  for (const char c : value) {
+    out += (c == '\n' || c == '\r' || c == '"') ? ' ' : c;
+  }
+  constexpr size_t kMax = 160;
+  if (out.size() > kMax) {
+    out = out.substr(0, kMax) + "...";
+  }
+  return out;
 }
 
 bool readFloats(const std::string& path, std::vector<float>* out, size_t expected) {
@@ -686,6 +707,17 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     return failCycle(host);
   }
 
+  if (!spec.labelParam.empty()) {
+    // Read it after the render: the value is written when the plug-in creates
+    // its session, which is the first render. The name carries it verbatim so
+    // the suite can assert which provider was chosen without a second channel.
+    const std::string value = host.paramValue(spec.labelParam);
+    if (!check("label parameter '" + spec.labelParam + "' = \"" + flatValue(value) + "\"",
+               !value.empty(), "empty: the instance never set it")) {
+      return failCycle(host);
+    }
+  }
+
   if (!spec.goldenFile.empty()) {
     std::vector<float> golden;
     const size_t pixels = static_cast<size_t>(spec.width) * spec.height;
@@ -949,6 +981,7 @@ int main(int argc, char** argv) {
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
                  "       [--dst-bounds-inset N] [--roi-expand N] [--roi-context]\n"
                  "       [--roi-context-tolerance T] (tiled render: bound, not bit-equality)\n"
+                 "       [--label-param NAME] (a string the plug-in sets itself)\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
@@ -1030,6 +1063,8 @@ int main(int argc, char** argv) {
       spec.roiContext = true;
     } else if (a == "--set-status-only") {
       spec.setStatusOnly = true;
+    } else if (a == "--label-param") {
+      spec.labelParam = next("--label-param");
     } else if (a == "--negative-pitch") {
       spec.negativePitch = true;
     } else if (a == "--image-origin") {

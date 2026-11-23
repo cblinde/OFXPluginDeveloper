@@ -151,10 +151,85 @@ void LoadPrivateRuntime()
 
 } // namespace
 
+namespace {
+
+/// One line, clipped: ORT's provider errors are a paragraph with the file and
+/// line of the check inside them, and this string goes into a label parameter.
+std::string ShortMessage(const std::string& text)
+{
+    const size_t newline = text.find('\n');
+    std::string line = newline == std::string::npos ? text : text.substr(0, newline);
+    // ORT prefixes its own location and error number:
+    //   /onnxruntime_src/.../provider_bridge_ort.cc:1488 ... [ONNXRuntimeError] : 1 : FAIL : <why>
+    // The "why" is the part a user can act on; the rest is noise in a label.
+    const std::string marker = " : FAIL : ";
+    const size_t at = line.find(marker);
+    if (at != std::string::npos) {
+        line = line.substr(at + marker.size());
+    }
+    constexpr size_t kMax = 120;
+    if (line.size() > kMax) {
+        line = line.substr(0, kMax) + "...";
+    }
+    return line;
+}
+
+/// The options every session gets. A function because the CUDA attempt needs a
+/// fresh copy to fall back to: a failed AppendExecutionProvider_CUDA may leave
+/// the options half-configured, and the CPU session must not inherit that.
+Ort::SessionOptions MakeSessionOptions(int intraThreads)
+{
+    Ort::SessionOptions options;
+    // See the header: the host already runs render() on several threads.
+    const int threads = intraThreads > 0 ? intraThreads : 1;
+    options.SetIntraOpNumThreads(threads);
+    options.SetInterOpNumThreads(1);
+    options.SetExecutionMode(ORT_SEQUENTIAL);
+    // Full graph optimisation is the default, but state it: a plugin built with
+    // ORT_ENABLE_BASIC can be several times slower with no visible difference.
+    options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
+    // Memory patterns stay on (the ORT default). They cache the per-shape
+    // allocations a session reuses on every Run(), which is exactly this
+    // plug-in's access pattern: one shape, once per frame.
+    return options;
+}
+
+/// Requests the CUDA execution provider. Every failure - no GPU, no driver,
+/// missing cuDNN, a CPU-only runtime, a runtime whose provider library is not
+/// beside it - arrives as an ORT exception, so the caller falls back to a CPU
+/// session instead of failing the frame. The reason is kept for the label.
+///
+/// Verified on this machine (CPU package, ORT 1.20.1): the call throws "Failed
+/// to load library libonnxruntime_providers_shared.so" and does not crash.
+/// Verified nowhere: the success branch. There is no GPU here.
+bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason)
+{
+    try {
+        OrtCUDAProviderOptions cuda{};
+        cuda.device_id = 0;
+        // ORT benchmarks convolution algorithms at session creation by default,
+        // which costs minutes at 1080p before the first tile (external
+        // measurement, AI_MODEL_INTEGRATION.md section 7).
+        cuda.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchHeuristic;
+        // Copies stay on the provider's stream, which is the default here and
+        // the only safe choice when the host hands over host memory.
+        cuda.do_copy_in_default_stream = 1;
+        options.AppendExecutionProvider_CUDA(cuda);
+        return true;
+    } catch (const std::exception& e) {
+        *reason = ShortMessage(e.what());
+        return false;
+    }
+}
+
+} // namespace
+
 struct ModelRunner::Impl {
     Ort::Session session{ nullptr };
     std::string inputName;
     std::string outputName;
+    std::string provider = "CPU";
+    std::string providerReason;
     int channels = 0;
     std::vector<const char*> inputNames;
     std::vector<const char*> outputNames;
@@ -172,26 +247,17 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
     LoadPrivateRuntime();
 #endif
 
-    Ort::SessionOptions options;
-    // See the header: the host already runs render() on several threads.
-    const int threads = intraThreads > 0 ? intraThreads : 1;
-    options.SetIntraOpNumThreads(threads);
-    options.SetInterOpNumThreads(1);
-    options.SetExecutionMode(ORT_SEQUENTIAL);
-    // Full graph optimisation is the default, but state it: a plugin built with
-    // ORT_ENABLE_BASIC can be several times slower with no visible difference.
-    options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
-    // CPU EP is the only provider this template links, because no GPU exists in
-    // the environment it was built in. If the ORT build has others (a -gpu
-    // package), they are NOT enabled implicitly: a plug-in must opt in
-    // deliberately, and for a plug-in that ships that is the first path, not an
-    // afterthought - AppendExecutionProvider_CUDA first, this CPU session as the
-    // fallback, provider and reason visible in a parameter. See
-    // AI_MODEL_INTEGRATION.md section 7.
-    //
-    // Memory patterns stay on (the ORT default). They cache the per-shape
-    // allocations a session reuses on every Run(), which is exactly this
-    // plug-in's access pattern: one shape, once per frame.
+    // CUDA first. Both attempts build their own options, so a failed provider
+    // append cannot leave the CPU session half-configured.
+    Ort::SessionOptions options = MakeSessionOptions(intraThreads);
+    std::string providerReason;
+    if (AppendCudaProvider(options, &providerReason)) {
+        _impl->provider = "CUDA (device 0)";
+    } else {
+        _impl->provider = "CPU";
+        _impl->providerReason = providerReason;
+        options = MakeSessionOptions(intraThreads);
+    }
 
 #ifdef _WIN32
     const std::wstring wide = WidePath(modelPath);
@@ -243,6 +309,16 @@ const std::string& ModelRunner::InputName() const
 const std::string& ModelRunner::OutputName() const
 {
     return _impl->outputName;
+}
+
+const std::string& ModelRunner::Provider() const
+{
+    return _impl->provider;
+}
+
+const std::string& ModelRunner::ProviderReason() const
+{
+    return _impl->providerReason;
 }
 
 void ModelRunner::Run(const float* input, int channels, int height, int width, float* output)

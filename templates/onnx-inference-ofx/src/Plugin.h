@@ -53,6 +53,9 @@ private:
     OFX::StringParam* _modelPath;
     OFX::IntParam* _tileSize;
     OFX::IntParam* _halo;
+    // Read-only label: which execution provider the session got, and why not
+    // CUDA when it did not. Written when the session is created.
+    OFX::StringParam* _provider;
 
     std::mutex _runnerMutex;
     std::shared_ptr<ModelRunner> _runner;

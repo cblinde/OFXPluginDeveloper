@@ -403,15 +403,29 @@ SANITIZE=address,undefined ./test/run-tests.sh
 What this template proves, on this machine: see §5's measurements, plus the
 bundle exports exactly two symbols, records `NEEDED libonnxruntime.so.1` and
 `RUNPATH $ORIGIN` on Linux (`@loader_path` on macOS, where the runtime keeps its
-versioned `.dylib` name), ships one copy of the runtime, and `dlopen` enumerates one
-plugin (`com.ofxplugindeveloper.onnxinference` v1.0).
+versioned `.dylib` name), ships one copy of the runtime, `dlopen` enumerates one
+plugin (`com.ofxplugindeveloper.onnxinference` v1.0), and the session asks for
+the CUDA provider before it is created as a CPU session
+(`ModelRunner::AppendCudaProvider`). The outcome is visible: the plug-in writes
+it into the `provider` label parameter, and the suite asserts the value, which
+reads
 
-What it does **not** prove: no host has rendered through it, no GPU execution
-provider is compiled in, and no timing is claimed — there is no GPU here, so the
-CPU session is what could be built and run. That is a limit of this repository,
-not a recommendation: the CUDA EP is the first path for a plug-in that ships,
-the recipe below is documented from the ORT API, and its numbers are external
-(**B**).
+```
+CPU (fallback: Failed to load library libonnxruntime_providers_shared.so with
+error: libonnxruntime_providers_shared.so: cannot open shared object file ...)
+```
+
+here — the request was made, it failed, the frame still rendered, and the label
+says why (**V**).
+
+What it does **not** prove: no host has rendered through it, no CUDA session has
+ever been created, and no timing is claimed. The provider *request* is compiled
+and its failure path is tested; the success path is not. There is no GPU and no
+provider binary in this repository, so on a GPU machine the remaining work is to
+confirm the label flips to `CUDA (device 0)`, measure the run (`bench`-style,
+timer around `Run()`), and repeat the bundle check with the provider DLLs in
+place — the recipe below is documented from the ORT API, and every number in it
+is external (**B**).
 
 ### Adapting it to a real model
 
@@ -529,8 +543,12 @@ make the choice visible — and the consequence is packaging, not a second build
 - **One bundle, request the provider, fall back silently.** Create the session
   with `AppendExecutionProvider_CUDA` inside a `try`; every failure — no device,
   no driver, missing cuDNN DLL, not enough VRAM — ends on a CPU session instead
-  of an exception the host turns into a red frame. Two lazily built sessions are
-  simpler than a retry ladder.
+  of an exception the host turns into a red frame. This template already does
+  exactly that: `ModelRunner::AppendCudaProvider()` sets
+  `cudnn_conv_algo_search = HEURISTIC`, catches the failure and rebuilds the
+  options for the CPU session, and `Plugin.cpp` writes provider plus reason into
+  the `provider` label parameter. Two lazily built sessions are simpler than a
+  retry ladder.
 - **Make it visible and assert it.** Nothing else tells anyone the provider
   stopped loading: the picture stays correct and only the time changes —
   measured elsewhere at 28× on a 4x model and 11× on a denoiser (**B**). Write
@@ -553,9 +571,13 @@ make the choice visible — and the consequence is packaging, not a second build
   7.25 GB at a 384² tile and crossed 11.8 GB at 640², at which point the driver
   fell into its slower path: halving the tile beats enlarging it (**B**).
 
-None of this is compiled here: no GPU, no provider in this repository, so every
-number above is external evidence from one RTX 3060 (**B**), and the recipe is
-documented from the ORT API.
+The request itself is compiled and its failure path is verified here: this
+machine links the CPU package of ONNX Runtime, `AppendExecutionProvider_CUDA`
+throws `Failed to load library libonnxruntime_providers_shared.so`, and the
+`provider` label carries that reason (**V**). The success branch has never run —
+no GPU, no provider binary — so every number above is external evidence from one
+RTX 3060 (**B**), and the success path is documented from the ORT API rather
+than measured.
 
 #### Detection heads: the four facts that cost a day
 

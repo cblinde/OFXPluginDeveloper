@@ -40,14 +40,16 @@ const char* const kPluginIdentifier = "com.ofxplugindeveloper.onnxinference";
 const char* const kPluginName = "ONNX Inference";
 const char* const kPluginGrouping = "OFX Plugin Developer";
 const char* const kPluginDescription =
-    "Runs an ONNX model over the frame with ONNX Runtime (CPU execution provider "
-    "here; a shipping plug-in requests the CUDA provider first, "
-    "AI_MODEL_INTEGRATION.md section 7). "
+    "Runs an ONNX model over the frame with ONNX Runtime. The CUDA execution "
+    "provider is requested first and a CPU session is the fallback; the provider "
+    "label says which one the session got and why not CUDA when it did not. "
     "Reference implementation for tiled, pitch-accurate inference plug-ins.";
 
 const char* const kParamModelPath = "modelPath";
 const char* const kParamTileSize = "tileSize";
 const char* const kParamHalo = "halo";
+// Label, not a setting: the plug-in writes it when the session is created.
+const char* const kParamProvider = "provider";
 
 constexpr std::int64_t kPixelBytes = 4 * sizeof(float); // RGBA float
 
@@ -109,15 +111,17 @@ InferencePlugin::InferencePlugin(OfxImageEffectHandle handle)
     , _modelPath(nullptr)
     , _tileSize(nullptr)
     , _halo(nullptr)
+    , _provider(nullptr)
 {
     _dstClip = fetchClip(kOfxImageEffectOutputClipName);
     _srcClip = fetchClip(kOfxImageEffectSimpleSourceClipName);
     _modelPath = fetchStringParam(kParamModelPath);
     _tileSize = fetchIntParam(kParamTileSize);
     _halo = fetchIntParam(kParamHalo);
+    _provider = fetchStringParam(kParamProvider);
 
     if (_dstClip == nullptr || _srcClip == nullptr || _modelPath == nullptr ||
-        _tileSize == nullptr || _halo == nullptr) {
+        _tileSize == nullptr || _halo == nullptr || _provider == nullptr) {
         OFX::throwSuiteStatusException(kOfxStatErrMissingHostFeature);
     }
 }
@@ -134,6 +138,16 @@ std::shared_ptr<ModelRunner> InferencePlugin::AcquireRunner(const std::string& p
                         fresh->InputChannels());
         _runner = fresh;
         _loadedPath = path;
+        // Say which provider this session got. A CPU fallback leaves the
+        // picture correct and only changes the clock, so this label is the one
+        // place a user can see that CUDA did not load - and the contract test
+        // asserts it is set and starts with "CUDA" or "CPU".
+        std::string label = fresh->Provider();
+        if (!fresh->ProviderReason().empty()) {
+            label += " (fallback: " + fresh->ProviderReason() + ")";
+        }
+        _provider->setValue(label);
+        OFX::Log::print("%s: execution provider %s", kPluginName, label.c_str());
         return fresh;
     } catch (const std::exception& e) {
         OFX::Log::print("%s: cannot load '%s': %s", kPluginName, path.c_str(), e.what());
@@ -435,6 +449,20 @@ void InferencePluginFactory::describeInContext(OFX::ImageEffectDescriptor& desc,
     halo->setDisplayRange(0, 64);
     halo->setParent(*group);
     page->addChild(*halo);
+
+    // Not a control: a label the plug-in fills in once the session exists. The
+    // CUDA provider is requested first and this says whether it was granted,
+    // because a silent fallback is invisible until someone times a frame.
+    OFX::StringParamDescriptor* provider = desc.defineStringParam(kParamProvider);
+    provider->setLabels("Execution provider", "Provider", "Execution provider");
+    provider->setScriptName(kParamProvider);
+    provider->setHint("Which execution provider the ONNX session was created with. "
+                      "CUDA is requested first; anything else carries the reason it was "
+                      "not available.");
+    provider->setDefault("CPU (no model loaded yet)");
+    provider->setStringType(OFX::eStringTypeLabel);
+    provider->setParent(*group);
+    page->addChild(*provider);
 }
 
 OFX::ImageEffect* InferencePluginFactory::createInstance(OfxImageEffectHandle handle,

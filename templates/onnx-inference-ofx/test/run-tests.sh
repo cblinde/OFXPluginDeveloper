@@ -84,9 +84,18 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     --clip Source --clip Output --identity --size 64x48 \
     --src "${ROOT}/models/test_input.bin" --golden "${ROOT}/models/test_golden.bin" \
     --set "modelPath=${ROOT}/models/test_conv.onnx" --set halo=2 \
-    --roi-expand 2 --roi-context \
+    --roi-expand 2 --roi-context --label-param provider \
     --not-identity-after-set --negative-pitch --byte-dst-rejected \
-    --src-bounds-inset 2 --dst-bounds-inset 2
+    --src-bounds-inset 2 --dst-bounds-inset 2 | tee "${TMP}/exact.log"
+
+  # The plug-in writes its execution provider into a label parameter. CUDA is
+  # requested first and the CPU session is the fallback, so the value has to
+  # name one of them and, when it is the fallback, carry the reason. Both are
+  # accepted here: the harness cannot know which runtime a GPU machine links.
+  if ! grep -q "label parameter 'provider' = \"\(CUDA\|CPU\)" "${TMP}/exact.log"; then
+    echo "  FAIL: the provider label does not name an execution provider" >&2
+    exit 1
+  fi
 
   # The same pixel comparison with the plug-in's own tiling engaged: tileSize=16
   # makes the 64x48 window go through RunTiled, so the frame is assembled from

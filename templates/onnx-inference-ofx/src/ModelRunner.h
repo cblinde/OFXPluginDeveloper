@@ -16,10 +16,16 @@
 //  * Run() is called concurrently from host render threads. ORT documents that
 //    several threads may call Run() on one session; kernels are stateless. The
 //    guard rail is that this class keeps no per-call state.
-//  * Nothing here touches CUDA. A CUDA execution provider needs the host's
-//    stream (kOfxImageEffectPropCudaStream) to be useful; see
-//    AI_MODEL_INTEGRATION.md for the exact recipe and why it is not compiled
-//    into this template.
+//  * The CUDA execution provider is requested first, the CPU session is the
+//    silent fallback. This is ORT's own device, not the host's render stream:
+//    the frame stays in host memory, kOfxImageEffectPropCudaEnabled stays
+//    false, and no device pointer is ever asked for. Provider and reason are
+//    reported so the plug-in can show them - a fallback nobody sees is a 25x
+//    slowdown that looks like a working frame.
+//  * The CUDA branch has never run on a GPU. This repository builds against the
+//    CPU package of ONNX Runtime, where the request throws; that path is
+//    compiled and reviewed here, not measured. See AI_MODEL_INTEGRATION.md
+//    section 7 for what a GPU machine still has to verify.
 
 #ifndef AIOFX_MODEL_RUNNER_H
 #define AIOFX_MODEL_RUNNER_H
@@ -50,6 +56,14 @@ public:
 
     const std::string& InputName() const;
     const std::string& OutputName() const;
+
+    /// The provider the session was created with: "CUDA (device 0)" when the
+    /// request succeeded, "CPU" otherwise.
+    const std::string& Provider() const;
+
+    /// Why the CUDA request failed - the runtime's own first line, clipped.
+    /// Empty when the provider was appended.
+    const std::string& ProviderReason() const;
 
 private:
     struct Impl;

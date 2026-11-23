@@ -188,7 +188,7 @@ never uses, and the first thing you then do is delete them.
 | --- | --- | --- |
 | CPU-only pixel maths (grade, blur, keyer) | `templates/minimal-ofx/` | smallest host-loadable module, no CUDA, no model |
 | CUDA render path with a CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
-| ONNX model per frame | `templates/onnx-inference-ofx/` | ORT session, packing, tiling, golden fixtures; then request the CUDA EP first and keep CPU as the fallback (`AI_MODEL_INTEGRATION.md` §7) — the template compiles CPU-only only because this machine has no GPU |
+| ONNX model per frame | `templates/onnx-inference-ofx/` | ORT session, packing, tiling, golden fixtures; then request the CUDA EP first and keep CPU as the fallback (`AI_MODEL_INTEGRATION.md` §7) — the template requests that provider first, and this machine has only the CPU runtime, so its tests see the fallback |
 | Model with a non-image output (detection, classification, embedding) | `templates/onnx-inference-ofx/` for the session and packaging shape only | `ModelRunner` requires out shape == in shape and `AiCore` unpacks an image; the head decoder is yours (`AI_MODEL_INTEGRATION.md` §7) |
 
 ```
