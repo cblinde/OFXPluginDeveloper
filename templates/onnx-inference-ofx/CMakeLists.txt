@@ -279,8 +279,16 @@ endif()
 # below is consistent and unaffected.
 option(OFXPLUGIN_BUNDLE_CUDA_PROVIDER
   "Copy onnxruntime_providers_cuda and the CUDA libraries it imports next to the .ofx (Linux and Windows; macOS warns and skips)" OFF)
+option(OFXPLUGIN_CUDA_FROM_HOST
+  "Copy only the CUDA provider and its shared library: use the host's cuDNN/cuBLAS/cuFFT/cudart instead of shipping copies (Linux and Windows)" OFF)
 set(OFXPLUGIN_CUDA_RUNTIME_DIRS "" CACHE STRING
   "Extra directories to search for the CUDA provider and its imports (semicolon-separated)")
+
+if(OFXPLUGIN_CUDA_FROM_HOST AND NOT OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
+  message(WARNING
+    "OFXPLUGIN_CUDA_FROM_HOST=ON without OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON: no "
+    "provider is copied, so the switch has nothing to apply to.")
+endif()
 
 if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
   if(APPLE)
@@ -401,11 +409,38 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
       endif()
     endfunction()
     ofx_warn_missing_cuda("onnxruntime_providers_shared" _cuda_shared)
-    ofx_warn_missing_cuda("cuDNN (libcudnn / cudnn*64_*.dll)" _have_cudnn)
-    ofx_warn_missing_cuda("cuBLAS (libcublas / cublas64_*.dll)" _cuda_cublas)
-    ofx_warn_missing_cuda("cuBLASLt (libcublasLt / cublasLt64_*.dll)" _cuda_cublaslt)
-    ofx_warn_missing_cuda("cuFFT (libcufft / cufft64_*.dll)" _cuda_cufft)
-    ofx_warn_missing_cuda("CUDA runtime (libcudart / cudart64_*.dll)" _cuda_cudart)
+    # A provider-only bundle needs nothing beside the provider: the host's stack
+    # is what its imports resolve to, so a missing CUDA file here is the point,
+    # not a warning.
+    if(NOT OFXPLUGIN_CUDA_FROM_HOST)
+      ofx_warn_missing_cuda("cuDNN (libcudnn / cudnn*64_*.dll)" _have_cudnn)
+      ofx_warn_missing_cuda("cuBLAS (libcublas / cublas64_*.dll)" _cuda_cublas)
+      ofx_warn_missing_cuda("cuBLASLt (libcublasLt / cublasLt64_*.dll)" _cuda_cublaslt)
+      ofx_warn_missing_cuda("cuFFT (libcufft / cufft64_*.dll)" _cuda_cufft)
+      ofx_warn_missing_cuda("CUDA runtime (libcudart / cudart64_*.dll)" _cuda_cudart)
+    endif()
+
+    # Provider-only bundle (F30). A host that ships CUDA has its own cuDNN,
+    # cuBLAS, cuFFT and cudart loaded before the first render, and Windows resolves
+    # an import by base name: our copies would be a second module under a name the
+    # host already owns, of whatever minor version we shipped (F26, F32). Shipping
+    # none of them removes the possibility instead of guarding against it - the
+    # provider imports whatever the host has. The bundle is ~60 % smaller too.
+    #
+    # The runtime guard in ModelRunner is still what makes the full bundle behave
+    # on such a host; this option is the packaging answer, not a substitute.
+    if(OFXPLUGIN_CUDA_FROM_HOST)
+      message(STATUS
+        "CUDA provider bundle: provider only (OFXPLUGIN_CUDA_FROM_HOST=ON). The "
+        "host must supply cuDNN 9, cuBLAS/cuBLASLt 12, cuFFT 11 and the CUDA 12 "
+        "runtime; the bundle ships none of them, so it cannot create a second "
+        "copy of a base name the host has loaded.")
+      set(_cuda_cudnn_list "")
+      set(_cuda_cublas "")
+      set(_cuda_cublaslt "")
+      set(_cuda_cufft "")
+      set(_cuda_cudart "")
+    endif()
 
     # Copy under the name each library already has: the provider's import table
     # holds those names, so a rename here would be the same failure the core's
