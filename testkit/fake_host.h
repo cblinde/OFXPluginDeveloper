@@ -86,6 +86,13 @@ public:
   // host-side outArgs property is kOfxPropName).
   OfxStatus isIdentity(double time, const OfxRectI& window, std::string* identityClip);
   OfxStatus render(double time, const OfxRectI& window);
+  // Sends kOfxImageEffectActionGetRegionsOfInterest and reads the answer for the
+  // source clip. The plug-in reports the answer through the Support library as
+  // one property per clip ("OfxImageClipPropRoI_<clip>"), so this is the only
+  // way a test sees it: `sourceRoi` is written only when the action answered
+  // kOfxStatOK, i.e. when the plug-in actually set a region. A plug-in that
+  // leaves the region alone answers kOfxStatReplyDefault and is visible as such.
+  OfxStatus getRegionsOfInterest(double time, const OfxRectD& requested, OfxRectD* sourceRoi);
   OfxStatus destroyInstance();
   OfxStatus unload();
 

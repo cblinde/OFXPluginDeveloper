@@ -1292,6 +1292,35 @@ OfxStatus FakeHost::render(double time, const OfxRectI& window) {
   return mainEntry(kOfxImageEffectActionRender, &outArgs, &inArgs);
 }
 
+OfxStatus FakeHost::getRegionsOfInterest(double time, const OfxRectD& requested,
+                                         OfxRectD* sourceRoi) {
+  PropSet inArgs;
+  PropSet outArgs;
+  setDouble(&inArgs, kOfxPropTime, 0, time);
+  setDouble(&inArgs, kOfxImageEffectPropRenderScale, 0, 1.0);
+  setDouble(&inArgs, kOfxImageEffectPropRenderScale, 1, 1.0);
+  setDouble(&inArgs, kOfxImageEffectPropRegionOfInterest, 0, requested.x1);
+  setDouble(&inArgs, kOfxImageEffectPropRegionOfInterest, 1, requested.y1);
+  setDouble(&inArgs, kOfxImageEffectPropRegionOfInterest, 2, requested.x2);
+  setDouble(&inArgs, kOfxImageEffectPropRegionOfInterest, 3, requested.y2);
+  const OfxStatus st =
+      mainEntry(kOfxImageEffectActionGetRegionsOfInterest, &outArgs, &inArgs);
+  if (st == kOfxStatOK && sourceRoi) {
+    // Not a kOfx* property: Support names the outArgs entry after the clip, see
+    // `_clipROIPropNames` in ofxsImageEffect.cpp. Reading it here is what makes
+    // a wrong RoI visible instead of silent.
+    const std::string prop =
+        std::string("OfxImageClipPropRoI_") + kOfxImageEffectSimpleSourceClipName;
+    double v[4] = {0.0, 0.0, 0.0, 0.0};
+    for (int i = 0; i < 4; ++i) getDouble(&outArgs, prop.c_str(), i, &v[i]);
+    sourceRoi->x1 = v[0];
+    sourceRoi->y1 = v[1];
+    sourceRoi->x2 = v[2];
+    sourceRoi->y2 = v[3];
+  }
+  return st;
+}
+
 OfxStatus FakeHost::destroyInstance() {
   for (int i = 0; i < instanceCount(); ++i) {
     if (impl_->instances[static_cast<size_t>(i)] == impl_->current) return destroyInstanceAt(i);

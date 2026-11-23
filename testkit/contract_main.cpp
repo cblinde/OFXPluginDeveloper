@@ -178,6 +178,10 @@ struct Spec {
   // its buffer, so the render window covers pixels the destination does not
   // have.
   int dstBoundsInset = 0;
+  // --roi-expand: the plug-in must answer GetRegionsOfInterest with the
+  // requested region grown by this many pixels on every side, clamped to the
+  // source region of definition. Negative disables the check.
+  int roiExpand = -1;
   bool negativePitch = false;
   bool topOrigin = false;
   // --set-status-only: render after --set, but assert only the status and that
@@ -440,6 +444,16 @@ bool checkDestinationUnchanged(const std::vector<float>& before,
                          std::to_string(after.size()) + " floats");
 }
 
+bool sameRect(const OfxRectD& a, const OfxRectD& b) {
+  return a.x1 == b.x1 && a.y1 == b.y1 && a.x2 == b.x2 && a.y2 == b.y2;
+}
+
+std::string rectText(const OfxRectD& r) {
+  char buffer[160];
+  std::snprintf(buffer, sizeof(buffer), "[%g %g %g %g]", r.x1, r.y1, r.x2, r.y2);
+  return buffer;
+}
+
 bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   testkit::FakeHost host;
   Module module;
@@ -683,6 +697,43 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
   }
 
+  if (spec.roiExpand >= 0) {
+    // A plug-in that reports a source region smaller than it reads loses the
+    // pixels its edge tiles needed, and the host cannot notice: the frame still
+    // renders, only its border is computed from padding. Ask with a region
+    // inside the frame, where the growth is visible, and then at the frame
+    // border, where the answer has to be clamped.
+    const OfxRectD frame{0.0, 0.0, static_cast<double>(host.imageWidth()),
+                         static_cast<double>(host.imageHeight())};
+    const double margin = 8.0;
+    const OfxRectD inside{window.x1 + margin, window.y1 + margin, window.x2 - margin,
+                          window.y2 - margin};
+    OfxRectD answered{};
+    OfxStatus roiStatus = host.getRegionsOfInterest(0.0, inside, &answered);
+    if (!check("getRegionsOfInterest answers for the source clip",
+               roiStatus == kOfxStatOK, statusName(roiStatus))) {
+      return failCycle(host);
+    }
+    const OfxRectD expected{std::max(inside.x1 - spec.roiExpand, frame.x1),
+                            std::max(inside.y1 - spec.roiExpand, frame.y1),
+                            std::min(inside.x2 + spec.roiExpand, frame.x2),
+                            std::min(inside.y2 + spec.roiExpand, frame.y2)};
+    if (!check("source RoI is the requested region grown by its halo",
+               sameRect(answered, expected),
+               rectText(answered) + " expected " + rectText(expected))) {
+      return failCycle(host);
+    }
+    roiStatus = host.getRegionsOfInterest(0.0, frame, &answered);
+    if (!check("getRegionsOfInterest answers at the source bounds",
+               roiStatus == kOfxStatOK, statusName(roiStatus))) {
+      return failCycle(host);
+    }
+    if (!check("source RoI is clamped to the source bounds", sameRect(answered, frame),
+               rectText(answered) + " expected " + rectText(frame))) {
+      return failCycle(host);
+    }
+  }
+
   if (spec.srcBoundsInset > 0) {
     // A host may hand a render window the source RoD does not cover (a crop, a
     // transition, wrong bounds). Image::getPixelAddress() returns nullptr for
@@ -761,7 +812,7 @@ int main(int argc, char** argv) {
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
                  "       [--negative-pitch] [--image-origin top|bottom] [--set-status-only]\n"
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
-                 "       [--dst-bounds-inset N]\n"
+                 "       [--dst-bounds-inset N] [--roi-expand N]\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
@@ -834,6 +885,8 @@ int main(int argc, char** argv) {
       spec.srcBoundsInset = std::atoi(next("--src-bounds-inset").c_str());
     } else if (a == "--dst-bounds-inset") {
       spec.dstBoundsInset = std::atoi(next("--dst-bounds-inset").c_str());
+    } else if (a == "--roi-expand") {
+      spec.roiExpand = std::atoi(next("--roi-expand").c_str());
     } else if (a == "--set-status-only") {
       spec.setStatusOnly = true;
     } else if (a == "--negative-pitch") {

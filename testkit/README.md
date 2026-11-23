@@ -49,6 +49,16 @@ answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
 `--src`/`--golden`/`--size WxH` for a golden-image render comparison, and
 `--set-status-only` when the parameter is not a gain.
 
+`--roi-expand N` asks `kOfxImageEffectActionGetRegionsOfInterest` twice — for a
+region inside the frame and for the frame itself — and requires the source RoI to
+be the requested region grown by `N`, clamped to the source region of definition.
+`FakeHost::getRegionsOfInterest(time, requested, &sourceRoi)` is the host call
+behind it; the answer is read from the outArgs property Support writes per clip
+(`OfxImageClipPropRoI_<clip>`), so a plug-in that reports nothing answers
+`kOfxStatReplyDefault` and fails the check by name instead of passing silently.
+The plug-in's own context parameter has to match `N` (e.g. `--set halo=2
+--roi-expand 2`).
+
 `--src-bounds-inset N` publishes a source region of definition inset by `N`
 inside its buffer, `--dst-bounds-inset N` the same for the destination. Each one
 adds a baseline render, a render the plug-in has to reject with
@@ -155,7 +165,11 @@ is deliberately not part of `./run-tests.sh`: a normal run has to stay green.
 
 1. **The multi-resolution and tile protocol.** It does not set
    `kOfxImageEffectPropTilesRoD` or slice render windows, so `setSupportsTiles(true)`
-   paths are untested.
+   paths are untested. The region-of-interest **action** is asked and checked
+   (`--roi-expand`), but the host does not act on the answer: it always hands
+   over the whole frame, so a plug-in that reads the region it declared stays
+   inside the image. What is untested is a host that clips the source image to
+   the answered RoI, and one that renders slices.
 2. **Clip preferences and host scheduling.** `getClipPreferences` and per-clip
    depths/PARs are not exercised. `multiThread` does run real workers (up to
    four), so a pixel loop is split into bands and executed concurrently; that is
