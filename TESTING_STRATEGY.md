@@ -48,7 +48,7 @@ column perfectly and never ran the right one.
 | Layer | What it tests | Cost to build | What it catches | Here |
 |---|---|---|---|---|
 | **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | the templates |
-| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 158 checks |
+| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 158 checks (the 136 from a `CPU_ONLY=1` build, so host protocol + CPU path) |
 | **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) §1 |
 | **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | the templates: `testkit/fake_host.*` |
 | **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | the templates |
@@ -180,7 +180,13 @@ testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
 
 Measured (CPU-only build of the CUDA template, this machine): **110 checks, 0
 failed** for `ReferenceGain`, **136 checks, 0 failed** for `MinimalCudaGain`,
-**158 checks, 0 failed** for `OnnxInference`. The
+**158 checks, 0 failed** for `OnnxInference`. The 136 belong to a `CPU_ONLY=1`
+build, whose launcher symbol and cubin are absent by construction (the build
+prints `CUDA launcher: ABSENT (CPU-only build)`, the suite prints `PTX check
+skipped: nvcc not on PATH`): not one of those checks was computed by a CUDA
+kernel, so they verify the host protocol and
+the CPU path of the CUDA template and leave the GPU path **[I]** until
+`test/gpu-kernel-test.cu` runs on hardware (§13). The
 checks are: the two export symbols; `pluginApi`, `apiVersion`, non-empty
 `pluginIdentifier` (stable across a second load), `pluginVersionMajor/Minor`;
 non-null `setHost`/`mainEntry`; then a whole `describe → describeInContext →
@@ -695,7 +701,7 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | GPU kernels, hardware | 28/28 launcher cases bit-exact on RTX 3060 sm_86; 200 queued launches, 8 host threads, zero-copy **[B]** |
 | GPU throughput | 1920×1080: vec4 0.212 ms / scalar 0.222 ms, ~312/300 GB/s **[B]** |
 | Artifact + fake host (reference) | 110 checks, 0 failed, two load/unload cycles, two live instances with separate values |
-| Artifact + fake host (CUDA) | 136 checks, 0 failed, two load/unload cycles, four instances × three concurrent renders |
+| Artifact + fake host (CUDA) | 136 checks, 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path — it is unverified here (no toolkit, no GPU) |
 | Artifact + fake host (inference) | 158 checks, 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | cppcheck clean, shellcheck clean |
