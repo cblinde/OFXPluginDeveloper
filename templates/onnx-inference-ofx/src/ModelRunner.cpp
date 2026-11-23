@@ -100,6 +100,33 @@ std::wstring PrivateRuntimePath()
                                        : path.substr(0, slash + 1) + kPrivateRuntimeDll;
 }
 
+#ifdef _WIN32
+/// Loads every DLL beside the module by absolute path, except the runtime's own.
+/// A GPU bundle is a directory of libraries that import each other by base name,
+/// and a plug-in directory is not on the default search path: the cuDNN
+/// dispatcher loads, then the process exits 127 looking for cudnn_graph64_9.dll -
+/// an exit, not an exception, so the CPU fallback never runs. Loading them up
+/// front is what makes the later name-based lookups find the copies already in
+/// the process. onnxruntime* is skipped: the core is loaded under its private
+/// name, and the provider must be loaded by ORT's own mailbox handshake.
+void PreloadSiblingDlls(const std::wstring& moduleFile)
+{
+    const size_t slash = moduleFile.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) return;
+    const std::wstring directory = moduleFile.substr(0, slash + 1);
+    WIN32_FIND_DATAW entry{};
+    HANDLE found = FindFirstFileW((directory + L"*.dll").c_str(), &entry);
+    if (found == INVALID_HANDLE_VALUE) return;
+    do {
+        const std::wstring name = entry.cFileName;
+        if (name.compare(0, 11, L"onnxruntime") == 0) continue;
+        LoadLibraryExW((directory + name).c_str(), nullptr,
+                       LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    } while (FindNextFileW(found, &entry) != 0);
+    FindClose(found);
+}
+#endif
+
 /// Loads the private runtime once and installs its C API. Never unloaded: an
 /// Ort::Env created later outlives this call, so FreeLibrary would leave the
 /// process with dangling code pointers. A failure is remembered rather than
@@ -124,6 +151,7 @@ void LoadPrivateRuntime()
                     std::to_string(GetLastError()) + ")";
             return;
         }
+        PreloadSiblingDlls(file);
         FARPROC symbol = GetProcAddress(library, "OrtGetApiBase");
         if (symbol == nullptr) {
             error = "onnxruntime-ofx.dll has no OrtGetApiBase";

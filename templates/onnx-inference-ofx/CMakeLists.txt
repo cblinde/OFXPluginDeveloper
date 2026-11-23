@@ -278,7 +278,7 @@ endif()
 # preload ORT - not a rename. On Linux the core keeps its SONAME, so the copy
 # below is consistent and unaffected.
 option(OFXPLUGIN_BUNDLE_CUDA_PROVIDER
-  "Copy onnxruntime_providers_cuda and the CUDA libraries it imports next to the .ofx (Linux only; refused on Windows)" OFF)
+  "Copy onnxruntime_providers_cuda and the CUDA libraries it imports next to the .ofx (Linux and Windows; macOS warns and skips)" OFF)
 set(OFXPLUGIN_CUDA_RUNTIME_DIRS "" CACHE STRING
   "Extra directories to search for the CUDA provider and its imports (semicolon-separated)")
 
@@ -288,28 +288,6 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
       "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON has no effect on macOS: CUDA is not "
       "available there and OFX hosts expose Metal/OpenCL instead. The session "
       "will keep falling back to the CPU.")
-  elseif(WIN32)
-    # Refused, not warned about. The provider imports "onnxruntime.dll" by base
-    # name; this bundle ships the core as onnxruntime-ofx.dll because a private
-    # name is what stops the host's own runtime from being bound to by imports
-    # (AI_MODEL_INTEGRATION.md section 4). Renamed, the provider has nothing to
-    # bind to; unrenamed, the host's runtime wins and render access-violates.
-    # A copied file that can never be used is not a feature with a caveat.
-    message(FATAL_ERROR
-      "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON is not available on Windows.\n"
-      "  onnxruntime_providers_cuda.dll imports \"onnxruntime.dll\" by base name, "
-      "and the Windows bundle ships the core as onnxruntime-ofx.dll so that a "
-      "host's own runtime (Resolve 21 ships 1.13) cannot capture that import. "
-      "With the core renamed the provider has nothing to bind to; with the core "
-      "unrenamed the host's runtime is what it binds to. Copying either one is a "
-      "bundle that fails at load, so the configure stops here instead.\n"
-      "  Use one of these:\n"
-      "   - a sidecar process that owns ONNX Runtime and the CUDA provider and "
-      "exchanges frames over shared memory (AI_MODEL_INTEGRATION.md sections 2 "
-      "and 3);\n"
-      "   - leave OFXPLUGIN_BUNDLE_CUDA_PROVIDER=OFF: the bundle still ships the "
-      "core, the plug-in falls back to the CPU and reports why in the provider "
-      "label.")
   else()
     if(NOT OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
       message(WARNING
@@ -354,7 +332,12 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     if(WIN32)
       set(_provider_patterns onnxruntime_providers_cuda.dll)
       set(_shared_patterns onnxruntime_providers_shared.dll)
-      set(_cudnn_patterns cudnn64_*.dll)
+      # cuDNN 9 is one dispatcher (cudnn64_9.dll) plus components it loads by base
+      # name (cudnn_graph64_9.dll, cudnn_ops64_9.dll, ...). The provider imports
+      # only the dispatcher, so a glob for that one file produced a bundle that
+      # exits 127 inside the provider - a crash, not the CPU fallback the label
+      # promises. Every component in the same directory travels.
+      set(_cudnn_patterns cudnn*64_*.dll)
       set(_cublas_patterns cublas64_*.dll)
       set(_cublaslt_patterns cublasLt64_*.dll)
       set(_cufft_patterns cufft64_*.dll)
@@ -371,7 +354,28 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
 
     ofx_pick_cuda_file(_cuda_provider ${_provider_patterns})
     ofx_pick_cuda_file(_cuda_shared ${_shared_patterns})
-    ofx_pick_cuda_file(_cuda_cudnn ${_cudnn_patterns})
+    # A list, because cuDNN is not one file on Windows. Linux keeps one entry: the
+    # SONAME chain resolves the rest from the directory the .so sits in.
+    set(_cuda_cudnn_list)
+    if(WIN32)
+      foreach(_dir IN LISTS _cuda_dirs)
+        if(IS_DIRECTORY "${_dir}")
+          file(GLOB _cudnn_hits "${_dir}/${_cudnn_patterns}")
+          list(APPEND _cuda_cudnn_list ${_cudnn_hits})
+        endif()
+      endforeach()
+      list(REMOVE_DUPLICATES _cuda_cudnn_list)
+    else()
+      ofx_pick_cuda_file(_cudnn_hit ${_cudnn_patterns})
+      if(_cudnn_hit)
+        list(APPEND _cuda_cudnn_list "${_cudnn_hit}")
+      endif()
+    endif()
+    if(_cuda_cudnn_list)
+      set(_have_cudnn TRUE)
+    else()
+      set(_have_cudnn FALSE)
+    endif()
     ofx_pick_cuda_file(_cuda_cublas ${_cublas_patterns})
     ofx_pick_cuda_file(_cuda_cublaslt ${_cublaslt_patterns})
     ofx_pick_cuda_file(_cuda_cufft ${_cufft_patterns})
@@ -397,7 +401,7 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
       endif()
     endfunction()
     ofx_warn_missing_cuda("onnxruntime_providers_shared" _cuda_shared)
-    ofx_warn_missing_cuda("cuDNN (libcudnn / cudnn64_*.dll)" _cuda_cudnn)
+    ofx_warn_missing_cuda("cuDNN (libcudnn / cudnn*64_*.dll)" _have_cudnn)
     ofx_warn_missing_cuda("cuBLAS (libcublas / cublas64_*.dll)" _cuda_cublas)
     ofx_warn_missing_cuda("cuBLASLt (libcublasLt / cublasLt64_*.dll)" _cuda_cublaslt)
     ofx_warn_missing_cuda("cuFFT (libcufft / cufft64_*.dll)" _cuda_cufft)
@@ -408,9 +412,10 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     # private name exists to avoid - only with no way for ORT to find it.
     set(_cuda_bytes 0)
     set(_cuda_count 0)
-    foreach(_file IN ITEMS "${_cuda_provider}" "${_cuda_shared}" "${_cuda_cudnn}"
-                           "${_cuda_cublas}" "${_cuda_cublaslt}" "${_cuda_cufft}"
-                           "${_cuda_cudart}")
+    set(_cuda_files "${_cuda_provider}" "${_cuda_shared}" ${_cuda_cudnn_list}
+                    "${_cuda_cublas}" "${_cuda_cublaslt}" "${_cuda_cufft}"
+                    "${_cuda_cudart}")
+    foreach(_file IN LISTS _cuda_files)
       if(NOT _file)
         continue()
       endif()
