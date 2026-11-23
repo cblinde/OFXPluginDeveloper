@@ -228,6 +228,13 @@ Four rules, and the header sentence that settles them:
    inference — and its test asserts the alpha channel is untouched on tight,
    padded and negative-stride images.
 
+Writing *into* the frame rather than copying it through repeats all five rules
+against the destination image, which has its own pitch and bounds, and adds
+three drawing-specific traps: placement in frame coordinates, premultiplied
+plates, and a single rasterising origin. That contract is
+[`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
+the overlay after the model".
+
 ### 3.4 Ownership and error surface
 
 - `fetchImage()` returns **owned** memory; `fetchClip()`/`fetchParam()` return
@@ -301,6 +308,14 @@ further rules the template teaches by construction:
   control*: the same tiled render with `halo = 0` must disagree with whole-frame
   inference (`templates/onnx-inference-ofx/test/ai_pipeline_test.cpp:300`).
   Without that control, a tiled-vs-tiled comparison passes for the wrong reason.
+- **A tiled plug-in that also draws has two independent failure modes.** The halo
+  decides what the model sees; the overlay's placement decides what the viewer
+  sees. A seam and a shifted box are different bugs, and only the second one
+  survives an orientation-blind assertion (a copy matches either way up). The
+  drawing contract — destination pitch, frame coordinates, premultiplied plates,
+  one rasterising origin — is
+  [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
+  the overlay after the model".
 
 ### 3.7 Model and tensor plumbing
 

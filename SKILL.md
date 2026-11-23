@@ -342,6 +342,14 @@ multiplying by a row index, which is what the templates do; keeping the stride
 and the offset arithmetic in `int` overflows on a large frame. Reading the
 accessor once per row and reusing it is the other half of the same fix.
 
+Writing *back* is the same arithmetic against the **destination** image, which
+has its own base pointer, its own signed pitch and its own bounds — plus traps a
+copy does not have: the overlay is positioned in frame coordinates, the plate may
+be premultiplied, and a host may rasterise from either origin. Short version in
+[`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
+the overlay after the model"; the full rules are in
+[`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
+
 Clip property for the *unmapped* component string is
 `kOfxImageClipPropUnmappedComponents` (`ofxImageEffect.h`). There is no
 `kOfxImageEffectPropUnmappedComponents`; do not invent it.
@@ -397,7 +405,11 @@ provider and falls back to the CPU, never a second "GPU build" for users. The
 ONNX template has that copy behind `-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` plus
 `-DOFXPLUGIN_CUDA_RUNTIME_DIRS`, with a warning per missing file because the
 provider's missing import fails as error 126, not as a message
-(`AI_MODEL_INTEGRATION.md` §7). A ledger in the repository is not in the bundle. Copy it from
+(`AI_MODEL_INTEGRATION.md` §7). What such a plug-in draws over the model's output
+is a separate contract — destination pitch, frame-coordinate placement,
+premultiplied plates, one rasterising origin — spelled out in
+[`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
+the overlay after the model". A ledger in the repository is not in the bundle. Copy it from
 `CMakeLists.txt` with a `POST_BUILD` step (`${CMAKE_COMMAND} -E
 copy_if_different`), after the asset copy and before any stale-file cleanup,
 and make a missing ledger a `message(WARNING)` so a source tree without it still
@@ -578,6 +590,13 @@ orientation-agnostic, so it matches either way up; a box drawn in the top half o
 the tile catches a mirror, a centred one does not. `testkit`'s
 `setImageOrigin`/`setNegativePitch` build all four layouts, and
 [`testkit/README.md`](testkit/README.md) says what each one can prove.
+
+A tiled plug-in that draws is where both mistakes meet: the halo decides what the
+model sees, the overlay's placement decides what the user sees, and a seam plus a
+shifted box are two separate bugs. The drawing half — its own pitch, the window
+offset, premultiplied plates, the single rasterising origin — is
+[`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
+the overlay after the model".
 
 ---
 
