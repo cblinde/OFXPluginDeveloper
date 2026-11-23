@@ -140,6 +140,35 @@ std::shared_ptr<ModelRunner> InferencePlugin::AcquireRunner(const std::string& p
     }
 }
 
+void InferencePlugin::getRegionsOfInterest(const OFX::RegionsOfInterestArguments& args,
+                                           OFX::RegionOfInterestSetter& rois)
+{
+    if (_srcClip == nullptr || !_srcClip->isConnected()) {
+        return;
+    }
+    const int halo = std::max(0, static_cast<int>(_halo->getValueAtTime(args.time)));
+    if (halo == 0) {
+        // Nothing outside the window is read, so the host's own region stands.
+        return;
+    }
+    OfxRectD roi = args.regionOfInterest;
+    roi.x1 -= halo;
+    roi.y1 -= halo;
+    roi.x2 += halo;
+    roi.y2 += halo;
+    // Never outside the source, and never empty: render() clamps to the same
+    // bounds, so the declaration and the pixels it reads agree.
+    const OfxRectD bounds = _srcClip->getRegionOfDefinition(args.time);
+    roi.x1 = std::max(roi.x1, bounds.x1);
+    roi.y1 = std::max(roi.y1, bounds.y1);
+    roi.x2 = std::min(roi.x2, bounds.x2);
+    roi.y2 = std::min(roi.y2, bounds.y2);
+    if (roi.x2 <= roi.x1 || roi.y2 <= roi.y1) {
+        return;
+    }
+    rois.setRegionOfInterest(*_srcClip, roi);
+}
+
 void InferencePlugin::render(const OFX::RenderArguments& args)
 {
     if (_dstClip->getPixelDepth() != OFX::eBitDepthFloat ||
@@ -223,9 +252,6 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
 
     const long long srcPitch = src->getRowBytes();
     const long long dstPitch = dst->getRowBytes();
-    const char* srcBase = static_cast<const char*>(src->getPixelData()) +
-                          static_cast<long long>(window.y1 - sb.y1) * srcPitch +
-                          static_cast<long long>(window.x1 - sb.x1) * kPixelBytes;
     char* dstBase = static_cast<char*>(dst->getPixelData()) +
                     static_cast<long long>(window.y1 - db.y1) * dstPitch +
                     static_cast<long long>(window.x1 - db.x1) * kPixelBytes;
@@ -237,19 +263,62 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
     // AiCore clamps again for callers that do not come through this parameter.
     const int halo = std::max(0, static_cast<int>(_halo->getValueAtTime(args.time)));
 
+    // The context getRegionsOfInterest() asked for, clamped the same way: a host
+    // that honours the region hands over these pixels and the window's edge
+    // tiles get real neighbours instead of a clamped border; a host that ignores
+    // it leaves sb == window and this collapses to the window.
+    OfxRectI ctx{window.x1 - halo, window.y1 - halo, window.x2 + halo, window.y2 + halo};
+    ctx.x1 = std::max(ctx.x1, sb.x1);
+    ctx.y1 = std::max(ctx.y1, sb.y1);
+    ctx.x2 = std::min(ctx.x2, sb.x2);
+    ctx.y2 = std::min(ctx.y2, sb.y2);
+    const bool hasContext =
+        ctx.x1 != window.x1 || ctx.y1 != window.y1 || ctx.x2 != window.x2 || ctx.y2 != window.y2;
+    const int inW = ctx.x2 - ctx.x1;
+    const int inH = ctx.y2 - ctx.y1;
+    const char* inBase = static_cast<const char*>(src->getPixelData()) +
+                         static_cast<long long>(ctx.y1 - sb.y1) * srcPitch +
+                         static_cast<long long>(ctx.x1 - sb.x1) * kPixelBytes;
+
     try {
         std::vector<float> planar(static_cast<size_t>(channels) * static_cast<size_t>(width) *
                                   static_cast<size_t>(height));
+        // With context from the host the model runs over the padded region and
+        // only the window is written back: pixels outside the window belong to
+        // the host, not to this render.
+        std::vector<float> padded;
+        float* inferenceOut = planar.data();
+        if (hasContext) {
+            padded.assign(static_cast<size_t>(channels) * static_cast<size_t>(inW) *
+                              static_cast<size_t>(inH), 0.0f);
+            inferenceOut = padded.data();
+        }
         TiledOptions opts;
         opts.tileSize = tileSize;
         opts.halo = halo;
 
-        if (tileSize <= 0 || (tileSize >= width && tileSize >= height)) {
-            RunWhole(*runner, reinterpret_cast<const float*>(srcBase), channels, width, height,
-                     srcPitch, planar.data());
+        if (tileSize <= 0 || (tileSize >= inW && tileSize >= inH)) {
+            RunWhole(*runner, reinterpret_cast<const float*>(inBase), channels, inW, inH,
+                     srcPitch, inferenceOut);
         } else {
-            RunTiled(*runner, reinterpret_cast<const float*>(srcBase), channels, width, height,
-                     srcPitch, opts, planar.data());
+            RunTiled(*runner, reinterpret_cast<const float*>(inBase), channels, inW, inH,
+                     srcPitch, opts, inferenceOut);
+        }
+        if (hasContext) {
+            const int dx = window.x1 - ctx.x1;
+            const int dy = window.y1 - ctx.y1;
+            for (int c = 0; c < channels; ++c) {
+                for (int y = 0; y < height; ++y) {
+                    std::memcpy(planar.data() +
+                                    (static_cast<size_t>(c) * static_cast<size_t>(height) +
+                                     static_cast<size_t>(y)) * static_cast<size_t>(width),
+                                inferenceOut +
+                                    (static_cast<size_t>(c) * static_cast<size_t>(inH) +
+                                     static_cast<size_t>(y + dy)) * static_cast<size_t>(inW) +
+                                    static_cast<size_t>(dx),
+                                static_cast<size_t>(width) * sizeof(float));
+                }
+            }
         }
         UnpackRGB(planar.data(), width, height, reinterpret_cast<float*>(dstBase), dstPitch, 0, 0);
     } catch (const std::exception& e) {

@@ -30,6 +30,13 @@ public:
 
     void render(const OFX::RenderArguments& args) override;
 
+    // Asks the host for the pixels the window's edge tiles need: the window
+    // grown by the halo, clamped to the source region of definition. render()
+    // packs exactly that region, so the declaration is what it uses and not a
+    // wish.
+    void getRegionsOfInterest(const OFX::RegionsOfInterestArguments& args,
+                              OFX::RegionOfInterestSetter& rois) override;
+
     bool isIdentity(const OFX::IsIdentityArguments& args,
                     OFX::Clip*& identityClip,
                     double& identityTime) override;
