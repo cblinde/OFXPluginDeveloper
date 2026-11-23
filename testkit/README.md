@@ -4,7 +4,11 @@
 `OfxGetNumberOfPlugins`/`OfxGetPlugin`, checks the `OfxPlugin` struct, and then
 drives the plug-in through a hand-written host: `describe`,
 `describeInContext`, `createInstance`, `isIdentity`, `render`,
-`destroyInstance`, `unload` — twice, in one process. It also holds two instances
+`destroyInstance`, `unload` — twice, in one process. That second cycle is what
+catches a runtime-owned static: its destructor runs at unload and calls into a
+module that is already half gone, so the run hangs or dies *after* the last check
+passed (the rule is [`SKILL.md`](../SKILL.md) §1, rule 13, and `[stage] unload`
+on stderr says where it happened). It also holds two instances
 at once with different parameter values, and renders one thread per instance (or
 several threads on one instance, when the plug-in declares `eRenderFullySafe`) to
 check the declared render thread safety instead of trusting it.
@@ -174,7 +178,9 @@ neighbour's value fails on the pixels, not on a crash; `--concurrency-threads N`
 `--concurrency-threads 0` turns the block off. A plug-in declaring
 `eRenderUnsafe` gets a named skip; `eRenderInstanceSafe` renders different
 instances on different threads; `eRenderFullySafe` renders the same instance on
-all of them.
+all of them. A model slower than about a second per frame turns the default
+4 × 3 into a multi-minute run with no output in between: pass
+`--concurrency-threads 0` there and exercise concurrency against a fast model.
 
 ## Assumptions the checks encode
 

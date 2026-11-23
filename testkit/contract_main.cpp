@@ -709,6 +709,10 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
   }
 
+  // A hung harness is unreadable: the last stage line before silence says which
+  // phase it never finished. stderr, so the check stream on stdout stays exactly
+  // what a script compares.
+  std::fprintf(stderr, "[stage] render\n");
   const OfxStatus renderStatus = host.render(0.0, window);
   if (!check("kOfxImageEffectActionRender", renderStatus == kOfxStatOK, statusName(renderStatus))) {
     return failCycle(host);
@@ -1026,6 +1030,9 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   if (!check("kOfxActionDestroyInstance", destroyStatus == kOfxStatOK, statusName(destroyStatus))) {
     return failCycle(host);
   }
+  // The unload is where a runtime-owned static bites: a destructor that calls
+  // into a half-unmapped module hangs here with the last check already green.
+  std::fprintf(stderr, "[stage] unload\n");
   const OfxStatus unloadStatus = host.unload();
   if (!check("kOfxActionUnload", unloadStatus == kOfxStatOK, statusName(unloadStatus))) {
     return failCycle(host);
