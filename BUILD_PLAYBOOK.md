@@ -59,20 +59,23 @@ OFX_SOURCE_DIR=/path/to/openfx templates/minimal-ofx/build.sh
 
 The deeper check, which drives the whole host protocol through a fake host, is
 [`templates/minimal-ofx/test/run-tests.sh`](templates/minimal-ofx/test/run-tests.sh)
-— 104 checks, exit 0 [V]:
+— 110 checks, exit 0 [V]:
 
 ```
-ok 57 - OfxGetPlugin(0) returns a plug-in
-ok 66 - kOfxActionLoad
-ok 67 - kOfxActionDescribe
-ok 68 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
-ok 76 - kOfxImageEffectActionRender
-ok 98 - render rejects a byte image
-ok 99 - baseline render before the rejected window
-ok 100 - render rejects a window outside the source bounds
-ok 101 - destination is unchanged after the rejected render
-ok 103 - kOfxActionUnload
-contract_test: 104 checks, 0 failed
+ok 60 - OfxGetPlugin(0) returns a plug-in
+ok 69 - kOfxActionLoad
+ok 70 - kOfxActionDescribe
+ok 71 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 79 - kOfxImageEffectActionRender
+ok 101 - render rejects a byte image
+ok 102 - baseline render before the rejected window
+ok 103 - render rejects a window outside the source bounds
+ok 104 - destination is unchanged after the rejected render
+ok 105 - baseline render inside the destination bounds
+ok 106 - render rejects a window outside the destination bounds
+ok 107 - destination is unchanged after the rejected render
+ok 109 - kOfxActionUnload
+contract_test: 110 checks, 0 failed
 ```
 
 ---
@@ -344,7 +347,7 @@ These are the places where building disagreed with prose that already existed.
 | Question | Status |
 |---|---|
 | Does a real host (Resolve/Nuke/Natron/SCRATCH) load, enumerate and instantiate it? | **Unverified.** No host is installed here. |
-| Does `describe`/`describeInContext`/`render` behave under a host's real suite set? | **Partly verified**: the fake host in [`testkit/`](testkit/) drives those actions (104 checks), holds two instances at once and checks their separate values, but it is not a host. |
+| Does `describe`/`describeInContext`/`render` behave under a host's real suite set? | **Partly verified**: the fake host in [`testkit/`](testkit/) drives those actions (110 checks), holds two instances at once and checks their separate values, but it is not a host. |
 | Do the licence texts of the models, fonts and runtimes in the bundle travel with it? | **Not checked by any build.** A bundle can install and render with no notice file; only a file listing proves it. The copy step and the warning are in §3.11. |
 | Does the pixel output match a reference? | **Unverified for this plug-in.** The ONNX template has golden-file tests; the reference gain has no golden. |
 | GPU, Windows/MSVC, macOS/Clang paths | **Unverified.** Only Linux x86-64 with GCC 13.3 was built. |

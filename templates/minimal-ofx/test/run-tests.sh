@@ -34,6 +34,6 @@ echo "[3/3] running the host protocol against ${OFX_FILE}"
   --clip Source \
   --clip Output \
   --byte-dst-rejected \
-  --src-bounds-inset 2 \
+  --src-bounds-inset 2 --dst-bounds-inset 2 \
   --negative-pitch \
   --concurrency-param gain

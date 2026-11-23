@@ -243,14 +243,21 @@ void GainPlugin::setupAndProcess(GainProcessor& processor, const OFX::RenderArgu
     }
 
     // Image::getPixelAddress() returns nullptr outside the image bounds, and a
-    // host may hand over a render window the source region of definition does
-    // not cover (a crop, a transition, wrong bounds). Validate once here: the
-    // destination is checked by ImageProcessor::process(), the source is not,
-    // and both the CPU loop and the CUDA kernel would read where the plug-in
-    // has no pixel.
+    // host may hand over a render window the image does not cover (a crop, a
+    // transition, wrong bounds). Both the CPU loop and the CUDA kernel would then
+    // read or write where the plug-in has no pixel. ImageProcessor::process()
+    // does compare the window with the destination bounds, but it answers with a
+    // bare return and its assert is compiled out of a release build: the host
+    // would get kOfxStatOK and an untouched frame. Refuse both windows here,
+    // where the status is ours to choose.
     const OfxRectI& sb = src->getBounds();
     if (args.renderWindow.x1 < sb.x1 || args.renderWindow.y1 < sb.y1 ||
         args.renderWindow.x2 > sb.x2 || args.renderWindow.y2 > sb.y2) {
+        OFX::throwSuiteStatusException(kOfxStatErrValue);
+    }
+    const OfxRectI& db = dst->getBounds();
+    if (args.renderWindow.x1 < db.x1 || args.renderWindow.y1 < db.y1 ||
+        args.renderWindow.x2 > db.x2 || args.renderWindow.y2 > db.y2) {
         OFX::throwSuiteStatusException(kOfxStatErrValue);
     }
 
