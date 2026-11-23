@@ -47,7 +47,7 @@ source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in mus
 answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
 `--image-origin top|bottom`, `--mark X,Y` (a mark the plug-in draws at a frame
 position; asserted in frame coordinates, so a mirrored one fails with the row it
-landed on),
+landed on; full frame only, since an inset destination moves the row origin),
 `--src`/`--golden`/`--size WxH` for a golden-image render comparison,
 `--set-status-only` when the parameter is not a gain, and `--label-param NAME`
 for a string the plug-in sets itself (a read-only label): read after the first

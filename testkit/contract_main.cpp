@@ -738,6 +738,28 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     // the host says the buffer starts at the frame's top, and a pass-through
     // copy cannot show that because it writes and reads through the same
     // pointer.
+    if (!check("mark position inside the frame",
+               spec.markX >= 0 && spec.markX < spec.width && spec.markY >= 0 &&
+                   spec.markY < spec.height,
+               "(" + std::to_string(spec.markX) + "," + std::to_string(spec.markY) +
+                   ") is outside " + std::to_string(spec.width) + "x" +
+                   std::to_string(spec.height))) {
+      return failCycle(host);
+    }
+    // The row mapping below counts from the frame's origin. An inset destination
+    // publishes bounds that no longer start there, so this would read the wrong
+    // pixel rather than say so.
+    if (!check("mark check needs full-frame destination bounds", spec.dstBoundsInset == 0,
+               "--dst-bounds-inset " + std::to_string(spec.dstBoundsInset) +
+                   " moves bounds.y1; run the mark check on a full frame")) {
+      return failCycle(host);
+    }
+    // A mark on the mirror line is its own mirror, so neither row decides it.
+    if (!check("mark is off the mirror line", 2 * spec.markY != spec.height - 1,
+               "row " + std::to_string(spec.markY) + " is its own mirror in a " +
+                   std::to_string(spec.height) + "-row frame")) {
+      return failCycle(host);
+    }
     const std::vector<float> dst = host.destination();
     const size_t pixels = static_cast<size_t>(spec.width) * spec.height;
     if (!check("destination is readable", dst.size() == pixels * 4,

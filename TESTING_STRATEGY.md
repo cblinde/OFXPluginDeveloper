@@ -462,14 +462,14 @@ so the normal run stays green):
   passed, as a plug-in following the pattern must
 
 --- negative control: mark drawn in a bottom-up frame arrives where the frame says ---
-  ok 25 - overlay mark at (24,8)
-  contract_test: 58 checks, 0 failed
+  ok 28 - overlay mark at (24,8)
+  contract_test: 64 checks, 0 failed
   passed, as a plug-in following the pattern must
 
 --- negative control: mark drawn into a top-down frame is mirrored ---
   FAIL overlay mark at (24,8): the mark is at the mirrored row: the rasteriser
        assumed the pointer's first row is the frame's top
-  contract_test: 25 checks, 1 failed
+  contract_test: 28 checks, 1 failed
   caught (exit 1) with: FAIL overlay mark at (24,8)
 
 negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp
