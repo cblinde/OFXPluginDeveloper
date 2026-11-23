@@ -71,6 +71,10 @@ struct ImageObj {
   int w = 0;
   int h = 0;
   int boundsInset = 0; // published RoD is inset by this much inside the buffer
+  // Where the published bounds start in frame coordinates: 0 for the whole
+  // frame, the render window's origin when the image was cropped to that window.
+  int originX = 0;
+  int originY = 0;
   long long rowBytes = 0;
   void* data = nullptr;
   bool isByte = false;
@@ -125,6 +129,10 @@ struct Impl {
   bool byteDst = false;
   int srcInset = 0; // see FakeHost::setSourceBoundsInset
   int dstInset = 0; // see FakeHost::setDestinationBoundsInset
+  // See FakeHost::setSourceCroppedToWindow: the source is published as the last
+  // render window instead of the whole frame.
+  bool cropSource = false;
+  OfxRectI lastWindow{0, 0, 64, 48};
   std::vector<float> srcRGBA; // tight, top-down
   ImageObj* srcImage = nullptr;
   ImageObj* dstImage = nullptr;
@@ -634,10 +642,18 @@ ClipObj* clipOf(OfxImageClipHandle c) {
   return (s->ownerKind == kClip) ? static_cast<ClipObj*>(s->owner) : nullptr;
 }
 
-void buildSourceImage(ImageObj* img) {
-  img->w = g->imgW;
-  img->h = g->imgH;
+// Fills `img` from the frame's pixels inside `rect` (frame coordinates) and
+// publishes exactly that rect as the bounds. The full frame is the ordinary
+// case; the render window is what a host that ignores the declared region
+// hands over.
+void buildSourceImage(ImageObj* img, const OfxRectI& rect) {
+  const int x0 = rect.x1;
+  const int y0 = rect.y1;
+  img->w = rect.x2 - rect.x1;
+  img->h = rect.y2 - rect.y1;
   img->boundsInset = g->srcInset;
+  img->originX = x0;
+  img->originY = y0;
   const int pitchPixels = g->padded ? img->w + kPadPixels : img->w;
   const long long bytesPerRow = static_cast<long long>(pitchPixels) * 16;
   const bool negative = g->negativePitch;
@@ -650,10 +666,10 @@ void buildSourceImage(ImageObj* img) {
   for (int y = 0; y < img->h; ++y) {
     const int memRow = reversed ? (img->h - 1 - y) : y;
     float* row = base + static_cast<size_t>(memRow) * pitchPixels * 4;
+    const size_t framePixel = (static_cast<size_t>(y0 + y) * g->imgW + static_cast<size_t>(x0));
     for (int x = 0; x < img->w; ++x) {
       for (int c = 0; c < 4; ++c) {
-        row[x * 4 + c] = (c < 3) ? g->srcRGBA[(static_cast<size_t>(y) * img->w + x) * 4 + c]
-                                 : g->srcRGBA[(static_cast<size_t>(y) * img->w + x) * 4 + 3];
+        row[x * 4 + c] = g->srcRGBA[(framePixel + static_cast<size_t>(x)) * 4 + c];
       }
     }
     // Poison the padding so a plug-in that steps by width instead of rowBytes
@@ -678,6 +694,8 @@ void buildDstImage(ImageObj* img) {
   img->h = g->imgH;
   img->isByte = g->byteDst;
   img->boundsInset = g->dstInset;
+  img->originX = 0;
+  img->originY = 0;
   const int inset = img->boundsInset;
   // An inset destination is smaller than the window a test asks for, and a
   // plug-in that ignores the inset addresses before the declared region. Give
@@ -718,14 +736,27 @@ void buildDstImage(ImageObj* img) {
 
 ImageObj* imageFor(ClipObj* clip) {
   const bool isSource = clip->name == kOfxImageEffectSimpleSourceClipName;
+  // Which pixels the source image covers: the whole frame, or - when the host
+  // ignores the plug-in's declared region - just the window it asked for.
+  OfxRectI rect{0, 0, g->imgW, g->imgH};
+  if (isSource && g->cropSource) {
+    rect = g->lastWindow;
+    rect.x1 = std::max(rect.x1, 0);
+    rect.y1 = std::max(rect.y1, 0);
+    rect.x2 = std::min(rect.x2, g->imgW);
+    rect.y2 = std::min(rect.y2, g->imgH);
+  }
+  const int wantW = rect.x2 - rect.x1;
+  const int wantH = rect.y2 - rect.y1;
   // A render worker gets its own images: two threads writing one destination
   // buffer would test the host, not the plug-in.
   if (g->parallel) {
     ImageObj*& img = isSource ? tlsImages.src : tlsImages.dst;
     if (!img) img = new ImageObj();
-    if (img->w != g->imgW || img->h != g->imgH) {
+    if (img->w != wantW || img->h != wantH || img->originX != rect.x1 ||
+        img->originY != rect.y1) {
       if (isSource) {
-        buildSourceImage(img);
+        buildSourceImage(img, rect);
       } else {
         buildDstImage(img);
       }
@@ -734,9 +765,10 @@ ImageObj* imageFor(ClipObj* clip) {
   }
   ImageObj*& img = isSource ? g->srcImage : g->dstImage;
   if (!img) img = new ImageObj();
-  if (img->w != g->imgW || img->h != g->imgH) {
+  if (img->w != wantW || img->h != wantH || img->originX != rect.x1 ||
+      img->originY != rect.y1) {
     if (isSource) {
-      buildSourceImage(img);
+      buildSourceImage(img, rect);
     } else {
       buildDstImage(img);
     }
@@ -754,10 +786,10 @@ void publishImageProps(ImageObj* img, ClipObj* clip) {
                static_cast<long long>(inset) * (img->isByte ? 4 : 16);
   setPointer(&img->props, kOfxImagePropData, 0, data);
   setInt(&img->props, kOfxImagePropRowBytes, 0, static_cast<int>(img->rowBytes));
-  setInt(&img->props, kOfxImagePropBounds, 0, inset);
-  setInt(&img->props, kOfxImagePropBounds, 1, inset);
-  setInt(&img->props, kOfxImagePropBounds, 2, img->w - inset);
-  setInt(&img->props, kOfxImagePropBounds, 3, img->h - inset);
+  setInt(&img->props, kOfxImagePropBounds, 0, img->originX + inset);
+  setInt(&img->props, kOfxImagePropBounds, 1, img->originY + inset);
+  setInt(&img->props, kOfxImagePropBounds, 2, img->originX + img->w - inset);
+  setInt(&img->props, kOfxImagePropBounds, 3, img->originY + img->h - inset);
   setString(&img->props, kOfxImageEffectPropPixelDepth, 0,
             img->isByte ? kOfxBitDepthByte : kOfxBitDepthFloat);
   setString(&img->props, kOfxImageEffectPropComponents, 0, kOfxImageComponentRGBA);
@@ -1165,6 +1197,8 @@ void Impl::reset() {
   byteDst = false;
   srcInset = 0;
   dstInset = 0;
+  cropSource = false;
+  lastWindow = OfxRectI{0, 0, 64, 48};
   imgW = 64;
   imgH = 48;
   srcRGBA.assign(static_cast<size_t>(imgW) * imgH * 4, 0.0f);
@@ -1340,6 +1374,10 @@ void FakeHost::fillTimeArgs(void* inArgsPtr, double time, const OfxRectI& window
   setInt(inArgs, kOfxImageEffectPropRenderWindow, 2, window.x2);
   setInt(inArgs, kOfxImageEffectPropRenderWindow, 3, window.y2);
   setString(inArgs, kOfxImageEffectPropFieldToRender, 0, kOfxImageFieldBoth);
+  // The window a host would crop a declared region to; see
+  // FakeHost::setSourceCroppedToWindow. Parallel workers keep their own, so this
+  // is the host-thread window only.
+  if (!impl_->parallel) impl_->lastWindow = window;
 }
 
 void FakeHost::invalidateImages() {
@@ -1429,6 +1467,13 @@ std::vector<float> FakeHost::destinationBuffer() const {
   // The whole allocation in memory order, margins included. destination() walks
   // the declared bounds; this one shows a write that landed outside them.
   return impl_->dstImage->floats;
+}
+
+void FakeHost::setSourceCroppedToWindow(bool on) {
+  impl_->cropSource = on;
+  // The source changes shape with the window, so the cached image goes.
+  delete impl_->srcImage;
+  impl_->srcImage = nullptr;
 }
 
 void FakeHost::setPaddedRows(bool on) {

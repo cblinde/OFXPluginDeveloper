@@ -48,7 +48,7 @@ column perfectly and never ran the right one.
 | Layer | What it tests | Cost to build | What it catches | Here |
 |---|---|---|---|---|
 | **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | the templates |
-| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 146 checks |
+| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 158 checks |
 | **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) §1 |
 | **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | the templates: `testkit/fake_host.*` |
 | **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | the templates |
@@ -180,7 +180,7 @@ testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
 
 Measured (CPU-only build of the CUDA template, this machine): **110 checks, 0
 failed** for `ReferenceGain`, **136 checks, 0 failed** for `MinimalCudaGain`,
-**146 checks, 0 failed** for `OnnxInference`. The
+**158 checks, 0 failed** for `OnnxInference`. The
 checks are: the two export symbols; `pluginApi`, `apiVersion`, non-empty
 `pluginIdentifier` (stable across a second load), `pluginVersionMajor/Minor`;
 non-null `setHost`/`mainEntry`; then a whole `describe → describeInContext →
@@ -332,6 +332,24 @@ region grown by `N` and clamped to the source region of definition. A plug-in
 that answers `kOfxStatReplyDefault` — it never reported a region — fails the
 first check by name, because a silently shrunken RoI costs pixels at the frame
 border and nothing else notices.
+
+A rectangle is a promise about pixels, so `--roi-context` tests the pixels. It
+renders the whole frame, then a window inset by three pixels, and requires the
+overlap to be **bit-identical** to the whole-frame render: the plug-in said which
+neighbours it reads and the host handed them over, so the arithmetic has to reach
+the same result. It then repeats that window against a host that ignores the
+declaration (`FakeHost::setSourceCroppedToWindow`, which publishes the source
+cropped to the window), and requires the same pixels to **differ** — otherwise
+the first comparison could pass without anything outside the window ever being
+read. Measured: without the declaration honoured the first difference sits at
+pixel (3,3), the window's own border.
+
+This runs with the plug-in's default tile size, so the window goes through the
+model in one pass and the comparison can be exact. A window the plug-in splits
+internally is blended from overlapping tiles (`TileAccumulator` feathers them),
+which is not bit-identical by construction; that path is covered by the halo
+negative control in `templates/onnx-inference-ofx/test/ai_pipeline_test.cpp:300`
+with a tolerance, not by this check.
 
 ### 5.2 How to reuse it for your own plug-in
 
@@ -678,7 +696,7 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | GPU throughput | 1920×1080: vec4 0.212 ms / scalar 0.222 ms, ~312/300 GB/s **[B]** |
 | Artifact + fake host (reference) | 110 checks, 0 failed, two load/unload cycles, two live instances with separate values |
 | Artifact + fake host (CUDA) | 136 checks, 0 failed, two load/unload cycles, four instances × three concurrent renders |
-| Artifact + fake host (inference) | 146 checks, 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo, four instances × three concurrent renders |
+| Artifact + fake host (inference) | 158 checks, 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | cppcheck clean, shellcheck clean |
 

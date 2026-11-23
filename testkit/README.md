@@ -59,6 +59,18 @@ behind it; the answer is read from the outArgs property Support writes per clip
 The plug-in's own context parameter has to match `N` (e.g. `--set halo=2
 --roi-expand 2`).
 
+`--roi-context` checks the pixels rather than the rectangle. It renders the whole
+frame, then a window inset by three pixels, and requires the overlap to be
+bit-identical to the whole-frame render; then it renders that window again
+against a host that ignores the declaration, and requires the pixels to differ.
+The second render is what gives the first one teeth: if nothing outside the
+window were read, both renders would agree.
+
+`FakeHost::setSourceCroppedToWindow(true)` is the host side of that second
+render: the source image is published cropped to the window, and its origin and
+size come from the window the host asked for, so a plug-in that reads past its
+bounds reads pixels the host never supplied.
+
 `--src-bounds-inset N` publishes a source region of definition inset by `N`
 inside its buffer, `--dst-bounds-inset N` the same for the destination. Each one
 adds a baseline render, a render the plug-in has to reject with
@@ -166,10 +178,10 @@ is deliberately not part of `./run-tests.sh`: a normal run has to stay green.
 1. **The multi-resolution and tile protocol.** It does not set
    `kOfxImageEffectPropTilesRoD` or slice render windows, so `setSupportsTiles(true)`
    paths are untested. The region-of-interest **action** is asked and checked
-   (`--roi-expand`), but the host does not act on the answer: it always hands
-   over the whole frame, so a plug-in that reads the region it declared stays
-   inside the image. What is untested is a host that clips the source image to
-   the answered RoI, and one that renders slices.
+   (`--roi-expand`), and the pixels are checked both ways round (`--roi-context`:
+   whole frame handed over vs. the source cropped to the window). What is
+   untested is a host that slices one render into several windows, and the
+   `kOfxImageEffectPropTilesRoD` protocol those slices travel with.
 2. **Clip preferences and host scheduling.** `getClipPreferences` and per-clip
    depths/PARs are not exercised. `multiThread` does run real workers (up to
    four), so a pixel loop is split into bands and executed concurrently; that is

@@ -122,6 +122,13 @@ public:
   // given; the buffer carries a margin, so that write is a pixel change the test
   // can see instead of a heap overflow. destinationBuffer() reads it back.
   void setDestinationBoundsInset(int pixels);
+  // A host that ignores the region the plug-in declared in
+  // kOfxImageEffectActionGetRegionsOfInterest hands over only the window it asked
+  // for: the source image is cropped to that window, so a plug-in that reads
+  // outside it reads pixels the host never supplied. Off by default - the host
+  // then hands over the whole frame, which is the context a host that honours
+  // the declaration gives. Host thread only (not for renderConcurrently).
+  void setSourceCroppedToWindow(bool on);
   void setSourcePlanar(const float* rgb, int width, int height); // 3 channels
   void setSourceConstant(float r, float g, float b, float a);
   void setPaddedRows(bool on);           // rowBytes > width*16, poisoned margin

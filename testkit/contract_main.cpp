@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -182,6 +183,11 @@ struct Spec {
   // requested region grown by this many pixels on every side, clamped to the
   // source region of definition. Negative disables the check.
   int roiExpand = -1;
+  // --roi-context: prove the declared region is used, with pixels rather than a
+  // rectangle. An inset window has to match the whole-frame render bit for bit
+  // when the host hands over the surrounding pixels, and must stop matching when
+  // it hands over the window alone.
+  bool roiContext = false;
   bool negativePitch = false;
   bool topOrigin = false;
   // --set-status-only: render after --set, but assert only the status and that
@@ -442,6 +448,35 @@ bool checkDestinationUnchanged(const std::vector<float>& before,
                    ? "first difference at float " + std::to_string(firstDiff)
                    : std::to_string(before.size()) + " -> " +
                          std::to_string(after.size()) + " floats");
+}
+
+// Bitwise comparison of one rectangle of two tightly packed RGBA destinations.
+// Empty when every float there is bit-identical, otherwise the first difference
+// as text. Exact on purpose: a render that reads the pixels its host was told to
+// hand over produces the same bits as the whole-frame render, and one that reads
+// a border it did not get produces a seam - a tolerance would hide the seam it
+// is meant to find.
+std::string firstBitDifference(const std::vector<float>& a, const std::vector<float>& b, int stride,
+                               const OfxRectI& rect) {
+  for (int y = rect.y1; y < rect.y2; ++y) {
+    for (int x = rect.x1; x < rect.x2; ++x) {
+      const size_t base = (static_cast<size_t>(y) * static_cast<size_t>(stride) +
+                           static_cast<size_t>(x)) * 4;
+      for (int c = 0; c < 4; ++c) {
+        if (a.size() <= base + c || b.size() <= base + c) return "destination shorter than the frame";
+        std::uint32_t ba = 0;
+        std::uint32_t bb = 0;
+        std::memcpy(&ba, &a[base + c], sizeof ba);
+        std::memcpy(&bb, &b[base + c], sizeof bb);
+        if (ba != bb) {
+          return "pixel (" + std::to_string(x) + "," + std::to_string(y) + ") channel " +
+                 std::to_string(c) + ": " + std::to_string(a[base + c]) + " vs " +
+                 std::to_string(b[base + c]);
+        }
+      }
+    }
+  }
+  return std::string();
 }
 
 bool sameRect(const OfxRectD& a, const OfxRectD& b) {
@@ -734,6 +769,53 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
   }
 
+  if (spec.roiContext) {
+    // GetRegionsOfInterest is a promise about pixels, not about a rectangle. Ask
+    // for a window inset inside the frame and compare it with the whole-frame
+    // render: every pixel there must be identical to the bit, because the plug-in
+    // said which neighbours it reads and the host handed them over. Then repeat
+    // the render against a host that ignores the declaration and supplies only the
+    // window - the same pixels must now differ, or the declared region was never
+    // used and the two checks would pass for the wrong reason.
+    const int margin = 3;
+    const OfxRectI inner{window.x1 + margin, window.y1 + margin, window.x2 - margin,
+                        window.y2 - margin};
+    OfxStatus st = host.render(0.0, window);
+    if (!check("roi context: whole-frame render", st == kOfxStatOK, statusName(st))) {
+      return failCycle(host);
+    }
+    const std::vector<float> whole = host.destination();
+    if (!check("roi context: destination is readable",
+               whole.size() == static_cast<size_t>(spec.width) * spec.height * 4,
+               std::to_string(whole.size()) + " floats")) {
+      return failCycle(host);
+    }
+    st = host.render(0.0, inner);
+    if (!check("roi context: render of an inset window", st == kOfxStatOK, statusName(st))) {
+      return failCycle(host);
+    }
+    const std::vector<float> withContext = host.destination();
+    const std::string same = firstBitDifference(whole, withContext, spec.width, inner);
+    if (!check("roi context: the inset window matches the whole frame bit for bit",
+               same.empty(), same)) {
+      return failCycle(host);
+    }
+    host.setSourceCroppedToWindow(true);
+    st = host.render(0.0, inner);
+    // Reset before reading back: the cropped image is freed with the mode.
+    const std::vector<float> withoutContext = host.destination();
+    host.setSourceCroppedToWindow(false);
+    if (!check("roi context: render of the same window without a context region",
+               st == kOfxStatOK, statusName(st))) {
+      return failCycle(host);
+    }
+    const std::string differs = firstBitDifference(whole, withoutContext, spec.width, inner);
+    if (!check("roi context: without a context region the same window differs", !differs.empty(),
+               "the window is bit-identical to the whole frame, so nothing outside it was read")) {
+      return failCycle(host);
+    }
+  }
+
   if (spec.srcBoundsInset > 0) {
     // A host may hand a render window the source RoD does not cover (a crop, a
     // transition, wrong bounds). Image::getPixelAddress() returns nullptr for
@@ -812,7 +894,7 @@ int main(int argc, char** argv) {
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
                  "       [--negative-pitch] [--image-origin top|bottom] [--set-status-only]\n"
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
-                 "       [--dst-bounds-inset N] [--roi-expand N]\n"
+                 "       [--dst-bounds-inset N] [--roi-expand N] [--roi-context]\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
@@ -887,6 +969,8 @@ int main(int argc, char** argv) {
       spec.dstBoundsInset = std::atoi(next("--dst-bounds-inset").c_str());
     } else if (a == "--roi-expand") {
       spec.roiExpand = std::atoi(next("--roi-expand").c_str());
+    } else if (a == "--roi-context") {
+      spec.roiContext = true;
     } else if (a == "--set-status-only") {
       spec.setStatusOnly = true;
     } else if (a == "--negative-pitch") {

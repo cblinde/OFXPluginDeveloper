@@ -84,7 +84,7 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     --clip Source --clip Output --identity --size 64x48 \
     --src "${ROOT}/models/test_input.bin" --golden "${ROOT}/models/test_golden.bin" \
     --set "modelPath=${ROOT}/models/test_conv.onnx" --set halo=2 \
-    --roi-expand 2 \
+    --roi-expand 2 --roi-context \
     --not-identity-after-set --negative-pitch --byte-dst-rejected \
     --src-bounds-inset 2 --dst-bounds-inset 2
 else
@@ -151,7 +151,7 @@ else
     --src "${ROOT}/models/test_input.bin" --golden "${ROOT}/models/test_golden.bin" \
     --set "modelPath=${ROOT}/models/test_conv.onnx" \
     --not-identity-after-set --byte-dst-rejected --src-bounds-inset 2 \
-    --dst-bounds-inset 2 --set halo=2 --roi-expand 2 \
+    --dst-bounds-inset 2 --set halo=2 --roi-expand 2 --roi-context \
     > "${TMP}/vg-contract.log" 2>&1 || {
       echo "  FAIL: memcheck reported errors" >&2
       grep -E "ERROR SUMMARY|Invalid|uninitialised|definitely lost" "${TMP}/vg-contract.log" | head -20 >&2
