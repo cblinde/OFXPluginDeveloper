@@ -412,7 +412,18 @@ cuDNN 9 components copied beside it the bundle ran on a GPU host, while a bundle
 with only the cuDNN dispatcher exited 127 inside the provider
 (`AI_MODEL_INTEGRATION.md` §7). Run `dumpbin /dependents` on the provider you
 ship and recheck per ORT version; a provider that imports the core leaves the
-sidecar shape (`AI_MODEL_INTEGRATION.md` §2). What such a plug-in draws over the model's output
+sidecar shape (`AI_MODEL_INTEGRATION.md` §2).
+
+Two consequences for the bundle itself, both measured in a host that ships its
+own CUDA stack (Resolve 21.2): the preload must **skip the groups the host
+already has loaded** — imports resolve by base name, so a second `cudnn64_9.dll`
+mixes two minor versions in one process — and skip `cuFFTW`, which the provider
+never imports and which fails 127 next to a newer host cuFFT. `-DOFXPLUGIN_CUDA_FROM_HOST=ON` is the
+packaging answer for a host that brings its own CUDA: provider and shared library
+only, no cuDNN/cuBLAS/cuFFT/cudart of ours to collide (2.8 GB → 1.1 GB in the
+reporter's bundle). Neither replaces the runtime guard on a full bundle, and a
+fake host cannot show the problem at all (`AI_MODEL_INTEGRATION.md` §7,
+`tools/host_cuda_probe.cpp`). What such a plug-in draws over the model's output
 is a separate contract — destination pitch, frame-coordinate placement,
 premultiplied plates, one rasterising origin — spelled out in
 [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
@@ -424,6 +435,16 @@ builds. `POST_BUILD` rather than a configure-time copy is what puts an edited
 notice into an already installed bundle on the next build. A bundle of AGPL
 weights that installs and renders without the notice has shipped for eight
 builds in a field-tested plug-in **[B]**.
+
+**One thread budget per node.** An inference plug-in may hold several ONNX
+Runtime sessions (a detector and a text tower) inside a host that holds several
+instances of the node. Build all of them through one session-options helper, make
+the intra-op count a parameter whose default is what the plug-in already did,
+remember the value each session was created with, and print it in the status
+label in both provider modes — that label is the only evidence the setting
+reached the session (`--label-param` asserts it). It is a CPU-path control:
+measured on one RTX 3060 it changed nothing under CUDA (`AI_MODEL_INTEGRATION.md`
+§7).
 
 **Install locations.**
 

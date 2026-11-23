@@ -442,7 +442,7 @@ What it does **not** prove: no host has rendered through it, no CUDA session has
 ever been created, and no timing is claimed. The provider *request* is compiled
 and its failure path is tested; the success path is not. There is no GPU and no
 provider binary in this repository, so on a GPU machine the remaining work is to
-confirm the label flips to `CUDA (device 0)`, measure the run with
+confirm the label flips to `CUDA (device 0, 1 thread, …)` and names the stack, measure the run with
 `tools/bench_ep.py` (one row per provider, plus the providers the session really
 ended up with, so a silent fallback is visible next to the number), and repeat
 the bundle check with the provider DLLs in place — the recipe below is documented from the ORT API, and every number in it
@@ -605,17 +605,47 @@ make the choice visible — and the consequence is packaging, not a second build
   `DllMain` needs the mailbox that only the ORT core sets; ORT finds the provider
   beside the core by itself. Preload only what the provider imports — cuDNN,
   cuBLAS/cuBLASLt, cuFFT, cudart — or the load fails with **126** (**B**).
-- **cuDNN 9 on Windows is not one file, and the preload has to be a loop.** The
-  provider imports the dispatcher (`cudnn64_9.dll`); the dispatcher loads its
-  components (`cudnn_graph64_9.dll`, `cudnn_ops64_9.dll`, `cudnn_heuristic64_9.dll`,
-  …) by base name at run time, and a plug-in directory is not on the default
-  search path. A bundle that copied only the dispatcher did not fall back to the
-  CPU: the process **exited 127** inside the provider (**B**). The template now
-  copies `cudnn*64_*.dll` and `ModelRunner` loads every non-`onnxruntime*` DLL
-  beside the module by absolute path before asking for `OrtGetApiBase` — that
-  load is what makes the later name-based lookups find what is already in the
-  process (**[B]** for the failure and the fix in the handover; the preload itself
-  is **[I]** here — no Windows machine compiles it).
+  `cufftw*` is **not** in that list, even though it shares the cuFFT prefix: the
+  provider never imports cuFFTW, and it is the file whose 127 cost a whole GPU
+  path (below).
+- **cuDNN 9 on Windows is not one file, and the preload has to be a guard as
+  well as a loop.** The provider imports the dispatcher (`cudnn64_9.dll`); the
+  dispatcher loads its components (`cudnn_graph64_9.dll`, `cudnn_ops64_9.dll`,
+  `cudnn_heuristic64_9.dll`, …) by base name at run time, and a plug-in directory
+  is not on the default search path. A bundle that copied only the dispatcher did
+  not fall back to the CPU: the process **exited 127** inside the provider
+  (**B**). The template copies `cudnn*64_*.dll` and, on Windows, preloads by
+  absolute path what the provider imports — but only where the host does not
+  already own that base name:
+  * **cuFFTW is skipped.** The provider never imports it, and it imports the exact
+    cuFFT build it shipped with: next to a host's newer `cufft64_11.dll` the load
+    fails 127 (a broken *import*, not a missing file — that is 126). An
+    all-or-nothing preload turned that unused file into `cannot load
+    cufftw64_11.dll (Windows error 127)` on the provider label while the whole GPU
+    path stayed down (**B**).
+  * **A group the host has loaded is left alone** — cuDNN, cuBLAS/cuBLASLt,
+    cuFFT, cudart — and the provider label says `host CUDA stack` instead of
+    `bundled CUDA`. The test has to compare the loaded module's *path*: an
+    explicit load by absolute path succeeds and leaves a **second** module of the
+    same base name, and an *import* is resolved by base name against whichever
+    copy is loaded under it. Measured in Resolve 21.2: two `cudnn64_9.dll`
+    (host 9.8.0.87, bundle 9.1.0.70) in one process, and the 9.1 components
+    failing 127 against the 9.8 dispatcher (**B**). "A module with that name
+    exists" is the wrong test — after your own preload it is true for your copy.
+  * **One unneeded file must not end the GPU attempt.** Keep loading the rest, let
+    the session decide, and name the file that failed in the label if the provider
+    then fails. The template records skipped and failed names and appends them to
+    the fallback reason.
+
+  This class of bug is invisible to a fake host: it has nothing loaded, so the
+  bundle's own DLLs are used and every check is green. The reproduction is
+  `tools/host_cuda_probe.cpp` — one MSVC file, no dependencies, written and run
+  against Resolve 21.2 by the reporter and **not compiled in this repository**
+  (**[B]** for its output, **[I]** here): it loads the host's folder, then the
+  bundle's by absolute path, then prints which file the process resolves for each
+  base name. `FAILED (error 127)` on a component means the bundle cannot be
+  preloaded next to that host and the guard is mandatory. The preload in the
+  template is **[I]** here — no Windows machine compiles it.
 - **Budget the size.** The provider imports `cufft64_*` even for a model with no
   FFT in it; with cuDNN 9 + cuBLAS 12 + cuFFT a bundle was 2.4–2.7 GB, of which
   the provider alone was 643 MB (**B**). That is a product decision — one
@@ -626,7 +656,15 @@ make the choice visible — and the consequence is packaging, not a second build
   provider library and cuDNN/cuBLAS/cuBLASLt/cuFFT/cudart beside the `.ofx`,
   names every missing file as a `CMake Warning` with the load error it causes
   (126), prints the total size at configure time, and never fails a configure
-  for a machine without a CUDA runtime. The option works on Windows too, and what
+  for a machine without a CUDA runtime. `-DOFXPLUGIN_CUDA_FROM_HOST=ON` is the
+  other packaging: only the provider and `onnxruntime_providers_shared` travel,
+  so its imports resolve to the host's cuDNN 9 / cuBLAS 12 / cuFFT 11 / cudart 12
+  and a second copy of a base name cannot exist. Measured on the reference
+  machine: 15 → 3 DLLs in `Contents/Win64`, 2.8 GB → 1.1 GB, and the same contract
+  result (78 checks, 0 failed) with the host's folder prepended to `PATH` (**B**).
+  It needs a CUDA host, so it is a deployment choice rather than a better
+  default; the guard above is what makes one full bundle correct on both kinds of
+  host. The option works on Windows too, and what
   decides whether it can is the provider's **import table**, not the platform:
   the Windows bundle ships the core as `onnxruntime-ofx.dll`, because that private
   name is what keeps a host's own runtime (Resolve 21: 1.13) from capturing the
@@ -666,6 +704,44 @@ make the choice visible — and the consequence is packaging, not a second build
   system memory instead of refusing (**B**). A window that never fails is "no
   ceiling found", not "fits", and the number that matters on such a machine is
   measured frame time at the sizes you ship.
+
+#### One thread budget per node, and a label that proves it
+
+ONNX Runtime's default is one intra-op thread **per physical core, per session**.
+An inference plug-in is not one session: a detector plus a text tower for the
+promptable models, and a host holds as many instances as the timeline has nodes.
+Each of those taking a full core count with affinity is how a plug-in that
+benchmarks well makes a timeline stutter. Five rules keep it one budget:
+
+- **One helper builds every session.** The template's `MakeSessionOptions(threads)`
+  sets the intra-op count, `inter_op = 1`, `ORT_SEQUENTIAL` and `ORT_ENABLE_ALL`,
+  and the CPU fallback gets the same helper. A second session built with its own
+  copy of those options is how two sessions drift apart.
+- **That drift is not hypothetical.** In a reference plug-in the detector took the
+  `intraThreads` parameter while the text tower kept a hard-coded `min(CPU/2, 4)`:
+  a node at 8 ran its tower on 4 and gave no sign of it. Passing the value is half
+  the fix; the other half is remembering the count each session was created with,
+  or the cache that avoids rebuilding the tower per frame keeps the old number.
+- **Make it a parameter whose default is what the plug-in already did**, so a
+  saved project renders exactly as before, and treat a change as "re-create the
+  session once", not once per frame. The template takes `intraThreads` in its
+  constructor and defaults to 1, because a host already calls `render()` on
+  several threads.
+- **Print the count in the status label, in both modes** — `CPU (8 threads)`,
+  `CUDA (device 0: …, 6 threads)`; the template writes `CPU (1 thread)` and
+  `CUDA (device 0, 1 thread, host CUDA stack)`. That line is what makes a value
+  like `--set intraThreads=3` checkable from the contract harness
+  (`--label-param`): without it the parameter can be wired to nothing and no test
+  notices.
+- **Do not present it as a GPU speed-up.** Measured on one RTX 3060, medians of
+  12 steady-state samples, 4/6/8 threads: YOLO26m at 640×480 gave 38/34/38 ms and
+  YOLO26n at 1920×1080 gave 23/25/24 ms, with 22–54 ms spread inside a single
+  setting — no effect, i.e. smaller than the noise. The CPU path is where it
+  matters: 297/269/233 ms and 42/42/39 ms (9 samples) (**B**). A control that
+  changes only one path belongs in that path's group, not beside "Use CUDA".
+
+Honest limit: those numbers are single-instance. The multi-instance argument is
+why a cap exists at all, and it is not something the reporter measured (**B**).
 
 The request itself is compiled and its failure path is verified here: this
 machine links the CPU package of ONNX Runtime, `AppendExecutionProvider_CUDA`
