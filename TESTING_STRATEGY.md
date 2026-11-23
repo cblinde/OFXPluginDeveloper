@@ -302,8 +302,8 @@ and the templates share it rather than each carrying a copy.
 | `testkit/fake_host.cpp` | ~1,100 | the five suites + message suite, the object model (descriptor, instance, clips, parameters, images) |
 | `testkit/contract_main.cpp` | ~500 | the checks, the `dlopen`, and the command line |
 | `testkit/build-contract-test.sh` | ~50 | compiles both into one binary; finds headers from the template's `CMakeCache.txt` |
-| `testkit/negative-controls/` | 2 stubs + 1 six-way | deliberately broken plug-ins that prove the harness fails, plus one ROI stub built plain or internally tiled with the context read or ignored, and twice more for the label check (`-DNO_LABEL` never writes it, `-DWITH_LABEL` does) |
-| `testkit/run-negative-controls.sh` | ~175 | builds the eight controls, asserts each fault is rejected with the right message **and** that the context-reading and label-writing builds pass |
+| `testkit/negative-controls/` | 2 stubs + 1 seven-way | deliberately broken plug-ins that prove the harness fails, plus one ROI stub built plain or internally tiled with the context read or ignored, twice more for the label check (`-DNO_LABEL` never writes it, `-DWITH_LABEL` does), and once that draws a mark (`-DDRAW_MARK`) |
+| `testkit/run-negative-controls.sh` | ~197 | builds the twelve controls, asserts each fault is rejected with the right message **and** that the context-reading and label-writing builds pass while the mark build passes only in the bottom-up layouts |
 
 Coverage, precisely: all **18** `OfxPropertySuiteV1` functions (including the `*N`
 and `propGetDimension` variants), all **13** `OfxImageEffectSuiteV1` functions,
@@ -396,7 +396,7 @@ out/contract_test out/MyPlugin.ofx \
 
 ### 5.3 Proof that it can fail
 
-A harness that has only ever passed is untested. Eight controls, run by
+A harness that has only ever passed is untested. Twelve controls, run by
 `testkit/run-negative-controls.sh` (deliberately **not** part of `./run-tests.sh`,
 so the normal run stays green):
 
@@ -460,6 +460,17 @@ so the normal run stays green):
   ok 52 - label parameter 'provider' = "CPU (stub, written by render)"
   contract_test: 52 checks, 0 failed
   passed, as a plug-in following the pattern must
+
+--- negative control: mark drawn in a bottom-up frame arrives where the frame says ---
+  ok 25 - overlay mark at (24,8)
+  contract_test: 58 checks, 0 failed
+  passed, as a plug-in following the pattern must
+
+--- negative control: mark drawn into a top-down frame is mirrored ---
+  FAIL overlay mark at (24,8): the mark is at the mirrored row: the rasteriser
+       assumed the pointer's first row is the frame's top
+  contract_test: 25 checks, 1 failed
+  caught (exit 1) with: FAIL overlay mark at (24,8)
 
 negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp
 ```

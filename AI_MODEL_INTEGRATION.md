@@ -683,8 +683,12 @@ probe hides a mirror, and "bytes changed" hides everything else
 [`testkit/README.md`](testkit/README.md): `--image-origin top|bottom` and
 `--negative-pitch` set the two axes independently, the two top-down layouts are
 negative controls, and a pass-through copy satisfies all four while a mark drawn
-at a chosen position does not. (A 94-check `tile_window_test` that draws per
-layout exists in the reporting tree, not in this repository **[B]**.)
+at a chosen position does not. `testkit/run-negative-controls.sh` runs that as a
+control: its `-DDRAW_MARK` stub writes one 8×8 mark through the destination's
+bounds and pitch, `--mark 24,8` reads it back in frame order, and the build
+passes in both bottom-up layouts and fails `the mark is at the mirrored row` in
+both top-down ones (**V**). A 94-check `tile_window_test` that draws per layout
+also exists in the reporting tree, not in this repository **[B]**.
 
 Cited back from where the question arises: [`SKILL.md`](SKILL.md) §5 (writing
 back is the same pitch arithmetic against the destination) and

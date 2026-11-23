@@ -21,6 +21,12 @@
  * dependency, so the filter has to be small enough to read in one sitting and
  * reproducible to the bit (same nine floats in the same order for every pixel).
  *
+ * -DDRAW_MARK is the drawing control: the same box filter, then one 8x8 mark
+ * written at a fixed image position through the destination's bounds and pitch.
+ * Run in the two bottom-up layouts it passes; run in the two top-down ones the
+ * harness's mark check sees it at the mirrored row, which is the difference a
+ * pass-through copy cannot show.
+ *
  * Two more controls come out of this file for the label check that
  * `--label-param` makes. -DNO_LABEL declares the read-only `provider` label,
  * gives it a default, and never writes it: the harness must reject that, or
@@ -43,7 +49,9 @@
 /* Four builds come out of this one file: plain and internally tiled, each in a
  * context-reading and a context-ignoring form. The ids have to differ because
  * the harness is told which plug-in to expect. */
-#if defined(NO_LABEL)
+#if defined(DRAW_MARK)
+#define PLUGIN_ID "com.testkit.control.mark"
+#elif defined(NO_LABEL)
 #define PLUGIN_ID "com.testkit.negative.nolabel"
 #elif defined(WITH_LABEL)
 #define PLUGIN_ID "com.testkit.control.labelok"
@@ -188,6 +196,37 @@ static void filterWindow(OfxPropertySetHandle srcProps, OfxPropertySetHandle dst
 #endif
 }
 
+#ifdef DRAW_MARK
+/* The one thing this build does that the ROI builds do not: draw. Addressed the
+ * way the docs say - destination base, destination pitch, offset by
+ * (position - bounds) - so the mark lands where the frame says it should. A
+ * buffer whose pointer claims to start at the frame's top still gets the mark at
+ * this buffer position; the harness reads it back in frame coordinates. */
+#define MARK_X 24
+#define MARK_Y 8
+#define MARK_SIZE 8
+
+static void drawMark(OfxPropertySetHandle dstProps)
+{
+  void* dstData = 0;
+  int dstRowBytes = 0;
+  int db[4] = {0, 0, 0, 0};
+  g_props->propGetPointer(dstProps, kOfxImagePropData, 0, &dstData);
+  g_props->propGetInt(dstProps, kOfxImagePropRowBytes, 0, &dstRowBytes);
+  g_props->propGetIntN(dstProps, kOfxImagePropBounds, 4, db);
+  for (int y = MARK_Y; y < MARK_Y + MARK_SIZE; ++y) {
+    float* out = (float*)((char*)dstData + (long long)(y - db[1]) * dstRowBytes +
+                          (long long)(MARK_X - db[0]) * 16);
+    for (int x = 0; x < MARK_SIZE; ++x, out += 4) {
+      out[0] = 0.9375f;
+      out[1] = 0.0625f;
+      out[2] = 0.5f;
+      out[3] = 1.0f;
+    }
+  }
+}
+#endif
+
 static OfxStatus render(void* handle, OfxPropertySetHandle inArgs)
 {
 #ifdef WITH_LABEL
@@ -224,6 +263,9 @@ static OfxStatus render(void* handle, OfxPropertySetHandle inArgs)
   if (stat != kOfxStatOK) return stat;
 
   filterWindow(srcProps, dstProps, window);
+#ifdef DRAW_MARK
+  drawMark(dstProps);
+#endif
 
   g_effects->clipReleaseImage(srcProps);
   g_effects->clipReleaseImage(dstProps);

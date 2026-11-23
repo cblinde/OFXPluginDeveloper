@@ -21,8 +21,8 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `build-contract-test.sh` | compiles the two files into one binary, finding the OFX headers from the template's CMake cache |
 | `build-contract-test.bat` | the same build under MSVC; the loader path in `contract_main.cpp` is `LoadLibraryExW` there |
 | `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping |
-| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built six ways (plain or internally tiled with the context read or ignored, and two more for the label check: one that never writes the label, one that does), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
-| `run-negative-controls.sh` | builds those eight controls, asserts each fault is rejected with the right message, and that the context-reading and label-writing builds pass |
+| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built seven ways (plain or internally tiled with the context read or ignored, two for the label check — one that never writes the label, one that does — and one that draws a mark at a fixed position), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
+| `run-negative-controls.sh` | builds those twelve controls, asserts each fault is rejected with the right message, and that the context-reading and label-writing builds pass and the mark build passes in both bottom-up layouts while failing in both top-down ones |
 
 ## Running it
 
@@ -45,7 +45,9 @@ Flags: `--param name:type` (repeatable; `type` is one of `double`, `int`
 `r,g,b,a`), `--identity` (expect `kOfxStatOK` and the
 source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
 answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
-`--image-origin top|bottom`,
+`--image-origin top|bottom`, `--mark X,Y` (a mark the plug-in draws at a frame
+position; asserted in frame coordinates, so a mirrored one fails with the row it
+landed on),
 `--src`/`--golden`/`--size WxH` for a golden-image render comparison,
 `--set-status-only` when the parameter is not a gain, and `--label-param NAME`
 for a string the plug-in sets itself (a read-only label): read after the first
@@ -142,6 +144,12 @@ The two `Top` layouts are negative controls. A copy through the pointer passes
 all four, and should: a pass-through is orientation-agnostic, so only a plug-in
 that draws at chosen image positions exposes the difference. Assert where a mark
 landed and which way up it is — comparing bytes will not catch a mirror.
+
+`run-negative-controls.sh` runs that as a control rather than describing it: the
+`-DDRAW_MARK` build of the ROI stub draws one 8×8 mark through the destination's
+bounds and pitch, and `--mark 24,8` reads it back from the host's own frame-order
+view. Both bottom-up layouts pass; both top-down layouts fail with `the mark is at
+the mirrored row`, which is the failure the four-layout table predicts.
 
 The fake host serves message suite **v1 and v2**. `setPersistentMessage(...)` is
 recorded as `[persistent:<type>] text (id)` and `clearPersistentMessage` as

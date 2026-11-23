@@ -61,6 +61,10 @@ cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_no_label.ofx" -DNO_LABEL "${HERE}/negative-controls/stub_roi_context.c"
 cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_label_ok.ofx" -DWITH_LABEL "${HERE}/negative-controls/stub_roi_context.c"
+# And the drawing control: a box filter plus one mark at a fixed image position,
+# so the four pointer-origin/stride layouts stop being a claim in a README.
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/roi_mark.ofx" -DDRAW_MARK "${HERE}/negative-controls/stub_roi_context.c"
 
 # The harness's default source is one constant colour, and a box filter over a
 # constant image has no seam to find: every window would agree no matter what
@@ -166,6 +170,24 @@ run_control "label parameter declared and never written" \
 run_pass "label parameter written by the plug-in" \
   "${TMP}/roi_label_ok.ofx" --id com.testkit.control.labelok \
   --label-param provider "${LABEL_ARGS[@]}"
+
+MARK_ARGS=(--clip Source --clip Output --concurrency-threads 0
+           --size 64x48 --src "${TMP}/roi_source.bin" --mark "24,8")
+
+run_pass "mark drawn in a bottom-up frame arrives where the frame says" \
+  "${TMP}/roi_mark.ofx" --id com.testkit.control.mark "${MARK_ARGS[@]}"
+run_pass "mark drawn with a bottom-up, negative-pitch frame" \
+  "${TMP}/roi_mark.ofx" --id com.testkit.control.mark --negative-pitch "${MARK_ARGS[@]}"
+
+run_control "mark drawn into a top-down frame is mirrored" \
+  "FAIL overlay mark at (24,8)" \
+  "${TMP}/roi_mark.ofx" --id com.testkit.control.mark --image-origin top \
+  "${MARK_ARGS[@]}"
+
+run_control "mark drawn into a top-down, negative-pitch frame is mirrored" \
+  "FAIL overlay mark at (24,8)" \
+  "${TMP}/roi_mark.ofx" --id com.testkit.control.mark --image-origin top \
+  --negative-pitch "${MARK_ARGS[@]}"
 
 echo
 if [[ ${fail} -ne 0 ]]; then

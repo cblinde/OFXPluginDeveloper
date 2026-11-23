@@ -202,6 +202,13 @@ struct Spec {
   std::string labelParam;
   bool negativePitch = false;
   bool topOrigin = false;
+  // --mark X,Y: the plug-in draws a mark at this image position. Asserted in
+  // frame coordinates, so a layout whose pointer claims to start at the frame's
+  // top shows the mark at the mirrored row instead. The sentinel is the value
+  // negative-controls/stub_roi_context.c writes under -DDRAW_MARK.
+  bool hasMark = false;
+  int markX = 0;
+  int markY = 0;
   // --set-status-only: render after --set, but assert only the status and that
   // each write was accepted. The default also compares the frame to
   // src x atof(value), which only holds for a gain-like parameter.
@@ -722,6 +729,39 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
   }
 
+  if (spec.hasMark) {
+    // Frame coordinates, not buffer coordinates. destination() is the host's
+    // own read-back: it always walks frame rows upward from bounds.y1, whatever
+    // the pointer handed to the plug-in and the stride sign do. So this check
+    // needs no knowledge of the layout - which is the point: a plug-in that
+    // addresses only through the pointer puts the mark at the mirrored row when
+    // the host says the buffer starts at the frame's top, and a pass-through
+    // copy cannot show that because it writes and reads through the same
+    // pointer.
+    const std::vector<float> dst = host.destination();
+    const size_t pixels = static_cast<size_t>(spec.width) * spec.height;
+    if (!check("destination is readable", dst.size() == pixels * 4,
+               std::to_string(dst.size()) + " floats")) {
+      return failCycle(host);
+    }
+    auto isMark = [&](int frameY) {
+      const float* px = &dst[(static_cast<size_t>(frameY) * spec.width + spec.markX) * 4];
+      auto near = [](float a, float b) { return std::abs(a - b) < 1e-6f; };
+      return near(px[0], 0.9375f) && near(px[1], 0.0625f) && near(px[2], 0.5f) &&
+             near(px[3], 1.0f);
+    };
+    const bool atFrame = isMark(spec.markY);
+    const bool atMirror = isMark(spec.height - 1 - spec.markY);
+    if (!check("overlay mark at (" + std::to_string(spec.markX) + "," +
+                   std::to_string(spec.markY) + ")",
+               atFrame && !atMirror,
+               atMirror ? "the mark is at the mirrored row: the rasteriser assumed the "
+                          "pointer's first row is the frame's top"
+                        : "no mark above the noise at that position or its mirror")) {
+      return failCycle(host);
+    }
+  }
+
   if (!spec.goldenFile.empty()) {
     std::vector<float> golden;
     const size_t pixels = static_cast<size_t>(spec.width) * spec.height;
@@ -981,7 +1021,7 @@ int main(int argc, char** argv) {
                  "usage: contract_test <plugin.ofx> --id <identifier> [--param name:type]...\n"
                  "       [--clip name]... [--set name=value]... [--context <context>]\n"
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
-                 "       [--negative-pitch] [--image-origin top|bottom] [--set-status-only]\n"
+                 "       [--negative-pitch] [--image-origin top|bottom] [--mark X,Y] [--set-status-only]\n"
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
                  "       [--dst-bounds-inset N] [--roi-expand N] [--roi-context]\n"
                  "       [--roi-context-tolerance T] (tiled render: bound, not bit-equality)\n"
@@ -1069,6 +1109,16 @@ int main(int argc, char** argv) {
       spec.setStatusOnly = true;
     } else if (a == "--label-param") {
       spec.labelParam = next("--label-param");
+    } else if (a == "--mark") {
+      const std::string where = next("--mark");
+      const size_t comma = where.find(',');
+      if (comma == std::string::npos) {
+        std::fprintf(stderr, "error: --mark wants X,Y\n");
+        return 2;
+      }
+      spec.markX = std::atoi(where.substr(0, comma).c_str());
+      spec.markY = std::atoi(where.substr(comma + 1).c_str());
+      spec.hasMark = true;
     } else if (a == "--negative-pitch") {
       spec.negativePitch = true;
     } else if (a == "--image-origin") {
