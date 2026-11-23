@@ -85,7 +85,7 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     --src "${ROOT}/models/test_input.bin" --golden "${ROOT}/models/test_golden.bin" \
     --set "modelPath=${ROOT}/models/test_conv.onnx" \
     --not-identity-after-set --negative-pitch --byte-dst-rejected \
-    --src-bounds-inset 2
+    --src-bounds-inset 2 --dst-bounds-inset 2
 else
   echo "  FAIL: no .ofx under build/bundle; run ./build.sh first" >&2
   exit 1
@@ -150,6 +150,7 @@ else
     --src "${ROOT}/models/test_input.bin" --golden "${ROOT}/models/test_golden.bin" \
     --set "modelPath=${ROOT}/models/test_conv.onnx" \
     --not-identity-after-set --byte-dst-rejected --src-bounds-inset 2 \
+    --dst-bounds-inset 2 \
     > "${TMP}/vg-contract.log" 2>&1 || {
       echo "  FAIL: memcheck reported errors" >&2
       grep -E "ERROR SUMMARY|Invalid|uninitialised|definitely lost" "${TMP}/vg-contract.log" | head -20 >&2

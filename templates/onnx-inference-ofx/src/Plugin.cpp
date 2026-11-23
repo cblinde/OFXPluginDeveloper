@@ -182,6 +182,16 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
         OFX::throwSuiteStatusException(kOfxStatErrValue);
     }
 
+    // The same arithmetic writes the destination. A window the destination
+    // region of definition does not cover would put pixels outside the buffer
+    // the host handed over, and the write itself succeeds, so nothing reports
+    // it later.
+    const OfxRectI& db = dst->getBounds();
+    if (args.renderWindow.x1 < db.x1 || args.renderWindow.y1 < db.y1 ||
+        args.renderWindow.x2 > db.x2 || args.renderWindow.y2 > db.y2) {
+        OFX::throwSuiteStatusException(kOfxStatErrValue);
+    }
+
     const OfxRectI window = args.renderWindow;
     const int width = window.x2 - window.x1;
     const int height = window.y2 - window.y1;
@@ -211,7 +221,6 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
         OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
     }
 
-    const OfxRectI& db = dst->getBounds();
     const long long srcPitch = src->getRowBytes();
     const long long dstPitch = dst->getRowBytes();
     const char* srcBase = static_cast<const char*>(src->getPixelData()) +
