@@ -48,7 +48,7 @@ column perfectly and never ran the right one.
 | Layer | What it tests | Cost to build | What it catches | Here |
 |---|---|---|---|---|
 | **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | the templates |
-| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 104 + 130 + 122 checks |
+| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 104 + 130 + 128 checks |
 | **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) §1 |
 | **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | the templates: `testkit/fake_host.*` |
 | **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | the templates |
@@ -180,7 +180,7 @@ testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
 
 Measured (CPU-only build of the CUDA template, this machine): **104 checks, 0
 failed** for `ReferenceGain`, **130 checks, 0 failed** for `MinimalCudaGain`,
-**122 checks, 0 failed** for `OnnxInference`. The
+**128 checks, 0 failed** for `OnnxInference`. The
 checks are: the two export symbols; `pluginApi`, `apiVersion`, non-empty
 `pluginIdentifier` (stable across a second load), `pluginVersionMajor/Minor`;
 non-null `setHost`/`mainEntry`; then a whole `describe → describeInContext →
@@ -319,7 +319,11 @@ the source region of definition does not cover is rejected with
 `kOfxStatErrValue` instead of dereferencing the `nullptr` that
 `Image::getPixelAddress()` returns outside the bounds, and the destination is
 compared pixel for pixel across that rejected render, so a plug-in that writes
-part of the frame and still reports an error fails the test.
+part of the frame and still reports an error fails the test. The write side is
+checked the same way: a destination region of definition that does not cover the
+window is refused too, and the plug-in must leave every pixel alone — otherwise
+the frame would be written outside the buffer the host handed over, which no
+host can detect afterwards.
 
 ### 5.2 How to reuse it for your own plug-in
 
@@ -666,7 +670,7 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | GPU throughput | 1920×1080: vec4 0.212 ms / scalar 0.222 ms, ~312/300 GB/s **[B]** |
 | Artifact + fake host (reference) | 104 checks, 0 failed, two load/unload cycles, two live instances with separate values |
 | Artifact + fake host (CUDA) | 130 checks, 0 failed, two load/unload cycles, four instances × three concurrent renders |
-| Artifact + fake host (inference) | 122 checks, 0 failed, render matches the Python golden through the OFX API, four instances × three concurrent renders |
+| Artifact + fake host (inference) | 128 checks, 0 failed, render matches the Python golden through the OFX API, four instances × three concurrent renders |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | cppcheck clean, shellcheck clean |
 
