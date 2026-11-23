@@ -66,6 +66,13 @@ against a host that ignores the declaration, and requires the pixels to differ.
 The second render is what gives the first one teeth: if nothing outside the
 window were read, both renders would agree.
 
+`--roi-context-tolerance T` is the same pair with a bound instead of
+bit-equality, for a render the plug-in splits into tiles: the window must stay
+within `T` of the whole-frame render when the context is available, and must
+leave `T` when it is not. Use it with a small `tileSize` to exercise the tiled
+path; pick `T` from measurement, below the no-context deviation and above any
+feather rounding (the ONNX template uses 0.02 against a measured 0.1875).
+
 `FakeHost::setSourceCroppedToWindow(true)` is the host side of that second
 render: the source image is published cropped to the window, and its origin and
 size come from the window the host asked for, so a plug-in that reads past its

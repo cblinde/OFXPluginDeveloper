@@ -87,6 +87,23 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     --roi-expand 2 --roi-context \
     --not-identity-after-set --negative-pitch --byte-dst-rejected \
     --src-bounds-inset 2 --dst-bounds-inset 2
+
+  # The same pixel comparison with the plug-in's own tiling engaged: tileSize=16
+  # makes the 64x48 window go through RunTiled, so the frame is assembled from
+  # overlapping, feathered tiles. There the comparison is a bound rather than
+  # bit-equality - TileAccumulator blends the overlap, which is exact only when
+  # the overlapping tiles agree bitwise, true at halo >= receptive radius but not
+  # guaranteed by construction. Measured on this model: 0 deviation with halo=2
+  # and 0.1875 without the context region, so 0.02 leaves an order of magnitude
+  # between the check and the failure, and matches the halo-ladder threshold in
+  # AI_MODEL_INTEGRATION.md section 7.
+  echo "  tiled render (tileSize=16), tolerance 0.02:"
+  "${TMP}/contract_test" "${BUNDLE_OFX}" \
+    --id com.ofxplugindeveloper.onnxinference \
+    --param modelPath:string --param tileSize:int --param halo:int \
+    --clip Source --clip Output --size 64x48 \
+    --set "modelPath=${ROOT}/models/test_conv.onnx" --set halo=2 --set tileSize=16 \
+    --set-status-only --concurrency-threads 0 --roi-context-tolerance 0.02
 else
   echo "  FAIL: no .ofx under build/bundle; run ./build.sh first" >&2
   exit 1

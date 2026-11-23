@@ -48,7 +48,7 @@ column perfectly and never ran the right one.
 | Layer | What it tests | Cost to build | What it catches | Here |
 |---|---|---|---|---|
 | **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | the templates |
-| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 158 checks (the 136 from a `CPU_ONLY=1` build, so host protocol + CPU path) |
+| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 158 checks (the 136 from a `CPU_ONLY=1` build, so host protocol + CPU path; the 158 are followed by 82 in the tiled-context variant) |
 | **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) §1 |
 | **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | the templates: `testkit/fake_host.*` |
 | **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | the templates |
@@ -180,7 +180,9 @@ testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
 
 Measured (CPU-only build of the CUDA template, this machine): **110 checks, 0
 failed** for `ReferenceGain`, **136 checks, 0 failed** for `MinimalCudaGain`,
-**158 checks, 0 failed** for `OnnxInference`. The 136 belong to a `CPU_ONLY=1`
+**158 checks, 0 failed** for `OnnxInference`, followed by **82 checks, 0 failed**
+in the tiled-context run (`tileSize=16`, `--roi-context-tolerance 0.02`).
+The 136 belong to a `CPU_ONLY=1`
 build, whose launcher symbol and cubin are absent by construction (the build
 prints `CUDA launcher: ABSENT (CPU-only build)`, the suite prints `PTX check
 skipped: nvcc not on PATH`): not one of those checks was computed by a CUDA
@@ -350,12 +352,20 @@ the first comparison could pass without anything outside the window ever being
 read. Measured: without the declaration honoured the first difference sits at
 pixel (3,3), the window's own border.
 
-This runs with the plug-in's default tile size, so the window goes through the
-model in one pass and the comparison can be exact. A window the plug-in splits
-internally is blended from overlapping tiles (`TileAccumulator` feathers them),
-which is not bit-identical by construction; that path is covered by the halo
-negative control in `templates/onnx-inference-ofx/test/ai_pipeline_test.cpp:300`
-with a tolerance, not by this check.
+This runs twice. With the plug-in's default tile size the window goes through the
+model in one pass and the comparison is exact. The second run sets `tileSize=16`,
+so the same 64×48 window goes through `RunTiled` and the frame is assembled from
+overlapping, feathered tiles; there the check is a **bound**, `--roi-context-tolerance
+0.02`, because `TileAccumulator` blends the overlap and bit-equality is a
+property no tiling implementation can promise by construction. The bound is
+justified by measurement on this model, not by taste: with `halo=2` the tiled
+render deviates by **0** from the whole-frame render (overlapping tiles agree
+bitwise when the halo covers the receptive radius, so the blend is weight-neutral),
+and with the context gone — `halo=0`, or a host that supplies only the window —
+by **0.1875**. 0.02 sits an order of magnitude below the failure and at the same
+threshold `AI_MODEL_INTEGRATION.md` §7 uses for the halo ladder, so a plug-in
+that drops its context fails the tiled run too rather than sneaking under a loose
+bound.
 
 ### 5.2 How to reuse it for your own plug-in
 
@@ -726,7 +736,7 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | GPU throughput | 1920×1080: vec4 0.212 ms / scalar 0.222 ms, ~312/300 GB/s **[B]** |
 | Artifact + fake host (reference) | 110 checks, 0 failed, two load/unload cycles, two live instances with separate values |
 | Artifact + fake host (CUDA) | 136 checks, 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path — it is unverified here (no toolkit, no GPU) |
-| Artifact + fake host (inference) | 158 checks, 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders |
+| Artifact + fake host (inference) | 158 checks, 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 82 checks for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | cppcheck clean, shellcheck clean |
 

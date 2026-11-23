@@ -188,6 +188,12 @@ struct Spec {
   // when the host hands over the surrounding pixels, and must stop matching when
   // it hands over the window alone.
   bool roiContext = false;
+  // --roi-context-tolerance T: the same comparison with a bound instead of
+  // bit-equality, for a render the plug-in splits into tiles. TileAccumulator
+  // feathers the overlap, so the same neighbourhood is reached through different
+  // weights; the declaration still has to keep the window within T of the
+  // whole-frame render, and losing it has to push it beyond T.
+  double roiContextTolerance = 0.0;
   bool negativePitch = false;
   bool topOrigin = false;
   // --set-status-only: render after --set, but assert only the status and that
@@ -477,6 +483,38 @@ std::string firstBitDifference(const std::vector<float>& a, const std::vector<fl
     }
   }
   return std::string();
+}
+
+// Worst absolute difference over one rectangle of two tightly packed RGBA
+// destinations, with the pixel it sits at. Used where bit-equality is the wrong
+// question - a render the plug-in splits into tiles is blended from overlapping
+// tiles, so the same neighbourhood reaches a different rounding.
+std::string maxRectDifference(const std::vector<float>& a, const std::vector<float>& b,
+                              int stride, const OfxRectI& rect, double* worst) {
+  double peak = 0.0;
+  std::string where;
+  for (int y = rect.y1; y < rect.y2; ++y) {
+    for (int x = rect.x1; x < rect.x2; ++x) {
+      const size_t base = (static_cast<size_t>(y) * static_cast<size_t>(stride) +
+                           static_cast<size_t>(x)) * 4;
+      for (int c = 0; c < 4; ++c) {
+        if (a.size() <= base + c || b.size() <= base + c) {
+          *worst = peak;
+          return "destination shorter than the frame";
+        }
+        const double diff = std::abs(static_cast<double>(a[base + c]) -
+                                     static_cast<double>(b[base + c]));
+        if (diff > peak) {
+          peak = diff;
+          where = "pixel (" + std::to_string(x) + "," + std::to_string(y) + ") channel " +
+                  std::to_string(c) + ": " + std::to_string(a[base + c]) + " vs " +
+                  std::to_string(b[base + c]);
+        }
+      }
+    }
+  }
+  *worst = peak;
+  return where;
 }
 
 bool sameRect(const OfxRectD& a, const OfxRectD& b) {
@@ -795,10 +833,21 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
       return failCycle(host);
     }
     const std::vector<float> withContext = host.destination();
-    const std::string same = firstBitDifference(whole, withContext, spec.width, inner);
-    if (!check("roi context: the inset window matches the whole frame bit for bit",
-               same.empty(), same)) {
-      return failCycle(host);
+    if (spec.roiContextTolerance > 0.0) {
+      double worst = 0.0;
+      const std::string at = maxRectDifference(whole, withContext, spec.width, inner, &worst);
+      if (!check("roi context: the inset window stays within the tolerance of the whole frame",
+                 worst <= spec.roiContextTolerance,
+                 "max deviation " + std::to_string(worst) + " at " + at + " (tolerance " +
+                     std::to_string(spec.roiContextTolerance) + ")")) {
+        return failCycle(host);
+      }
+    } else {
+      const std::string same = firstBitDifference(whole, withContext, spec.width, inner);
+      if (!check("roi context: the inset window matches the whole frame bit for bit",
+                 same.empty(), same)) {
+        return failCycle(host);
+      }
     }
     host.setSourceCroppedToWindow(true);
     st = host.render(0.0, inner);
@@ -809,10 +858,22 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
                st == kOfxStatOK, statusName(st))) {
       return failCycle(host);
     }
-    const std::string differs = firstBitDifference(whole, withoutContext, spec.width, inner);
-    if (!check("roi context: without a context region the same window differs", !differs.empty(),
-               "the window is bit-identical to the whole frame, so nothing outside it was read")) {
-      return failCycle(host);
+    if (spec.roiContextTolerance > 0.0) {
+      double worst = 0.0;
+      const std::string at = maxRectDifference(whole, withoutContext, spec.width, inner, &worst);
+      if (!check("roi context: without a context region the same window leaves the tolerance",
+                 worst > spec.roiContextTolerance,
+                 "max deviation " + std::to_string(worst) + " at " + at + ", inside the tolerance " +
+                     std::to_string(spec.roiContextTolerance) +
+                     ", so nothing outside the window was read")) {
+        return failCycle(host);
+      }
+    } else {
+      const std::string differs = firstBitDifference(whole, withoutContext, spec.width, inner);
+      if (!check("roi context: without a context region the same window differs", !differs.empty(),
+                 "the window is bit-identical to the whole frame, so nothing outside it was read")) {
+        return failCycle(host);
+      }
     }
   }
 
@@ -895,6 +956,7 @@ int main(int argc, char** argv) {
                  "       [--negative-pitch] [--image-origin top|bottom] [--set-status-only]\n"
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
                  "       [--dst-bounds-inset N] [--roi-expand N] [--roi-context]\n"
+                 "       [--roi-context-tolerance T] (tiled render: bound, not bit-equality)\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
@@ -970,6 +1032,9 @@ int main(int argc, char** argv) {
     } else if (a == "--roi-expand") {
       spec.roiExpand = std::atoi(next("--roi-expand").c_str());
     } else if (a == "--roi-context") {
+      spec.roiContext = true;
+    } else if (a == "--roi-context-tolerance") {
+      spec.roiContextTolerance = std::atof(next("--roi-context-tolerance").c_str());
       spec.roiContext = true;
     } else if (a == "--set-status-only") {
       spec.setStatusOnly = true;
