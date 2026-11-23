@@ -12,6 +12,8 @@ templates/minimal-ofx/test/run-tests.sh     # artifact inspection + fake-host co
 python3 tools/check-docs.py                 # documentation drift, ~1 s
 tools/measure-halo.sh model.onnx            # tile overlap per model, writes <model>.halo.json
 python3 tools/make-testmodels.py --out build/testmodels   # synthetic 1/3/4-channel and 2x models
+python3 tools/model_probe.py model.onnx     # shapes, dynamic dims, size factor, alignment
+python3 tools/bench_ep.py model.onnx        # median/p90 per execution provider
 ```
 
 `./run-tests.sh` needs `ONNXRUNTIME_ROOT` for the inference template, and

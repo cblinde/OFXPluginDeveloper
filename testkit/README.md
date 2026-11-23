@@ -196,8 +196,9 @@ neighbour's value fails on the pixels, not on a crash; `--concurrency-threads N`
 `eRenderUnsafe` gets a named skip; `eRenderInstanceSafe` renders different
 instances on different threads; `eRenderFullySafe` renders the same instance on
 all of them. A model slower than about a second per frame turns the default
-4 × 3 into a multi-minute run with no output in between: pass
-`--concurrency-threads 0` there and exercise concurrency against a fast model.
+4 × 3 into a multi-minute run with no output in between: measure it first with
+`tools/bench_ep.py`, pass `--concurrency-threads 0` there, and exercise
+concurrency against a fast model.
 
 ### Models for the channel and factor paths
 

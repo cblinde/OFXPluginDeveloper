@@ -436,9 +436,10 @@ What it does **not** prove: no host has rendered through it, no CUDA session has
 ever been created, and no timing is claimed. The provider *request* is compiled
 and its failure path is tested; the success path is not. There is no GPU and no
 provider binary in this repository, so on a GPU machine the remaining work is to
-confirm the label flips to `CUDA (device 0)`, measure the run (`bench`-style,
-timer around `Run()`), and repeat the bundle check with the provider DLLs in
-place — the recipe below is documented from the ORT API, and every number in it
+confirm the label flips to `CUDA (device 0)`, measure the run with
+`tools/bench_ep.py` (one row per provider, plus the providers the session really
+ended up with, so a silent fallback is visible next to the number), and repeat
+the bundle check with the provider DLLs in place — the recipe below is documented from the ORT API, and every number in it
 is external (**B**).
 
 ### Adapting it to a real model
@@ -500,6 +501,10 @@ at load, not per frame:
 - **Find the alignment by probing.** One inference each at 63/72/80/96 tells you
   the factor: 63 runs → 1, 72 → 8, 80 → 16, 96 → 32. Four runs at load, not in
   the render path, and the difference between a dropdown entry and a trap.
+  `tools/model_probe.py` runs exactly that ladder and prints the factor it
+  implies, next to the shapes, the channel count, whether H/W are dynamic at all,
+  and the output/input size ratio — so an upscaler is recognised before anyone
+  writes a runner for it.
 - **Pad right and bottom** to that multiple with edge replication, run, and crop
   the result back to the real size. Zero padding is content to a convolution, so
   a black border bleeds inward; replication does not.
