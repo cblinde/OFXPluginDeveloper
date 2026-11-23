@@ -507,6 +507,11 @@ at load, not per frame:
   back. That costs quality — say so in the UI instead of letting the user find
   out from a soft frame.
 
+`tools/make-testmodels.py` writes fixtures for exactly the paths a real model
+hides: a 1/3/4-channel identity and a 2× upscaler, as small real graphs. Use them
+to test channel packing, alpha pass-through and factor handling before a
+downloaded model enters the loop; they say nothing about quality.
+
 #### The halo is measured, not guessed
 
 Item 2 above gives the principle. For a real model nobody prints the receptive

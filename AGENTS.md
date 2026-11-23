@@ -11,10 +11,13 @@ templates/minimal-ofx/build.sh              # one plug-in, from a clean checkout
 templates/minimal-ofx/test/run-tests.sh     # artifact inspection + fake-host contract
 python3 tools/check-docs.py                 # documentation drift, ~1 s
 tools/measure-halo.sh model.onnx            # tile overlap per model, writes <model>.halo.json
+python3 tools/make-testmodels.py --out build/testmodels   # synthetic 1/3/4-channel and 2x models
 ```
 
 `./run-tests.sh` needs `ONNXRUNTIME_ROOT` for the inference template, and
-`CPU_ONLY=1` when no CUDA toolkit is installed.
+`CPU_ONLY=1` when no CUDA toolkit is installed. `tools/make-testmodels.py` needs
+`onnx` to write the files and `onnxruntime` + `numpy` for its self-test; neither
+is a dependency of the suites.
 
 ## Read order
 

@@ -186,6 +186,31 @@ all of them. A model slower than about a second per frame turns the default
 4 × 3 into a multi-minute run with no output in between: pass
 `--concurrency-threads 0` there and exercise concurrency against a fast model.
 
+### Models for the channel and factor paths
+
+The fixture model is RGB, shape-preserving and honest about its own transform,
+which leaves three paths untested by it: one channel, four channels, and a model
+that changes the size. `tools/make-testmodels.py` writes those without a
+download, without a real model and without a GPU:
+
+```bash
+python3 tools/make-testmodels.py --out build/testmodels
+```
+
+It emits `id_1x_1ch.onnx`, `id_1x_3ch.onnx` and `id_1x_4ch.onnx` — a 1×1
+`AveragePool`, so output equals input and a channel-order mistake becomes a
+deviation instead of a green pass-through, with the fourth channel standing in
+for alpha — and `up_2x_3ch.onnx`, a nearest `Resize`, so the output is exactly
+twice the input in both axes. Each file is a real graph, not a `Constant`, and
+each is loaded back through ONNX Runtime's CPU provider at two frame sizes, one
+of them odd in both axes: a model with a hard-coded export size passes the first
+and fails the second. `--no-self-test` writes the files without loading them.
+
+Point `modelPath` at `id_1x_3ch.onnx` and the check stream proves a pass-through:
+with the same file as `--src` and `--golden`, `render matches the golden` is
+exact. `up_2x_3ch.onnx` is the fixture for the other behaviour — a runner that
+only accepts shape-preserving models must refuse it, not quietly crop.
+
 ## Assumptions the checks encode
 
 Written down because each one is a way for a green run to mean less than it looks:
