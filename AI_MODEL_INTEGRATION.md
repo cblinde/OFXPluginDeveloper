@@ -624,6 +624,40 @@ than measured.
   instead — the harness in the reporting tree does exactly that for twelve
   prompts **[B]**.
 
+#### Drawing into the frame: the overlay after the model
+
+What the model finds is drawn on top of the frame that was just rendered, and
+the pass-through copy that makes a filter correct is orientation-agnostic while
+the drawing is not: an overlay ships mirrored or on the wrong side of its box and
+every copy check stays green (**B** — labels beside their boxes and mirrored text
+in a host). The four rules that matter; the full set is
+[`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
+
+- **Write through the destination's pitch, never `width * 16`.** The output image
+  has its own base pointer, its own signed `kOfxImagePropRowBytes` and its own
+  bounds (**A**: `ofxImageEffect.h:1340-1353`), and its pitch need not equal the
+  source's. One row is `dstBase + (y - window.y1) * dstPitch`.
+- **Offset by the window, once.** A box computed in image coordinates becomes
+  `x - window.x1`, `y - window.y1`; `kOfxImagePropBounds` is what you clip
+  against, not what you index with. A tile or proxy window is where an overlay
+  that "works on the full frame" draws into its neighbour's image.
+- **An opaque plate on a premultiplied image is `colour * a`.** The clip's
+  `kOfxImageEffectPropPreMultiplication` is normally `kOfxImagePreMultiplied`
+  (**A**: `ofxImageEffect.h:978-992`), so storing the straight colour makes every
+  soft edge glow - the opposite of the filter's own rule, which is to copy alpha
+  through untouched.
+- **Rasterise from one stated origin.** Glyph quads and plate rows are computed in
+  a top-down canvas; if `kOfxImagePropData` addresses `bounds.y1` (the bottom), a
+  rasteriser that assumes top-down draws the whole page upside down and still
+  changes pixels. Rebase once (base at `(h - 1) * rowBytes`, negated stride; §5's
+  row) and keep every overlay coordinate in that one space.
+
+Test it as a bound, not as a pixel value: "ink stays inside the plate", "nothing
+past the right edge", "the box outline is in the top half of the tile". A centred
+probe hides a mirror, and "bytes changed" hides everything else
+([`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) §5, L3;
+`testkit/tile_window_test.cpp` is the worked example, 94 checks).
+
 ---
 
 ## 8. What this document does not know
