@@ -579,7 +579,12 @@ make the choice visible — and the consequence is packaging, not a second build
   to — either way the copy is a bundle that fails at load, so the switch does not
   exist there. The working shape on Windows is a sidecar process that owns ORT
   and the provider (§2, §3), or the option off with the CPU fallback naming
-  itself in the label.
+  itself in the label. macOS gets no copy for a simpler reason — CUDA does not
+  exist there — so the bundle ships the core and the CPU path, and a Mac user who
+  needs the GPU has two routes this template does not implement: ONNX Runtime's
+  CoreML EP, with the partition-fragmentation caveat in §1, or a sidecar running
+  MLX/Metal as `CorridorKey-Runtime` does (§1); either way the `provider` label
+  must name which one ran.
   Verified on Linux with a directory of stand-in files: seven files copied into
   `Contents/<ARCH>/`, `CUDA provider bundle: 7 file(s), 7 MB` at configure time
   (**V**); the same configure without them warns seven times and still succeeds
