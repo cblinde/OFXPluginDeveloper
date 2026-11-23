@@ -564,6 +564,20 @@ make the choice visible — and the consequence is packaging, not a second build
   FFT in it; with cuDNN 9 + cuBLAS 12 + cuFFT a bundle was 2.4–2.7 GB, of which
   the provider alone was 643 MB (**B**). That is a product decision — one
   download for everyone, no separate GPU build.
+- **The copy is a switch, not a script.** `templates/onnx-inference-ofx` ships
+  `-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` (off by default) plus
+  `-DOFXPLUGIN_CUDA_RUNTIME_DIRS=<dir>`: it copies the provider, the shared
+  provider library and cuDNN/cuBLAS/cuBLASLt/cuFFT/cudart beside the `.ofx`,
+  names every missing file as a `CMake Warning` with the load error it causes
+  (126), prints the total size at configure time, and never fails a configure
+  for a machine without a CUDA runtime. On Windows it also warns about the
+  private core name: a provider DLL imports `onnxruntime.dll` by that name, so a
+  host that preloads its own ORT (Resolve 21: 1.13) would bind the provider to
+  the host's runtime — use a sidecar process there rather than a rename.
+  Verified on Linux with a directory of stand-in files: seven files copied into
+  `Contents/<ARCH>/`, `CUDA provider bundle: 7 file(s), 7 MB` at configure time
+  (**V**); the same configure without them warns seven times and still succeeds
+  (**V**). No provider has ever been loaded.
 - **`cudnn_conv_algo_search = heuristic`.** The ORT default benchmarks
   convolution algorithms at session creation and was reported to cost minutes at
   1080p before the first tile (**B**).

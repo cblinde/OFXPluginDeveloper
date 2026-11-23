@@ -241,6 +241,186 @@ if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
 endif()
 
 # ---------------------------------------------------------------------------
+# 3b. CUDA execution provider (optional; off by default)
+# ---------------------------------------------------------------------------
+# The session asks for the CUDA provider before it is created
+# (ModelRunner::AppendCudaProvider) and falls back to the CPU session. What
+# makes that request succeed on a user's machine is packaging, not code: the
+# provider and everything it imports has to sit beside the .ofx, because the
+# host process resolves those imports there and nowhere else. This option copies
+# them; leave it OFF for a CPU-only bundle.
+#
+# Cost, measured on one RTX 3060 / CUDA 12 machine (**B** - no GPU in this
+# repository, so nothing here is timed or loaded here):
+#   * onnxruntime_providers_cuda alone: 643 MB;
+#   * with cuDNN 9 + cuBLAS/cuBLASLt 12 + cuFFT + cudart: a 2.4-2.7 GB bundle.
+# That is a product decision - one download for everyone - not a build trick.
+#
+# The two load failures this block exists to avoid:
+#   * 1114 (DllMain could not initialise): a plug-in that LoadLibrary()s
+#     onnxruntime_providers_cuda itself. Its DllMain needs the mailbox that only
+#     the ORT core sets, so it fails when preloaded; ORT loads it beside the core
+#     by itself. Never preload the provider - preload the imports below, if
+#     anything.
+#   * 126 (ERROR_MOD_NOT_FOUND): the provider is present but one of its imports
+#     is not. It imports cuFFT even for a model with no FFT in it, so a bundle
+#     missing libcufft/cufft64_*.dll refuses to load with nothing in the host UI
+#     to explain it. Missing files therefore produce a warning that names the
+#     consequence.
+#
+# Windows caveat, and it is the reason this option is not simply "turn it on":
+# the core runtime is shipped as onnxruntime-ofx.dll (see section 3) so that the
+# host's own onnxruntime.dll cannot win the base-name match. A provider DLL
+# still imports "onnxruntime.dll" by that exact name, so on a host that has ORT
+# loaded (Resolve 21 ships 1.13) the provider binds to the host's runtime and the
+# mismatch in AI_MODEL_INTEGRATION.md section 4 comes back. On Windows the honest
+# arrangements are a sidecar process for the GPU runtime, or a host that does not
+# preload ORT - not a rename. On Linux the core keeps its SONAME, so the copy
+# below is consistent and unaffected.
+option(OFXPLUGIN_BUNDLE_CUDA_PROVIDER
+  "Copy onnxruntime_providers_cuda and the CUDA libraries it imports next to the .ofx" OFF)
+set(OFXPLUGIN_CUDA_RUNTIME_DIRS "" CACHE STRING
+  "Extra directories to search for the CUDA provider and its imports (semicolon-separated)")
+
+if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
+  if(APPLE)
+    message(WARNING
+      "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON has no effect on macOS: CUDA is not "
+      "available there and OFX hosts expose Metal/OpenCL instead. The session "
+      "will keep falling back to the CPU.")
+  else()
+    if(NOT OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
+      message(WARNING
+        "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON while OFXPLUGIN_BUNDLE_ONNX_RUNTIME=OFF: "
+        "the provider would be copied without the runtime it registers itself "
+        "with. Enable both, or neither.")
+    endif()
+    if(WIN32)
+      message(WARNING
+        "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON on Windows: the bundle ships the core "
+        "as onnxruntime-ofx.dll, but a provider DLL imports \"onnxruntime.dll\" by "
+        "name, so a host that already loads ORT (Resolve 21: 1.13) will have the "
+        "provider bind to ITS runtime. The copy below is still useful for a host "
+        "that does not preload ORT; otherwise use a sidecar process. See "
+        "AI_MODEL_INTEGRATION.md section 7.")
+    endif()
+
+    # Search order: what the caller names, then the usual CUDA layouts, then the
+    # ONNX Runtime root - a -gpu package keeps the providers in bin/ or lib/.
+    set(_cuda_dirs ${OFXPLUGIN_CUDA_RUNTIME_DIRS})
+    foreach(_env CUDA_PATH CUDA_HOME CUDNN_HOME)
+      if(DEFINED ENV{${_env}})
+        list(APPEND _cuda_dirs "$ENV{${_env}}/bin" "$ENV{${_env}}/lib64" "$ENV{${_env}}/lib")
+      endif()
+    endforeach()
+    list(APPEND _cuda_dirs
+      "${ONNXRUNTIME_ROOT}/bin" "${ONNXRUNTIME_ROOT}/lib"
+      "/usr/local/cuda/bin" "/usr/local/cuda/lib64"
+      "/usr/lib/x86_64-linux-gnu" "/usr/lib/aarch64-linux-gnu")
+    list(REMOVE_DUPLICATES _cuda_dirs)
+
+    # First file matching any of the given patterns in any search directory.
+    # A function, so each call gets its own loop variables.
+    function(ofx_pick_cuda_file out_var)
+      foreach(_pattern IN LISTS ARGN)
+        foreach(_dir IN LISTS _cuda_dirs)
+          if(NOT IS_DIRECTORY "${_dir}")
+            continue()
+          endif()
+          file(GLOB _hits "${_dir}/${_pattern}")
+          if(_hits)
+            list(GET _hits 0 _hit)
+            set(${out_var} "${_hit}" PARENT_SCOPE)
+            return()
+          endif()
+        endforeach()
+      endforeach()
+      set(${out_var} "" PARENT_SCOPE)
+    endfunction()
+
+    if(WIN32)
+      set(_provider_patterns onnxruntime_providers_cuda.dll)
+      set(_shared_patterns onnxruntime_providers_shared.dll)
+      set(_cudnn_patterns cudnn64_*.dll)
+      set(_cublas_patterns cublas64_*.dll)
+      set(_cublaslt_patterns cublasLt64_*.dll)
+      set(_cufft_patterns cufft64_*.dll)
+      set(_cudart_patterns cudart64_*.dll)
+    else()
+      set(_provider_patterns libonnxruntime_providers_cuda.so)
+      set(_shared_patterns libonnxruntime_providers_shared.so)
+      set(_cudnn_patterns libcudnn.so.*)
+      set(_cublas_patterns libcublas.so.*)
+      set(_cublaslt_patterns libcublasLt.so.*)
+      set(_cufft_patterns libcufft.so.*)
+      set(_cudart_patterns libcudart.so.*)
+    endif()
+
+    ofx_pick_cuda_file(_cuda_provider ${_provider_patterns})
+    ofx_pick_cuda_file(_cuda_shared ${_shared_patterns})
+    ofx_pick_cuda_file(_cuda_cudnn ${_cudnn_patterns})
+    ofx_pick_cuda_file(_cuda_cublas ${_cublas_patterns})
+    ofx_pick_cuda_file(_cuda_cublaslt ${_cublaslt_patterns})
+    ofx_pick_cuda_file(_cuda_cufft ${_cufft_patterns})
+    ofx_pick_cuda_file(_cuda_cudart ${_cudart_patterns})
+
+    if(NOT _cuda_provider)
+      message(WARNING
+        "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON but no onnxruntime_providers_cuda was "
+        "found in: ${_cuda_dirs}. Nothing is copied: the session keeps falling "
+        "back to the CPU. A GPU build needs the -gpu package of ONNX Runtime, or "
+        "set OFXPLUGIN_CUDA_RUNTIME_DIRS to the directory that has it.")
+    endif()
+
+    # Missing imports are a warning, not an error: a source tree without a CUDA
+    # runtime still has to configure. The message names the load error it causes.
+    function(ofx_warn_missing_cuda label found)
+      if(NOT ${found})
+        message(WARNING
+          "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON: ${label} not found in "
+          "${_cuda_dirs}. onnxruntime_providers_cuda imports it, so a bundle "
+          "without it fails with error 126 (module not found) instead of "
+          "reporting a missing file.")
+      endif()
+    endfunction()
+    ofx_warn_missing_cuda("onnxruntime_providers_shared" _cuda_shared)
+    ofx_warn_missing_cuda("cuDNN (libcudnn / cudnn64_*.dll)" _cuda_cudnn)
+    ofx_warn_missing_cuda("cuBLAS (libcublas / cublas64_*.dll)" _cuda_cublas)
+    ofx_warn_missing_cuda("cuBLASLt (libcublasLt / cublasLt64_*.dll)" _cuda_cublaslt)
+    ofx_warn_missing_cuda("cuFFT (libcufft / cufft64_*.dll)" _cuda_cufft)
+    ofx_warn_missing_cuda("CUDA runtime (libcudart / cudart64_*.dll)" _cuda_cudart)
+
+    # Copy under the name each library already has: the provider's import table
+    # holds those names, so a rename here would be the same failure the core's
+    # private name exists to avoid - only with no way for ORT to find it.
+    set(_cuda_bytes 0)
+    set(_cuda_count 0)
+    foreach(_file IN ITEMS "${_cuda_provider}" "${_cuda_shared}" "${_cuda_cudnn}"
+                           "${_cuda_cublas}" "${_cuda_cublaslt}" "${_cuda_cufft}"
+                           "${_cuda_cudart}")
+      if(NOT _file)
+        continue()
+      endif()
+      get_filename_component(_name "${_file}" NAME)
+      file(SIZE "${_file}" _size)
+      math(EXPR _cuda_bytes "${_cuda_bytes} + ${_size}")
+      math(EXPR _cuda_count "${_cuda_count} + 1")
+      add_custom_command(TARGET ${PLUGIN_TARGET} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_file}"
+                "$<TARGET_FILE_DIR:${PLUGIN_TARGET}>/${_name}"
+        COMMENT "Bundling ${_name} for the CUDA execution provider")
+    endforeach()
+    if(_cuda_count GREATER 0)
+      # Say the size at configure time: the number is the reason this is a
+      # product decision and not a default.
+      math(EXPR _cuda_mb "${_cuda_bytes} / 1048576")
+      message(STATUS
+        "CUDA provider bundle: ${_cuda_count} file(s), ${_cuda_mb} MB")
+    endif()
+  endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # 4. Tests: the host harness needs the runtime, not the OFX library
 # ---------------------------------------------------------------------------
 enable_testing()

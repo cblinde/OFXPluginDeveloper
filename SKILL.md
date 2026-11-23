@@ -393,7 +393,10 @@ generated header, so a model cannot be offered in the UI and missing from
 `Contents/Resources`, and a file nothing lists is removed and named in the build
 log. A model plug-in also ships the CUDA execution provider and the DLLs it
 imports (cuDNN, cuBLAS/cuBLASLt, cuFFT, cudart): one bundle that requests the
-provider and falls back to the CPU, never a second "GPU build" for users
+provider and falls back to the CPU, never a second "GPU build" for users. The
+ONNX template has that copy behind `-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` plus
+`-DOFXPLUGIN_CUDA_RUNTIME_DIRS`, with a warning per missing file because the
+provider's missing import fails as error 126, not as a message
 (`AI_MODEL_INTEGRATION.md` §7). A ledger in the repository is not in the bundle. Copy it from
 `CMakeLists.txt` with a `POST_BUILD` step (`${CMAKE_COMMAND} -E
 copy_if_different`), after the asset copy and before any stale-file cleanup,
