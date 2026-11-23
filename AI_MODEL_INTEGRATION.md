@@ -14,8 +14,9 @@ here say so.
 | **C** | Reported second-hand (README claim, forum post, issue thread). Treat as a lead. |
 
 This repository has no GPU and no OFX host, so nothing below is a performance
-measurement. Where a number appears it is either a size, an exact CPU result from
-`templates/onnx-inference-ofx/test`, or explicitly labelled as unmeasured.
+measurement. Where a number appears it is a size, an exact CPU result from
+`templates/onnx-inference-ofx/test`, a **B**-graded figure from a project that
+shipped it, or explicitly labelled as unmeasured.
 
 ---
 
@@ -421,6 +422,111 @@ documented from the ORT API, not compiled here.
    template for its session lifetime, thread budget, bundling and packing, and
    write the head decoder yourself; nothing in the runner or the unpacker
    applies.
+
+#### What the host hands you is not float RGBA
+
+The template accepts `eBitDepthFloat` only and passes three channels straight
+through. A plug-in a colourist actually uses takes what the host gives it.
+
+- **Depth.** `eBitDepthUByte` and `eBitDepthUShort` arrive as integer
+  components: normalise with the depth's maximum (255, 65535) before the model
+  and quantise back with rounding rather than truncation, or every pass drifts
+  the frame darker by up to one code value. Declare only the depths `render()`
+  really handles — capability and branch have to agree (A5 in
+  `PREFLIGHT_REVIEW_CHECKLIST.md`).
+- **Premultiplication.** A model trained on straight colour must not be fed
+  premultiplied pixels: `RGB·A` darkens every soft edge and the network treats
+  the matte as image content, so a denoiser learns to preserve the fringe it was
+  supposed to remove. Read `kOfxImageEffectPropPreMultiplication`, divide by
+  alpha before packing and multiply back after unpacking, and leave pixels with
+  `A == 0` at zero. `ARCHITECTURE_AND_CUDA_PIPELINE.md` §8 states the rule per
+  operation; this is the inference instance of it.
+- **Pitch.** Signed and possibly padded, as in §5. `PackRGB`/`UnpackRGB` take the
+  host's row bytes for exactly this reason.
+- **Keep the conversion OFX-free.** Depth and alpha conversion belongs beside
+  `Pack*`/`Unpack*`, on plain buffers, so a test can round-trip every depth,
+  padded rows and a negative stride without a host.
+
+#### Models that only accept certain sizes
+
+Graphs that reshape to `H/8`, `H/16` or `H/32` (SwinIR, DAT, OmniSR and most
+transformer exports) throw `The input tensor cannot be reshaped to the requested
+shape` at any size that is not a multiple — measured elsewhere, four of eight
+candidate models failed that way, and one ran at 64×64 only (**B**). Decide it
+at load, not per frame:
+
+- **Find the alignment by probing.** One inference each at 63/72/80/96 tells you
+  the factor: 63 runs → 1, 72 → 8, 80 → 16, 96 → 32. It is a handful of
+  milliseconds at load and it is the difference between a dropdown entry and a
+  trap.
+- **Pad right and bottom** to that multiple with edge replication, run, and crop
+  the result back to the real size. Zero padding is content to a convolution, so
+  a black border bleeds inward; replication does not.
+- **A fixed input size** means scaling every tile to the export resolution and
+  back. That costs quality — say so in the UI instead of letting the user find
+  out from a soft frame.
+
+#### The halo is measured, not guessed
+
+Item 2 above gives the principle. For a real model nobody prints the receptive
+radius, so measure it — five minutes, no host:
+
+1. Render the whole frame and the tiled frame through the **same** function; a
+   benchmark that reimplements the tiling proves nothing about the plug-in.
+2. Walk a ladder (32/48/64/96/128) and take the first overlap whose maximum
+   deviation from the whole frame stays under ~0.02.
+3. Require at least one real tile edge in the comparison, and **exclude the frame
+   border**: a tile clipped at the image edge sees content no interior tile ever
+   sees, and the largest deviation lands there — reported from a shipping project
+   as 0.38 on the right border of a model that is pixel-identical at interior
+   edges, which would have bought an overlap three times too large (**B**).
+4. Keep `2·overlap < frame height` in the ladder, otherwise the largest
+   candidate overlaps the whole frame and passes trivially.
+5. Overlap is a property of the model, not of the resolution: reported values
+   held unchanged from a small frame to 1080p (**B**), so measure once per model
+   and store the number (a file beside the model, keyed by name **and** file
+   size, is enough; a replaced file must not inherit a stale value).
+
+The price, so "more context is safer" is not free: a tile of `T` with overlap
+`H` makes the model see `(T + 2H)²` pixels instead of `T²`. At `T = 512`,
+`H = 64` is +56 % and `H = 32` is +27 % — halving the overlap saves 19 % of
+model time (**A**: arithmetic from the formula).
+
+#### The provider belongs in the same bundle
+
+§6 answers *whether* CUDA is worth it. For a per-frame inference plug-in it
+usually is, and the consequence is packaging, not a second build:
+
+- **One bundle, request the provider, fall back silently.** Create the session
+  with `AppendExecutionProvider_CUDA` inside a `try`; every failure — no device,
+  no driver, missing cuDNN DLL, not enough VRAM — ends on a CPU session instead
+  of an exception the host turns into a red frame. Two lazily built sessions are
+  simpler than a retry ladder.
+- **Make it visible and assert it.** Nothing else tells anyone the provider
+  stopped loading: the picture stays correct and only the time changes —
+  measured elsewhere at 28× on a 4x model and 11× on a denoiser (**B**). Write
+  provider plus reason into a label parameter (`CUDA (RTX 3060)` versus
+  `CPU (provider load failed)`) and add a test stage that fails when the expected
+  provider is missing.
+- **Do not preload the provider DLL.** `LoadLibrary` on
+  `onnxruntime_providers_cuda.dll` fails with error **1114** because its
+  `DllMain` needs the mailbox that only the ORT core sets; ORT finds the provider
+  beside the core by itself. Preload only what the provider imports — cuDNN,
+  cuBLAS/cuBLASLt, cuFFT, cudart — or the load fails with **126**.
+- **Budget the size.** The provider imports `cufft64_*` even for a model with no
+  FFT in it; with cuDNN 9 + cuBLAS 12 + cuFFT a bundle was 2.4–2.7 GB, of which
+  the provider alone was 643 MB (**B**). That is a product decision — one
+  download for everyone, no separate GPU build.
+- **`cudnn_conv_algo_search = heuristic`.** The ORT default benchmarks
+  convolution algorithms at session creation and was reported to cost minutes at
+  1080p before the first tile (**B**).
+- **Tile size is VRAM-bound, not model-bound.** The same 4x transformer held
+  7.25 GB at a 384² tile and crossed 11.8 GB at 640², at which point the driver
+  fell into its slower path: halving the tile beats enlarging it (**B**).
+
+None of this is compiled in this repository — there is no GPU and no provider
+here, so every number above is external evidence, and the recipe is documented
+from the ORT API, exactly as §7 says.
 
 #### Detection heads: the four facts that cost a day
 
