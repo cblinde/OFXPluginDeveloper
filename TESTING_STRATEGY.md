@@ -231,7 +231,10 @@ cost seconds and they are the only defence against some classes of bug.
 | Capability guard | every `setSupportsCudaRender(true)` inside `#ifdef` | advertising what you did not build |
 
 `templates/minimal-cuda-ofx/test/run-analysis.sh` runs cppcheck and shellcheck
-over the template; the gate list as a whole is
+over the template — its sources and its three scripts, not the repository. A
+missing tool is reported as skipped rather than clean: the run ends
+`static analysis: incomplete - N tool(s) ran, M skipped`, and
+`REQUIRE_ANALYSIS=1` turns that into a failure. The gate list as a whole is
 [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) §1.
 
 ---
@@ -738,7 +741,7 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | Artifact + fake host (CUDA) | 136 checks, 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path — it is unverified here (no toolkit, no GPU) |
 | Artifact + fake host (inference) | 158 checks, 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 82 checks for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
-| Analysis | cppcheck clean, shellcheck clean |
+| Analysis | shellcheck 0.10.0, `-x --severity=style`, over all **eleven** shell scripts of this repository: no findings (run here). cppcheck was **not installed** in this environment, so `run-analysis.sh` reports it skipped — its cppcheck half is unverified here, not clean |
 
 ### 13.1 nvcc without a GPU
 

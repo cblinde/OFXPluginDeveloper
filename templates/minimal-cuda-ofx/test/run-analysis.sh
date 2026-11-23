@@ -24,6 +24,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
 REQUIRE="${REQUIRE_ANALYSIS:-0}"
 STATUS=0
+RAN=0
+SKIPPED=0
 
 missing()
 {
@@ -32,11 +34,13 @@ missing()
     STATUS=1
   else
     echo "  skipped: $1 not on PATH ($2)"
+    SKIPPED=$((SKIPPED + 1))
   fi
 }
 
 echo "== cppcheck =="
 if command -v cppcheck >/dev/null 2>&1; then
+  RAN=$((RAN + 1))
   cppcheck --version
   (
     cd "${ROOT}"
@@ -54,6 +58,7 @@ fi
 echo
 echo "== shellcheck =="
 if command -v shellcheck >/dev/null 2>&1; then
+  RAN=$((RAN + 1))
   shellcheck --version | grep -E '^version:'
   ( cd "${ROOT}" && shellcheck -x --severity=style build.sh test/run-tests.sh \
       test/run-analysis.sh ) || STATUS=1
@@ -62,9 +67,13 @@ else
 fi
 
 echo
-if [[ "${STATUS}" == "0" ]]; then
-  echo "static analysis: clean"
-else
+if [[ "${STATUS}" != "0" ]]; then
   echo "static analysis: findings above" >&2
+elif [[ "${SKIPPED}" != "0" ]]; then
+  # A run that skipped a tool has not found the code clean, it has not looked at
+  # it. Saying "clean" here is how a missing cppcheck turns into a green build.
+  echo "static analysis: incomplete - ${RAN} tool(s) ran, ${SKIPPED} skipped (REQUIRE_ANALYSIS=1 makes that fatal)"
+else
+  echo "static analysis: clean"
 fi
 exit "${STATUS}"

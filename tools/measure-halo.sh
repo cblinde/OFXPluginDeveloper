@@ -116,7 +116,7 @@ if [[ -z "${ORT_ROOT}" ]]; then
   fi
 fi
 [[ -n "${ORT_ROOT}" && -d "${ORT_ROOT}/include" ]] || die "ONNX Runtime not found; set ONNXRUNTIME_ROOT (see --help)"
-ls "${ORT_ROOT}"/lib/libonnxruntime.so* >/dev/null 2>&1 || die "${ORT_ROOT}/lib has no libonnxruntime.so"
+compgen -G "${ORT_ROOT}/lib/libonnxruntime.so*" >/dev/null || die "${ORT_ROOT}/lib has no libonnxruntime.so"
 
 mkdir -p "${BUILD}"
 BIN="${BUILD}/measure-halo"
@@ -124,8 +124,8 @@ BIN="${BUILD}/measure-halo"
 # does not always carry: it ships libonnxruntime.so. Link against that, run
 # against a directory that has the name the binary records.
 LIBDIR="${ORT_ROOT}/lib"
-if ! ls "${LIBDIR}"/libonnxruntime.so.1* >/dev/null 2>&1; then
-  real_so="$(ls "${LIBDIR}"/libonnxruntime.so 2>/dev/null | head -1)"
+if ! compgen -G "${LIBDIR}/libonnxruntime.so.1*" >/dev/null; then
+  real_so="$(find "${LIBDIR}" -maxdepth 1 -name 'libonnxruntime.so' -print -quit 2>/dev/null)"
   [[ -n "${real_so}" ]] || die "${LIBDIR} has neither libonnxruntime.so.1 nor libonnxruntime.so"
   mkdir -p "${BUILD}/lib"
   ln -sf "${real_so}" "${BUILD}/lib/libonnxruntime.so.1"
