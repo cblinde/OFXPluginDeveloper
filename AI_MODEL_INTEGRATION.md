@@ -429,11 +429,9 @@ The template accepts `eBitDepthFloat` only and passes three channels straight
 through. A plug-in a colourist actually uses takes what the host gives it.
 
 - **Depth.** `eBitDepthUByte` and `eBitDepthUShort` arrive as integer
-  components: normalise with the depth's maximum (255, 65535) before the model
-  and quantise back with rounding rather than truncation, or every pass drifts
-  the frame darker by up to one code value. Declare only the depths `render()`
-  really handles — capability and branch have to agree (A5 in
-  `PREFLIGHT_REVIEW_CHECKLIST.md`).
+  components: normalise by the depth's own maximum (255 / 65535, **A**) before
+  the model and quantise back with rounding rather than truncation, or every pass
+  drifts the frame darker by up to one code value.
 - **Premultiplication.** A model trained on straight colour must not be fed
   premultiplied pixels: `RGB·A` darkens every soft edge and the network treats
   the matte as image content, so a denoiser learns to preserve the fringe it was
@@ -441,10 +439,9 @@ through. A plug-in a colourist actually uses takes what the host gives it.
   alpha before packing and multiply back after unpacking, and leave pixels with
   `A == 0` at zero. `ARCHITECTURE_AND_CUDA_PIPELINE.md` §8 states the rule per
   operation; this is the inference instance of it.
-- **Pitch.** Signed and possibly padded, as in §5. `PackRGB`/`UnpackRGB` take the
-  host's row bytes for exactly this reason.
 - **Keep the conversion OFX-free.** Depth and alpha conversion belongs beside
-  `Pack*`/`Unpack*`, on plain buffers, so a test can round-trip every depth,
+  `Pack*`/`Unpack*`, on plain buffers addressed through the host's signed row
+  bytes (the pitch trap in §5), which is what lets a test round-trip every depth,
   padded rows and a negative stride without a host.
 
 #### Models that only accept certain sizes
@@ -456,9 +453,8 @@ candidate models failed that way, and one ran at 64×64 only (**B**). Decide it
 at load, not per frame:
 
 - **Find the alignment by probing.** One inference each at 63/72/80/96 tells you
-  the factor: 63 runs → 1, 72 → 8, 80 → 16, 96 → 32. It is a handful of
-  milliseconds at load and it is the difference between a dropdown entry and a
-  trap.
+  the factor: 63 runs → 1, 72 → 8, 80 → 16, 96 → 32. Four runs at load, not in
+  the render path, and the difference between a dropdown entry and a trap.
 - **Pad right and bottom** to that multiple with edge replication, run, and crop
   the result back to the real size. Zero padding is content to a convolution, so
   a black border bleeds inward; replication does not.
@@ -512,7 +508,7 @@ usually is, and the consequence is packaging, not a second build:
   `onnxruntime_providers_cuda.dll` fails with error **1114** because its
   `DllMain` needs the mailbox that only the ORT core sets; ORT finds the provider
   beside the core by itself. Preload only what the provider imports — cuDNN,
-  cuBLAS/cuBLASLt, cuFFT, cudart — or the load fails with **126**.
+  cuBLAS/cuBLASLt, cuFFT, cudart — or the load fails with **126** (**B**).
 - **Budget the size.** The provider imports `cufft64_*` even for a model with no
   FFT in it; with cuDNN 9 + cuBLAS 12 + cuFFT a bundle was 2.4–2.7 GB, of which
   the provider alone was 643 MB (**B**). That is a product decision — one
@@ -524,9 +520,9 @@ usually is, and the consequence is packaging, not a second build:
   7.25 GB at a 384² tile and crossed 11.8 GB at 640², at which point the driver
   fell into its slower path: halving the tile beats enlarging it (**B**).
 
-None of this is compiled in this repository — there is no GPU and no provider
-here, so every number above is external evidence, and the recipe is documented
-from the ORT API, exactly as §7 says.
+None of this is compiled here: no GPU, no provider in this repository, so every
+number above is external evidence from one RTX 3060 (**B**), and the recipe is
+documented from the ORT API.
 
 #### Detection heads: the four facts that cost a day
 

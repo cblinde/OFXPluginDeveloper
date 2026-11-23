@@ -80,14 +80,11 @@ host crash with no stack trace. None of them is stylistic.
 12. **Verify, then claim.** A plugin that compiles is not a plugin that renders.
     State exactly which hosts and GPU paths you exercised.
 13. **Nothing runtime-owned in a static with a destructor.** A host may unload
-    and reload the module in one process — the contract test in [`testkit/`](testkit/)
-    does exactly that, twice. A function-local `static` whose destructor calls
-    into CUDA, a thread pool or an inference runtime runs that destructor at
-    `DLL_PROCESS_DETACH`, while the module is already half gone, and the damage
-    shows up as a hang or crash on the **next** load, not at unload. Allocate
-    such state with `new` and never free it (the process is the lifetime), or
-    free it in `kOfxActionUnload` when no instance can be alive; keep statics
-    only for objects whose destructor touches nothing.
+    and reload the module in one process ([`testkit/`](testkit/) does, twice). A
+    function-local `static` whose destructor calls into CUDA, a thread pool or an
+    inference runtime runs it at `DLL_PROCESS_DETACH` and breaks the **next**
+    load: allocate that state with `new` and never free it. The ONNX case, with
+    the segfault it produces, is in [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §4.
 
 ---
 
