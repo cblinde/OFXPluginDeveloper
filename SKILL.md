@@ -405,7 +405,11 @@ provider and falls back to the CPU, never a second "GPU build" for users. The
 ONNX template has that copy behind `-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` plus
 `-DOFXPLUGIN_CUDA_RUNTIME_DIRS`, with a warning per missing file because the
 provider's missing import fails as error 126, not as a message
-(`AI_MODEL_INTEGRATION.md` §7). What such a plug-in draws over the model's output
+(`AI_MODEL_INTEGRATION.md` §7). On Windows that switch is refused at configure
+time rather than shipped as a broken copy: the provider imports
+`onnxruntime.dll` while the core travels as `onnxruntime-ofx.dll`, so either the
+host's runtime captures the import or nothing does — the working shape there is a
+sidecar process (`AI_MODEL_INTEGRATION.md` §2). What such a plug-in draws over the model's output
 is a separate contract — destination pitch, frame-coordinate placement,
 premultiplied plates, one rasterising origin — spelled out in
 [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:

@@ -570,10 +570,16 @@ make the choice visible — and the consequence is packaging, not a second build
   provider library and cuDNN/cuBLAS/cuBLASLt/cuFFT/cudart beside the `.ofx`,
   names every missing file as a `CMake Warning` with the load error it causes
   (126), prints the total size at configure time, and never fails a configure
-  for a machine without a CUDA runtime. On Windows it also warns about the
-  private core name: a provider DLL imports `onnxruntime.dll` by that name, so a
-  host that preloads its own ORT (Resolve 21: 1.13) would bind the provider to
-  the host's runtime — use a sidecar process there rather than a rename.
+  for a machine without a CUDA runtime. On Windows the option is **refused** at
+  configure time (`FATAL_ERROR`), not warned about: the provider DLL imports
+  `onnxruntime.dll` by base name, and the Windows bundle ships the core as
+  `onnxruntime-ofx.dll` because that private name is what keeps a host's own
+  runtime (Resolve 21: 1.13) from capturing the import (§4). Renamed, the
+  provider has nothing to bind to; unrenamed, the host's runtime is what it binds
+  to — either way the copy is a bundle that fails at load, so the switch does not
+  exist there. The working shape on Windows is a sidecar process that owns ORT
+  and the provider (§2, §3), or the option off with the CPU fallback naming
+  itself in the label.
   Verified on Linux with a directory of stand-in files: seven files copied into
   `Contents/<ARCH>/`, `CUDA provider bundle: 7 file(s), 7 MB` at configure time
   (**V**); the same configure without them warns seven times and still succeeds

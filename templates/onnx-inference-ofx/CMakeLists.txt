@@ -278,7 +278,7 @@ endif()
 # preload ORT - not a rename. On Linux the core keeps its SONAME, so the copy
 # below is consistent and unaffected.
 option(OFXPLUGIN_BUNDLE_CUDA_PROVIDER
-  "Copy onnxruntime_providers_cuda and the CUDA libraries it imports next to the .ofx" OFF)
+  "Copy onnxruntime_providers_cuda and the CUDA libraries it imports next to the .ofx (Linux only; refused on Windows)" OFF)
 set(OFXPLUGIN_CUDA_RUNTIME_DIRS "" CACHE STRING
   "Extra directories to search for the CUDA provider and its imports (semicolon-separated)")
 
@@ -288,21 +288,34 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
       "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON has no effect on macOS: CUDA is not "
       "available there and OFX hosts expose Metal/OpenCL instead. The session "
       "will keep falling back to the CPU.")
+  elseif(WIN32)
+    # Refused, not warned about. The provider imports "onnxruntime.dll" by base
+    # name; this bundle ships the core as onnxruntime-ofx.dll because a private
+    # name is what stops the host's own runtime from being bound to by imports
+    # (AI_MODEL_INTEGRATION.md section 4). Renamed, the provider has nothing to
+    # bind to; unrenamed, the host's runtime wins and render access-violates.
+    # A copied file that can never be used is not a feature with a caveat.
+    message(FATAL_ERROR
+      "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON is not available on Windows.\n"
+      "  onnxruntime_providers_cuda.dll imports \"onnxruntime.dll\" by base name, "
+      "and the Windows bundle ships the core as onnxruntime-ofx.dll so that a "
+      "host's own runtime (Resolve 21 ships 1.13) cannot capture that import. "
+      "With the core renamed the provider has nothing to bind to; with the core "
+      "unrenamed the host's runtime is what it binds to. Copying either one is a "
+      "bundle that fails at load, so the configure stops here instead.\n"
+      "  Use one of these:\n"
+      "   - a sidecar process that owns ONNX Runtime and the CUDA provider and "
+      "exchanges frames over shared memory (AI_MODEL_INTEGRATION.md sections 2 "
+      "and 3);\n"
+      "   - leave OFXPLUGIN_BUNDLE_CUDA_PROVIDER=OFF: the bundle still ships the "
+      "core, the plug-in falls back to the CPU and reports why in the provider "
+      "label.")
   else()
     if(NOT OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
       message(WARNING
         "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON while OFXPLUGIN_BUNDLE_ONNX_RUNTIME=OFF: "
         "the provider would be copied without the runtime it registers itself "
         "with. Enable both, or neither.")
-    endif()
-    if(WIN32)
-      message(WARNING
-        "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON on Windows: the bundle ships the core "
-        "as onnxruntime-ofx.dll, but a provider DLL imports \"onnxruntime.dll\" by "
-        "name, so a host that already loads ORT (Resolve 21: 1.13) will have the "
-        "provider bind to ITS runtime. The copy below is still useful for a host "
-        "that does not preload ORT; otherwise use a sidecar process. See "
-        "AI_MODEL_INTEGRATION.md section 7.")
     endif()
 
     # Search order: what the caller names, then the usual CUDA layouts, then the
