@@ -654,6 +654,10 @@ Rules that make a timing number mean something:
 5. **State the machine.** CPU, GPU, driver, host version, resolution, bit depth.
 6. **Compare like with like.** GPU path vs CPU path on the same frames and the
    same tolerance; a GPU path that is not bit-identical needs a stated threshold.
+7. **Measure on an idle machine.** A run that overlapped a `ninja` build reported
+   168 ms/frame for a model that takes 45 ms: the *ratio* survived, the number did
+   not (**B**). Say what else was running, or the figure is a machine's mood, not
+   the plug-in's cost.
 
 Nothing in this repository is timed: there is no GPU and no host, so every
 performance statement in these documents is deliberately absent. If you add a
@@ -908,6 +912,25 @@ message is available to assert on; nothing asserts on it yet.
    which is the overlay smell in §14: the probe tests a second feature, not this
    one. Prefer the log line, and keep the pixel probe for what only pixels can
    prove.
+5. **Make it a state log, not a frame log.** One line per rendered frame is a
+   flushed syscall per frame — 216,000 for an hour at 60 fps — and a file largest
+   exactly when a user needs to read it. Write on the first few frames of an
+   instance, then only when the state or the reason changes, and let the test
+   follow that shape: assert the **last** line, and add one check that renders
+   twenty times and requires that neither the line count nor the byte size moved
+   (**B**). That check is what keeps the rule from rotting. Compare the
+   *configuration* (which filters were applied), not the composed line, whose
+   numbers change every frame — otherwise "changed" is always true and the log is
+   a frame log wearing a state-log comment. And when a line grows past three
+   conversions, assemble it from a `std::string` instead of a long `printf`: with
+   no MSVC equivalent of `__attribute__((format))`, one missing argument reads
+   past the varargs and takes the host down on the first render (**B**).
+6. **A file that exists is not a file the plug-in wrote.** An installer or a
+   previous run leaves a file behind, so a log test that only opens it passes with
+   empty content. Write the process id in the header and require it, and
+   `std::remove()` the file at the start of the block so the first render is the
+   one that must create it — otherwise the test counts the previous run's lines
+   (**B**: `model runs +-4` from a stale file).
 
 What this still does not establish: that the cache is *correct* (same answer as
 the full path on the frame that follows a hit), only that it was taken. That

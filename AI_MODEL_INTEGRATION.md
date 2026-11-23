@@ -259,6 +259,20 @@ name is mandatory: `LoadLibrary` matches an already-loaded module by base name,
 so even the full path to a file called `onnxruntime.dll` returns the host's copy.
 Never `FreeLibrary` it; an `Ort::Env` created afterwards outlives the call.
 
+**The C++ header is only half header-only.** `Ort::GetVersionString()` and
+`Ort::GetAvailableProviders()` are declared in `onnxruntime_cxx_api.h` and
+implemented in the runtime's import library, so calling either pulls
+`OrtGetApiBase` into the module — exactly the link-time import the load-by-path
+design exists to avoid — and the link *succeeds*, which is why nothing warns
+(**B**, and the plug-in that did it crashed in its constructor). Go through the
+table you loaded: `GetAvailableProviders` on that `OrtApi`, and `OrtGetApiBase`
+resolved with `GetProcAddress` on your own handle for the version.
+`dumpbin /dependents` on the finished `.ofx` is the check: no `onnxruntime.dll`
+may appear. The names that call returns are the runtime's strings — copy them and
+do **not** free them through `Ort::AllocatorWithDefaultOptions` (**B**: the first
+`Free()` was an access violation), and ask once per process, because the answer
+cannot change while that DLL is loaded.
+
 Never put a runtime-owned object in a function-local static either. An
 `Ort::Env env` there has its destructor run at `DLL_PROCESS_DETACH`, after the
 host unloaded the plug-in and while ORT's thread pool is winding down — a
@@ -554,7 +568,18 @@ make the choice visible — and the consequence is packaging, not a second build
   measured elsewhere at 28× on a 4x model and 11× on a denoiser (**B**). Write
   provider plus reason into a label parameter (`CUDA (RTX 3060)` versus
   `CPU (provider load failed)`) and add a test stage that fails when the expected
-  provider is missing.
+  provider is missing. Write that parameter **outside** the mutex that guards the
+  session: a host may call back into the instance from `setValueAtTime`, so a
+  label written while the render lock is held deadlocks the first render (**B**,
+  `std::system_error: resource deadlock would occur`). Compose the text under the
+  lock, release it, then write.
+- **A read-only field is a `StringParam`, not a push button or a log line.**
+  `kOfxParamTypeString` with `eStringTypeLabel` and `setEvaluateOnChange(false)`:
+  hosts draw it as text, the value is derivative (never saved, never evaluated),
+  and rewriting it does not invalidate a render. It is also the only form the
+  test harness can read back, which is what makes "which provider ran" a check
+  rather than a log nobody sees (**B** for the host rendering; the testkit side is
+  **[V]**, `--label-param`).
 - **Do not preload the provider DLL.** `LoadLibrary` on
   `onnxruntime_providers_cuda.dll` fails with error **1114** because its
   `DllMain` needs the mailbox that only the ORT core sets; ORT finds the provider

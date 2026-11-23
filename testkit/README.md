@@ -145,6 +145,15 @@ all four, and should: a pass-through is orientation-agnostic, so only a plug-in
 that draws at chosen image positions exposes the difference. Assert where a mark
 landed and which way up it is — comparing bytes will not catch a mirror.
 
+One definition matters when you assert a window: `FakeHost::destination()` is the
+host's own read-back and always walks frame rows upward from `bounds.y1`, whatever
+origin and stride the plug-in's pointer had. For a `Top` origin that is *not* the
+order the plug-in saw — the read-back is mirrored relative to the pointer handed
+out. A sub-window test therefore has to un-swap the snapshot once before it can
+say "nothing outside the window was touched"; the contract test never hits this,
+because it renders full frames. `--mark X,Y` is written against this read-back
+order on purpose, which is what makes the mirrored layout fail.
+
 `run-negative-controls.sh` runs that as a control rather than describing it: the
 `-DDRAW_MARK` build of the ROI stub draws one 8×8 mark through the destination's
 bounds and pitch, and `--mark 24,8` reads it back from the host's own frame-order

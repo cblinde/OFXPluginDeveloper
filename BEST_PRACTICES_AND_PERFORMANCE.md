@@ -212,9 +212,13 @@ Which setting is right is a property of the *effect*, not of the GPU:
   because a proxy render is a different scale — is then the only setting under
   which the output is defined.
 
-Also note: `process()` silently returns when the render window is not inside the
-destination bounds **[S]**. A plugin that "does nothing" is often being handed a
-window it rejected; log it once before assuming the GPU failed.
+Also note: `templates/onnx-inference-ofx` refuses a window that is not inside the
+source **or** the destination bounds — `render()` throws `kOfxStatErrValue` for
+either, so the host's error channel carries it instead of a frame that merely
+looks rendered. An older form of this template returned quietly, and the
+distinction is the point: a silent return turns "the host handed me a window I
+cannot write" into a frame that is not drawn while the status says success. If you
+keep a quiet return anywhere, log it once before assuming the GPU failed.
 
 ### 5.4 Do not add threads to the CPU path
 
