@@ -296,8 +296,8 @@ and the templates share it rather than each carrying a copy.
 | `testkit/fake_host.cpp` | ~1,100 | the five suites + message suite, the object model (descriptor, instance, clips, parameters, images) |
 | `testkit/contract_main.cpp` | ~500 | the checks, the `dlopen`, and the command line |
 | `testkit/build-contract-test.sh` | ~50 | compiles both into one binary; finds headers from the template's `CMakeCache.txt` |
-| `testkit/negative-controls/` | 2 stubs | deliberately broken plug-ins that prove the harness fails |
-| `testkit/run-negative-controls.sh` | ~70 | builds the controls, asserts each is rejected with the right message |
+| `testkit/negative-controls/` | 3 stubs | deliberately broken plug-ins that prove the harness fails, plus an ROI stub whose two builds differ in one decision: whether render reads the context region it was given |
+| `testkit/run-negative-controls.sh` | ~135 | builds the controls, asserts each fault is rejected with the right message **and** that the ROI pattern build passes |
 
 Coverage, precisely: all **18** `OfxPropertySuiteV1` functions (including the `*N`
 and `propGetDimension` variants), all **13** `OfxImageEffectSuiteV1` functions,
@@ -382,7 +382,7 @@ out/contract_test out/MyPlugin.ofx \
 
 ### 5.3 Proof that it can fail
 
-A harness that has only ever passed is untested. Two controls, run by
+A harness that has only ever passed is untested. Four controls, run by
 `testkit/run-negative-controls.sh` (deliberately **not** part of `./run-tests.sh`,
 so the normal run stays green):
 
@@ -399,8 +399,32 @@ so the normal run stays green):
   contract_test: 20 checks, 1 failed
   caught (exit 1) with: FAIL param 'gain' type: OfxParamTypeInteger (expected OfxParamTypeDouble)
 
-negative controls: both faults detected, harness is not a rubber stamp
+--- negative control: declared context region ignored by render ---
+  ok 25 - roi context: whole-frame render
+  ok 26 - roi context: destination is readable
+  ok 27 - roi context: render of an inset window
+  FAIL roi context: the inset window matches the whole frame bit for bit:
+       pixel (3,3) channel 0: 0.618557 vs 0.687285
+  contract_test: 28 checks, 1 failed
+  caught (exit 1) with: FAIL roi context: the inset window matches the whole frame bit for bit
+
+--- negative control: declared context region honoured by render ---
+  ok 61 - roi context: the inset window matches the whole frame bit for bit
+  ok 62 - roi context: render of the same window without a context region
+  ok 63 - roi context: without a context region the same window differs
+  contract_test: 66 checks, 0 failed
+  passed, as a plug-in following the pattern must
+
+negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp
 ```
+
+The ROI pair is the interesting one, because a single build could not prove it:
+the same C stub (`stub_roi_context.c`) applies a 3×3 box filter and differs only
+in whether it clamps its taps to the published source bounds or to the render
+window. Built with `-DIGNORE_CONTEXT` it must fail the bit-for-bit check at the
+window's own border; built as is, it must pass the whole harness. Both runs use a
+generated, varying source fixture — over the harness's default constant colour a
+box filter has no seam to find and the control would pass for the wrong reason.
 
 The first stub answers `kOfxActionDescribe` with `kOfxStatReplyDefault`; the
 second declares `gain` as `OfxParamTypeInteger`. Neither is caught by a compiler

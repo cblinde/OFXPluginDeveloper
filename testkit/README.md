@@ -21,8 +21,8 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `build-contract-test.sh` | compiles the two files into one binary, finding the OFX headers from the template's CMake cache |
 | `build-contract-test.bat` | the same build under MSVC; the loader path in `contract_main.cpp` is `LoadLibraryExW` there |
 | `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping |
-| `negative-controls/` | two deliberately broken plug-ins that prove the harness fails when it should |
-| `run-negative-controls.sh` | builds those controls, asserts each is rejected with the right message |
+| `negative-controls/` | three deliberately broken plug-ins that prove the harness fails when it should, plus one ROI stub whose two builds differ in a single decision: whether `render` reads the context region it was handed |
+| `run-negative-controls.sh` | builds those controls, asserts each fault is rejected with the right message, and that the ROI build which follows the pattern passes |
 
 ## Running it
 
@@ -172,6 +172,15 @@ fails the build rather than turning the check into a skip.
 
 `testkit/run-negative-controls.sh` proves the harness is not a rubber stamp. It
 is deliberately not part of `./run-tests.sh`: a normal run has to stay green.
+
+`--roi-context` gets a pair there rather than a single control, because one build
+cannot prove it. The same stub (`negative-controls/stub_roi_context.c`) applies a
+3×3 box filter and differs only in whether its taps are clamped to the published
+source bounds or to the render window: with `-DIGNORE_CONTEXT` it must fail
+`the inset window matches the whole frame bit for bit` at the window's own
+border, and without that define the whole harness must pass. Both runs use a
+generated, varying source, because over the default constant colour no box
+filter can show a seam and the control would pass for the wrong reason.
 
 ## What this host cannot prove
 

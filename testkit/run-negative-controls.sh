@@ -3,9 +3,16 @@
 #
 # Proves that contract_test detects faults instead of merely passing.
 #
-# Two deliberately broken .ofx files are built from stub_bad_status.c and
-# stub_bad_type.c, and each is fed to the same harness the templates use. The
-# script succeeds only if the harness exits non-zero *and* names the assertion.
+# Three deliberately broken .ofx files are built from stub_bad_status.c,
+# stub_bad_type.c and stub_roi_context.c (-DIGNORE_CONTEXT), and each is fed to
+# the same harness the templates use. The script succeeds only if the harness
+# exits non-zero *and* names the assertion.
+#
+# The fourth control is the same ROI stub built to follow the pattern: it must
+# pass, which proves the harness is not simply red. That pair is what makes
+# `--roi-context` self-verifying - without the ignored build the check could be
+# satisfied by any plug-in, and without the honoured build it could be
+# unsatisfiable.
 #
 # This is intentionally NOT wired into ../run-tests.sh: a normal run must stay
 # green, and a run that always has two failing tests would train people to
@@ -28,6 +35,40 @@ cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/bad_status.ofx" "${HERE}/negative-controls/stub_bad_status.c"
 cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/bad_type.ofx" "${HERE}/negative-controls/stub_bad_type.c"
+# Same source, one decision apart: clamp the filter taps to the published
+# source bounds (the context the plug-in asked for) or to the window it was
+# told to render.
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/roi_ignored.ofx" -DIGNORE_CONTEXT "${HERE}/negative-controls/stub_roi_context.c"
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/roi_honoured.ofx" "${HERE}/negative-controls/stub_roi_context.c"
+
+# The harness's default source is one constant colour, and a box filter over a
+# constant image has no seam to find: every window would agree no matter what
+# the plug-in reads. A varying fixture is what makes the comparison mean
+# something, so it is generated rather than committed.
+cat > "${TMP}/make_roi_source.c" <<'EOF'
+#include <stdio.h>
+int main(int argc, char** argv)
+{
+  if (argc != 2) return 2;
+  FILE* f = fopen(argv[1], "wb");
+  if (!f) return 1;
+  for (int c = 0; c < 3; ++c)
+    for (int y = 0; y < 48; ++y)
+      for (int x = 0; x < 64; ++x) {
+        float v = (float)(((x * 7 + y * 13 + c * 29) % 97) / 97.0);
+        fwrite(&v, sizeof v, 1, f);
+      }
+  fclose(f);
+  return 0;
+}
+EOF
+cc -o "${TMP}/make_roi_source" "${TMP}/make_roi_source.c"
+"${TMP}/make_roi_source" "${TMP}/roi_source.bin"
+ROI_ARGS=("${TMP}/roi_honoured.ofx" --id com.testkit.control.roiok
+          --clip Source --clip Output --concurrency-threads 0 --roi-context
+          --size 64x48 --src "${TMP}/roi_source.bin")
 
 fail=0
 run_control()
@@ -51,15 +92,42 @@ run_control()
   echo "  caught (exit ${status}) with: ${expected}"
 }
 
+# The mirror image of run_control: a plug-in that follows the pattern has to
+# pass, otherwise a check that is red for everything would look like a working
+# control.
+run_pass()
+{
+  local title="$1"; shift
+  local output status
+  output="$("${BIN}" "$@" 2>&1)"
+  status=$?
+  printf '\n--- negative control: %s ---\n' "${title}"
+  printf '%s\n' "${output}" | sed 's/^/  /'
+  if [[ ${status} -ne 0 ]]; then
+    echo "  CONTROL FAILED: the harness rejected a plug-in that follows the pattern" >&2
+    fail=1
+    return
+  fi
+  echo "  passed, as a plug-in following the pattern must"
+}
+
 run_control "describe returns kOfxStatReplyDefault" "FAIL kOfxActionDescribe: kOfxStatReplyDefault" \
   "${TMP}/bad_status.ofx" --id com.testkit.negative.badstatus --param gain:double
 
 run_control "parameter declared with the wrong type" "FAIL param 'gain' type: OfxParamTypeInteger (expected OfxParamTypeDouble)" \
   "${TMP}/bad_type.ofx" --id com.testkit.negative.badtype --param gain:double
 
+run_control "declared context region ignored by render" \
+  "FAIL roi context: the inset window matches the whole frame bit for bit" \
+  "${TMP}/roi_ignored.ofx" --id com.testkit.negative.roiignored \
+  --clip Source --clip Output --concurrency-threads 0 --roi-context \
+  --size 64x48 --src "${TMP}/roi_source.bin"
+
+run_pass "declared context region honoured by render" "${ROI_ARGS[@]}"
+
 echo
 if [[ ${fail} -ne 0 ]]; then
   echo "negative controls FAILED: the harness does not detect the faults above" >&2
   exit 1
 fi
-echo "negative controls: both faults detected, harness is not a rubber stamp"
+echo "negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp"
