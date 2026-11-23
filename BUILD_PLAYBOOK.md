@@ -445,6 +445,16 @@ name that a host's own runtime pre-empts even when the file is present. The Linu
 failure mode is *two* files, so the contract harness needs the bundle directory,
 not just the `.ofx` path.
 
+**One command for the ONNX template's suites.** `templates\onnx-inference-ofx\test\test.bat
+Release` is the Windows counterpart of `test/run-tests.sh`: it validates
+`ONNXRUNTIME_ROOT` (a raw NuGet extraction is accepted and normalised into
+`build\_ort`), puts the runtime's `bin\` on `PATH`, builds unless the second
+argument is `nobuild`, runs `ai_pipeline_test models`, then the contract harness
+twice — exact golden, then the plug-in's own tiling at tolerance 0.02 — and ends
+with the fixture list and `check-ofx-artifact.bat --strict`. It has never run, so
+it is **[I]** until someone executes it on Windows; the steps mirror the Linux
+script, and a failure there is as likely to be this script as the plug-in.
+
 **What stays Linux-only.** The CPU-emulated kernel suite
 (`test/kernel_equivalence.cpp`) calls `posix_memalign`, which MSVC does not have,
 and the shell suites need `g++`, `nm`, `readelf` and `valgrind`. On Windows the
