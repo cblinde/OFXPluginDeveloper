@@ -31,7 +31,14 @@
 #include "ofxImageEffect.h"
 #include "ofxProperty.h"
 
-#ifdef IGNORE_CONTEXT
+/* Four builds come out of this one file: plain and internally tiled, each in a
+ * context-reading and a context-ignoring form. The ids have to differ because
+ * the harness is told which plug-in to expect. */
+#if defined(TILED) && defined(IGNORE_CONTEXT)
+#define PLUGIN_ID "com.testkit.negative.roiignoredtiled"
+#elif defined(TILED)
+#define PLUGIN_ID "com.testkit.control.roioktiled"
+#elif defined(IGNORE_CONTEXT)
 #define PLUGIN_ID "com.testkit.negative.roiignored"
 #else
 #define PLUGIN_ID "com.testkit.control.roiok"
@@ -58,8 +65,22 @@ static void fetchSuites(void)
 /* A 3x3 box filter: radius 1, so the context region is one pixel. */
 #define RADIUS 1
 
-static void boxFilter(OfxPropertySetHandle srcProps, OfxPropertySetHandle dstProps,
-                      const int window[4])
+#ifdef TILED
+/* Core tiles, and the context each tile asks for. Two pixels of halo around a
+ * 32-pixel core is what a real plug-in does with a small receptive field; the
+ * point here is that the tile boundary is a boundary the whole-frame render does
+ * not have, so ignoring the context shows up inside the window, not only at its
+ * edge. */
+#define TILE 32
+#define TILE_HALO 2
+#endif
+
+/* Writes every pixel of `core` by averaging a 3x3 neighbourhood, with the taps
+ * clamped to `box`. `box` is where the pixels the tile is allowed to read live:
+ * the published source bounds when the plug-in uses the context it declared,
+ * the core itself when it does not. */
+static void filterRect(OfxPropertySetHandle srcProps, OfxPropertySetHandle dstProps,
+                       const int core[4], const int box[4])
 {
   void* srcData = 0;
   void* dstData = 0;
@@ -74,20 +95,17 @@ static void boxFilter(OfxPropertySetHandle srcProps, OfxPropertySetHandle dstPro
   g_props->propGetInt(dstProps, kOfxImagePropRowBytes, 0, &dstRowBytes);
   g_props->propGetIntN(dstProps, kOfxImagePropBounds, 4, db);
 
-  /* Where the taps may come from. This single line is what the control proves:
-     with the published bounds the plug-in reads the context it asked for; with
-     the window it reads only what it was given and the border is computed from
-     clamped taps. */
-#ifdef IGNORE_CONTEXT
-  const int lo_x = window[0], lo_y = window[1], hi_x = window[2], hi_y = window[3];
-#else
-  const int lo_x = sb[0], lo_y = sb[1], hi_x = sb[2], hi_y = sb[3];
-#endif
+  /* Where the taps may come from. This is what the control proves: with the
+     declared context the plug-in reads the neighbours it asked for; without it
+     it reads only what it was handed and the boundary is computed from clamped
+     taps - at the window edge in the plain build, at every tile boundary in the
+     tiled one. */
+  const int lo_x = box[0], lo_y = box[1], hi_x = box[2], hi_y = box[3];
 
-  for (int y = window[1]; y < window[3]; ++y) {
+  for (int y = core[1]; y < core[3]; ++y) {
     float* out = (float*)((char*)dstData + (long long)(y - db[1]) * dstRowBytes +
-                          (long long)(window[0] - db[0]) * 16);
-    for (int x = window[0]; x < window[2]; ++x, out += 4) {
+                          (long long)(core[0] - db[0]) * 16);
+    for (int x = core[0]; x < core[2]; ++x, out += 4) {
       float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
       for (int dy = -RADIUS; dy <= RADIUS; ++dy) {
         int py = y + dy;
@@ -109,6 +127,43 @@ static void boxFilter(OfxPropertySetHandle srcProps, OfxPropertySetHandle dstPro
       for (int c = 0; c < 4; ++c) out[c] = acc[c] / 9.0f;
     }
   }
+}
+
+static int clampInt(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+/* Renders `window` the way the build under test is supposed to: whole, or as
+ * disjoint 32-pixel cores each with TILE_HALO of context. In the ignored builds
+ * the context is dropped, so a tile sees nothing beyond itself. */
+static void filterWindow(OfxPropertySetHandle srcProps, OfxPropertySetHandle dstProps,
+                         const int window[4])
+{
+  int sb[4] = {0, 0, 0, 0};
+  g_props->propGetIntN(srcProps, kOfxImagePropBounds, 4, sb);
+#ifdef TILED
+  for (int ty = window[1]; ty < window[3]; ty += TILE) {
+    for (int tx = window[0]; tx < window[2]; tx += TILE) {
+      const int core[4] = {tx, ty, tx + TILE < window[2] ? tx + TILE : window[2],
+                           ty + TILE < window[3] ? ty + TILE : window[3]};
+#ifdef IGNORE_CONTEXT
+      const int halo = 0;
+#else
+      const int halo = TILE_HALO;
+#endif
+      const int box[4] = {clampInt(core[0] - halo, sb[0], sb[2] - 1),
+                          clampInt(core[1] - halo, sb[1], sb[3] - 1),
+                          clampInt(core[2] + halo, sb[0] + 1, sb[2]),
+                          clampInt(core[3] + halo, sb[1] + 1, sb[3])};
+      filterRect(srcProps, dstProps, core, box);
+    }
+  }
+#else
+#ifdef IGNORE_CONTEXT
+  const int box[4] = {window[0], window[1], window[2], window[3]};
+#else
+  const int box[4] = {sb[0], sb[1], sb[2], sb[3]};
+#endif
+  filterRect(srcProps, dstProps, window, box);
+#endif
 }
 
 static OfxStatus render(void* handle, OfxPropertySetHandle inArgs)
@@ -134,7 +189,7 @@ static OfxStatus render(void* handle, OfxPropertySetHandle inArgs)
   stat = g_effects->clipGetImage(dstClip, time, 0, &dstProps);
   if (stat != kOfxStatOK) return stat;
 
-  boxFilter(srcProps, dstProps, window);
+  filterWindow(srcProps, dstProps, window);
 
   g_effects->clipReleaseImage(srcProps);
   g_effects->clipReleaseImage(dstProps);

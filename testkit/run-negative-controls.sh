@@ -3,16 +3,18 @@
 #
 # Proves that contract_test detects faults instead of merely passing.
 #
-# Three deliberately broken .ofx files are built from stub_bad_status.c,
-# stub_bad_type.c and stub_roi_context.c (-DIGNORE_CONTEXT), and each is fed to
-# the same harness the templates use. The script succeeds only if the harness
-# exits non-zero *and* names the assertion.
+# Six controls are fed to the same harness the templates use. Two are separate
+# broken plug-ins (stub_bad_status.c answers describe with ReplyDefault,
+# stub_bad_type.c declares the wrong parameter type). The other four are one ROI
+# stub built four ways: plain or internally tiled, with the declared context
+# read or ignored.
 #
-# The fourth control is the same ROI stub built to follow the pattern: it must
-# pass, which proves the harness is not simply red. That pair is what makes
-# `--roi-context` self-verifying - without the ignored build the check could be
-# satisfied by any plug-in, and without the honoured build it could be
-# unsatisfiable.
+# The script succeeds only if every broken build exits non-zero *and* names the
+# assertion, and every context-reading build passes. Those pairs are what make
+# `--roi-context` and `--roi-context-tolerance` self-verifying: without the
+# ignored build a check could be satisfied by any plug-in, and without the
+# honoured build it could be unsatisfiable. The tiled pair covers the tolerance
+# variant without needing the ONNX template's model or bundle.
 #
 # This is intentionally NOT wired into ../run-tests.sh: a normal run must stay
 # green, and a run that always has two failing tests would train people to
@@ -42,6 +44,16 @@ cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_ignored.ofx" -DIGNORE_CONTEXT "${HERE}/negative-controls/stub_roi_context.c"
 cc -shared -fPIC -std=c99 -I "${INC}" \
    -o "${TMP}/roi_honoured.ofx" "${HERE}/negative-controls/stub_roi_context.c"
+# The same two decisions again, with the stub tiling internally: -DTILED splits
+# the window into 32-pixel cores, so dropping the context now shows up at a
+# boundary the whole-frame render does not have. This is the pair behind
+# --roi-context-tolerance, which the ONNX template exercises only with its own
+# bundle.
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/roi_tiled_ignored.ofx" -DTILED -DIGNORE_CONTEXT \
+   "${HERE}/negative-controls/stub_roi_context.c"
+cc -shared -fPIC -std=c99 -I "${INC}" \
+   -o "${TMP}/roi_tiled_ok.ofx" -DTILED "${HERE}/negative-controls/stub_roi_context.c"
 
 # The harness's default source is one constant colour, and a box filter over a
 # constant image has no seam to find: every window would agree no matter what
@@ -124,6 +136,17 @@ run_control "declared context region ignored by render" \
   --size 64x48 --src "${TMP}/roi_source.bin"
 
 run_pass "declared context region honoured by render" "${ROI_ARGS[@]}"
+
+TILED_ARGS=(--clip Source --clip Output --concurrency-threads 0
+            --roi-context-tolerance 0.02 --size 64x48 --src "${TMP}/roi_source.bin")
+
+run_control "internally tiled render ignores the declared context" \
+  "FAIL roi context: the inset window stays within the tolerance of the whole frame" \
+  "${TMP}/roi_tiled_ignored.ofx" --id com.testkit.negative.roiignoredtiled \
+  "${TILED_ARGS[@]}"
+
+run_pass "internally tiled render honours the declared context" \
+  "${TMP}/roi_tiled_ok.ofx" --id com.testkit.control.roioktiled "${TILED_ARGS[@]}"
 
 echo
 if [[ ${fail} -ne 0 ]]; then

@@ -21,8 +21,8 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `build-contract-test.sh` | compiles the two files into one binary, finding the OFX headers from the template's CMake cache |
 | `build-contract-test.bat` | the same build under MSVC; the loader path in `contract_main.cpp` is `LoadLibraryExW` there |
 | `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping |
-| `negative-controls/` | three deliberately broken plug-ins that prove the harness fails when it should, plus one ROI stub whose two builds differ in a single decision: whether `render` reads the context region it was handed |
-| `run-negative-controls.sh` | builds those controls, asserts each fault is rejected with the right message, and that the ROI build which follows the pattern passes |
+| `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built four ways (plain or internally tiled, context read or ignored), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
+| `run-negative-controls.sh` | builds those six controls, asserts each fault is rejected with the right message, and that the two context-reading builds pass |
 
 ## Running it
 
@@ -188,6 +188,12 @@ source bounds or to the render window: with `-DIGNORE_CONTEXT` it must fail
 border, and without that define the whole harness must pass. Both runs use a
 generated, varying source, because over the default constant colour no box
 filter can show a seam and the control would pass for the wrong reason.
+
+`--roi-context-tolerance` gets the same pair with `-DTILED`, which splits the
+window into 32-pixel cores and gives each one two pixels of context. The ignored
+build then fails at a tile boundary *inside* the window (`max deviation 0.376 at
+pixel (31,31)` against a 0.02 bound), and the reading build passes - so the
+tolerance variant is covered without the ONNX template's model or bundle.
 
 ## What this host cannot prove
 

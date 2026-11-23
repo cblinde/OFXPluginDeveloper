@@ -301,8 +301,8 @@ and the templates share it rather than each carrying a copy.
 | `testkit/fake_host.cpp` | ~1,100 | the five suites + message suite, the object model (descriptor, instance, clips, parameters, images) |
 | `testkit/contract_main.cpp` | ~500 | the checks, the `dlopen`, and the command line |
 | `testkit/build-contract-test.sh` | ~50 | compiles both into one binary; finds headers from the template's `CMakeCache.txt` |
-| `testkit/negative-controls/` | 3 stubs | deliberately broken plug-ins that prove the harness fails, plus an ROI stub whose two builds differ in one decision: whether render reads the context region it was given |
-| `testkit/run-negative-controls.sh` | ~135 | builds the controls, asserts each fault is rejected with the right message **and** that the ROI pattern build passes |
+| `testkit/negative-controls/` | 2 stubs + 1 four-way | deliberately broken plug-ins that prove the harness fails, plus an ROI stub built plain or internally tiled, each with the context read or ignored |
+| `testkit/run-negative-controls.sh` | ~155 | builds the six controls, asserts each fault is rejected with the right message **and** that both context-reading builds pass |
 
 Coverage, precisely: all **18** `OfxPropertySuiteV1` functions (including the `*N`
 and `propGetDimension` variants), all **13** `OfxImageEffectSuiteV1` functions,
@@ -395,7 +395,7 @@ out/contract_test out/MyPlugin.ofx \
 
 ### 5.3 Proof that it can fail
 
-A harness that has only ever passed is untested. Four controls, run by
+A harness that has only ever passed is untested. Six controls, run by
 `testkit/run-negative-controls.sh` (deliberately **not** part of `./run-tests.sh`,
 so the normal run stays green):
 
@@ -428,16 +428,37 @@ so the normal run stays green):
   contract_test: 66 checks, 0 failed
   passed, as a plug-in following the pattern must
 
+--- negative control: internally tiled render ignores the declared context ---
+  ok 25 - roi context: whole-frame render
+  ok 26 - roi context: destination is readable
+  ok 27 - roi context: render of an inset window
+  FAIL roi context: the inset window stays within the tolerance of the whole frame:
+       max deviation 0.375716 at pixel (31,31) channel 2: 0.920962 vs 0.545246
+       (tolerance 0.020000)
+  contract_test: 28 checks, 1 failed
+  caught (exit 1) with: FAIL roi context: the inset window stays within the tolerance of the whole frame
+
+--- negative control: internally tiled render honours the declared context ---
+  ok 61 - roi context: the inset window stays within the tolerance of the whole frame
+  ok 62 - roi context: render of the same window without a context region
+  ok 63 - roi context: without a context region the same window leaves the tolerance
+  contract_test: 66 checks, 0 failed
+  passed, as a plug-in following the pattern must
+
 negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp
 ```
 
-The ROI pair is the interesting one, because a single build could not prove it:
-the same C stub (`stub_roi_context.c`) applies a 3×3 box filter and differs only
-in whether it clamps its taps to the published source bounds or to the render
-window. Built with `-DIGNORE_CONTEXT` it must fail the bit-for-bit check at the
-window's own border; built as is, it must pass the whole harness. Both runs use a
-generated, varying source fixture — over the harness's default constant colour a
-box filter has no seam to find and the control would pass for the wrong reason.
+The ROI pairs are the interesting ones, because a single build could not prove
+either: the same C stub (`stub_roi_context.c`) applies a 3×3 box filter and
+differs only in whether it clamps its taps to the published source bounds or to
+the render window. Built with `-DIGNORE_CONTEXT` it must fail the bit-for-bit
+check at the window's own border; built as is, it must pass the whole harness.
+With `-DTILED` the stub splits the window into 32-pixel cores and gives each two
+pixels of context, so the same difference now shows up at a tile boundary inside
+the window and must fail the tolerance check (`--roi-context-tolerance 0.02`,
+measured 0.3757 against the bound). All four runs use a generated, varying source
+fixture — over the harness's default constant colour a box filter has no seam to
+find and the controls would pass for the wrong reason.
 
 The first stub answers `kOfxActionDescribe` with `kOfxStatReplyDefault`; the
 second declares `gain` as `OfxParamTypeInteger`. Neither is caught by a compiler
