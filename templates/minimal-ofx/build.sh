@@ -64,6 +64,10 @@ ofx_file="$(find "${here}/build/bundle" -name '*.ofx' -type f | head -1)"
 echo "[4/4] verifying ${ofx_file}"
 file "${ofx_file}"
 
+# The verification below needs binutils. On Windows the same checks live in
+# build.bat, which uses dumpbin and cuobjdump; say so instead of dying on
+# "nm: command not found" after a build that already succeeded.
+command -v nm >/dev/null 2>&1 && command -v readelf >/dev/null 2>&1 || die "nm and readelf are not installed, and this step proves the artifact with them; on Windows run build.bat (dumpbin) or test/run-tests.bat"
 exports="$(nm -D --defined-only "${ofx_file}" | awk '$2 == "T" {print $3}' | sort)"
 expected=$'OfxGetNumberOfPlugins\nOfxGetPlugin'
 if [[ "${exports}" != "${expected}" ]]; then

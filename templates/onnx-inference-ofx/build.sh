@@ -80,6 +80,7 @@ if [[ -z "${OFX_BIN}" ]]; then
   exit 1
 fi
 
+command -v nm >/dev/null 2>&1 || die "nm is not installed, and this step proves the artifact with it; on Windows run build.bat (dumpbin) or test/test.bat"
 EXPORTS="$(nm -D --defined-only "${OFX_BIN}" | grep -c ' T ' || true)"
 if [[ "${EXPORTS}" != "2" ]]; then
   echo "error: the module exports ${EXPORTS} dynamic symbols, expected exactly 2" >&2

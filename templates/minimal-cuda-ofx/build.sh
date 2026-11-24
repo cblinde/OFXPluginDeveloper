@@ -223,6 +223,7 @@ find "${bundle}" -name '*.ofx' -type f -printf '  %p\n' 2>/dev/null || true
 # Immediate, cheap proof that the intended path was actually compiled in.
 ofx_file="$(find "${bundle}" -name '*.ofx' -type f | head -1)"
 if [[ -n "$ofx_file" ]]; then
+  command -v nm >/dev/null 2>&1 || die "nm is not installed, and this step proves the artifact with it; on Windows run build.bat (dumpbin) or test/run-tests.bat"
   exported="$(nm -D --defined-only "$ofx_file" 2>/dev/null | grep -c ' T ' || true)"
   echo "  exported dynamic symbols: ${exported} (expected 2)"
   # Note: no `grep -q` here. With `set -o pipefail`, grep -q exits early, nm dies

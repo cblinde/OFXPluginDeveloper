@@ -60,7 +60,7 @@ templates/minimal-ofx/
   src/Plugin.cpp                     the smallest host-loadable plug-in
   exports.map                        version script: exactly two dynamic symbols
   build.sh / build.bat               fetch headers, build, inspect the artifact
-  test/run-tests.sh                  contract harness against the reference plug-in
+  test/run-tests.sh  .bat            contract harness against the reference plug-in
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp       OFX host wrapper: params, dispatch, isIdentity
@@ -156,7 +156,13 @@ The template's checks are one command on Windows too: `test\run-tests.bat
 Release` runs the artifact check, executes `test/gpu-kernel-test.cu` on the real
 GPU, and drives the built `.ofx` through the contract harness. It is the
 counterpart of `test/run-tests.sh` where `g++`, `nm -D`, `readelf`, `dlopen` and
-valgrind do not exist.
+valgrind do not exist. The reference and CUDA templates each have one, and the
+same counts come out of either route: 110 checks for the reference plug-in, 136
+for the CUDA one.
+
+`./run-tests.sh` notices which platform it is on. On Windows it hands the work to
+those `.bat` runners instead of failing at the first missing `nm`, so one command
+still means every build and every suite the machine can run.
 
 #### Arguments accepted by the scripts
 
@@ -216,9 +222,10 @@ Documented rather than hidden, because each one is a trap for the next reader:
    licence statement (see [Licensing](references/reference-projects.md#licensing-and-provenance)).
 2. **The Windows path was executed on another machine, not here.** The 2026-11-22
    field test built, loaded and rendered through `.\build.bat`; this checkout can
-   only syntax-review it, so treat the Windows build as externally verified **[B]**
-   ([the archived run](references/field-evidence.md))
-   rather than as a check `./run-tests.sh` performs.
+   only syntax-review it, so the graded evidence for the Windows path is the
+   archived run **[B]** ([field-evidence](references/field-evidence.md)). A Windows
+   machine now runs the same checks through `./run-tests.sh`, which dispatches to
+   the `.bat` runners; that is a local run, and it is not new archived evidence.
 3. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
    `/usr/OFX/Plugins` is root-owned on most Linux systems, so run that step with
    `sudo` or point `OFX_INSTALL_DIR` at a writable host plugin directory.
