@@ -186,8 +186,8 @@ The review ran a mechanical check of the repo against the official sources.
 | Property types and defaults used by the template | confirmed, see §3 |
 | `ImageProcessor` dispatches the GPU path once per render, not per thread | confirmed, see `ofx-api-constants.md` |
 | The CPU path is already threaded by the Support library | confirmed, see `ofx-api-constants.md` |
-| Kernel memory instructions, after vectorizing | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** per pixel, 14 registers, 0 spills, 0 stack — measured, see `field-evidence.md` §5 |
-| Vec4 path versus scalar path, executing the real kernel source on the host | **3,240 grid launches, 0 mismatches**: widths 0–63 covering every `width % 4`, heights 1/2/3/5, origins (0,0)/(5,3)/(17,9), aligned and padded and misaligned pitches — see `field-evidence.md` §5 **[M]** |
+| Kernel memory instructions, after vectorizing | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** per pixel, 14 registers, 0 spills, 0 stack — measured, see `field-evidence.md` §4 |
+| Vec4 path versus scalar path, executing the real kernel source on the host | **3,240 grid launches, 0 mismatches**: widths 0–63 covering every `width % 4`, heights 1/2/3/5, origins (0,0)/(5,3)/(17,9), aligned and padded and misaligned pitches — see `field-evidence.md` §4 **[M]** |
 | CPU path: hoisted row pointers versus the previous per-pixel addressing | bit-identical over 1,464 pixel components — see `ofx-api-constants.md` **[M]** |
 
 ---
@@ -201,7 +201,7 @@ The review ran a mechanical check of the repo against the official sources.
   instruction claim is about instructions, not speed.
 - **The equivalence proof stopped at the host.** The two kernels and the two CPU
   loop forms were shown to agree byte-for-byte by executing the real kernel
-  source on the CPU (`field-evidence.md` §5), which is not the same as running SASS on a GPU. The
+  source on the CPU (`field-evidence.md` §4), which is not the same as running SASS on a GPU. The
   same checks are committed as `templates/minimal-cuda-ofx/test/run-tests.sh` so
   they can be re-run after any change.
 - **No host has ever loaded these plugins.** Every host-behaviour claim in this

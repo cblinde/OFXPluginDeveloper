@@ -241,7 +241,7 @@ Writing *into* the frame rather than copying it through repeats all five rules
 against the destination image, which has its own pitch and bounds, and adds
 three drawing-specific traps: placement in frame coordinates, premultiplied
 plates, and a single rasterising origin. That contract is
-[`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) `onnx-and-tensorrt.md` §4, "Drawing into the frame:
+[`onnx-and-tensorrt.md`](onnx-and-tensorrt.md) §4, "Drawing into the frame:
 the overlay after the model".
 
 ### 3.4 Ownership and error surface

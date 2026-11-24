@@ -48,20 +48,19 @@ still not load. Clear it, with the host closed:
 | Plugin not in the effect list | Bundle folder name vs binary stem; wrong arch folder; missing entry points (`nm -D`) |
 | Effect appears, output is black | Advertising CUDA without a CUDA path; not checking `CudaEnabled`; launch on the wrong device |
 | Correct at 1×, broken at odd sizes | Pitch ignored (`width * 16` instead of `rowBytes`) |
-| Crashes only with a second plugin installed | Default symbol visibility (§6) |
+| Crashes only with a second plugin installed | Default symbol visibility (`cmake-and-linking.md` §3) |
 | Crashes on scrub, fine on render | Async work outliving the render action without a stream |
 | Works in Edit page, fails in Color page | Different render window / RoI; see `references/host-resolve.md` |
 | Loading the plugin kills the host at startup | Static initialiser doing CUDA work; a static `cudaMalloc` at load |
-| GPU path gone, label says `cannot load cufftw64_11.dll (error 127)` | A preload of everything beside the module; skip cuFFTW and guard host-owned base names (§6) |
+| GPU path gone, label says `cannot load cufftw64_11.dll (error 127)` | A preload of everything beside the module; skip cuFFTW and guard host-owned base names (`packaging-and-install.md` §2) |
 | Host crashes in its own `cudnn64_9.dll` after your plugin loads | A second module of the same base name; use the host's stack or `OFXPLUGIN_CUDA_FROM_HOST` |
 | Second instance shows the first instance's value | State in a static/global instead of the instance (`testing-layers.md` §8) |
-| A label says `CPU (8 threads)` but the setting changes nothing | The session was built before the parameter, or with a second options helper (§6) |
+| A label says `CPU (8 threads)` but the setting changes nothing | The session was built before the parameter, or with a second options helper (`onnx-and-tensorrt.md` §4) |
 
 **Profiling.** Start the host *under* the profiler: Nsight Systems
 (`--trace=cuda,nvtx,osrt`) for the timeline, Nsight Compute per kernel, and
 `compute-sanitizer --tool memcheck` for the pitch bug you cannot see. Both need
-`-lineinfo` (or `-G`, debugging only). Details in
-`onnx-and-tensorrt.md` §3.
+`-lineinfo` (or `-G`, debugging only).
 
 **ABI failures.** Mixing OFX SDK versions is mostly harmless (properties are
 string-keyed), but the `OfxPlugin` struct layout and the Support library's C++
@@ -217,14 +216,14 @@ These are the places where building disagreed with prose that already existed.
    [`checklists.md`](checklists.md) D2 quoted the
    host call order including `OfxSetHost`. The Support library defines two
    symbols; `OfxSetHost` is declared and never defined; the host pointer arrives
-   through `OfxPlugin::setHost` (§3.6). The docs now say two exports plus the
+   through `OfxPlugin::setHost` (`../SKILL.md` §3). The docs now say two exports plus the
    `setHost` field.
 2. **`Support/Library` is not an include directory you need.** It was listed in
    all three templates; both this plug-in's TU and the Support TUs compile
    without it [V]. Only `include/` and `Support/include/` are required.
 3. **The API string is `OfxImageEffectPluginAPI`.** The first version of this
    build's own assertion used `OfxImageEffectPlugin` and failed against the
-   artifact (§3.8) — which is exactly the mistake a newcomer makes from prose.
+   artifact (`../SKILL.md` §3) — which is exactly the mistake a newcomer makes from prose.
    The check now asserts the constant's real value and `apiVersion == 1`.
 
 ---
@@ -240,7 +239,7 @@ These are the places where building disagreed with prose that already existed.
 | GPU, Windows/MSVC, macOS/Clang paths | **Unverified.** Only Linux x86-64 with GCC 13.3 was built. |
 | Host-specific quirks (blacklist behaviour, bundle caching, install-time locking) | **Unverified.** See [`host-resolve.md`](host-resolve.md), graded B there. |
 
-The artifact inspection in §3 proves the module is loadable and that the
+The artifact inspection in `testing-layers.md` §3 proves the module is loadable and that the
 registration hook produces the expected `OfxPlugin`. It cannot prove what a host
 does with it.
 
@@ -251,7 +250,7 @@ does with it.
 | Symptom | Usual cause | Fix |
 | --- | --- | --- |
 | Black frame, no error | GPU advertised but not compiled in; or `kOfxImageEffectPropCudaEnabled` read as a string | Advertise only under `#ifdef`; use `propGetInt` **[S]** |
-| Plugin vanished from the menu | Host blacklisted it after a crash | Clear the host's plugin cache (`debugging-and-symptoms.md` §1) |
+| Plugin vanished from the menu | Host blacklisted it after a crash | Clear the host's plugin cache (§1) |
 | Renders on CPU, "CUDA is on" | Device code not in the binary | `testing-layers.md` §3, `cuobjdump`/`nm` |
 | Image sheared on odd widths | `width * sizeof(pixel)` instead of the host pitch | Use `rowBytes`, widen to `int64_t` **[S]** |
 | Flipped vertically | Negative `rowBytes` treated as unsigned | Signed pitch, arithmetic through `char*` **[S]** |

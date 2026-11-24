@@ -7,7 +7,7 @@ drives the plug-in through a hand-written host: `describe`,
 `destroyInstance`, `unload` — twice, in one process. That second cycle is what
 catches a runtime-owned static: its destructor runs at unload and calls into a
 module that is already half gone, so the run hangs or dies *after* the last check
-passed (the rule is [`SKILL.md`](../SKILL.md) §1, rule 13, and `[stage] unload`
+passed (the rule is [`SKILL.md`](../SKILL.md) §1, rule 11, and `[stage] unload`
 on stderr says where it happened). Every phase prints such a line on **stderr** —
 `render`, `mark`, `compare golden`, `compare parameter`, `concurrency`,
 `byte destination`, `roi region`, `roi context`, `unload` — so a run that stops

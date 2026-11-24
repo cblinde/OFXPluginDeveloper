@@ -38,7 +38,7 @@ compute-bound — a convolution, a model run per frame, an iterative solver —
 write the GPU path first and keep the CPU path as its comparison and as what
 runs when the host gives no device. The table below decides whether the GPU path
 pays on your frame; it does not decide whether to have one. The model case, with
-the provider and its packaging, is `ai-architectures-and-runtimes.md` §4–§6.
+the provider and its packaging, is `ai-architectures-and-runtimes.md` §4 and §6.
 
 Before optimising, know the shape of the budget. One render action, 1920×1080
 RGBA32F, one thread per pixel:
