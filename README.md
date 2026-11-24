@@ -37,9 +37,6 @@ substitute for testing in a real host. One path has been rendered by one host â€
 `NatronRenderer`, headless â€” and nothing has been rendered by Resolve, Nuke or
 SCRATCH. See [What has actually been verified](#what-has-actually-been-verified).
 
-| File | What it is |
-| --- | --- |
-
 ## Where everything lives
 
 | Path | What it is |
