@@ -95,10 +95,17 @@ Found by reading the headers during this pass. Each one has bitten somebody.
    `...Supported` pair is `propGetString`. Mixing them up returns
    `kOfxStatErrBadHandle` or reads garbage.
 
-2. **The three "can we?" properties have three different names.** **[S]**
+2. **The GPU "can we?" properties do not follow one naming scheme.** **[S]**
    - CUDA: `kOfxImageEffectPropCudaRenderSupported`
    - Metal: `kOfxImageEffectPropMetalRenderSupported`
-   - OpenCL: `kOfxImageEffectPropOpenCLSupported` ← no `Render`
+   - OpenCL **Buffers**: `kOfxImageEffectPropOpenCLRenderSupported`
+   - OpenCL **Images**: `kOfxImageEffectPropOpenCLSupported` ← no `Render`
+
+   The OpenCL pair is two capabilities, not a typo, and the
+   `kOfxImageEffectPropOpenCLEnabled` doc block swaps their parentheticals — the
+   property blocks in §693-704 of the header are the authority, and
+   `kOfxImageEffectPropOpenCLImage` being set is the runtime discriminator
+   (`SKILL.md` §5).
    Guessing by analogy produces a property the host has never heard of, and a
    plugin that silently never gets the GPU.
 
