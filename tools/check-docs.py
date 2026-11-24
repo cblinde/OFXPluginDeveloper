@@ -30,6 +30,11 @@ What it checks, and why each one exists:
    long. A bare header name or a path whose first segment is not in this
    repository points into an external checkout and is skipped.
 7. AGENTS.md shape: present, and a router rather than an essay.
+8. Heading skeleton. tools/heading-manifest.tsv records every heading the 14
+   pre-restructure documents carried and the file that holds it now. A heading
+   that stops existing is a failed check, so the one failure mode a
+   reorganisation cannot hide - a whole section quietly lost - becomes visible
+   as a line number. Renumbering is ignored on purpose: it was the point.
 """
 
 import argparse
@@ -382,6 +387,11 @@ def check_link_shape(root, files, texts, report):
 # checked by check_section_refs; this one covers the short form.
 BARE_SECTION_FILES = ("README.md", "AGENTS.md", "SKILL.md")
 
+# The heading skeleton, written once after the split into references/ and
+# committed. Regenerate it only on purpose: it is the record of what existed,
+# not a description of the tree today.
+HEADING_MANIFEST = "tools/heading-manifest.tsv"
+
 
 def check_bare_sections(root, files, texts, report):
     skill_sections = section_numbers(texts.get("SKILL.md", ""))
@@ -400,6 +410,87 @@ def check_bare_sections(root, files, texts, report):
                                  f"bare §{number} names no section of SKILL.md "
                                  f"(it has {sorted(skill_sections)}); cite the file, "
                                  f"e.g. 'references/x.md §{number}'")
+
+
+def heading_titles(text):
+    """Every heading's text, ignoring fenced blocks.
+
+    A fenced block can start a line with '# ' (a shell comment in a transcript)
+    and check_links' slug map tolerates that; here it would let a deleted
+    heading "match" a line of output.
+    """
+    titles, fenced = [], False
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        match = re.match(r"^#{1,6}\s+(.*?)\s*$", line)
+        if match:
+            titles.append(match.group(1))
+    return titles
+
+
+def heading_key(text):
+    """The comparison form: words only, no markup, no section number.
+
+    The restructure renumbered sections deliberately (old §11 became §4), so a
+    number cannot be part of a heading's identity; losing the number is fine,
+    losing the words is not.
+    """
+    text = re.sub(r"[`*_]", "", text)
+    text = re.sub(r"^\s*(L?\d+(?:\.\d+)*)[.)]?\s+", "", text)
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def check_heading_manifest(root, files, texts, report):
+    path = os.path.join(root, HEADING_MANIFEST)
+    if not os.path.exists(path):
+        report.error(HEADING_MANIFEST, 1,
+                     "missing; it is the record of which headings a restructure "
+                     "had to preserve")
+        return
+
+    rows, declared = [], None
+    for number, line in enumerate(read(path).splitlines(), 1):
+        if line.startswith("# headings:"):
+            try:
+                declared = int(line.split(":", 1)[1])
+            except ValueError:
+                report.error(HEADING_MANIFEST, number, f"unreadable count: {line!r}")
+            continue
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) != 4:
+            report.error(HEADING_MANIFEST, number,
+                         f"{len(parts)} columns, expected 4 "
+                         f"(source, heading, home file, current heading)")
+            continue
+        rows.append((number, parts))
+
+    if declared is not None and declared != len(rows):
+        report.error(HEADING_MANIFEST, 1,
+                     f"declares {declared} headings but lists {len(rows)}; a "
+                     f"partial write or a truncated row would hide sections")
+
+    present = {}
+    for doc in files:
+        present[doc] = {heading_key(title) for title in heading_titles(texts[doc])}
+
+    for number, (source, heading, home, current) in rows:
+        if home not in present:
+            report.error(HEADING_MANIFEST, number,
+                         f"'{heading}' from {source} maps to {home}, which is not "
+                         f"a document in this tree")
+            continue
+        wanted = current or heading
+        if heading_key(wanted) not in present[home]:
+            report.error(HEADING_MANIFEST, number,
+                         f"'{heading}' (from the pre-split {source}) is no longer "
+                         f"a heading of {home}; if it was renamed, put the new "
+                         f"text in the fourth column, otherwise the section was lost")
 
 
 def check_agents(root, report):
@@ -435,6 +526,7 @@ def main():
     check_anchors(root, files, texts, report)
     check_link_shape(root, files, texts, report)
     check_bare_sections(root, files, texts, report)
+    check_heading_manifest(root, files, texts, report)
     check_agents(root, report)
 
     status = report.show()

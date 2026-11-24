@@ -1,0 +1,273 @@
+# Every heading that existed in the 14 root documents at 4290e68, and the file
+# that carries it now. tools/check-docs.py fails when one of them stops
+# existing, so a restructure cannot drop a section without saying so.
+#
+# Columns, tab separated:
+#   source document | heading as written then | home file | current heading
+# The fourth column is filled only where the restructure renamed a heading;
+# numbering was renumbered on purpose and is ignored when matching, so a
+# section that merely changes number still passes.
+#
+# headings: 262
+AGENTS.md	AGENTS.md	AGENTS.md	
+AGENTS.md	Commands	AGENTS.md	
+AGENTS.md	Read order	AGENTS.md	
+AGENTS.md	Hard rules	AGENTS.md	
+AI_MODEL_INTEGRATION.md	AI model integration for OpenFX plug-ins	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	1. What shipped plug-ins actually do	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	1.1 What their own documentation says to avoid	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	2. The four architectures, and when each is right	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	3. Language runtimes inside a plugin: what actually breaks	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	4. ONNX Runtime: the facts that matter, with exact names	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	5. Tensor plumbing: where the silent bugs are	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	6. When CUDA is necessary, helpful, or a waste of time	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	The three costs CUDA adds, independent of FLOPs	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	The decision procedure	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	Verdicts by workload	references/ai-architectures-and-runtimes.md	
+AI_MODEL_INTEGRATION.md	7. The template: `templates/onnx-inference-ofx`	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	Adapting it to a real model	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	What the host hands you is not float RGBA	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	Models that only accept certain sizes	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	The halo is measured, not guessed	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	The provider belongs in the same bundle, and it is the first path	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	One thread budget per node, and a label that proves it	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	Detection heads: the four facts that cost a day	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	Drawing into the frame: the overlay after the model	references/onnx-and-tensorrt.md	
+AI_MODEL_INTEGRATION.md	8. What this document does not know	references/ai-architectures-and-runtimes.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Architecture and the CUDA pipeline	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	1. Object model in one page	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	2. Lifecycle	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Plugin level	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Instance level	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Non-obvious rules	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Thread safety	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	3. The GPU negotiation handshake	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	4. Zero copy: what it actually means	references/cuda-streams-and-memory.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	5. Streams: the contract, in full	references/cuda-streams-and-memory.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Why `cudaDeviceSynchronize()` is banned	references/cuda-streams-and-memory.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Why the sync in the no-stream case is mandatory	references/cuda-streams-and-memory.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Default stream pitfalls	references/cuda-streams-and-memory.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Ordering you get for free, and ordering you must not assume	references/cuda-streams-and-memory.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	NVTX, so the profiler can see you	references/cuda-streams-and-memory.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	6. Memory layout, pitch and pixel formats	references/pixel-formats-and-pitch.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	The one formula	references/pixel-formats-and-pitch.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Why `width * sizeof(pixel)` is wrong	references/pixel-formats-and-pitch.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Component and depth matrix	references/pixel-formats-and-pitch.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Window vs bounds vs RoD	references/pixel-formats-and-pitch.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Allocating your own device memory	references/pixel-formats-and-pitch.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	7. RoD and RoI	references/roi-tiling-and-render-hints.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Region of Definition	references/roi-tiling-and-render-hints.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Region of Interest	references/roi-tiling-and-render-hints.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	8. Colour space and alpha	references/colour-and-alpha.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	9. AI pipelines: TensorRT and ONNX Runtime on OFX device pointers	references/onnx-and-tensorrt.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Where the pointers go	references/onnx-and-tensorrt.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Shape and layout mismatch	references/onnx-and-tensorrt.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Lifecycle and the traps	references/onnx-and-tensorrt.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	10. Toolchain notes that cause real failures	references/cmake-and-linking.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	`nvcc` flags	references/cmake-and-linking.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	PTX and first-launch cost	references/cmake-and-linking.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Static vs dynamic `cudart`	references/cmake-and-linking.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Windows specifics	references/cmake-and-linking.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Linux specifics	references/cmake-and-linking.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	11. Profiling and diagnosis	references/debugging-and-symptoms.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Attach points	references/debugging-and-symptoms.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Reading the Nsight Systems timeline	references/debugging-and-symptoms.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Logging without a console	references/debugging-and-symptoms.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	The five crashes worth memorising	references/debugging-and-symptoms.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	12. End-to-end walkthrough of the template	references/ofx-lifecycle-and-threads.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	13. Drawing into the frame (boxes, labels, plates)	references/pixel-formats-and-pitch.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	Best Practices and Performance	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	1. What this pass changed, and what it verified	references/verification-status.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	2. What the reference projects teach	references/reference-projects.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	2.3 Counter-examples: where a big project is wrong	references/reference-projects.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	3. Verified quirks in the OFX 1.5.1 headers	references/ofx-api-constants.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	4. The cost model: what actually costs time	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	5. Host-side practices	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	5.1 Never allocate per frame if the size did not change	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	5.2 Your GPU path is called once per render — do not thread it yourself	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	5.3 `supportsTiles` decides how big a window you get	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	5.4 Do not add threads to the CPU path	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	5.5 Abort checks belong per row, not per pixel	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	5.6 One device, restored	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	5.7 The Support library logs once per render	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	6. Kernel-level performance	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	6.1 One 16-byte load and one 16-byte store per pixel	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	6.2 Block and grid	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	6.3 Registers, spills, occupancy	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	6.4 One definition of the maths	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	6.5 Precision and fast maths	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	7. Streams, and what changes when the host gives you one	references/cuda-streams-and-memory.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	8. Prove what you built (10 seconds, catches the worst class of bug)	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	9. Testing what you cannot see	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	9.1 Odd sizes	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	9.2 Identity and bypass	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	9.3 Cross-backend tolerance	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	9.4 Memory safety	references/performance-model.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	10. Anti-patterns, by symptom	references/debugging-and-symptoms.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	11. Checklist for a new GPU effect	references/checklists.md	
+BEST_PRACTICES_AND_PERFORMANCE.md	12. What is still unverified	references/verification-status.md	
+BUILD_PLAYBOOK.md	Build playbook: from a clean checkout to a `.ofx` a host will load	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	1. The command	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	2. What the artifact must be	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3. Compile-level requirements, with evidence	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.1 Two include directories, not three	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.2 `OFX::ImageProcessor` is not in `ofxsImageEffect.h`	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.3 The Support library is compiled **into** the module	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.4 `-fPIC` is mandatory	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.5 `-fvisibility=hidden`, and what it buys	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.6 The two entry points, and the third one that is not an export	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.7 Registration: one function, and it is required at link time	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.8 The API string and version are not yours to choose	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.9 C++ standard and ABI	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.10 RPATH: only when you ship a dependency	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	3.11 What the host looks for on disk	references/packaging-and-install.md	
+BUILD_PLAYBOOK.md	4. Claims this build corrected	references/debugging-and-symptoms.md	
+BUILD_PLAYBOOK.md	5. What this does not prove	references/debugging-and-symptoms.md	
+BUILD_PLAYBOOK.md	6. Reusing the scaffold	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	7. Windows: the toolchain matrix that decides whether the build works	references/cmake-and-linking.md	
+FIELD_TEST_WINDOWS_CUDA.md	Field test: Windows 11, CUDA 13.0, RTX 3060 (2026-11-22)	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	1. Environment	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	2. What was executed	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	3. The artifact on Windows	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	4. The kernels on hardware	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	5. The host protocol through `LoadLibraryExW`	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	6. What this run does not prove	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	7. Where each claim is used	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	8. Reproducing it	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	9. The second review: an ONNX upscale plug-in (2026-11-22)	references/field-evidence.md	
+FIELD_TEST_WINDOWS_CUDA.md	10. The third review: a YOLO object detector (2026-11-22)	references/field-evidence.md	
+HOST_COMPATIBILITY_MATRIX.md	Host compatibility matrix	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	1. Master table	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2. DaVinci Resolve Studio	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.1 Pages behave differently	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.2 The GPU mode switch is user-controlled and can be "Auto"	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.3 Streams: expect none	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.4 Odd render sizes and row-byte alignment	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.5 Crashing or hanging plugins are blacklisted	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.6 Free vs Studio	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.7 Resolve's own developer material	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.8 Do not rely on Resolve-only extensions	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.9 Version currency: 21.2, and the OFX 1.5 colour APIs	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	3. Nuke	references/host-nuke-scratch-natron.md	
+HOST_COMPATIBILITY_MATRIX.md	3.1 No GPU buffer path for OFX	references/host-nuke-scratch-natron.md	
+HOST_COMPATIBILITY_MATRIX.md	3.2 Tiling and concurrency	references/host-nuke-scratch-natron.md	
+HOST_COMPATIBILITY_MATRIX.md	3.3 RoD and RoI are evaluated eagerly	references/host-nuke-scratch-natron.md	
+HOST_COMPATIBILITY_MATRIX.md	3.4 Errors are surfaced, not swallowed	references/host-nuke-scratch-natron.md	
+HOST_COMPATIBILITY_MATRIX.md	4. Assimilate SCRATCH	references/host-nuke-scratch-natron.md	
+HOST_COMPATIBILITY_MATRIX.md	5. Natron	references/host-nuke-scratch-natron.md	
+HOST_COMPATIBILITY_MATRIX.md	6. Feature detection, not host sniffing	references/host-detection-and-acceptance.md	
+HOST_COMPATIBILITY_MATRIX.md	7. The compatibility test you should actually run	references/host-detection-and-acceptance.md	
+HOST_COMPATIBILITY_MATRIX.md	8. Known real-world failure, as a case study	references/host-resolve.md	
+PATTERN_INDEX.md	Pattern index	references/pattern-index.md	
+PATTERN_INDEX.md	1. By task ("I need to…")	references/pattern-index.md	
+PATTERN_INDEX.md	2. By symptom ("the render is wrong")	references/debugging-and-symptoms.md	
+PATTERN_INDEX.md	Compile and link symptoms	references/debugging-and-symptoms.md	
+PATTERN_INDEX.md	3. By property ("which constant does what")	references/ofx-api-constants.md	
+PATTERN_INDEX.md	4. External AI / ONNX plug-ins: what exists, what to learn, what to avoid	references/ai-architectures-and-runtimes.md	
+PATTERN_INDEX.md	5. The general-purpose suites: what to read, what to skip	references/reference-projects.md	
+PATTERN_INDEX.md	5.1 Mechanics and the exact file to read	references/reference-projects.md	
+PATTERN_INDEX.md	5.2 Before you trust a third-party index	references/reference-projects.md	
+PATTERN_INDEX.md	6. If you only need the decision, not the code	references/reference-projects.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	Pre-flight review checklist	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	1. Mechanical gates	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	What these gates cannot prove	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	Sanitizer coverage, and what is genuinely inapplicable	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	2. The questions	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	A. The render action and device work	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	B. Images and addressing	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	C. Capability negotiation (the type traps)	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	D. Hosts and packaging	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	E. Inference (only if the plug-in runs a model)	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	3. The five failures this checklist exists to prevent	references/checklists.md	
+PREFLIGHT_REVIEW_CHECKLIST.md	4. Reviewer's sign-off	references/checklists.md	
+README.md	OFXPluginDeveloper	README.md	
+README.md	Purpose	README.md	
+README.md	Sources	references/reference-projects.md	
+README.md	Primary specifications and SDKs	references/reference-projects.md	
+README.md	Artifacts the build pulls in	references/reference-projects.md	
+README.md	Open-source implementations analysed	references/reference-projects.md	
+README.md	Licensing and provenance	references/reference-projects.md	
+README.md	Deliberately not included	references/reference-projects.md	
+README.md	Usage	README.md	
+README.md	1. Read the skill first	README.md	
+README.md	2. Start a plugin from the template	README.md	
+README.md	3. Build	README.md	
+README.md	Arguments accepted by the scripts	README.md	
+README.md	Options and environment variables	README.md	
+README.md	Known gaps in the repository	README.md	
+README.md	4. Verify before you test in a host	README.md	
+README.md	Requirements	README.md	
+README.md	What has actually been verified	README.md	
+README.md	Repository layout	README.md	Where everything lives
+README.md	Licence	README.md	
+REFERENCE_READING_GUIDE.md	Reference reading guide	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	Contents	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	1. The three tiers	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	2. The five-seam skeleton	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	3. Patterns to look for	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	3.1 Registration and packaging	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	3.2 Declaration versus per-render truth	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	3.3 Addressing	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	3.4 Ownership and error surface	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	3.5 The GPU contract	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	3.6 Region of interest and tiling	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	3.7 Model and tensor plumbing	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	4. Anti-patterns and their tells	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	5. What each shipped project contributes	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	6. A seven-step reading plan	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	7. Twelve questions to ask of any OFX code	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	8. How the numbers here are reproduced	references/reference-projects.md	
+REFERENCE_READING_GUIDE.md	9. What this guide does not cover	references/reference-projects.md	
+SKILL.md	OFX + CUDA plugin development	SKILL.md	
+SKILL.md	1. Ground rules	SKILL.md	
+SKILL.md	2. Repository map	SKILL.md	2. Routing: which file to load
+SKILL.md	3. The layer contract	references/ofx-lifecycle-and-threads.md	
+SKILL.md	4. Generation workflow	SKILL.md	
+SKILL.md	Phase 0 — Decide the contract	SKILL.md	
+SKILL.md	Phase 1 — Scaffold	SKILL.md	
+SKILL.md	Phase 2 — Describe	SKILL.md	
+SKILL.md	Phase 3 — Params	SKILL.md	
+SKILL.md	Phase 4 — Host wrapper	SKILL.md	
+SKILL.md	Phase 5 — Kernel	SKILL.md	
+SKILL.md	Phase 6 — Build	SKILL.md	
+SKILL.md	Phase 7 — Install and smoke test	SKILL.md	
+SKILL.md	Phase 8 — Debug and profile	SKILL.md	
+SKILL.md	5. OFX constant reference (verified against OFX 1.5.1 headers)	references/ofx-api-constants.md	
+SKILL.md	5.1 Capability properties (plugin descriptor)	references/ofx-api-constants.md	
+SKILL.md	5.2 Per-render in-args (Render / BeginSequenceRender / EndSequenceRender only)	references/ofx-api-constants.md	
+SKILL.md	5.3 Image handle properties	references/ofx-api-constants.md	
+SKILL.md	5.4 Support names for the depths	references/ofx-api-constants.md	
+SKILL.md	5.5 Colour management (OFX 1.5)	references/ofx-api-constants.md	
+SKILL.md	5.6 Named traps	references/ofx-api-constants.md	
+SKILL.md	6. Build and packaging standards	references/packaging-and-install.md	
+SKILL.md	7. Debugging quick reference	references/debugging-and-symptoms.md	
+SKILL.md	8. Region of interest, and the 1.5.1 render hints	references/roi-tiling-and-render-hints.md	
+SKILL.md	9. Anti-patterns	references/debugging-and-symptoms.md	
+SKILL.md	10. Checklists	references/checklists.md	
+SKILL.md	11. Mandatory git workflow	SKILL.md	
+SKILL.md	12. Verification status of this skill	SKILL.md	
+TESTING_STRATEGY.md	Testing OFX plug-ins	references/testing-layers.md	
+TESTING_STRATEGY.md	Contents	references/testing-layers.md	
+TESTING_STRATEGY.md	1. The layers, cheapest first	references/testing-layers.md	
+TESTING_STRATEGY.md	2. L0: separate the maths from OFX	references/testing-layers.md	
+TESTING_STRATEGY.md	3. L1: the artifact, exports, dlopen, struct fields	references/testing-layers.md	
+TESTING_STRATEGY.md	4. L2: static conformance gates	references/testing-layers.md	
+TESTING_STRATEGY.md	5. L3: a fake host, for action-level tests	references/testing-layers.md	
+TESTING_STRATEGY.md	5.1 What is in it	references/testing-layers.md	
+TESTING_STRATEGY.md	5.2 How to reuse it for your own plug-in	references/testing-layers.md	
+TESTING_STRATEGY.md	5.3 Proof that it can fail	references/testing-layers.md	
+TESTING_STRATEGY.md	5.4 What the fake host still cannot prove	references/testing-layers.md	
+TESTING_STRATEGY.md	6. L4: image correctness, goldens, references, negative controls	references/testing-layers.md	
+TESTING_STRATEGY.md	7. L5: memory, UB and leaks	references/testing-layers.md	
+TESTING_STRATEGY.md	8. L6: concurrency and the thread-safety claim	references/testing-layers.md	
+TESTING_STRATEGY.md	9. L7: performance, measured or not claimed	references/testing-layers.md	
+TESTING_STRATEGY.md	10. L8: the host acceptance script	references/testing-layers.md	
+TESTING_STRATEGY.md	11. L9: failure injection	references/testing-layers.md	
+TESTING_STRATEGY.md	12. L10: CI and the release gate	references/testing-layers.md	
+TESTING_STRATEGY.md	13. What this repository actually runs	references/testing-layers.md	
+TESTING_STRATEGY.md	13.1 nvcc without a GPU	references/testing-layers.md	
+TESTING_STRATEGY.md	14. Test smells: passing for the wrong reason	references/testing-layers.md	
+TESTING_STRATEGY.md	15. L3b: observing a feature that leaves no trace	references/testing-layers.md	
+THIRD_PARTY_NOTICES.md	Third-party notices	THIRD_PARTY_NOTICES.md	
+THIRD_PARTY_NOTICES.md	What is not here	THIRD_PARTY_NOTICES.md	
+THIRD_PARTY_NOTICES.md	If you build on this	THIRD_PARTY_NOTICES.md	
