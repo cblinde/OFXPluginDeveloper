@@ -5,86 +5,82 @@ description: Build, review and debug CUDA-accelerated OpenFX plugins (DaVinci Re
 
 # OFX + CUDA plugin development
 
-Master reference and agent workflow for producing CUDA-accelerated OpenFX image
-effects that render correctly in DaVinci Resolve Studio, Nuke, SCRATCH and
-Natron, on Windows (MSVC + CUDA Toolkit) and Linux (GCC/Clang + CUDA Toolkit).
+Master reference and agent workflow for CUDA-accelerated OpenFX image effects
+that render correctly in DaVinci Resolve Studio, Nuke, SCRATCH and Natron, on
+Windows (MSVC + CUDA Toolkit) and Linux (GCC/Clang + CUDA Toolkit).
 
 **Provenance.** **[V]** verified in this repository (compiled, measured or run);
 **[I]** inferred from a header or documented behaviour, not demonstrated;
 **[B]** external evidence, grade B in `HOST_COMPATIBILITY_MATRIX.md`; the
 2026-11-22 Windows runs (CUDA field test and ONNX review) are archived in
 [`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md). Unmarked statements
-are design guidance that follows from the model, not measurements.
+are design guidance that follows from the model, not measurements. §12 records
+what that vocabulary currently covers, including the 2026-11-24 currency check.
 
-Read this file first. Then read the deep-dive companion documents when the task
-touches their subject:
+Read this file first, then only the companion whose subject the task touches:
 
 | Document | Read it when |
 | --- | --- |
-| [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, streams, memory layout, RoD/RoI, colour/alpha, TensorRT/ORT, profiling |
-| [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) | Building for real: the one command, the measured artifact contract, every compile-level requirement with file:line evidence, and what remains unproven without a host |
-| [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | A behaviour differs between hosts, or a host-specific workaround is needed |
-| [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | Before shipping: the questions to answer, each with the header line or spec sentence that settles it |
-| [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | A neural network in the plug-in: integration shapes, language-runtime hazards, ONNX Runtime API, CUDA decision rules |
-| [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | New to the codebase: which implementations to trust, patterns to copy, anti-patterns by their tells, and the twelve questions to ask of any plug-in |
-| [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | "I need to do X": the pattern, the file that proves it, the symptom that means you got it wrong, which shipped AI repository to learn from, and which general-purpose suite to read for a mechanic |
-| [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | Testing a plug-in to ship it: eleven layers (L0–L10), goldens and negative controls, sanitizers, concurrency, host acceptance, failure injection, CI |
-| [`testkit/`](testkit/) | Running the artifact and fake-host layers: `./run-tests.sh` loads each built `.ofx`, checks the struct, and drives describe/render without a host |
-| [`templates/minimal-ofx/`](templates/minimal-ofx/) | Starting a new plug-in from the smallest scaffold a host will load, built and verified by one command |
-| [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | Starting a new plugin, or needing a known-good reference |
+| [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) | Lifecycle, zero-copy, streams, pitch, RoD/RoI, colour/alpha, inference, profiling |
+| [`BUILD_PLAYBOOK.md`](BUILD_PLAYBOOK.md) | A real build: the one command, the artifact contract, compile rules with `file:line` |
+| [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) | Behaviour differs between hosts, or a host-specific workaround is needed |
+| [`PREFLIGHT_REVIEW_CHECKLIST.md`](PREFLIGHT_REVIEW_CHECKLIST.md) | Before shipping: the questions, each with the sentence that settles it |
+| [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) | A network in the plug-in: integration shapes, ORT API, provider packaging |
+| [`REFERENCE_READING_GUIDE.md`](REFERENCE_READING_GUIDE.md) | Reading OFX code: tiers, patterns, anti-patterns by their tells |
+| [`PATTERN_INDEX.md`](PATTERN_INDEX.md) | "I need to do X" / "it does Y": the pattern, the proving file, the symptom |
+| [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) | Testing to ship it: eleven layers (L0–L10), goldens, sanitizers, CI |
+| [`testkit/`](testkit/) | Running the artifact and fake-host layers without a host |
+| [`templates/minimal-ofx/`](templates/minimal-ofx/) | The smallest host-loadable CPU plug-in |
+| [`templates/minimal-cuda-ofx/`](templates/minimal-cuda-ofx/) | A known-good CUDA render path with a CPU fallback |
 
 ---
 
 ## 1. Ground rules
 
-These are the invariants. Every one of them exists because violating it produces
-a failure that is expensive to diagnose — black frames, silent corruption, or a
-host crash with no stack trace. None of them is stylistic.
+These are invariants, not style. Each one exists because violating it produces a
+failure that is expensive to diagnose: black frames, silent corruption, or a host
+crash with no stack trace.
 
-1. **`kOfxImageEffectPropCudaEnabled` decides the pixel location, not your
-   descriptor.** The descriptor's `...CudaRenderSupported` string only says what
-   you *can* do. At render time the in-args int tells you where the pixels
-   actually are.
-2. **Never dereference `kOfxImagePropData` on the CPU when CUDA is enabled.**
-   It is a device pointer then. Reading it faults or returns garbage.
-3. **Never assume `rowBytes == width * bytesPerPixel`.** Address with the
-   host's pitch. It may be padded *and it may be negative* for flipped images.
-   `kOfxImagePropData` is the row at `bounds.y1` (the bottom) whatever the sign
-   of the stride: rebase a view once onto the top row (`data + (h-1)*rowBytes`,
-   negated stride) instead of scattering flips through the code.
-4. **`cudaDeviceSynchronize()` is forbidden, full stop.** Per the spec: *"the
-   plug-in SHOULD NOT wait for final asynchronous operations to complete before
-   returning from the render action, and SHOULD NOT call cudaDeviceSynchronize()
-   at any time."* Synchronise the *stream you used* (`cudaStreamSynchronize`)
-   and only when the host did not give you one.
-5. **Stream present → return immediately. Stream absent → complete the work
-   before returning.** Both branches are mandatory. A plugin that always returns
-   immediately corrupts output in hosts that do not pass a stream.
-6. **Never destroy, reset or free anything the host owns** — stream, command
-   queue, context, or the image buffers. You may only free what you allocated.
-7. **Never switch devices without restoring the previous one.** Use RAII
-   immediately after `cudaSetDevice`.
-8. **Zero-copy means zero *your* copies.** If the host gave you device pointers,
-   the kernel reads them directly. A `cudaMemcpy` to your own buffer is a bug,
-   not a safety measure.
-9. **One pixel model, two backends.** The CPU path and the CUDA path must
-   implement the same function. If they diverge you will not notice until a
-   client compares a GPU render to a CPU render.
-10. **RAII for every host resource.** `clipGetImage`/`fetchImage` return owned
-    handles; wrap them in `std::unique_ptr` on the line they are created, so
-    every `throw` releases them.
-11. **Throw OFX status codes, don't return silently.** `kOfxStatErrUnsupported`,
+1. **`kOfxImageEffectPropCudaEnabled` decides where the pixels are, not your
+   descriptor.** `...CudaRenderSupported` only says what you *can* do; the
+   per-render int says where the data actually is this call.
+2. **Never dereference `kOfxImagePropData` on the CPU when CUDA is enabled.** It
+   is a device pointer then; reading it faults or returns garbage.
+3. **Never assume `rowBytes == width * bytesPerPixel`.** Address with the host's
+   pitch, widened to a signed 64-bit offset. The pointer is the row at
+   `bounds.y1` (the bottom) whatever the sign of the stride: rebase once onto a
+   top-down view (`data + (h-1)*rowBytes`, negated stride) instead of scattering
+   flips through the code. A **negative** stride is legal for CPU images only;
+   `ofxImageEffect.h` excludes CUDA/Metal/OpenCL Buffers, and OpenCL Images have
+   no row bytes at all.
+4. **Honour the stream contract exactly.** Host stream present: enqueue on it and
+   return without waiting. No stream: enqueue on your own (or the default) stream
+   and **synchronise that stream before returning**. `cudaDeviceSynchronize()` is
+   forbidden at any time — it blocks every stream on the device, deadlocks against
+   hosts that submit from another thread, and destroys the host's pipelining.
+5. **Never destroy, reset or free anything the host owns** — stream, command
+   queue, context, or image buffers. You may only free what you allocated.
+6. **Never switch devices without restoring the previous one.** RAII immediately
+   after `cudaSetDevice`, including on every `throw` path.
+7. **Zero-copy means zero *your* copies.** If the host gave device pointers, the
+   kernel reads them directly. A `cudaMemcpy` into your own buffer is a bug, not a
+   safety measure.
+8. **One pixel model, two backends.** CPU and CUDA paths implement the same
+   function; divergence is found by a client, not by you.
+9. **RAII for every host image.** `clipGetImage`/`fetchImage` return owned
+   handles; wrap them in `std::unique_ptr` on the line they are created.
+10. **Throw specific OFX codes, never return silently.** `kOfxStatErrUnsupported`,
     `kOfxStatFailed`, `kOfxStatGPURenderFailed` (`1002`),
-    `kOfxStatGPUOutOfMemory` (`1001`). A silent `return` produces a black frame
-    with no diagnostic anywhere.
-12. **Verify, then claim.** A plugin that compiles is not a plugin that renders.
-    State exactly which hosts and GPU paths you exercised.
-13. **Nothing runtime-owned in a static with a destructor.** A host may unload
-    and reload the module in one process ([`testkit/`](testkit/) does, twice). A
-    function-local `static` whose destructor calls into CUDA, a thread pool or an
-    inference runtime runs it at `DLL_PROCESS_DETACH` and breaks the **next**
-    load: allocate that state with `new` and never free it. The ONNX case, with
-    the segfault it produces, is in [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §4.
+    `kOfxStatGPUOutOfMemory` (`1001`). A silent `return` is a black frame with no
+    diagnostic anywhere.
+11. **Nothing runtime-owned in a static with a destructor.** A host may unload and
+    reload the module in one process. A function-local `static` whose destructor
+    calls into CUDA, a thread pool or an inference runtime runs it at
+    `DLL_PROCESS_DETACH` and breaks the **next** load. Allocate such state with
+    `new` and never free it (`AI_MODEL_INTEGRATION.md` §4).
+12. **Verify, then claim.** A plug-in that compiles is not a plug-in that renders.
+    State exactly which hosts and GPU paths you exercised, in the `[V]`/`[I]`/`[B]`
+    vocabulary.
 
 ---
 
@@ -92,46 +88,29 @@ host crash with no stack trace. None of them is stylistic.
 
 ```
 AGENTS.md                             router for agents: commands, read order, rules
-SKILL.md                              this file
-ARCHITECTURE_AND_CUDA_PIPELINE.md      the deep dive
+SKILL.md                              this file: rules, workflow, constants, packaging
+ARCHITECTURE_AND_CUDA_PIPELINE.md      lifecycle, streams, pitch, RoD/RoI, colour, inference
 BUILD_PLAYBOOK.md                      clean-checkout build, artifact contract, compile rules
-HOST_COMPATIBILITY_MATRIX.md           per-host behaviour and workarounds
-BEST_PRACTICES_AND_PERFORMANCE.md      performance rules, reference-project lessons, graded evidence
+HOST_COMPATIBILITY_MATRIX.md           per-host behaviour, graded A/B/C
+BEST_PRACTICES_AND_PERFORMANCE.md      cost model, reference-project lessons, its own S/M/D/R grades
 PREFLIGHT_REVIEW_CHECKLIST.md          pre-ship questions, each citing the line that settles it
-AI_MODEL_INTEGRATION.md                model integration: runtimes, languages, when CUDA pays
+AI_MODEL_INTEGRATION.md                runtimes, languages, ORT, provider bundling, heads
 REFERENCE_READING_GUIDE.md             reading OFX code: tiers, patterns, tells, reading plan
-PATTERN_INDEX.md                       lookup by task, symptom, property; external repos
-TESTING_STRATEGY.md                    testing layers, what each proves, host acceptance script
-run-tests.sh                           docs check + build every template + every suite
+PATTERN_INDEX.md                       lookup by task, symptom and property; external repos
+TESTING_STRATEGY.md                    L0–L10, goldens, negative controls, host acceptance
+run-tests.sh                           docs check + every build + every suite
 tools/check-docs.py                    documentation drift check (also in CI)
 testkit/                               dlopen + fake-host harness, negative controls
-templates/minimal-ofx/
-  CMakeLists.txt                       reference build: module, support sources, exports
-  src/Plugin.cpp                       the smallest host-loadable plug-in
-  exports.map                          version script: exactly two dynamic symbols
-  build.sh / build.bat                 fetch headers, build, inspect the artifact
-  test/run-tests.sh                    contract harness against the reference plug-in
-templates/minimal-cuda-ofx/
-  CMakeLists.txt                       bundle-producing build
-  src/Plugin.h                         host wrapper declarations
-  src/Plugin.cpp                       descriptor, params, dispatch, isIdentity
-  src/Kernel.cuh                       CUDA-free interface header
-  src/Kernel.cu                        vec4 + scalar kernels, device-guarded launcher
-  test/run-tests.sh                    GPU-free test suite (equivalence, PTX, bundle)
-  build.sh / build.bat                 portable out-of-source builds
-templates/onnx-inference-ofx/
-  build.sh / build.bat                 needs ONNXRUNTIME_ROOT; the Windows bundle
-                                       carries bin\onnxruntime.dll as
-                                       onnxruntime-ofx.dll next to the .ofx
+templates/minimal-ofx/                 smallest loadable module; CMake, exports.map, build.sh
+templates/minimal-cuda-ofx/            the CUDA layer split, bundle-producing build
+templates/onnx-inference-ofx/          ORT session, packing, tiling, goldens, provider bundle
 ```
 
-The template is the reference implementation for this skill. When generating a
-new plugin, copy its structure rather than re-deriving it; the file layout is
-what makes the `OFXPLUGIN_WITH_CUDA` split possible.
-
-For performance rules, the header quirks found by the verification pass (property
-types that differ from their neighbours, names whose string values disagree) and
-the anti-patterns indexed by symptom, see
+When generating a new plugin, copy a template's structure instead of re-deriving
+it. `templates/minimal-cuda-ofx/` is the reference for the CUDA layer split and
+the stream/pitch/device code; `templates/onnx-inference-ofx/` is the reference for
+everything a model adds. For the cost model, the header quirks found by the
+verification pass, and anti-patterns indexed by symptom, see
 [`BEST_PRACTICES_AND_PERFORMANCE.md`](BEST_PRACTICES_AND_PERFORMANCE.md).
 
 ---
@@ -145,80 +124,76 @@ L2  Transfer         Kernel.cuh/.cu: launcher, grid, pitch, stream, errors
 L1  Ingest           OFX image -> (device pointer | host pointer) + pitch + bounds
 ```
 
-Rules that keep the layers honest:
-
 - L1 is the **only** place that reads image properties.
-- L2 is the **only** place that names CUDA types. `Kernel.cuh` must stay
-  includable by a compiler that has never seen `cuda_runtime.h`.
-- L3 never holds a CUDA type in a class member; it passes `void*` for the stream.
+- L2 is the **only** place that names CUDA types. `Kernel.cuh` must compile
+  without `cuda_runtime.h`.
+- L3 never holds a CUDA type in a member; it passes `void*` for the stream.
 - L4 is a pure function of `(pixel, params, x, y)` — no globals, no statics.
 
-The template implements exactly this: `GainProcessor::processImagesCuda()` is L1+L2
-glue, `Kernel.cu` is L2, `GainPlugin` is L3, and the gain maths is L4 written
-twice (once in the kernel, once in `multiThreadProcessImages`) — deliberately,
-because the CPU fallback must not depend on CUDA.
+The template implements exactly this: `GainProcessor::processImagesCuda()` is
+L1+L2 glue, `Kernel.cu` is L2, `GainPlugin` is L3, and the gain maths is written
+twice (kernel and `multiThreadProcessImages`) because the CPU fallback must not
+depend on CUDA.
 
 ---
 
 ## 4. Generation workflow
 
-Follow the phases in order. Each phase ends in a state you can build.
+Each phase ends in a buildable state.
 
 ### Phase 0 — Decide the contract
 
-Write down, in one paragraph, before any code:
+Write down, before code:
 
-- Plugin identifier (reverse-DNS + name, e.g. `com.company.effectname`).
-- Contexts: `filter` (`eContextFilter`) and/or `general`.
-- Pixel formats accepted (start with `eBitDepthFloat` + `ePixelComponentRGBA`).
-- Whether the effect is spatially aware (does output(x,y) depend only on input(x,y)?).
-- Whether it is temporal (needs frames other than `time`).
-- Whether `isIdentity` is expressible (if yes, it is your cheapest optimisation).
+- Plugin identifier: reverse-DNS plus name (`com.company.effectname`).
+- Context: `filter` (`eContextFilter`) and/or `general`.
+- Pixel formats: start with `eBitDepthFloat` + `ePixelComponentRGBA`.
+- Spatial: does output(x,y) depend only on input(x,y)? This decides
+  `kOfxImageEffectPropNoSpatialAwareness` (§8).
+- Temporal: needs frames other than `time`?
+- `isIdentity`: expressible? It is the cheapest optimisation you have.
+- Declarations from OFX 1.5.1 that apply: CPU fallback
+  (`kOfxImageEffectPropCPURenderSupported`), thumbnail behaviour
+  (`kOfxImageEffectPropThumbnailRender`), colour management
+  (`kOfxImageEffectPropColourManagementStyle`, §5).
 
-If the effect needs neighbouring pixels (blur, edge detect), see §8 RoI before
-writing the kernel — the answer changes the architecture, not just the code.
+If the effect needs neighbouring pixels, read §8 before writing the kernel: the
+answer changes the architecture, not just the code.
 
 ### Phase 1 — Scaffold
 
-Pick the template that matches the effect. Copying the CUDA one for a CPU-only
-or model plug-in drags in a toolkit dependency and a GPU dispatch the effect
-never uses, and the first thing you then do is delete them.
-
 | Effect | Start from | Why that one |
 | --- | --- | --- |
-| CPU-only pixel maths (grade, blur, keyer) | `templates/minimal-ofx/` | smallest host-loadable module, no CUDA, no model |
-| CUDA render path with a CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
-| ONNX model per frame | `templates/onnx-inference-ofx/` | ORT session, packing, tiling, golden fixtures; then request the CUDA EP first and keep CPU as the fallback (`AI_MODEL_INTEGRATION.md` §7) — the template requests that provider first, and this machine has only the CPU runtime, so its tests see the fallback |
-| Model with a non-image output (detection, classification, embedding) | `templates/onnx-inference-ofx/` for the session and packaging shape only | `ModelRunner` requires out shape == in shape and `AiCore` unpacks an image; the head decoder is yours (`AI_MODEL_INTEGRATION.md` §7) |
+| CPU-only pixel maths | `templates/minimal-ofx/` | smallest host-loadable module; no CUDA, no model |
+| CUDA path with CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
+| ONNX model per frame | `templates/onnx-inference-ofx/` | session, packing, tiling, goldens; CUDA EP first, CPU fallback (`AI_MODEL_INTEGRATION.md` §7) |
+| Model whose output is not an image | `templates/onnx-inference-ofx/` for session and packaging only | `ModelRunner` requires out shape == in shape; the head decoder is yours |
 
-```
-templates/<chosen>/ -> plugins/<youreffect>/
-```
-
-Rename in `CMakeLists.txt`: `PLUGIN_TARGET`, `PLUGIN_BUNDLE`. Rename in
-`Plugin.cpp`: `kPluginIdentifier`, `kPluginName`, parameter names.
+Copy to `plugins/<youreffect>/`, then rename `PLUGIN_TARGET` and `PLUGIN_BUNDLE`
+in `CMakeLists.txt`, and `kPluginIdentifier`, `kPluginName` and the parameter
+names in `Plugin.cpp`.
 
 ### Phase 2 — Describe
 
-`describe()` sets what the plugin can do. `describeInContext()` defines clips and
-params. Keep them separate; never fetch an image or touch a param value here.
+`describe()` sets what the plugin can do; `describeInContext()` defines clips and
+params. Keep them separate; fetch no image and read no param value in either.
 
-Mandatory in `describe()`: supported contexts, supported bit depths, tiling and
-multi-resolution flags, thread safety, GPU capability flags. Mandatory in
-`describeInContext()`: the source clip (`kOfxImageEffectSimpleSourceClipName`)
-and output clip (`kOfxImageEffectOutputClipName`), with
-`addSupportedComponent(OFX::ePixelComponentRGBA)` on both.
+Mandatory in `describe()`: supported contexts, bit depths, tiling and
+multi-resolution flags, thread safety, GPU capability flags, and any 1.5.1
+declaration from Phase 0. Mandatory in `describeInContext()`: the source clip
+(`kOfxImageEffectSimpleSourceClipName`) and output clip
+(`kOfxImageEffectOutputClipName`), each with
+`addSupportedComponent(OFX::ePixelComponentRGBA)`.
 
 ### Phase 3 — Params
 
 Every param needs `setLabels`, `setScriptName`, `setHint`, `setDefault`, and a
-sense of range. Use `setDoubleType(OFX::eDoubleTypeScale)` for multipliers so the
-host renders a slider rather than a number box. Group related params with
-`defineGroupParam` + `setParent`, and add every param to a page with
-`page->addChild`.
+sensible range. `setDoubleType(OFX::eDoubleTypeScale)` makes a slider instead of a
+number box. Group related params with `defineGroupParam` + `setParent`, and add
+every param to a page with `page->addChild`.
 
-No hard-coded UI limits that clamp data: `setRange` is the clamp, `setDisplayRange`
-is the slider. A grade that cannot exceed 1.0 is a bug.
+`setRange` is the clamp; `setDisplayRange` is the slider. A grade that cannot
+exceed 1.0 is a bug.
 
 ### Phase 4 — Host wrapper
 
@@ -228,24 +203,22 @@ std::unique_ptr<OFX::Image> src(_srcClip->fetchImage(args.time));  // owned
 
 processor.setDstImg(dst.get());      // borrowed
 processor.setSrcImg(src.get());      // borrowed
-processor.setGPURenderArgs(args);    // <- selects CUDA / CPU inside ImageProcessor
+processor.setGPURenderArgs(args);    // selects CUDA / CPU inside ImageProcessor
 processor.setRenderWindow(args.renderWindow);
 processor.process();
 ```
 
 `setGPURenderArgs` is what makes `OFX::ImageProcessor` call `processImagesCuda()`
-instead of `multiThreadProcessImages()`. Forgetting it means the CUDA path never
+instead of `multiThreadProcessImages()`. Omitting it means the CUDA path never
 runs and nobody notices, because the CPU path still produces a correct image.
 
 ### Phase 5 — Kernel
 
-Requirements for every kernel in this skill:
-
-- Boundary check (`if (x >= width || y >= height) return;`).
-- Pitch in **bytes**, signed 64-bit, applied via `char*` arithmetic.
-- Base pointers already offset to the render window (done host-side).
+- Boundary check against the **image bounds**, not the render window.
+- Pitch in bytes, signed 64-bit, applied through `char*` arithmetic.
+- Base pointers already offset to the render window (host-side).
 - `__restrict__` on both pointers; no atomics; no shared memory unless measured.
-- Launch config `dim3(16,16)` to start; grid rounded up.
+- `dim3(16,16)` to start; grid rounded up.
 - `cudaGetLastError()` checked immediately after the launch.
 - No `cudaDeviceSynchronize()` anywhere.
 
@@ -254,65 +227,80 @@ Requirements for every kernel in this skill:
 Linux: `./build.sh` → `build/bundle/<Name>.ofx.bundle/Contents/Linux-x86-64/<Name>.ofx`
 Windows: `.\build.bat` → `build\bundle\<Name>.ofx.bundle\Contents\Win64\<Name>.ofx`
 
-Before claiming success, check the binary is where the host will look:
+Verify the artifact, not the intent:
 
 ```bash
-find build/bundle -name '*.ofx' -type f      # on Linux/macOS
-nm -D --defined-only <bundle>/Contents/Linux-x86-64/<Name>.ofx | grep Ofx
+find build/bundle -name '*.ofx' -type f
+nm -D --defined-only <bundle>/Contents/Linux-x86-64/<Name>.ofx | grep ' T '
 ```
 
-You want exactly two dynamic symbols, `OfxGetNumberOfPlugins` and `OfxGetPlugin`.
-`-fvisibility=hidden` is not enough on its own: GCC still exports five weak
-`std::` template helpers (measured: 7 symbols). Pin the export list with a
-version script — [`templates/minimal-ofx/exports.map`](templates/minimal-ofx/exports.map)
-— or the equivalent for your platform; `BUILD_PLAYBOOK.md` §3.5 has the numbers.
+The requirement is **exactly two exported entry-point names**,
+`OfxGetNumberOfPlugins` and `OfxGetPlugin`. Total dynamic-symbol count depends on
+the build: `-fvisibility=hidden` alone still exports five weak `std::` helpers
+(measured: 7 symbols **[V]**); the version script in
+`templates/minimal-ofx/exports.map` removes those too, to 2. A count of 5 `T`
+means `CUDA_VISIBILITY_PRESET` is missing (§6).
 
 ### Phase 7 — Install and smoke test
 
-Copy the bundle into the host's plugin directory (§6). Start the host, then:
+Copy the bundle into the host's plugin directory (§6), start the host, then:
 
-1. Does the plugin appear in the effect list under the expected group?
-2. Apply it. Does the image change as expected?
-3. Toggle the parameter to identity. Does `isIdentity` kick in (no re-render)?
+1. Does the plugin appear under the expected group?
+2. Apply it: does the image change as expected?
+3. Set the neutral value: does `isIdentity` short-circuit the render?
 4. Switch the host's GPU mode (CUDA ↔ CPU/OpenCL) and repeat.
-5. Render to file, not just to the viewer — many bugs only appear in the
-   render path.
+5. Render to file, not just to the viewer — many bugs only appear in the render
+   path.
 
 ### Phase 8 — Debug and profile
 
-See §7. `OFX::Log::print` writes a *file* only when the translation unit was
-compiled with `DEBUG` (neither CMake's `Debug` configuration nor these templates
-define it); the host-visible channel is `setPersistentMessage` (§7). `stdout`
-reaches nothing.
+§7. The host-visible channel is `setPersistentMessage`, not `printf` and not
+`OFX::Log::print` (which writes a file only in a `DEBUG` build).
 
 ---
 
 ## 5. OFX constant reference (verified against OFX 1.5.1 headers)
 
-GPU capability properties, set on the plugin descriptor. All are `string × 1`
-except the OpenGL one, which the header declares as **`C string × 1`**. Every row
-was resolved against the pinned 1.5.1 tree **[V]**:
+### 5.1 Capability properties (plugin descriptor)
+
+All are `string × 1` except where noted. Every row was resolved against the pinned
+1.5.1 tree **[V]**:
 
 | Constant | Header | Notes |
 | --- | --- | --- |
 | `kOfxImageEffectPropCudaRenderSupported` | `ofxGPURender.h` | `"false"` default for a plugin |
 | `kOfxImageEffectPropCudaStreamSupported` | `ofxGPURender.h` | `"true"` = you can use host streams; only then may the host set `...CudaStream` |
-| `kOfxImageEffectPropOpenCLRenderSupported` | `ofxGPURender.h` | OpenCL **Buffers** render (the header's own wording) |
-| `kOfxImageEffectPropOpenCLSupported` | `ofxGPURender.h` | OpenCL **Images** render; then use `kOfxImageEffectPropOpenCLImage`, not `kOfxImagePropData` |
-| `kOfxImageEffectPropMetalRenderSupported` | `ofxGPURender.h` | macOS |
-| `kOfxImageEffectPropOpenGLRenderSupported` | `ofxGPURender.h` | **C string**; has a third value `"needed"`; may flip at `kOfxActionInstanceChanged` since v1.4 |
+| `kOfxImageEffectPropOpenCLRenderSupported` | `ofxGPURender.h` | OpenCL **Buffers** render |
+| `kOfxImageEffectPropOpenCLSupported` | `ofxGPURender.h` | OpenCL **Images** render; then read `kOfxImageEffectPropOpenCLImage`, not `kOfxImagePropData` |
+| `kOfxImageEffectPropMetalRenderSupported` | `ofxGPURender.h` | macOS; has a third value `"needed"` |
+| `kOfxImageEffectPropOpenGLRenderSupported` | `ofxGPURender.h` | **C string**; third value `"needed"`; may flip at `kOfxActionInstanceChanged` since v1.4 |
+| `kOfxImageEffectPropCPURenderSupported` | `ofxGPURender.h` | **C string**, default `"true"`; added in **1.5.1** |
 
-Two traps follow from that table:
+`kOfxImageEffectPropCPURenderSupported` is the modern way to say "GPU-only": set
+`"false"` on the descriptor only when `render()` genuinely has no host-pointer
+path. A host in OpenCL/Metal mode will then skip the effect instead of handing it
+CPU images it cannot read — which is correct, and is why the templates, which do
+have a fallback, leave the default alone. A host missing the property assumes the
+default.
 
-- **None of these six is an int.** They are strings; the *per-render* flags below
-  (`...CudaEnabled`, `...OpenCLEnabled`, `...MetalEnabled`) are ints. Use
-  `propGetString` for this group and `propGetInt` for the next.
-- **`kOfxImagePropRowBytes` is not guaranteed for OpenCL Images**: the header
-  states row bytes need not be set, "since OpenCL Images do not have the concept
-  of row bytes" - so pitch arithmetic applies to the Buffers path only.
+Four traps follow from this table:
 
-Per-render in-args properties (valid only inside Render / BeginSequenceRender /
-EndSequenceRender):
+- **The per-render flags are ints; these are strings.** `...CudaEnabled`,
+  `...OpenCLEnabled`, `...MetalEnabled` are `int`; use `propGetInt` for those and
+  `propGetString` here. Mixing them up returns `kOfxStatErrBadHandle` or garbage.
+- **The OpenCL mapping is inverted in one doc block.** The property blocks are
+  unambiguous (`...OpenCLRenderSupported` = Buffers, `...OpenCLSupported` =
+  Images), but the `kOfxImageEffectPropOpenCLEnabled` block labels them the other
+  way round. Trust the two property blocks, and discriminate at render time by
+  testing whether `kOfxImageEffectPropOpenCLImage` is set.
+- **`kOfxImagePropRowBytes` is not guaranteed for OpenCL Images** — "OpenCL
+  Images do not have the concept of row bytes". Pitch arithmetic is a
+  Buffers/CPU path rule.
+- **Metal texture rendering is not in 1.5.1.** `kOfxImageEffectPropMetalTextureSupported`
+  is an open proposal (`openfx#283`, Oct 2026), not a header constant. Do not
+  reference it in shipped code.
+
+### 5.2 Per-render in-args (Render / BeginSequenceRender / EndSequenceRender only)
 
 | Constant | Type | Meaning |
 | --- | --- | --- |
@@ -322,46 +310,43 @@ EndSequenceRender):
 | `kOfxImageEffectPropOpenCLCommandQueue` | `pointer` | `cl_command_queue` |
 | `kOfxImageEffectPropMetalEnabled` | `int` | Metal buffers in use |
 | `kOfxImageEffectPropMetalCommandQueue` | `pointer` | `id<MTLCommandQueue>` |
+| `kOfxImageEffectPropNoSpatialAwareness` | `string` | **1.5.1**, optional: host asks for a render with no spatial effects (§8) |
+| `kOfxImageEffectPropThumbnailRender` | `string` | **1.5.1**, optional: host considers this a UI thumbnail (§8) |
 
-Image handle properties:
+Both are read-only in-args with default `"false"`. `ThumbnailRender` is also
+present in `GetRegionOfDefinition`, `GetRegionsOfInterest`, `GetFramesNeeded`,
+`GetClipPreferences` and `IsIdentity`; `NoSpatialAwareness` is specified for
+Begin/Render only. Read whichever the host offers where the answer changes the
+action.
+
+### 5.3 Image handle properties
 
 | Constant | Type | Meaning |
 | --- | --- | --- |
 | `kOfxImagePropData` | `pointer` | base of the row at `bounds.y1` (the bottom; its origin is independent of the stride's sign); device pointer when CUDA/OpenCL/Metal enabled |
-| `kOfxImagePropRowBytes` | `int` | scanline stride in bytes; **signed, may be negative** |
+| `kOfxImagePropRowBytes` | `int` | scanline stride in bytes; **signed, may be negative for CPU images** |
 | `kOfxImagePropBounds` | `int × 4` | window of valid pixels in this image |
 | `kOfxImagePropRegionOfDefinition` | `int × 4` | RoD; may exceed bounds |
 | `kOfxImageEffectPropPixelDepth` | `string` | `kOfxBitDepthByte` / `Short` / `Half` / `Float` |
 | `kOfxImageEffectPropComponents` | `string` | `kOfxImageComponentRGBA` / `RGB` / `Alpha` |
-| `kOfxImageEffectPropPreMultiplication` | `string` | premultiplied / unpremultiplied |
+| `kOfxImageEffectPropPreMultiplication` | `string` | premultiplied / unpremultiplied / opaque |
 | `kOfxImagePropPixelAspectRatio` | `double` | non-square pixels are legal |
 
-`kOfxImagePropRowBytes` is an `int` in the header, and the Support accessor
-(`OFX::Image::getRowBytes()`) returns `int` too. Widen it to `long long` before
-multiplying by a row index, which is what the templates do; keeping the stride
-and the offset arithmetic in `int` overflows on a large frame. Reading the
-accessor once per row and reusing it is the other half of the same fix.
+`kOfxImagePropRowBytes` is an `int` in the header and in
+`OFX::Image::getRowBytes()`. Widen it to `long long` before multiplying by a row
+index; keeping the arithmetic in `int` overflows on a large frame. Read the
+accessor once per row and reuse it.
 
-Writing *back* is the same arithmetic against the **destination** image, which
-has its own base pointer, its own signed pitch and its own bounds — plus traps a
-copy does not have: the overlay is positioned in frame coordinates, the plate may
-be premultiplied, and a host may rasterise from either origin. Short version in
-[`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
-the overlay after the model"; the full rules are in
+Writing back is the same arithmetic against the **destination** image, which has
+its own base pointer, its own signed pitch and its own bounds, plus traps a copy
+does not have. Short version in [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md)
+§7, "Drawing into the frame: the overlay after the model"; full rules in
 [`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
 
-Clip property for the *unmapped* component string is
-`kOfxImageClipPropUnmappedComponents` (`ofxImageEffect.h`). There is no
-`kOfxImageEffectPropUnmappedComponents`; do not invent it.
+### 5.4 Support names for the depths
 
-Error codes worth knowing: `kOfxStatGPUOutOfMemory` = `1001`,
-`kOfxStatGPURenderFailed` = `1002`. Both live in `ofxGPURender.h`, which is
-**not** pulled in by `ofxsImageEffect.h` — include it explicitly or the compiler
-will report them undeclared.
-
-**Support names for the depths.** The strings above are the C API; the Support
-library spells the depths as an enum, and the 8-bit case is the one every
-byte-capable plug-in gets wrong first:
+The strings above are the C API; the Support library spells them as an enum, and
+the 8-bit case is the one every byte-capable plug-in gets wrong first:
 
 | C value | Support name (`OFX::`) | Notes |
 | --- | --- | --- |
@@ -370,81 +355,108 @@ byte-capable plug-in gets wrong first:
 | `kOfxBitDepthHalf` | `eBitDepthHalf` | |
 | `kOfxBitDepthFloat` | `eBitDepthFloat` | what every template advertises |
 
-Advertise a depth only when `render()` handles it: the templates accept float
-only, and a host that hands over a byte image the descriptor did not declare is
-a crash or a black frame, not a conversion.
+Advertise a depth only when `render()` handles it. A host that hands over an
+undeclared depth is not converting for you; the templates accept float only and
+the harness proves that a byte image is refused.
 
-**`getRegionOfDefinition` returns `bool` and takes an out-parameter.** It is not
-`OfxRectD getRegionOfDefinition(const Args&)`:
-`virtual bool getRegionOfDefinition(const OFX::RegionOfDefinitionArguments&, OfxRectD&)`.
-Return `true` only when you set the rect; `false` means "use the default", the
-union of the input clips' RoD (`ofxsImageEffect.h:1119-1127`).
+### 5.5 Colour management (OFX 1.5)
+
+`ofxColour.h` adds a colour-management contract that the pre-1.5 skill said did
+not exist. The default is still `kOfxImageEffectColourManagementNone`, so legacy
+behaviour remains valid — but it is now a **choice**, not a limitation.
+
+| Constant | Set on | Meaning |
+| --- | --- | --- |
+| `kOfxImageEffectPropColourManagementStyle` | plugin descriptor, host descriptor, instance | `None` (default) / `Basic` / `Core` / `Full` / `OCIO`; the host picks the highest style both sides offer and records it on the instance |
+| `kOfxImageClipPropColourspace` | clip instance | the colourspace the host actually supplied; cross-reference with `OfxColourspace_<clip>` when output matches an input |
+| `kOfxImageEffectActionGetOutputColourspace` | action | where a colour-manipulating effect declares its output space |
+
+Rules:
+
+- **Do not opt in unless you convert through the host's config.** Declaring a
+  style is a promise that you read `kOfxImageClipPropColourspace` and honour it.
+  A gain that claims `Basic` and then ignores the property is worse than one that
+  claims nothing.
+- **If you stay at `None`, do not convert either.** The old rule still holds:
+  never bake a transform you were not asked for, and expose an explicit
+  "as-is / no conversion" default when an effect only makes sense in linear light.
+- **Resolve 21 implements the 1.5 colour APIs** (**[B]**,
+  [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) §2.9). Feature-
+  detect the host's style; never infer it from the host name.
+
+### 5.6 Named traps
+
+- The clip property for the *unmapped* component string is
+  `kOfxImageClipPropUnmappedComponents` (`ofxImageEffect.h`). There is no
+  `kOfxImageEffectPropUnmappedComponents`.
+- `kOfxStatGPUOutOfMemory` = `1001`, `kOfxStatGPURenderFailed` = `1002`, both in
+  `ofxGPURender.h`, which `ofxsImageEffect.h` does **not** include. Include it
+  explicitly.
+- `getRegionOfDefinition` returns `bool` and takes an out-parameter:
+  `virtual bool getRegionOfDefinition(const OFX::RegionOfDefinitionArguments&,
+  OfxRectD&)`. Return `true` only when you set the rect; `false` means "use the
+  union of the input clips' RoD" (`ofxsImageEffect.h:1119-1127`).
+- `kOfxImageEffectPropNoSpatialAwareness` on the **descriptor** means "this plugin
+  *can* render without spatial awareness", not "this plugin has none". §8 has the
+  semantics; getting the polarity wrong makes a blur advertise itself as a LUT.
 
 ---
 
 ## 6. Build and packaging standards
 
 **Bundle layout.** Hosts scan `NAME.ofx.bundle/Contents/<ARCH>/NAME.ofx`, where
-`ARCH` is `Win64`, `Linux-x86-64`, `Linux-aarch64` or `MacOS` (per the OFX
-packaging spec). The file must end in `.ofx` on every platform, and the *stem must match
-the bundle name*. A plugin named `MinimalCudaGain` must live at
+`ARCH` is `Win64`, `Linux-x86-64`, `Linux-aarch64` or `MacOS`. The file must end
+in `.ofx` on every platform and the **stem must match the bundle name**:
 `MinimalCudaGain.ofx.bundle/Contents/Win64/MinimalCudaGain.ofx`.
 
-**What the bundle ships is part of the bundle.** The architecture directory
-decides whether a host finds the module; the files beside it decide whether it
-works and whether you may ship it. Walk the list once: the runtime under the
-name its loader expects (the per-platform branch in
-`templates/onnx-inference-ofx/CMakeLists.txt`, `BUILD_PLAYBOOK.md` §7), every
-model the UI offers, fonts, tokenizer tables — and the **licence text for each
-third-party item**. Let one list drive the copies, the dropdown labels and any
-generated header, so a model cannot be offered in the UI and missing from
-`Contents/Resources`, and a file nothing lists is removed and named in the build
-log. A model plug-in also ships the CUDA execution provider and the DLLs it
-imports (cuDNN, cuBLAS/cuBLASLt, cuFFT, cudart): one bundle that requests the
-provider and falls back to the CPU, never a second "GPU build" for users. The
-ONNX template has that copy behind `-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` plus
-`-DOFXPLUGIN_CUDA_RUNTIME_DIRS`, with a warning per missing file because the
-provider's missing import fails as error 126, not as a message
-(`AI_MODEL_INTEGRATION.md` §7). The same switch works on Windows, because the
-core travels as `onnxruntime-ofx.dll` and what matters is whether the provider
-imports `onnxruntime.dll` at all: for ORT 1.20.1 it does not, and with all the
-cuDNN 9 components copied beside it the bundle ran on a GPU host, while a bundle
-with only the cuDNN dispatcher exited 127 inside the provider
-(`AI_MODEL_INTEGRATION.md` §7). Run `dumpbin /dependents` on the provider you
-ship and recheck per ORT version; a provider that imports the core leaves the
-sidecar shape (`AI_MODEL_INTEGRATION.md` §2).
+**What ships is part of the bundle.** The architecture directory decides whether
+a host finds the module; the files beside it decide whether it works and whether
+you may ship it. One list drives the copies, the dropdown labels and any generated
+header — runtime under the loader's name, every model the UI offers, fonts,
+tokenizer tables, and the **licence text for each third-party item** — so a model
+cannot be offered and missing, and an unlisted file is removed and named in the
+build log. Copy the licence ledger with `POST_BUILD` +
+`${CMAKE_COMMAND} -E copy_if_different`, after the asset copy and before stale-file
+cleanup, and make a missing ledger a `message(WARNING)` so a source tree without
+it still builds. A bundle of AGPL weights that installs and renders without its
+notice has shipped for eight builds in a field-tested plug-in **[B]**.
 
-Two consequences for the bundle itself, both measured in a host that ships its
-own CUDA stack (Resolve 21.2): the preload must **skip the groups the host
-already has loaded** — imports resolve by base name, so a second `cudnn64_9.dll`
-mixes two minor versions in one process — and skip `cuFFTW`, which the provider
-never imports and which fails 127 next to a newer host cuFFT. `-DOFXPLUGIN_CUDA_FROM_HOST=ON` is the
-packaging answer for a host that brings its own CUDA: provider and shared library
-only, no cuDNN/cuBLAS/cuFFT/cudart of ours to collide (2.8 GB → 1.1 GB in the
-reporter's bundle). Neither replaces the runtime guard on a full bundle, and a
-fake host cannot show the problem at all (`AI_MODEL_INTEGRATION.md` §7,
-`tools/host_cuda_probe.cpp`). What such a plug-in draws over the model's output
-is a separate contract — destination pitch, frame-coordinate placement,
-premultiplied plates, one rasterising origin — spelled out in
-[`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
-the overlay after the model". A ledger in the repository is not in the bundle. Copy it from
-`CMakeLists.txt` with a `POST_BUILD` step (`${CMAKE_COMMAND} -E
-copy_if_different`), after the asset copy and before any stale-file cleanup,
-and make a missing ledger a `message(WARNING)` so a source tree without it still
-builds. `POST_BUILD` rather than a configure-time copy is what puts an edited
-notice into an already installed bundle on the next build. A bundle of AGPL
-weights that installs and renders without the notice has shipped for eight
-builds in a field-tested plug-in **[B]**.
+**The CUDA provider belongs in the same bundle.** One bundle that appends the
+provider and falls back to the CPU, never a second "GPU build": the provider plus
+cuDNN, cuBLAS/cuBLASLt, cuFFT and cudart, behind
+`-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` and `-DOFXPLUGIN_CUDA_RUNTIME_DIRS`, with a
+warning per missing file because a missing import fails as **error 126**, not as a
+message. Two host-facing facts:
 
-**One thread budget per node.** An inference plug-in may hold several ONNX
-Runtime sessions (a detector and a text tower) inside a host that holds several
-instances of the node. Build all of them through one session-options helper, make
-the intra-op count a parameter whose default is what the plug-in already did,
-remember the value each session was created with, and print it in the status
-label in both provider modes — that label is the only evidence the setting
-reached the session (`--label-param` asserts it). It is a CPU-path control:
-measured on one RTX 3060 it changed nothing under CUDA (`AI_MODEL_INTEGRATION.md`
-§7).
+- **Preload only what the provider imports, and only where the host does not own
+  that base name.** Imports resolve by base name, so an explicit load of your
+  `cudnn64_9.dll` beside Resolve's creates a second module of the same name and
+  mixes two minor versions in one process. Skip **cuFFTW** entirely: the provider
+  never imports it and it fails 127 next to a newer host cuFFT. Compare the loaded
+  module's *path*, not its name, and report `host CUDA stack` vs `bundled CUDA`.
+- **`-DOFXPLUGIN_CUDA_FROM_HOST=ON` is the packaging answer for a host that brings
+  its own CUDA**: provider and shared library only, no cuDNN/cuBLAS/cuFFT/cudart
+  of ours to collide (2.8 GB → 1.1 GB in the reporter's bundle **[B]**). It needs a
+  CUDA host; it does not replace the runtime guard on a full bundle.
+
+  Neither fact is visible to a fake host, which has nothing loaded and therefore
+  always uses the bundle's own DLLs. The reproduction is
+  `tools/host_cuda_probe.cpp`; the detail and the measured evidence are
+  [`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7.
+- **Check the provider's import table per ORT version.** `dumpbin /dependents` on
+  the provider you ship, looking for `onnxruntime.dll`. ORT 1.20.1's provider does
+  not import it, which is what makes the `onnxruntime-ofx.dll` sidecar work with
+  all 30 files beside it **[B]**; a later provider that does import it needs the
+  sidecar shape instead (`AI_MODEL_INTEGRATION.md` §2).
+
+**One thread budget per node.** An inference plug-in may hold several sessions
+inside a host that holds several instances of the node. Build every session
+through one `MakeSessionOptions(threads)` helper, make the intra-op count a
+parameter whose default is what the plug-in already did, remember the value each
+session was created with, and print it in the status label in **both** provider
+modes — the label is the only evidence the setting reached the session
+(`--label-param` asserts it). It is a CPU-path control: measured on one RTX 3060
+it changed nothing under CUDA **[B]** (`AI_MODEL_INTEGRATION.md` §7).
 
 **Install locations.**
 
@@ -454,177 +466,182 @@ measured on one RTX 3060 it changed nothing under CUDA (`AI_MODEL_INTEGRATION.md
 | User-local | `OFX_PLUGIN_PATH` (semicolon-separated) | `OFX_PLUGIN_PATH` (colon-separated) |
 
 **Firewall your symbols.** Set `CXX_VISIBILITY_PRESET hidden`,
-`CUDA_VISIBILITY_PRESET hidden` and `VISIBILITY_INLINES_HIDDEN ON`. The CUDA one
-is separate and easy to miss: `CXX_VISIBILITY_PRESET` does **not** apply to the
-`.cu` translation unit, so every `extern "C"` launcher in `Kernel.cu` stays an
-exported dynamic symbol. Measured on this template: without
-`CUDA_VISIBILITY_PRESET` the built `.ofx` exported 5 `T` symbols, with it 2 **[V]**.
-Every plugin statically links its own copy of the
-Support library; with default visibility, two plugins in one host process export
-identical mangled symbols and the loader binds one plugin's `OFX::PropertySet` to
-the other's. The symptom is a crash that appears only when a *second* plugin is
-installed. With hidden visibility `nm -D` shows two `T` symbols — that is correct,
-and the launcher is still visible in the full symbol table (`nm`, lowercase `t`).
+`CUDA_VISIBILITY_PRESET hidden` and `VISIBILITY_INLINES_HIDDEN ON`. The CUDA one is
+separate and easy to miss: `CXX_VISIBILITY_PRESET` does **not** apply to the `.cu`
+translation unit, so every `extern "C"` launcher stays exported. Measured on this
+template: without `CUDA_VISIBILITY_PRESET` 5 `T` symbols, with it 2 **[V]**; the
+version script then removes the weak `std::` helpers as well.
 
-Visibility attributes are an ELF mechanism: under MSVC `CXX_VISIBILITY_PRESET`
-and `CUDA_VISIBILITY_PRESET` are no-ops, and the Windows export set comes from
-the Support library's `OfxExport`, which expands to `__declspec(dllexport)`.
-That still yields exactly two exported names, verified with `dumpbin /exports`
-on a built Windows bundle **[B]** ([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3);
-the version script in
-`templates/minimal-ofx/exports.map` is guarded by `if(UNIX AND NOT APPLE)` for
-the same reason — on Windows there is nothing for it to do.
+Every plugin statically links its own Support library. With default visibility,
+two plugins in one host process export identical mangled symbols and the loader
+binds one plugin's `OFX::PropertySet` to the other's; the symptom is a crash that
+appears only when a *second* plugin is installed.
 
-**CUDA runtime linkage.** Default to `CUDA::cudart` (shared): the host already
-has a GPU stack. `cudart_static` removes the load-time dependency but gives each
+Visibility is an ELF mechanism. Under MSVC both presets are no-ops and the export
+set comes from the Support library's `OfxExport` (`__declspec(dllexport)`), which
+still yields exactly two exported names, verified with `dumpbin /exports` on a
+built Windows bundle **[B]** ([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3);
+`exports.map` is guarded by `if(UNIX AND NOT APPLE)` for the same reason.
+
+**CUDA runtime linkage.** Default to `CUDA::cudart` (shared): the host already has
+a GPU stack. `cudart_static` removes the load-time dependency but gives each
 plug-in its own runtime instance, and mixing the two in one process is undefined
-— see `ARCHITECTURE_AND_CUDA_PIPELINE.md` §10.
+(`ARCHITECTURE_AND_CUDA_PIPELINE.md` §10).
 
 On **Windows with CUDA 13**, do not claim a `cudart64_*.dll` import without
-checking it: `dumpbin /dependents` on a built template lists only KERNEL32,
-MSVCP140, VCRUNTIME140 and the UCRT, no CUDA runtime DLL, while the device code
-is present (seven cubins) and the module loads. The runtime is resolved through
-the hybrid runtime, and the string in the image is `cudart_hybrid64.dll` **[B]**
-([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3).
-The portable statement is "device code present, runtime resolved at load"; the
-import list, not the intent, is what a host depends on.
+checking: `dumpbin /dependents` on a built template lists KERNEL32, MSVCP140,
+VCRUNTIME140 and the UCRT, no CUDA runtime DLL, while the device code is present
+(seven cubins) and the module loads. The runtime resolves through the hybrid
+runtime and the string in the image is `cudart_hybrid64.dll` **[B]**
+([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3). The portable statement is "device
+code present, runtime resolved at load"; the import list is what a host depends on.
 
 **Architecture targets.** `CMAKE_CUDA_ARCHITECTURES` defaults to
 `75;80;86;89;90` plus `100;120` when the toolkit is ≥ 12.8. A bare number emits
 SASS **and** PTX, so the newest architecture still JITs on newer hardware. CUDA
-13 removed offline compilation for Volta and older; do not target `sm_70` or
-below with a modern toolkit — nvcc warns about deprecated targets, and that
-warning means the list is stale.
+13.0 removed offline compilation and library support below `sm_75` (Maxwell,
+Pascal, Volta); Turing is the floor, and an nvcc deprecation warning means the
+list is stale.
 
-One CMake trap, and it has two halves: `enable_language(CUDA)` initialises
-`CMAKE_CUDA_ARCHITECTURES` itself with the compiler's default, so by the time a
-project's own default block runs, `if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)` is
-**always false** and the curated list silently never applies. Capturing the
-variable before enabling the language fixes the **first** configure only: the
-value is now in the cache, so a second configure over the same build tree sees
-`if(NOT DEFINED …)` as false again and keeps nvcc's single architecture —
-measured: the second configure printed `-- CUDA architectures: 75` and
-generated one `--generate-code`, where a clean configure had seven **[B]**
-([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3). The
-template therefore records nvcc's default once in an internal cache variable —
-and only on a configure that saw no user value: recording it after
-`-DCMAKE_CUDA_ARCHITECTURES=90` would store the user's list as "the default",
-and the comparison would then reject the explicit choice — and treats a
-differing `CMAKE_CUDA_ARCHITECTURES` as a user choice. A tree configured before
-that marker existed has the cached value but no record of where it came from,
-so the template reads the cache entry before `enable_language()` and treats
-`UNINITIALIZED` as a `-D` value (CMake 3.x adds the "specified on the command
-line" help string) and the `STRING` that `enable_language()` writes as nvcc's
-default, then says so in a STATUS line; checked on CMake 3.31.6 and 4.4.5. Any
-project that ships a curated list needs the same trick; "it built" after an
-incremental reconfigure is not evidence the list survived. A configure check needs no GPU and proves
-the selection only: the `-- CUDA architectures:` line and the `--generate-code`
-flags in the generated build files. Whether the cubin is loadable is a host
-question, and whether the kernel runs needs hardware.
+The CMake trap has two halves. `enable_language(CUDA)` initialises
+`CMAKE_CUDA_ARCHITECTURES` itself, so a project default guarded by
+`if(NOT DEFINED ...)` never runs. Capturing the variable before
+`enable_language()` fixes only the first configure: the value is then cached, so
+the second configure keeps nvcc's single architecture — measured: `-- CUDA
+architectures: 75` and one `--generate-code`, where a clean configure had seven
+**[B]** ([evidence](FIELD_TEST_WINDOWS_CUDA.md) §3). The template records nvcc's
+default once in an internal cache variable, only on a configure that saw no user
+value, and treats a differing cached value as a user choice; a tree configured
+before that marker existed is handled by reading the cache entry before
+`enable_language()` and treating `UNINITIALIZED` as a `-D` value. Checked on CMake
+3.31.6 and 4.4.5. A configure proves the selection only — the STATUS line and the
+`--generate-code` flags. Whether the cubin loads is a host question, and whether
+the kernel runs needs hardware.
 
 **Do not bake the toolkit path into the bundle.** By default CMake records the
-directory it linked `cudart` from in `RUNPATH` — an absolute build-machine path
-for a bootstrapped toolkit. The template sets `INSTALL_RPATH` with
-`BUILD_WITH_INSTALL_RPATH ON`, so the `.ofx` resolves a `libcudart` placed beside
-it and otherwise uses the host's own runtime. The token is platform-specific:
-`$ORIGIN` for ELF, `@loader_path` for dyld (see `BUILD_PLAYBOOK.md` §7); using
-the wrong one builds fine and cannot resolve at load.
+`cudart` directory in `RUNPATH`. The template sets `INSTALL_RPATH` with
+`BUILD_WITH_INSTALL_RPATH ON`, so the `.ofx` resolves a `libcudart` beside it and
+otherwise uses the host's runtime. The token is platform-specific: `$ORIGIN` for
+ELF, `@loader_path` for dyld (`BUILD_PLAYBOOK.md` §7); the wrong one builds fine
+and cannot resolve at load.
 
 **MSVC.** The CUDA host compiler must use the same runtime library as the rest of
-the binary. CMake propagates this; do not hand-add `-Xcompiler /MD` to a Debug
-build (it must be `/MDd` there).
+the binary; CMake propagates it. Do not hand-add `-Xcompiler /MD` to a Debug build
+(it must be `/MDd`).
 
-**Separable compilation.** Only when device functions cross `.cu` files; then
-also set `CUDA_RESOLVE_DEVICE_SYMBOLS ON`.
+**Separable compilation.** Only when device functions cross `.cu` files; then also
+set `CUDA_RESOLVE_DEVICE_SYMBOLS ON`.
 
 ---
 
 ## 7. Debugging quick reference
 
-**You cannot see `stdout`.** A GUI host has no console attached; `printf` goes
-nowhere. Two channels are easily confused:
+**You cannot see `stdout`.** A GUI host has no console; `printf` goes nowhere. Two
+channels are easily confused:
 
 - `OFX::Log::print()` writes a **file** (`OFX_PLUGIN_LOGFILE`, default
   `ofxPluginLog.txt`, relative to the host's working directory), and Support
   guards the `fopen` with `#ifdef DEBUG` (`Support/Library/ofxsLog.cpp:40-47`).
-  CMake's `Debug` configuration does **not** define `DEBUG` and neither do these
-  templates, so the call writes nothing in any build unless you add `-DDEBUG`
-  yourself. Keep it as an opt-in trace, or write your own file logger into a
-  temp directory.
-- For a message the user can see in the timeline, post it through the host's
-  message suite: `OFX::ImageEffect::setPersistentMessage(OFX::Message::eMessageError,
-  id, msg)` (`Support/include/ofxsImageEffect.h:1067`). It needs message suite
-  v2, which not every host offers, so pair it with the file log rather than
-  replacing one silent channel with another host-missing exception.
+  CMake's `Debug` configuration does not define `DEBUG` and neither do these
+  templates, so the call writes nothing unless you add `-DDEBUG`. Keep it as an
+  opt-in trace, or write your own file logger into a temp directory.
+- For a message the user sees in the timeline:
+  `OFX::ImageEffect::setPersistentMessage(OFX::Message::eMessageError, id, msg)`
+  (`Support/include/ofxsImageEffect.h:1067`). It needs message suite v2, which
+  not every host offers, so pair it with a file log instead of replacing one
+  silent channel with a missing-suite exception.
 
-Every error path must report *and* throw a specific code.
+Every error path must report *and* throw a specific code. `ARCHITECTURE_AND_CUDA_PIPELINE.md`
+§11 has the printf-format gotcha, the log content worth capturing, and the five
+crash classes worth memorising.
 
-**The host blacklists crashing plugins.** Resolve records a plugin that crashed
-or hung and skips it on the next start **[B]**. After fixing a crash, the plugin may
-still not load. Clear it:
+**Close the host before you touch its plugin folder.** Windows keeps a loaded
+`.ofx` mapped, so installing over it fails in a way that looks like a corrupt
+bundle; on every platform the running host has already enumerated the old file.
+
+**The host blacklists crashing plugins.** Resolve records a plugin that crashed or
+hung and skips it on the next start **[B]**. After fixing a crash the plugin may
+still not load. Clear it, with the host closed:
 
 - Windows: `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\OFXPluginCacheV2.xml`
-  (older builds: `OFXPluginCache.xml` in `%PROGRAMDATA%\Blackmagic Design\...`).
+  (older builds: `OFXPluginCache.xml` under `%PROGRAMDATA%\Blackmagic Design\...`).
 - Then Preferences → System → Video Plugins and re-enable the plugin.
 
 **Symptom → likely cause.**
 
 | Symptom | First thing to check |
 | --- | --- |
-| Plugin not in the effect list | Bundle folder name vs binary name mismatch; wrong arch folder; missing entry points (`nm -D`) |
-| Effect appears, output is black | Advertising CUDA without a CUDA path; not checking `CudaEnabled`; kernel launched on the wrong device |
-| Output correct at 1× but broken at odd sizes | Pitch ignored (`width * 16` instead of `rowBytes`) |
+| Plugin not in the effect list | Bundle folder name vs binary stem; wrong arch folder; missing entry points (`nm -D`) |
+| Effect appears, output is black | Advertising CUDA without a CUDA path; not checking `CudaEnabled`; launch on the wrong device |
+| Correct at 1×, broken at odd sizes | Pitch ignored (`width * 16` instead of `rowBytes`) |
 | Crashes only with a second plugin installed | Default symbol visibility (§6) |
 | Crashes on scrub, fine on render | Async work outliving the render action without a stream |
 | Works in Edit page, fails in Color page | Different render window / RoI; see `HOST_COMPATIBILITY_MATRIX.md` |
-| Loading the plugin kills the host at startup | Static initialiser doing CUDA work; a static `cudaMalloc` at load time |
+| Loading the plugin kills the host at startup | Static initialiser doing CUDA work; a static `cudaMalloc` at load |
+| GPU path gone, label says `cannot load cufftw64_11.dll (error 127)` | A preload of everything beside the module; skip cuFFTW and guard host-owned base names (§6) |
+| Host crashes in its own `cudnn64_9.dll` after your plugin loads | A second module of the same base name; use the host's stack or `OFXPLUGIN_CUDA_FROM_HOST` |
+| Second instance shows the first instance's value | State in a static/global instead of the instance (`TESTING_STRATEGY.md` §8) |
+| A label says `CPU (8 threads)` but the setting changes nothing | The session was built before the parameter, or with a second options helper (§6) |
 
-**Profiling.** Nsight Systems attaches to the host process and shows your
-kernel as a child of the host's render thread; Nsight Compute attaches per
-kernel launch. Both need the plugin built with line info
-(`-lineinfo`, or `-G` only for debugging since it disables most optimisation).
-Because the host owns the process, start the host under the profiler rather than
-attaching to a render farm. Details in `ARCHITECTURE_AND_CUDA_PIPELINE.md` §9.
+**Profiling.** Start the host *under* the profiler: Nsight Systems
+(`--trace=cuda,nvtx,osrt`) for the timeline, Nsight Compute per kernel, and
+`compute-sanitizer --tool memcheck` for the pitch bug you cannot see. Both need
+`-lineinfo` (or `-G`, debugging only). Details in
+`ARCHITECTURE_AND_CUDA_PIPELINE.md` §9.
 
-**ABI failures.** Mixing a plugin built against one OFX SDK with a host that
-expects another is mostly harmless (properties are string-keyed), but the
-`OfxPlugin` struct layout and the C++ class layouts of the *Support library* are
-not. Never link two different Support library versions into one binary, and never
+**ABI failures.** Mixing OFX SDK versions is mostly harmless (properties are
+string-keyed), but the `OfxPlugin` struct layout and the Support library's C++
+class layouts are not. Never link two Support versions into one binary, and never
 share C++ objects across a plugin boundary **[I]**.
 
 ---
 
-## 8. Region of interest, before you write the kernel
+## 8. Region of interest, and the 1.5.1 render hints
 
 If output(x,y) needs input(x±r, y±r):
 
-1. In `describe()`, keep spatial awareness on (do **not** set
-   `kOfxImageEffectPropNoSpatialAwareness`).
-2. Override `getRegionsOfInterest()` and expand the source clip's RoI by `r` in
-   *canonical* coordinates (multiply by `args.renderScale` correctly — see the
-   deep dive).
-3. In `render()`, fetch the source with the expanded region, and remember the
-   host may hand you an image whose *bounds* differ from the render window. The
-   kernel's boundary check must be against the image bounds, not the window.
+1. Leave `kOfxImageEffectPropNoSpatialAwareness` **unset** on the descriptor — for
+   a neighbourhood effect that is the correct declaration ("I cannot render
+   without spatial awareness"). Override `getRegionsOfInterest()` and expand the
+   source RoI by `r` in *canonical* coordinates, multiplying by `args.renderScale`
+   (see the deep dive).
+2. Fetch the source with the expanded region and remember that the image's
+   **bounds** may differ from the render window. The kernel's boundary check is
+   against the image bounds.
+3. Test two offset windows, in both pointer origins and both stride signs, and
+   assert the overlay's *position and orientation*, not that bytes changed. A
+   pass-through copy is orientation-agnostic; a box in the top half of the tile
+   catches a mirror. `testkit`'s `setImageOrigin`/`setNegativePitch` build all four
+   layouts ([`testkit/README.md`](testkit/README.md) says what each proves).
 
-`getRegionsOfInterest` gets this wrong in almost every first draft, and the
-failure mode is a visible seam at tile edges, which is easy to blame on the
-kernel.
+The two classic failures: adding a pixel radius directly to canonical coordinates
+(at `renderScale = 0.5` you ask for twice the neighbourhood; at 2× too little, and
+seams appear only in proxy mode), and expanding the RoI but addressing the kernel
+relative to the render window rather than the fetched image bounds.
 
-The tile protocol hides a second mistake: render two offset windows, in both
-pointer origins and with both stride signs, and assert the overlay's *position
-and orientation* - not that bytes changed. A pass-through copy is
-orientation-agnostic, so it matches either way up; a box drawn in the top half of
-the tile catches a mirror, a centred one does not. `testkit`'s
-`setImageOrigin`/`setNegativePitch` build all four layouts, and
-[`testkit/README.md`](testkit/README.md) says what each one can prove.
+A tiled plug-in that draws has both bugs at once: the halo decides what the model
+sees, the overlay's placement decides what the user sees. The drawing half is
+[`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7 and
+[`ARCHITECTURE_AND_CUDA_PIPELINE.md`](ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
 
-A tiled plug-in that draws is where both mistakes meet: the halo decides what the
-model sees, the overlay's placement decides what the user sees, and a seam plus a
-shifted box are two separate bugs. The drawing half — its own pitch, the window
-offset, premultiplied plates, the single rasterising origin — is
-[`AI_MODEL_INTEGRATION.md`](AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
-the overlay after the model".
+**`kOfxImageEffectPropNoSpatialAwareness` (1.5.1), the right way round.** Set it
+`"true"` on the descriptor only if the effect is per-pixel *or* can disable its
+spatial parameters on request. The host then sets the in-args property to `"true"`
+for renders that must not move pixels (LUT generation, some scopes), and your
+`render()`/`beginSequenceRender()` must honour that by disabling the spatial part.
+If you leave it `"false"`, the host **bypasses** the effect for those renders —
+correct for a blur, wrong for a gain, and invisible until a user generates a LUT.
+
+**`kOfxImageEffectPropThumbnailRender` (1.5.1).** The host marks low-resolution
+UI renders. For a model plug-in this is the difference between a responsive
+timeline and a stall: return identity (or draw a badge) instead of running
+inference on a 208×117 thumbnail, and disable temporal inputs in
+`getFramesNeeded()` for the same render. Do not change the *result* for a
+full-resolution render based on this flag.
+
+**`kOfxImageEffectPropCPURenderSupported` (1.5.1)** belongs in the same decision:
+a plug-in that can only run on the GPU says so once, instead of throwing from
+`render()` on every CPU render a host attempts.
 
 ---
 
@@ -633,15 +650,17 @@ the overlay after the model".
 | Anti-pattern | Why it fails | Do instead |
 | --- | --- | --- |
 | `width * 4 * sizeof(float)` as the stride | Hosts pad rows (Resolve renders 208×117 thumbnails through 256-byte-aligned allocators) | `getRowBytes()`, signed 64-bit |
-| `cudaDeviceSynchronize()` in `render` | Explicitly forbidden; serialises the host's whole GPU pipeline | Enqueue on the host stream; sync only when no stream was given |
-| `cudaMemcpy` device→device to a private buffer | Doubles bandwidth and defeats the point of the OFX GPU path | Read the host pointer directly |
-| `cudaMalloc` in `render` | Alloc/free per frame destroys throughput and fragments the caching allocator | Allocate in `beginSequenceRender`/lazily once, reuse, free in `endSequenceRender`/destructor |
-| Static CUDA state in globals | Multiple instances share it; the host may render instances on different threads | Per-instance members, or a device-keyed cache with a mutex |
-| Catching everything and returning `kOfxStatOK` | The host has no idea the frame is wrong; you get black output and no log | Map failures to the specific `kOfxStat*` code |
+| `cudaDeviceSynchronize()` in `render` | Explicitly forbidden; serialises the host's whole GPU pipeline | Enqueue on the host stream; sync only the stream you used, only when none was given |
+| `cudaMemcpy` device→device to a private buffer | Doubles bandwidth and defeats the GPU path | Read the host pointer directly |
+| `cudaMalloc` in `render` | Alloc/free per frame destroys throughput and fragments the allocator | Allocate once per sequence/size, reuse, release in `endSequenceRender()` or `purgeCaches()` |
+| Freeing device memory in the destructor | The host may destroy the instance while tearing down its GPU stack; a CUDA call there can fault | Keep the destructor free of CUDA calls; release in `endSequenceRender`/`purgeCaches` |
+| Static CUDA state in globals | Multiple instances share it; instances render on different threads | Per-instance members, or a device-keyed cache with a mutex |
+| Catching everything and returning `kOfxStatOK` | The host composites a wrong frame with no log | Map failures to specific `kOfxStat*` codes |
 | `new` + manual `delete` around `fetchImage` | Any intervening `throw` leaks the host image | `std::unique_ptr` at construction |
-| Omitting `setGPURenderArgs` | CUDA path silently never runs | Always call it before `process()` |
-| Different maths in CPU and GPU paths | Divergence discovered by a client, not by you | One header/function as source of truth |
-| Testing only in the viewer | Viewer path ≠ render path in every host | Render to file, and to the delivery codec |
+| Omitting `setGPURenderArgs` | The CUDA path silently never runs | Always call it before `process()` |
+| Different maths in CPU and GPU paths | Divergence found by a client | One header/function as source of truth |
+| Testing only in the viewer | Viewer path ≠ render path | Render to file, and to the delivery codec |
+| Drawing the overlay before tiling | The overlay enters the model's receptive field and changes with tile size | Draw after inference, once per frame |
 
 ---
 
@@ -652,50 +671,52 @@ the overlay after the model".
 - [ ] Identifier is reverse-DNS and unique.
 - [ ] Bundle folder name == binary stem == `<Name>.ofx`.
 - [ ] Source and output clips defined with explicit supported components.
-- [ ] `addSupportedBitDepth` matches what `render()` actually accepts.
+- [ ] `addSupportedBitDepth` matches what `render()` accepts.
 - [ ] CUDA flags guarded by `#ifdef OFXPLUGIN_WITH_CUDA`.
 - [ ] `Kernel.cuh` compiles without CUDA headers.
-- [ ] CPU fallback implemented and reachable.
+- [ ] CPU fallback implemented and reachable, or
+      `kOfxImageEffectPropCPURenderSupported` set `"false"` on purpose.
+- [ ] Spatial/thumbnail/colour-management declarations from Phase 0 are written
+      down (§5, §8).
 - [ ] Global accesses go through the host pitch, and the hot path uses one vector
-      load/store per pixel where the pointers allow it (`./test/run-tests.sh` asserts
-      this in PTX).
+      load/store per pixel where the pointers allow it (`./test/run-tests.sh`
+      asserts this in PTX).
 
 **Before calling it done**
 
 - [ ] Compiles clean on the intended toolchain(s); warnings read, not ignored.
-- [ ] Linux: `nm -D --defined-only | grep ' T '` shows only the two entry
-      points. Weak `W` template helpers may remain; a version script removes
-      those too (`templates/minimal-ofx/exports.map`).
-- [ ] Windows: `dumpbin /exports <Name>.ofx` shows the same two names and
-      nothing else; `cuobjdump -lelf` lists the cubins when CUDA is on. Both are
-      checked by `testkit/check-ofx-artifact.bat`, which every `build.bat` calls
-      with `--strict`: it locates `dumpbin`/`cuobjdump` through `vswhere` and the
-      CUDA roots, because the Visual Studio generator branch has neither on
-      `PATH`, and fails the build when it cannot find them.
+- [ ] Linux: `nm -D --defined-only | grep ' T '` shows only the two entry points;
+      weak `W` helpers are gone too if the version script is used
+      (`templates/minimal-ofx/exports.map`).
+- [ ] Windows: `dumpbin /exports <Name>.ofx` shows the same two names and nothing
+      else; `cuobjdump -lelf` lists the cubins when CUDA is on. Both are checked
+      by `testkit/check-ofx-artifact.bat` with `--strict`, which finds
+      `dumpbin`/`cuobjdump` through `vswhere` and the CUDA roots and fails when
+      it cannot.
 - [ ] `dlopen`/`LoadLibraryEx` succeeds and the plugin enumerates (id, version,
       mainEntry).
 - [ ] Rendered in at least one real host, in both GPU and CPU modes.
 - [ ] Identity path verified (no render when params are neutral).
 - [ ] Non-square PAR and odd resolutions tested.
-- [ ] `isEnabledCudaRender` false path tested (force the host to OpenCL/CPU).
+- [ ] `isEnabledCudaRender` false path tested (force OpenCL/CPU).
 - [ ] No `cudaDeviceSynchronize` anywhere: `grep -rn cudaDeviceSynchronize src/`.
 - [ ] Every error path logs and throws.
 - [ ] `./test/run-tests.sh` passes: predicate, kernel equivalence, CPU loop,
       concurrency, PTX counts, bundle hygiene.
-- [ ] Windows: `test/gpu-kernel-test.cu` run on the target GPU (`nvcc
-      -arch=sm_XX`, 28 cases) — the only check that executes real SASS.
-- [ ] It is also clean under `SANITIZE=address,undefined`, `SANITIZE=thread` and
-      `RUN_VALGRIND=1`, and `./test/run-analysis.sh` reports nothing.
-- [ ] Every `kOfx*` property you read is read with its declared type, and every
-      pre-ship question in `PREFLIGHT_REVIEW_CHECKLIST.md` has an answer.
-- [ ] Verification status written down honestly (see §12).
+- [ ] Windows: `test/gpu-kernel-test.cu` run on the target GPU (`nvcc -arch=sm_XX`,
+      28 cases) — the only check that executes real SASS.
+- [ ] Clean under `SANITIZE=address,undefined`, `SANITIZE=thread` and
+      `RUN_VALGRIND=1`; `./test/run-analysis.sh` reports nothing.
+- [ ] Every `kOfx*` property is read with its declared type, and every pre-ship
+      question in `PREFLIGHT_REVIEW_CHECKLIST.md` has an answer.
+- [ ] Verification status written down honestly (§12).
 
 ---
 
 ## 11. Mandatory git workflow
 
-Commit and push continuously — after a new file compiles, after a working build,
-after a behaviour fix, after a doc milestone:
+Commit and push continuously — after a new file compiles, a working build, a
+behaviour fix, a doc milestone:
 
 ```bash
 git add <only the files in this change>
@@ -706,15 +727,13 @@ git push
 One logical change per commit (if the subject needs "and", split it); never a
 broken build on `main`; never build output or machine paths; write the body for
 the next reader ("use rowBytes so padded thumbnails do not shear", not "fix
-stride"); verify before pushing, not after. Types: `feat`, `fix`, `build`,
-`docs`, `refactor`, `perf`, `test`, `chore`; scopes: `template`, `kernel`,
-`cmake`, `skill`, `hosts`.
+stride"); verify before pushing, not after. Types: `feat`, `fix`, `build`, `docs`,
+`refactor`, `perf`, `test`, `chore`; scopes: `template`, `kernel`, `cmake`,
+`skill`, `hosts`.
 
 ---
 
 ## 12. Verification status of this skill
-
-Recorded so nobody mistakes documentation for proof.
 
 **Verified on the authoring machine** **[V]** (Linux x86-64, Ubuntu 24.04,
 GCC 13.3.0, CUDA 12.9.41 via `./build.sh --bootstrap-cuda`, CMake 3.31.6,
@@ -724,44 +743,64 @@ OpenFX `OFX_Release_1.5.1`):
   `Contents/Linux-x86-64/MinimalCudaGain.ofx` with no compiler warnings; the CUDA
   build links `libcudart.so.12`, and `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` drops it
   from `NEEDED`.
-- The artifact exports exactly two strong `T` symbols plus five weak `W` helpers,
-  and contains the launcher, both kernels and a `.nv_fatbin` section.
+- The artifact exports the two entry points plus five weak `W` helpers (7 dynamic
+  symbols without a version script), and contains the launcher, both kernels and a
+  `.nv_fatbin` section.
 - Kernel PTX (`-arch=sm_89`): one 16-byte load and one 16-byte store per pixel,
   14 registers, 0 spills, 0 stack. Both kernels ran over 3,240 **[V]** emulated
-  grid launches with 0 mismatches; the hoisted CPU loop is bit-identical.
+  grid launches with 0 mismatches; the hoisted CPU loop is bit-identical over
+  1,464 pixel components **[V]**.
 - `dlopen` returns one plug-in: `OfxImageEffectPluginAPI` v1,
   `com.ofxplugindeveloper.minimalcudagain` 1.0, `setHost` and `mainEntry` set.
 - `./test/run-tests.sh`, ASan+UBSan, TSan and `RUN_VALGRIND=1` are clean;
   `test/run-analysis.sh` (cppcheck + shellcheck) is clean.
-- Every `kOfx*` constant cited in §5 exists in the pinned headers.
+- Every `kOfx*` constant cited in §5 exists in the pinned headers, including the
+  three 1.5.1 additions and `ofxColour.h`.
+
+**Currency check, 2026-11-24** (external evidence, re-read before relying on it):
+
+| Fact | Source | Label |
+| --- | --- | --- |
+| OFX 1.5.1 (2025-11-20) is still the current release; the docs build is dated 2026-10 | `AcademySoftwareFoundation/openfx` releases, `openfx.readthedocs.io` | [B] |
+| Metal texture render and key modifiers are open proposals, not in 1.5.1 | `openfx` issues #283, #292 (Oct–Nov 2026) | [B] |
+| CUDA 13.5 is the current toolkit; 13.x needs driver ≥ 580 and cannot compile below `sm_75` | CUDA Toolkit Release Notes 13.5, CUDA Compatibility | [B] |
+| ONNX Runtime 1.32.0 (2026-11-13); CUDA packages target CUDA 13.0 + cuDNN 9 since 1.27 | ORT release notes, CUDA EP requirements table | [B] |
+| DaVinci Resolve Studio 21.2 (2026-11-05) is current; 21.0.3 fixed "GPU support in OpenFX plugins" | Blackmagic forum release posts, 21.0.3 notes | [B] |
+| Resolve 21 implements the OpenFX 1.5 colour-management APIs | DaVinci Resolve 21 New Features Guide | [B] |
 
 **Still not verified (state this plainly in any downstream report):**
 
 - **No GPU in this environment.** Nothing in `./run-tests.sh` executes SASS here:
-  numerics are validated on the host by emulating the thread mapping over the
-  real kernel source (`BEST_PRACTICES_AND_PERFORMANCE.md` §6.1). Device behaviour
-  beyond the single external run below — multi-GPU binding, real async ordering
-  across many streams — remains unverified.
-- **No host.** No Resolve, Nuke, SCRATCH or Natron is installed, so the plugin
-  has never rendered a pixel, and every host-specific claim in
+  numerics are validated on the host by emulating the thread mapping over the real
+  kernel source (`BEST_PRACTICES_AND_PERFORMANCE.md` §6.1). Device behaviour beyond
+  the external run below — multi-GPU binding, real async ordering across many
+  streams — remains unverified.
+- **No host.** No Resolve, Nuke, SCRATCH or Natron is installed, so the plugin has
+  never rendered a pixel, and every host-specific claim in
   `HOST_COMPATIBILITY_MATRIX.md` remains graded B/C rather than verified.
+- **The 1.5.1 render hints are documented, not exercised.** No host here sets
+  `kOfxImageEffectPropNoSpatialAwareness` or `kOfxImageEffectPropThumbnailRender`,
+  and the templates do not yet read them; the rules in §8 follow from the header
+  text **[I]**.
+- **No colour-managed test.** The colour-management paragraph in §5.5 is read from
+  `ofxColour.h` and Blackmagic's release note; no host and no config were
+  exercised **[I]** for the plug-in side.
+
 **Executed elsewhere, not here [B]** (2026-11-22 field test: Windows 11, RTX 3060
-sm_86, CUDA 13.0 toolkit on a 13.5 driver, MSVC 19.44/19.50; the logs are
-archived in [`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md)):
+sm_86, CUDA 13.0 toolkit on a 13.5 driver, MSVC 19.44/19.50; logs and limits in
+[`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md)):
 
 - `.\build.bat` configures and builds; the result is
   `Contents\Win64\<Name>.ofx` with exactly two exports (`dumpbin /exports`) and
   seven cubins (`cuobjdump -lelf`). The contract harness, ported to
-  `LoadLibraryExW`, drove it through the whole host protocol with 0 failures
-  (before this checkout's multi-instance checks existed).
-- The real kernels executed on the GPU: 28/28 bit-exact versus the host
-  reference, including padded and negative pitches, misaligned bases, window
-  offsets, zero-size windows and overrun guards.
+  `LoadLibraryExW`, drove the whole host protocol with 0 failures.
+- The real kernels executed on the GPU: 28/28 bit-exact versus the host reference,
+  including padded and negative pitches, misaligned bases, window offsets,
+  zero-size windows and overrun guards.
 - First throughput measurement: 1920×1080 RGBA32F, vec4 0.212 ms (~312 GB/s),
-  scalar 0.222 ms (~300 GB/s) — bandwidth-bound, ~4% apart, which is why the
-  PTX instruction count must not be read as a speed claim.
+  scalar 0.222 ms (~300 GB/s) — bandwidth-bound, ~4% apart, which is why the PTX
+  instruction count must not be read as a speed claim.
 
-**Still not verified:** no OFX host anywhere in that test either, so no pixel has
-been rendered by Resolve, Nuke, SCRATCH or Natron; only one GPU was available;
-no Windows sanitizer or valgrind pass; and no Nsight capture or multi-resolution
-performance work.
+**Still not verified there:** no OFX host, so no pixel has been rendered by
+Resolve, Nuke, SCRATCH or Natron; one GPU only; no Windows sanitizer or valgrind
+pass; no Nsight capture; no multi-resolution performance work.
