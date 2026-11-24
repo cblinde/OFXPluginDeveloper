@@ -356,6 +356,22 @@ def check_anchors(root, files, texts, report):
                              f"({total} lines)")
 
 
+def check_link_shape(root, files, texts, report):
+    """A link written `[label(target)` instead of `[label](target)`.
+
+    check_links only looks at what it can parse, so a bracket lost by a rewrite
+    is invisible to it: the label simply stops being a link. That happened to
+    four links when the documents moved, so scan for the shape directly.
+    """
+    shape = re.compile(r"\[[^\[\]]*\([^()\[\]]*\.md[^()\[\]]*\)")
+    for path in files:
+        text = strip_comments(texts[path])
+        for match in shape.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            report.error(path, line,
+                         f"malformed link {match.group(0)[:60]!r}: missing `]` before `(`")
+
+
 def check_agents(root, report):
     path = os.path.join(root, "AGENTS.md")
     if not os.path.exists(path):
@@ -387,6 +403,7 @@ def main():
     check_measurements(root, files, texts, report)
     check_labels(root, files, texts, report)
     check_anchors(root, files, texts, report)
+    check_link_shape(root, files, texts, report)
     check_agents(root, report)
 
     status = report.show()

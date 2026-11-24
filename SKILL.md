@@ -145,6 +145,11 @@ answer changes the architecture, not just the code.
 | ONNX model per frame | `templates/onnx-inference-ofx/` | session, packing, tiling, goldens; CUDA EP first, CPU fallback (`references/onnx-and-tensorrt.md` §7) |
 | Model whose output is not an image | `templates/onnx-inference-ofx/` for session and packaging only | `ModelRunner` requires out shape == in shape; the head decoder is yours |
 
+When generating a new plugin, copy a template's structure instead of re-deriving
+it. `templates/minimal-cuda-ofx/` is the reference for the CUDA layer split and
+the stream/pitch/device code; `templates/onnx-inference-ofx/` is the reference for
+everything a model adds.
+
 Copy to `plugins/<youreffect>/`, then rename `PLUGIN_TARGET` and `PLUGIN_BUNDLE`
 in `CMakeLists.txt`, and `kPluginIdentifier`, `kPluginName` and the parameter
 names in `Plugin.cpp`.

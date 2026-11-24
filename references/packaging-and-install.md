@@ -112,7 +112,7 @@ appears only when a *second* plugin is installed.
 Visibility is an ELF mechanism. Under MSVC both presets are no-ops and the export
 set comes from the Support library's `OfxExport` (`__declspec(dllexport)`), which
 still yields exactly two exported names, verified with `dumpbin /exports` on a
-built Windows bundle **[B]** ([evidence(field-evidence.md) §3);
+built Windows bundle **[B]** ([`evidence`](field-evidence.md) §3);
 `exports.map` is guarded by `if(UNIX AND NOT APPLE)` for the same reason.
 
 **CUDA runtime linkage.** Default to `CUDA::cudart` (shared): the host already has
@@ -125,7 +125,7 @@ checking: `dumpbin /dependents` on a built template lists KERNEL32, MSVCP140,
 VCRUNTIME140 and the UCRT, no CUDA runtime DLL, while the device code is present
 (seven cubins) and the module loads. The runtime resolves through the hybrid
 runtime and the string in the image is `cudart_hybrid64.dll` **[B]**
-([evidence(field-evidence.md) §3). The portable statement is "device
+([`evidence`](field-evidence.md) §3). The portable statement is "device
 code present, runtime resolved at load"; the import list is what a host depends on.
 
 **Architecture targets.** `CMAKE_CUDA_ARCHITECTURES` defaults to
@@ -141,7 +141,7 @@ The CMake trap has two halves. `enable_language(CUDA)` initialises
 `enable_language()` fixes only the first configure: the value is then cached, so
 the second configure keeps nvcc's single architecture — measured: `-- CUDA
 architectures: 75` and one `--generate-code`, where a clean configure had seven
-**[B]** ([evidence(field-evidence.md) §3). The template records nvcc's
+**[B]** ([`evidence`](field-evidence.md) §3). The template records nvcc's
 default once in an internal cache variable, only on a configure that saw no user
 value, and treats a differing cached value as a user choice; a tree configured
 before that marker existed is handled by reading the cache entry before

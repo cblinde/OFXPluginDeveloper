@@ -50,6 +50,43 @@ SCRATCH. See [What has actually been verified](#what-has-actually-been-verified)
 | `evidence/` | Raw logs of every run the documents cite |
 | `LICENSE`, `THIRD_PARTY_NOTICES.md` | BSD-3-Clause, and what the fetched dependencies oblige |
 
+### What is inside each template
+
+`templates/` carries no README of its own - this is the map.
+
+```text
+templates/minimal-ofx/
+  CMakeLists.txt                     reference build: module, support sources, export list
+  src/Plugin.cpp                     the smallest host-loadable plug-in
+  exports.map                        version script: exactly two dynamic symbols
+  build.sh / build.bat               fetch headers, build, inspect the artifact
+  test/run-tests.sh                  contract harness against the reference plug-in
+templates/minimal-cuda-ofx/
+  CMakeLists.txt                     bundle-producing build, CUDA optional
+  src/Plugin.h  src/Plugin.cpp       OFX host wrapper: params, dispatch, isIdentity
+  src/Kernel.cuh src/Kernel.cu       CUDA interface + vec4/scalar kernels + launcher
+  test/run-tests.sh                  GPU-free suite: equivalence, concurrency, PTX, bundle, memcheck
+  test/run-analysis.sh               cppcheck + shellcheck over sources and scripts
+  test/kernel_equivalence.cpp        host harness for kernels and CPU loop
+  test/shim/                         minimal <cuda_runtime.h> for host builds
+  test/gpu-kernel-test.cu            hardware harness: 28 cases, streams, zero-copy, throughput
+  build.sh  build.bat                toolkit discovery, bootstrap, build + artifact check
+templates/onnx-inference-ofx/
+  CMakeLists.txt                     bundle build, ONNX Runtime detection + bundling
+  src/Plugin.h  src/Plugin.cpp       OFX wrapper: window addressing, alpha, render
+  src/ModelRunner.h  src/ModelRunner.cpp   one ORT session behind a pimpl
+  src/AiCore.h  src/AiCore.cpp       packing, tiling, whole/tiled inference
+  models/                            committed 611-byte model + golden tensor
+  tools/make-test-model.py           regenerates model and golden
+  test/run-tests.sh                  packing, golden, tiling, negative control, bundle
+  test/ai_pipeline_test.cpp          the harness
+  build.sh  build.bat                configure + build + report (Windows needs
+                                     ONNXRUNTIME_ROOT; the DLL is bundled)
+  bundle output                      Contents/<ARCH>/<Name>.ofx (Win64 on Windows,
+                                     Linux-x86-64 on Linux), Resources/ with icons,
+                                     models and LUTs, and the libraries the plug-in loads
+```
+
 The detail that used to live in thirteen root documents is now in `references/`,
 one subject per file; `SKILL.md` §2 is the map from a task to the file that
 answers it.
@@ -180,13 +217,14 @@ Documented rather than hidden, because each one is a trap for the next reader:
 2. **The Windows path was executed on another machine, not here.** The 2026-11-22
    field test built, loaded and rendered through `.\build.bat`; this checkout can
    only syntax-review it, so treat the Windows build as externally verified **[B]**
-   ([the archived run(references/field-evidence.md))
+   ([the archived run](references/field-evidence.md))
    rather than as a check `./run-tests.sh` performs.
 3. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
-   Loading the plug-in outside a host needs `LD_LIBRARY_PATH` (or the
-   revision placed beside the `.ofx`) pointing at the bundled libraries.
    `/usr/OFX/Plugins` is root-owned on most Linux systems, so run that step with
    `sudo` or point `OFX_INSTALL_DIR` at a writable host plugin directory.
+   Loading the plug-in outside a host needs `LD_LIBRARY_PATH` pointing at the
+   bundled libraries, or a copy of them placed beside the `.ofx`. A toolkit
+   fetched by `--bootstrap-cuda` keeps `libcudart` in `<toolkit>/lib64`.
 
 
 ### 4. Verify before you test in a host
