@@ -215,7 +215,15 @@ if not exist "%PLUGIN_OFX%" (
 rem --strict: the Visual Studio generator branch never runs vcvars64, so neither
 rem dumpbin nor cuobjdump is on PATH. Both are resolved by the checker; if that
 rem fails, the build fails - an artifact nobody inspected is not a pass.
-call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" --cuda --strict || goto :error
+rem
+rem --cuda only when a CUDA path was compiled in. Asking for it unconditionally
+rem meant the CPU-only build demanded cubins it cannot have; it passed only
+rem because cuobjdump's "does not contain device code" info line was counted as
+rem one (fixed in the checker at the same time), i.e. a false pass hidden behind
+rem a second bug. Now the CPU_ONLY build asserts the opposite, honestly.
+set "CUDA_CHECK="
+if defined CUDA_FOUND set "CUDA_CHECK=--cuda"
+call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" %CUDA_CHECK% --strict || goto :error
 exit /b 0
 
 :error

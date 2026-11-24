@@ -23,6 +23,14 @@ rem use keeps the skip, so a bundle can be checked on a machine without VS.
 rem
 rem Exits 1 on a wrong export set or missing device code, 3 on a missing tool
 rem under --strict, 0 otherwise.
+rem
+rem TOOL SHADOWING: nothing here may call the legacy `find` utility. Git-for-Windows
+rem ships a GNU find.exe and puts its usr\bin ahead of System32 on PATH, so
+rem   findstr ... | find /c /v ""
+rem ran GNU find with /c as a PATH ARGUMENT and walked the whole of C:\ (measured:
+rem 4000+ "Permission denied" lines and a build that never returned). Every count
+rem below is done with `set /a` over `for /f` instead, which needs no external tool.
+rem findstr, where, dumpbin and cuobjdump have no MSYS namesake; those are safe.
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "OFX="
@@ -124,11 +132,20 @@ if errorlevel 1 (
 
 rem The export table rows are "ordinal hint RVA name"; count the names so a
 rem stray export (for example a leaked Support-library symbol) fails the build.
+rem
+rem The RVA is spelled out as eight hex digits instead of `[0-9A-Fa-f]*` on
+rem purpose. A loose pattern also matches dumpbin's file-header line
+rem     00000000 characteristics
+rem ('c' is a hex digit, so the name group starts at the 'c' of
+rem "characteristics"), which counted 3 names for a 2-export DLL and failed every
+rem correct build. Measured on the CUDA template's bundle.
+rem
+rem Count the matching rows, one `set /a` per line (see TOOL SHADOWING above).
 set "NAMES=0"
-for /f %%C in ('findstr /r /c:"^ *[0-9][0-9]* *[0-9][0-9]* *[0-9A-Fa-f][0-9A-Fa-f]* *[A-Za-z_?]" "%TMPEXP%" ^| find /c /v ""') do set "NAMES=%%C"
+for /f "delims=" %%C in ('findstr /r /c:"^ *[0-9][0-9]* *[0-9][0-9]* *[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f] *[A-Za-z_?]" "%TMPEXP%"') do set /a NAMES+=1
 if not "%NAMES%"=="2" (
   echo FAIL: dumpbin reports %NAMES% exported names, expected 2
-  findstr /r /c:"^ *[0-9][0-9]* *[0-9][0-9]* *[0-9A-Fa-f][0-9A-Fa-f]* *[A-Za-z_?]" "%TMPEXP%"
+  findstr /r /c:"^ *[0-9][0-9]* *[0-9][0-9]* *[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f] *[A-Za-z_?]" "%TMPEXP%"
   del "%TMPEXP%" >nul 2>&1
   exit /b 1
 )
@@ -165,8 +182,17 @@ echo   cuobjdump: %CUOBJDUMP%
 
 set "TMPCUB=%TEMP%\ofx-cubins-%RANDOM%%RANDOM%.txt"
 "%CUOBJDUMP%" -lelf "%OFX%" > "%TMPCUB%" 2>nul
+rem One cubin per output line, shaped "ELF file    N: <name>.cubin".
+rem
+rem Counting every line was wrong in the other direction: a binary with no
+rem device code makes cuobjdump print
+rem   cuobjdump info    : File '...' does not contain device code
+rem on stdout, which counted as "1 cubin(s)" - so a CPU_ONLY build passed the
+rem --cuda check it should have failed (or, once build.bat stops asking for it,
+rem printed a device-code line that was not true). Match the .cubin names only.
+rem The count itself uses `set /a` rather than find (TOOL SHADOWING above).
 set "CUBINS=0"
-for /f %%C in ('find /c /v "" ^< "%TMPCUB%"') do set "CUBINS=%%C"
+for /f "tokens=*" %%L in ('findstr /i /c:".cubin" "%TMPCUB%"') do set /a CUBINS+=1
 del "%TMPCUB%" >nul 2>&1
 if "%CUBINS%"=="0" (
   echo FAIL: --cuda was requested but the image contains no cubin

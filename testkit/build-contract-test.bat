@@ -52,11 +52,31 @@ if not defined VCVARS (
 )
 call "%VCVARS%" >nul || exit /b 2
 
-cl /nologo /std:c++17 /O2 /EHsc /W3 /I "%HERE%." /I "%INC%" ^
+rem ---- compile ---------------------------------------------------------------
+rem Objects go to a private directory next to the binary and are removed again.
+rem Without this, cl.exe writes contract_main.obj and fake_host.obj into whatever
+rem directory the caller happens to be in - measured: the repository root and
+rem templates\minimal-cuda-ofx\ both collected two untracked .obj files per run.
+for %%I in ("%OUT%") do set "OUT=%%~fI"
+for %%I in ("%OUT%") do set "OBJDIR=%%~dpIcontract-obj"
+if not exist "%OBJDIR%" mkdir "%OBJDIR%" || exit /b 1
+
+rem /D_CRT_SECURE_NO_WARNINGS: the harness parses option values with sscanf,
+rem which MSVC flags as C4996 ("unsafe"). It is a test binary reading its own
+rem argv, but an unqualified build should not print a warning nobody will act
+rem on - measured here as the only warning the harness produced.
+rem
+rem pushd, not /Fo: every path passed to cl below is absolute, so the current
+rem directory only decides where the .obj files land.
+pushd "%OBJDIR%" || exit /b 1
+cl /nologo /std:c++17 /O2 /EHsc /W3 /D_CRT_SECURE_NO_WARNINGS /I "%HERE%." /I "%INC%" ^
   "%HERE%fake_host.cpp" "%HERE%contract_main.cpp" ^
   /Fe:"%OUT%" /link /SUBSYSTEM:CONSOLE
-if errorlevel 1 (
+set "CL_STATUS=%ERRORLEVEL%"
+popd
+if not "%CL_STATUS%"=="0" (
   echo error: contract harness failed to compile
   exit /b 1
 )
+rmdir /s /q "%OBJDIR%" >nul 2>&1
 exit /b 0
