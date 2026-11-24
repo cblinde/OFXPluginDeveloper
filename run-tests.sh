@@ -23,7 +23,7 @@
 #   SANITIZE           e.g. address,undefined (forwarded; skips memcheck)
 #
 # Neither template needs a GPU or an OFX host application; what that leaves
-# unproven is listed in TESTING_STRATEGY.md.
+# unproven is listed in references/testing-layers.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

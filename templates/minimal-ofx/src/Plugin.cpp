@@ -9,7 +9,7 @@
 //     Support library turns into the two exported C entry points.
 //
 // If you are starting a plug-in, copy this file and CMakeLists.txt. The build
-// playbook (BUILD_PLAYBOOK.md) explains every compile-level requirement.
+// playbook (references/cmake-and-linking.md) explains every compile-level requirement.
 #include <memory>
 
 #include "ofxsImageEffect.h"

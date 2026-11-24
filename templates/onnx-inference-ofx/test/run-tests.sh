@@ -116,7 +116,7 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
   # guaranteed by construction. Measured on this model: 0 deviation with halo=2
   # and 0.1875 without the context region, so 0.02 leaves an order of magnitude
   # between the check and the failure, and matches the halo-ladder threshold in
-  # AI_MODEL_INTEGRATION.md section 7.
+  # references/onnx-and-tensorrt.md section 7.
   echo "  tiled render (tileSize=16), tolerance 0.02:"
   "${TMP}/contract_test" "${BUNDLE_OFX}" \
     --id com.ofxplugindeveloper.onnxinference \

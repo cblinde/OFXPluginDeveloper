@@ -5,7 +5,7 @@
 // The template's own suite (test/run-tests.sh) emulates the kernel bodies on the
 // CPU through test/shim/cuda_runtime.h. This harness does the opposite: it
 // compiles the real src/Kernel.cu and executes it on actual hardware, which is
-// what SKILL.md section 12 used to list as the one thing never verified on
+// what SKILL.md §5 used to list as the one thing never verified on
 // hardware. It now is, on one GPU: run it to reproduce or to measure a new one.
 //
 // Covered here and nowhere else in the repository:

@@ -148,7 +148,7 @@ bool StartsWith(const std::wstring& name, const wchar_t* prefix)
 /// The base names onnxruntime_providers_cuda's import table holds, as groups:
 /// the provider imports cudnn64_9, cublas64_12, cublasLt64_12, cufft64_11 and
 /// cudart64_12, and the loader resolves each by base name (see
-/// AI_MODEL_INTEGRATION.md section 7). cuFFTW is the same group as cuFFT but is
+/// references/onnx-and-tensorrt.md section 7). cuFFTW is the same group as cuFFT but is
 /// never imported by the provider, and is skipped by name.
 enum class CudaGroup { other, cudnn, cublas, cufft, cudart };
 
@@ -441,7 +441,7 @@ bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason)
         cuda.device_id = 0;
         // ORT benchmarks convolution algorithms at session creation by default,
         // which costs minutes at 1080p before the first tile (external
-        // measurement, AI_MODEL_INTEGRATION.md section 7).
+        // measurement, references/onnx-and-tensorrt.md section 7).
         cuda.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchHeuristic;
         // Copies stay on the provider's stream, which is the default here and
         // the only safe choice when the host hands over host memory.
@@ -610,7 +610,7 @@ void ModelRunner::Run(const float* input, int channels, int height, int width, f
     // writing past the buffer. Supporting one means reporting the output shape
     // from Run(), mapping it into the output RoD in AiCore, and scaling the RoD
     // in the plug-in; see "Adapting it to a real model" in
-    // AI_MODEL_INTEGRATION.md.
+    // references/ai-architectures-and-runtimes.md.
     // Every dimension, not just the element count: 1x3x48x64 has the same
     // number of floats as 1x3x64x48, and batch 2 with half the rows matches
     // too. Either would be copied back as a plausible, wrong image.
@@ -619,7 +619,7 @@ void ModelRunner::Run(const float* input, int channels, int height, int width, f
         throw std::runtime_error(
             "ModelRunner: output shape does not match the input (this runner is "
             "shape-preserving; a resolution-changing model needs the changes in "
-            "AI_MODEL_INTEGRATION.md)");
+            "references/ai-architectures-and-runtimes.md)");
     }
 
     const float* data = outputs[0].GetTensorData<float>();

@@ -17,7 +17,7 @@
 // and can render them from several threads, because the declared render thread
 // safety is a claim about exactly that.
 //
-// What it is not: a conformant host. See TESTING_STRATEGY.md L3 for what it
+// What it is not: a conformant host. See references/testing-layers.md L3 for what it
 // cannot prove (the multi-resolution/tile protocol, clip preferences, and how a
 // real host presents errors). It is a contract test, not a certification.
 

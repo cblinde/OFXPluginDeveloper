@@ -49,7 +49,7 @@ __global__ void GainKernelRGBA32FVec4(const float* __restrict__ src,
         reinterpret_cast<char*>(dst) + static_cast<long long>(y) * dstPitch);
 
     // 1x LDG.E.128 + 1x STG.E.128 (verified in PTX; see
-    // BEST_PRACTICES_AND_PERFORMANCE.md section 6.1).
+    // references/performance-model.md section 6.1).
     d[x] = ScalePixel(s[x], gain);
 }
 

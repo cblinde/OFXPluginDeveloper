@@ -16,7 +16,7 @@
 # set REQUIRE_ANALYSIS=1 to make a missing tool fatal (what CI should do).
 #
 # Intentional suppressions are inline, next to the code, and each one names its
-# reason. They are tabulated in PREFLIGHT_REVIEW_CHECKLIST.md.
+# reason. They are tabulated in references/checklists.md.
 
 set -euo pipefail
 

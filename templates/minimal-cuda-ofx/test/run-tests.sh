@@ -24,7 +24,7 @@
 #
 # Nothing here executes device code: step 1 runs the kernel bodies on the CPU so
 # they can be compared byte for byte, and step 2 reads the PTX that nvcc emits.
-# See PREFLIGHT_REVIEW_CHECKLIST.md for what that does and does not prove.
+# See references/checklists.md for what that does and does not prove.
 
 set -euo pipefail
 

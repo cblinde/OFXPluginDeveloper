@@ -20,7 +20,7 @@
 #       pip download --no-deps onnxruntime -d /tmp/ort
 #       cd /tmp/ort && unzip -q onnxruntime-*.whl
 #     then add the headers from the same release tag (see
-#     AI_MODEL_INTEGRATION.md, "Getting the runtime").
+#     references/ai-architectures-and-runtimes.md, "Getting the runtime").
 
 set -euo pipefail
 

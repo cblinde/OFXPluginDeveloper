@@ -11,7 +11,7 @@ project(minimal-ofx LANGUAGES CXX)
 #   4. position-independent code, because the host dlopen()s it.
 #
 # Each of those is explained, with the header or support-library line that
-# requires it, in BUILD_PLAYBOOK.md.
+# requires it, in references/cmake-and-linking.md.
 # ---------------------------------------------------------------------------
 
 set(PLUGIN_TARGET "ReferenceGain")
@@ -62,7 +62,7 @@ add_library(${PLUGIN_TARGET} MODULE
 
 # Two include directories are required, and only two: the C API headers and the
 # Support library's. `Support/Library` is listed in some projects; both this
-# translation unit and the Support ones compile without it (see BUILD_PLAYBOOK).
+# translation unit and the Support ones compile without it (see references/cmake-and-linking.md).
 target_include_directories(${PLUGIN_TARGET} PRIVATE
   "${OFX_SOURCE_DIR}/include"
   "${OFX_SOURCE_DIR}/Support/include")

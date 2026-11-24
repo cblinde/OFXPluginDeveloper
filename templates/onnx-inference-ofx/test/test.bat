@@ -13,7 +13,7 @@ rem Environment:
 rem   ONNXRUNTIME_ROOT  required. Either the release zip layout
 rem                     (include\onnxruntime_cxx_api.h, bin\onnxruntime.dll) or a
 rem                     raw NuGet extraction of Microsoft.ML.OnnxRuntime, which
-rem                     FIELD_TEST_WINDOWS_CUDA.md records as what the Windows
+rem                     references/field-evidence.md records as what the Windows
 rem                     sessions used: build\native\include plus
 rem                     runtimes\win-x64\native\onnxruntime.dll. The NuGet layout
 rem                     is normalised into build\_ort once, because build.bat and
@@ -34,7 +34,7 @@ rem
 rem NOT VERIFIED: this file has never run. There is no Windows machine in this
 rem repository, so nothing below is executed on a regular basis, and a failure
 rem here is as likely to be a bug in this script as in the plug-in. Treat a green
-rem run as the first evidence, not as confirmation. FIELD_TEST_WINDOWS_CUDA.md
+rem run as the first evidence, not as confirmation. references/field-evidence.md
 rem section 7 and section 9 record what the Windows sessions actually ran instead.
 rem ---------------------------------------------------------------------------
 setlocal EnableExtensions EnableDelayedExpansion

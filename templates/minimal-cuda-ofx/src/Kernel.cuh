@@ -29,7 +29,7 @@ constexpr int kLaunchOK = 0;
 ///
 /// This lives in the header rather than in Kernel.cu so the decision can be
 /// tested on a machine with no GPU (see the equivalence harness described in
-/// BEST_PRACTICES_AND_PERFORMANCE.md).
+/// references/performance-model.md).
 inline bool IsVec4Addressable(const void* src, const void* dst,
                               std::int64_t srcPitch, std::int64_t dstPitch)
 {
@@ -79,7 +79,7 @@ extern "C" int LaunchGainRGBA32F(void* hostStream,
 
 /// Blocks until the default stream is idle. Only call this when the host did NOT
 /// hand you a cudaStream_t: the OFX contract then requires the render action to
-/// return with its work complete. See ARCHITECTURE_AND_CUDA_PIPELINE.md.
+/// return with its work complete. See references/ofx-lifecycle-and-threads.md.
 extern "C" int WaitForDefaultStream();
 
 /// Human readable form of a value returned by the two functions above.

@@ -201,7 +201,7 @@ if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
   # built or tested on this machine. A shipping plug-in adds
   # onnxruntime_providers_cuda and the DLLs it imports (cuDNN, cuBLAS/cuBLASLt,
   # cuFFT, cudart) to the same directory, requests the provider first and falls
-  # back to this CPU session - AI_MODEL_INTEGRATION.md section 7, which also has
+  # back to this CPU session - references/onnx-and-tensorrt.md section 7, which also has
   # the size budget (2.4-2.7 GB) and the error 1114/126 traps.
   #
   # Ship the file name each platform's loader actually looks for; the branches
@@ -273,7 +273,7 @@ endif()
 # host's own onnxruntime.dll cannot win the base-name match. A provider DLL
 # still imports "onnxruntime.dll" by that exact name, so on a host that has ORT
 # loaded (Resolve 21 ships 1.13) the provider binds to the host's runtime and the
-# mismatch in AI_MODEL_INTEGRATION.md section 4 comes back. On Windows the honest
+# mismatch in references/onnx-and-tensorrt.md section 4 comes back. On Windows the honest
 # arrangements are a sidecar process for the GPU runtime, or a host that does not
 # preload ORT - not a rename. On Linux the core keeps its SONAME, so the copy
 # below is consistent and unaffected.
