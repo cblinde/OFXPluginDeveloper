@@ -50,7 +50,7 @@ it or not).
 | Operation is local and analytic | no model at all | `Hush-OpenNR` in §4 |
 | GPU is available but the host does not hand over device pointers | CPU, or accept one copy per frame and measure | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §6 |
 
-# Pattern index
+## Pattern index
 
 A lookup table for "I need to do X inside an OFX plug-in — what is the proven
 shape, where is the code, and what breaks first?" It is deliberately an **index**,
@@ -63,9 +63,9 @@ Read it four ways:
 - **By task** — [§1](#1-by-task-i-need-to) when you know what you are building.
 - **By symptom** — [§2](debugging-and-symptoms.md#2-by-symptom-the-render-is-wrong) when something is
   already broken.
-- **By property** — [§3](ofx-api-constants.md#3-by-property-which-constant-does-what) when you are
+- **By property** — [§6](ofx-api-constants.md#6-by-property-which-constant-does-what) when you are
   staring at a `kOfx*` name and need to know who sets it.
-- **By repository** — [§5](reference-projects.md#5-the-general-purpose-suites-what-to-read-what-to-skip)
+- **By repository** — [§10](reference-projects.md#10-the-general-purpose-suites-what-to-read-what-to-skip)
   when you would rather read shipping code than prose.
 
 For the reading order that teaches the object model, see

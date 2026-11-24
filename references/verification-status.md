@@ -192,7 +192,7 @@ The review ran a mechanical check of the repo against the official sources.
 
 ---
 
-## 12. What is still unverified
+## 13. What is still unverified
 
 - **One kernel measured, nothing else.** Throughput, the CPU loop it replaces and
   the copy cost are measured on one RTX 3060 (`../README.md` §"What has actually been

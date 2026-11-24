@@ -3,7 +3,7 @@
 L0-L10, what each proves and cannot prove, the failure-injection table, and what this repository actually runs.
 
 <!-- TESTING_STRATEGY.md lines 1-955 -->
-# Testing OFX plug-ins
+## Testing OFX plug-ins
 
 How to test an OFX plug-in well enough to ship it, in the order that catches
 failures cheapest-first. This is the "how"; [`checklists.md`](checklists.md)

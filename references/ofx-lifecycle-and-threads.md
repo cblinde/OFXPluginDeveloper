@@ -172,7 +172,7 @@ zero-copy.
 
 ---
 
-## 3. The layer contract
+## 13. The layer contract
 
 ```
 L4  Application      your effect maths (grade, keyer, model inference)
@@ -241,7 +241,7 @@ parts that took the longest to get right.
 
 ---
 
-# Architecture and the CUDA pipeline
+## Architecture and the CUDA pipeline
 
 Deep-dive companion to [`../SKILL.md`](../SKILL.md). Everything here assumes the
 OpenFX 1.5-era headers (`ofxImageEffect.h`, `ofxGPURender.h`, `ofxParam.h`), the

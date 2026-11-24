@@ -331,7 +331,7 @@ access and leaks **[D]**. It is slow — run it on 256×256, not 4K.
 
 ---
 
-# Best Practices and Performance
+## Best Practices and Performance
 
 A review of this repository and of the reference projects that already ship
 GPU-accelerated OFX plugins, reduced to rules you can act on. Every claim

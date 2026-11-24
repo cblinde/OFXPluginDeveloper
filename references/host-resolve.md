@@ -197,7 +197,7 @@ The template encodes that rule structurally: `GainProcessor` holds no CUDA
 handles at all, the stream is a borrowed `void*`, and the destructor releases
 nothing but its own C++ members.
 
-# Host compatibility matrix
+## Host compatibility matrix
 
 Deep-dive companion to [`../SKILL.md`](../SKILL.md). What differs between OpenFX hosts,
 what breaks, and what to do instead.

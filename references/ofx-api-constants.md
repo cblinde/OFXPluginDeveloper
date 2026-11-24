@@ -191,7 +191,7 @@ Found by reading the headers during this pass. Each one has bitten somebody.
 
 ---
 
-## 3. By property ("which constant does what")
+## 6. By property ("which constant does what")
 
 Only the ones that decide correctness; the complete table with header line
 numbers is [`../SKILL.md`](../SKILL.md) §5.

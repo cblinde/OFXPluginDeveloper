@@ -463,7 +463,7 @@ interface that has been stable for years.
 
 ---
 
-# Build playbook: from a clean checkout to a `.ofx` a host will load
+## Build playbook: from a clean checkout to a `.ofx` a host will load
 
 Most build prose is written from headers. This file is written from a build.
 [`templates/minimal-ofx/`](../templates/minimal-ofx/) is compiled by one command

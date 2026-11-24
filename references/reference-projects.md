@@ -7,7 +7,7 @@ What each shipped project contributes, what to copy, what to avoid, and the seve
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 47-88 -->
 <!-- README.md lines 59-158 -->
 <!-- REFERENCE_READING_GUIDE.md lines 1-50 -->
-# Reference reading guide
+## Reference reading guide
 
 **If you only read one thing, read this paragraph.** An OFX plug-in is three
 different conversations with the host, and almost every beginner bug is a
@@ -519,7 +519,7 @@ Nine of the ten sources include `OFX::ImageProcessor`:
 - **No performance numbers.** Nothing here times an effect, a kernel or a model;
   the numbers in §8 are sizes, symbol counts and exactness checks.
 
-## 5. The general-purpose suites: what to read, what to skip
+## 10. The general-purpose suites: what to read, what to skip
 
 The AI repositories in [§4](ai-architectures-and-runtimes.md#4-external-ai-onnx-plug-ins-what-exists-what-to-learn-what-to-avoid)
 answer "how do I ship a model". These answer "how do I ship a plug-in at all",
@@ -580,7 +580,7 @@ names 9 repositories, and 38 of its entries are directories inside
 describing code that is not there, so treat its API names as unverified until a
 header agrees.
 
-## 6. If you only need the decision, not the code
+## 11. If you only need the decision, not the code
 
 | Situation | Shape | Where the reasoning is |
 |---|---|---|
@@ -590,7 +590,7 @@ header agrees.
 | Operation is local and analytic | no model at all | `Hush-OpenNR` in §4 |
 | GPU is available but the host does not hand over device pointers | CPU, or accept one copy per frame and measure | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §6 |
 
-## 2. What the reference projects teach
+## 12. What the reference projects teach
 
 These are not summaries of feature lists; each row is a decision that another
 team already paid for.
@@ -729,56 +729,6 @@ an oversight:
 | DaVinci Resolve scripting API, DCTL | Different extension mechanisms, not OFX. Useful alongside a plugin, not part of one. |
 | pip CUDA wheels (`nvidia-cuda-nvcc-cu12`, `nvidia-cuda-runtime-cu12`) | Tried and rejected for the bootstrap: the nvcc wheel ships `ptxas` and NVVM but no `nvcc`/`cudafe++`/`nvlink`, so it cannot compile a translation unit. |
 | The GPL reference plugins | Read as engineering evidence only; never vendored or copied — see [Licensing](#licensing-and-provenance). |
-
----
-
-# Reference reading guide
-
-**If you only read one thing, read this paragraph.** An OFX plug-in is three
-different conversations with the host, and almost every beginner bug is a
-confusion between them. The *descriptor* conversation (`describe()`) is
-declarative: you say what you can do, using **strings**. The *render* conversation
-is negotiated per frame: the host tells you, with **ints and pointers**, where the
-pixels actually are and whether you got a stream. The *image* conversation is
-arithmetic: you receive a base pointer, a **signed** row stride and a window that
-need not start at the origin, and you must not substitute `width * bytesPerPixel`
-for any of them. If you internalise those three and the ownership rule around
-`fetchImage()`, the rest of this guide is an index into why the reference code
-looks the way it does. The single most instructive file in this repository is
-[`templates/minimal-cuda-ofx/src/Plugin.cpp`](../templates/minimal-cuda-ofx/src/Plugin.cpp)
-read next to [`../SKILL.md`](../SKILL.md) §1.
-
-**Where the paths point.** Paths beginning `.ofx-ref/` are inside a checkout of
-the OpenFX standard, which is git-ignored here and **not** part of a fresh clone:
-
-```bash
-git clone --depth 1 --branch OFX_Release_1.5.1 \
-  https://github.com/AcademySoftwareFoundation/openfx.git .ofx-ref
-```
-
-Line numbers for SDK files are for that tag (`OFX_Release_1.5.1`); the build in
-`templates/*/CMakeLists.txt` fetches the same tag. Paths beginning `templates/`
-are in this repository and every one of them was checked against the working
-tree when this guide was written.
-
-## Contents
-
-- [1. The three tiers](#1-the-three-tiers)
-- [2. The five-seam skeleton](#2-the-five-seam-skeleton)
-- [3. Patterns to look for](#3-patterns-to-look-for)
-  - [3.1 Registration and packaging](#31-registration-and-packaging)
-  - [3.2 Declaration versus per-render truth](#32-declaration-versus-per-render-truth)
-  - [3.3 Addressing](#33-addressing)
-  - [3.4 Ownership and error surface](#34-ownership-and-error-surface)
-  - [3.5 The GPU contract](#35-the-gpu-contract)
-  - [3.6 Region of interest and tiling](#36-region-of-interest-and-tiling)
-  - [3.7 Model and tensor plumbing](#37-model-and-tensor-plumbing)
-- [4. Anti-patterns and their tells](#4-anti-patterns-and-their-tells)
-- [5. What each shipped project contributes](#5-what-each-shipped-project-contributes)
-- [6. A seven-step reading plan](#6-a-seven-step-reading-plan)
-- [7. Twelve questions to ask of any OFX code](#7-twelve-questions-to-ask-of-any-ofx-code)
-- [8. How the numbers here are reproduced](#8-how-the-numbers-here-are-reproduced)
-- [9. What this guide does not cover](#9-what-this-guide-does-not-cover)
 
 ---
 

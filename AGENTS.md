@@ -29,10 +29,11 @@ is a dependency of the suites.
 
 | Task | Read, in this order | Skip |
 |---|---|---|
-| New plug-in | `SKILL.md` §1 and §4 -> `references/cmake-and-linking.md` -> copy `templates/minimal-cuda-ofx/` | host quirks until a host misbehaves |
+| New plug-in | `SKILL.md` §1 and §3 -> `references/cmake-and-linking.md` -> copy `templates/minimal-cuda-ofx/` | host quirks until a host misbehaves |
 | Debug a symptom | `references/debugging-and-symptoms.md` -> `references/pattern-index.md` -> `references/cuda-streams-and-memory.md` or `references/pixel-formats-and-pitch.md` | the design docs, until the symptom names a file |
 | AI-model decision | `references/ai-architectures-and-runtimes.md` -> `references/onnx-and-tensorrt.md` -> `templates/onnx-inference-ofx/` | CUDA kernel detail |
 | Check a `[B]` claim | `references/verification-status.md` -> its `evidence/` link | the design docs, until the evidence contradicts them |
+| Host behaviour differs | `references/host-resolve.md` -> `references/host-nuke-scratch-natron.md`, grades A/B/C | anything claiming a host was tested |
 
 ---
 ## Hard rules
@@ -53,8 +54,7 @@ is a dependency of the suites.
    measurements and provenance labels.
 5. **Never commit build output** (`build/`, `*.ofx`, `*.ptx`, `.ofx-ref/`).
 
-Labels: **[V]** verified in this repository, **[I]** inferred, **[B]** external
-evidence. The full definitions are in `references/cmake-and-linking.md`.
+**Labels:** **[V]** verified here, **[I]** inferred, **[B]** external evidence; definitions in `references/cmake-and-linking.md`.
 
 What actually runs, with counts: `references/testing-layers.md` §13. What a build proves,
 and what it cannot: `references/debugging-and-symptoms.md` §5.

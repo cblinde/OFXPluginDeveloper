@@ -110,7 +110,7 @@ cd plugins/my-effect
 ```
 
 For a CPU-only effect start from `templates/minimal-ofx/`; for a model,
-`templates/onnx-inference-ofx/`. `SKILL.md` §4 names which scaffold belongs to
+`templates/onnx-inference-ofx/`. `SKILL.md` §3 names which scaffold belongs to
 which effect and why the CUDA one is the wrong start for the other two.
 
 Then rename these, in this order:

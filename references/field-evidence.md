@@ -3,7 +3,7 @@
 The 2026-11-22 runs behind every external claim: environment, executed tests, logs, limits, and the two reviews.
 
 <!-- FIELD_TEST_WINDOWS_CUDA.md lines 1-347 -->
-# Field test: Windows 11, CUDA 13.0, RTX 3060 (2026-11-22)
+## Field test: Windows 11, CUDA 13.0, RTX 3060 (2026-11-22)
 
 Every **[B]** claim in this corpus comes from external runs on 2026-11-22: the
 Windows/GPU build below, a second Windows session that reviewed the ONNX

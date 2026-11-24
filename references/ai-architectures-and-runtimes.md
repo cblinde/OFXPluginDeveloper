@@ -273,7 +273,7 @@ evidence grade **B**. Links go to the projects, not to mirrors.
 
 ---
 
-# AI model integration for OpenFX plug-ins
+## AI model integration for OpenFX plug-ins
 
 How to put a neural network inside an OFX plug-in without turning the host into
 a crash reporter. Every claim is graded, every architectural recommendation is

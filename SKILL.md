@@ -25,43 +25,6 @@ one file the task needs; load two only when the task genuinely spans them.
 
 ---
 
-## 2. Routing: which file to load
-
-Load **one** row's file, not the set. Every file is self-contained; the paths are
-relative to this file.
-
-| Task in front of you | Load | Do not load |
-| --- | --- | --- |
-| A property string, a depth/support name, "which constant does X" | `references/ofx-api-constants.md` | host quirks, performance |
-| Plugin/instance/render lifecycle, what may block, thread safety | `references/ofx-lifecycle-and-threads.md` | colour, packaging |
-| The stream contract, `cudaDeviceSynchronize`, zero-copy, who owns a GPU object | `references/cuda-streams-and-memory.md` | pitch arithmetic |
-| `rowBytes`, stride, padded rows, depth matrix, drawing into the frame | `references/pixel-formats-and-pitch.md` | RoD/RoI |
-| RoD, RoI, tiles, `kOfxImageEffectPropNoSpatialAwareness`, render hints | `references/roi-tiling-and-render-hints.md` | colour |
-| Colour management, premultiplication, where alpha lands | `references/colour-and-alpha.md` | constants |
-| Resolve: pages, GPU switch, crashing-plug-in blacklisting, Free vs Studio | `references/host-resolve.md` | Nuke/SCRATCH/Natron |
-| Nuke, SCRATCH, Natron: no GPU buffer path, eager RoD, headless renderer | `references/host-nuke-scratch-natron.md` | Resolve |
-| Capability probing instead of host sniffing; the host acceptance run | `references/host-detection-and-acceptance.md` | per-host tables |
-| CMake, link flags, `-fPIC`, visibility, the artifact contract, toolchain | `references/cmake-and-linking.md` | packaging |
-| Bundle layout, `Contents/<arch>`, RPATH, licence texts, install | `references/packaging-and-install.md` | CMake internals |
-| A symptom: black frame, crash, seam, mirror, slow render | `references/debugging-and-symptoms.md` | the design docs |
-| "Is this fast enough", the cost model, measured numbers | `references/performance-model.md` | kernel syntax |
-| ONNX Runtime or TensorRT inside the plug-in: exact API names, tensors | `references/onnx-and-tensorrt.md` | which architecture |
-| Whether to use a model at all, per-language runtimes, CUDA worth it | `references/ai-architectures-and-runtimes.md` | ORT calls |
-| "I need to do X" as a task list, with the proving file in this repo | `references/pattern-index.md` | reading plan |
-| Testing to ship: layers L0-L10, goldens, sanitizers, CI, what runs here | `references/testing-layers.md` | host behaviour |
-| What was verified, by which command, and what was not | `references/verification-status.md` | design guidance |
-| The archived Windows GPU runs behind every external claim | `references/field-evidence.md` | current guidance |
-| What other shipped plug-ins did, and the seven-step reading plan | `references/reference-projects.md` | this repo's own code |
-| Pre-flight review, sign-off, the questions with their settling sentence | `references/checklists.md` | tutorials |
-| Run it: artifact + contract with no host, then a headless host render | `testkit/README.md` | prose |
-| Copy a working scaffold | `templates/minimal-ofx/` (CPU), `templates/minimal-cuda-ofx/` (CUDA + fallback), `templates/onnx-inference-ofx/` (model per frame) | the docs |
-
-Two rules for this table. If the task is "make it work at all", it is §4 below,
-not a reference file. If two rows seem to apply, the narrower one is the one to
-load first; the other is usually a consequence.
-
----
-
 ## 1. Ground rules
 
 These are invariants, not style. Each one exists because violating it produces a
@@ -113,7 +76,44 @@ crash with no stack trace.
 
 ---
 
-## 4. Generation workflow
+## 2. Routing: which file to load
+
+Load **one** row's file, not the set. Every file is self-contained; the paths are
+relative to this file.
+
+| Task in front of you | Load | Do not load |
+| --- | --- | --- |
+| A property string, a depth/support name, "which constant does X" | `references/ofx-api-constants.md` | host quirks, performance |
+| Plugin/instance/render lifecycle, what may block, thread safety | `references/ofx-lifecycle-and-threads.md` | colour, packaging |
+| The stream contract, `cudaDeviceSynchronize`, zero-copy, who owns a GPU object | `references/cuda-streams-and-memory.md` | pitch arithmetic |
+| `rowBytes`, stride, padded rows, depth matrix, drawing into the frame | `references/pixel-formats-and-pitch.md` | RoD/RoI |
+| RoD, RoI, tiles, `kOfxImageEffectPropNoSpatialAwareness`, render hints | `references/roi-tiling-and-render-hints.md` | colour |
+| Colour management, premultiplication, where alpha lands | `references/colour-and-alpha.md` | constants |
+| Resolve: pages, GPU switch, crashing-plug-in blacklisting, Free vs Studio | `references/host-resolve.md` | Nuke/SCRATCH/Natron |
+| Nuke, SCRATCH, Natron: no GPU buffer path, eager RoD, headless renderer | `references/host-nuke-scratch-natron.md` | Resolve |
+| Capability probing instead of host sniffing; the host acceptance run | `references/host-detection-and-acceptance.md` | per-host tables |
+| CMake, link flags, `-fPIC`, visibility, the artifact contract, toolchain | `references/cmake-and-linking.md` | packaging |
+| Bundle layout, `Contents/<arch>`, RPATH, licence texts, install | `references/packaging-and-install.md` | CMake internals |
+| A symptom: black frame, crash, seam, mirror, slow render | `references/debugging-and-symptoms.md` | the design docs |
+| "Is this fast enough", the cost model, measured numbers | `references/performance-model.md` | kernel syntax |
+| ONNX Runtime or TensorRT inside the plug-in: exact API names, tensors | `references/onnx-and-tensorrt.md` | which architecture |
+| Whether to use a model at all, per-language runtimes, CUDA worth it | `references/ai-architectures-and-runtimes.md` | ORT calls |
+| "I need to do X" as a task list, with the proving file in this repo | `references/pattern-index.md` | reading plan |
+| Testing to ship: layers L0-L10, goldens, sanitizers, CI, what runs here | `references/testing-layers.md` | host behaviour |
+| What was verified, by which command, and what was not | `references/verification-status.md` | design guidance |
+| The archived Windows GPU runs behind every external claim | `references/field-evidence.md` | current guidance |
+| What other shipped plug-ins did, and the seven-step reading plan | `references/reference-projects.md` | this repo's own code |
+| Pre-flight review, sign-off, the questions with their settling sentence | `references/checklists.md` | tutorials |
+| Run it: artifact + contract with no host, then a headless host render | `testkit/README.md` | prose |
+| Copy a working scaffold | `templates/minimal-ofx/` (CPU), `templates/minimal-cuda-ofx/` (CUDA + fallback), `templates/onnx-inference-ofx/` (model per frame) | the docs |
+
+Two rules for this table. If the task is "make it work at all", it is §4 below,
+not a reference file. If two rows seem to apply, the narrower one is the one to
+load first; the other is usually a consequence.
+
+---
+
+## 3. Generation workflow
 
 Each phase ends in a buildable state.
 
@@ -242,7 +242,7 @@ Copy the bundle into the host's plugin directory (§6), start the host, then:
 
 ---
 
-## 11. Mandatory git workflow
+## 4. Mandatory git workflow
 
 Commit and push continuously — after a new file compiles, a working build, a
 behaviour fix, a doc milestone:
@@ -264,7 +264,7 @@ stride"); verify before pushing, not after. Types: `feat`, `fix`, `build`, `docs
 
 ---
 
-## 12. Verification status of this skill
+## 5. Verification status of this skill
 
 The full ledger - what is **V**erified, by which command, and what is not - is
 `references/verification-status.md`. The short version, so it is not skipped:

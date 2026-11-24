@@ -281,7 +281,7 @@ does with it.
 
 ---
 
-## 4. Anti-patterns and their tells
+## 12. Anti-patterns and their tells
 
 The "tell" column is what to search for when reviewing someone else's plug-in —
 each one is a single grep away.
