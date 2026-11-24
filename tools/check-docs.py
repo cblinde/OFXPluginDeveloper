@@ -80,8 +80,11 @@ MEASURED = [
     (re.compile(r"\b647\b"), "647", "default-visibility exports"),
     (re.compile(r"\b663\b"), "663", "CUDA template default-visibility exports"),
 ]
-# Documents that own a measurement and may state it unmarked.
-MEASUREMENT_SOURCES = {"TESTING_STRATEGY.md", "BUILD_PLAYBOOK.md"}
+# Documents that own a measurement and may state it unmarked. Both the flat and
+# the references/ layout are listed so the check holds during the restructure
+# that introduced references/.
+MEASUREMENT_SOURCES = {"TESTING_STRATEGY.md", "BUILD_PLAYBOOK.md",
+                       "references/testing-layers.md", "references/cmake-and-linking.md"}
 PROVENANCE_MARKS = ("[V]", "[M]")
 
 NUMBER_WORDS = {
@@ -109,7 +112,11 @@ def markdown_files(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
         for name in sorted(filenames):
             if name.endswith(".md"):
-                found.append(os.path.relpath(os.path.join(dirpath, name), root))
+                # Forward slashes on every platform: the paths are used as
+                # dictionary keys and compared with literals like
+                # 'references/testing-layers.md', and os.sep is '\\' on Windows.
+                found.append(os.path.relpath(os.path.join(dirpath, name), root)
+                             .replace(os.sep, "/"))
     return found
 
 
@@ -133,6 +140,16 @@ def section_numbers(text):
 
 def mask_code(line):
     return re.sub(r"`[^`]*`", "CODE", line)
+
+
+def strip_comments(text):
+    """Drop HTML comments before scanning prose.
+
+    Slices carry `<!-- SKILL.md lines 599-647 -->` provenance comments. Those
+    numbers are addresses in the file the text came from, not measurements, and
+    the duplicated-measurement check read 647 as an export count.
+    """
+    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
 
 class Report:
@@ -170,8 +187,8 @@ def check_links(root, files, texts, report):
                 report.error(path, line, f"link target '{file_part}' does not exist")
                 continue
             if anchor and resolved.endswith(".md"):
-                relative = os.path.relpath(resolved, root)
-                if anchor not in headings(texts[relative]):
+                relative = os.path.relpath(resolved, root).replace(os.sep, "/")
+                if relative in texts and anchor not in headings(texts[relative]):
                     report.error(path, line, f"anchor #{anchor} does not exist in {relative}")
 
 
@@ -188,7 +205,7 @@ def check_section_refs(root, files, texts, report):
             if not os.path.exists(resolved):
                 report.error(path, line, f"{target} does not exist (referenced as §{dotted})")
                 continue
-            relative = os.path.relpath(resolved, root)
+            relative = os.path.relpath(resolved, root).replace(os.sep, "/")
             if relative not in texts:
                 continue
             if number not in section_numbers(texts[relative]):
@@ -210,9 +227,13 @@ def check_counts(root, files, texts, report):
         [d for d in os.listdir(os.path.join(root, "templates"))
          if os.path.exists(os.path.join(root, "templates", d, "CMakeLists.txt"))]
     )
-    layers_doc = texts.get("TESTING_STRATEGY.md", "")
+    # Either layout: the L-sections live in tests/testing-layers.md once the
+    # references/ split happens, and in TESTING_STRATEGY.md before it.
+    layers_doc = (texts.get("references/testing-layers.md")
+                  or texts.get("TESTING_STRATEGY.md", ""))
     layer_count = len(re.findall(r"^## \d+\. L\d+:", layers_doc, re.M))
-    ai_doc = texts.get("AI_MODEL_INTEGRATION.md", "")
+    ai_doc = (texts.get("references/ai-architectures-and-runtimes.md")
+              or texts.get("AI_MODEL_INTEGRATION.md", ""))
     ai_section = re.search(r"^## 1\..*?^## 2\.", ai_doc, re.M | re.S)
     ai_rows = len(re.findall(r"^\| \[", ai_section.group(0), re.M)) if ai_section else 0
 
@@ -251,13 +272,13 @@ def check_counts(root, files, texts, report):
 
 def check_measurements(root, files, texts, report):
     for pattern, label, what in MEASURED:
-        owners = [p for p in files if pattern.search(texts[p])]
+        owners = [p for p in files if pattern.search(strip_comments(texts[p]))]
         if len(owners) < 2:
             continue
         for path in owners:
             if path in MEASUREMENT_SOURCES:
                 continue
-            for line_number, line in enumerate(texts[path].splitlines(), 1):
+            for line_number, line in enumerate(strip_comments(texts[path]).splitlines(), 1):
                 if pattern.search(line) and not any(mark in line for mark in PROVENANCE_MARKS):
                     report.error(path, line_number,
                                  f"duplicated measurement '{label}' ({what}) without a "
@@ -276,12 +297,18 @@ def check_labels(root, files, texts, report):
         for name, tags in FAMILIES.items():
             if used & set(tags) - SHARED:
                 families.append(name)
-        if len(families) > 1:
-            report.error(path, 1,
-                         f"mixes provenance vocabularies {families}; use one family per document")
-            continue
+        # A document assembled from several sources (references/*.md) may carry
+        # more than one vocabulary; the invariant that matters is that every tag
+        # used is defined in the same document, which is checked below. A file
+        # that mixes families and defines them all is honest; one that smuggles a
+        # tag in without a legend is not.
         family = families[0] if families else None
-        allowed = set(FAMILIES[family]) | SHARED if family else SHARED
+        if len(families) > 1:
+            family = None
+        if family is None:
+            allowed = set().union(*(set(tags) for tags in FAMILIES.values())) | SHARED
+        else:
+            allowed = set(FAMILIES[family]) | SHARED
         unknown = sorted(used - allowed)
         if unknown:
             report.error(path, 1, f"unknown provenance label(s) {unknown}; see the legend in "
