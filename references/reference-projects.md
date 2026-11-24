@@ -54,6 +54,13 @@ tree when this guide was written.
 - [7. Twelve questions to ask of any OFX code](#7-twelve-questions-to-ask-of-any-ofx-code)
 - [8. How the numbers here are reproduced](#8-how-the-numbers-here-are-reproduced)
 - [9. What this guide does not cover](#9-what-this-guide-does-not-cover)
+- [10. The general-purpose suites: what to read, what to skip](#10-the-general-purpose-suites-what-to-read-what-to-skip)
+  - [10.1 Mechanics and the exact file to read](#101-mechanics-and-the-exact-file-to-read)
+  - [10.2 Before you trust a third-party index](#102-before-you-trust-a-third-party-index)
+- [11. If you only need the decision, not the code](#11-if-you-only-need-the-decision-not-the-code)
+- [12. What the reference projects teach](#12-what-the-reference-projects-teach)
+  - [12.1 Practices worth copying](#121-practices-worth-copying)
+  - [12.2 Counter-examples: where a big project is wrong](#122-counter-examples-where-a-big-project-is-wrong)
 
 ---
 
@@ -595,6 +602,8 @@ header agrees.
 These are not summaries of feature lists; each row is a decision that another
 team already paid for.
 
+### 12.1 Practices worth copying
+
 | Project | Practice | Why it matters | Adopted here? |
 | --- | --- | --- | --- |
 | **OneGrade** | *"The CPU header is the source of truth… any change to the math is a 4-file change (CPU + 3 kernels). Keep the helper names and formulas identical so they're easy to diff."* **[R]** | Four backends drifting apart is the normal failure mode of a multi-backend plugin, and it shows up as "CUDA looks different from CPU" only after a client notices. Naming parity makes the drift visible in a diff. | Partly: one kernel + one CPU loop, named to match, but no shared pipeline header yet. §6.4 says when to add one. |
@@ -611,7 +620,7 @@ team already paid for.
 loud about what they actually built, and paranoid about which host they are in.
 The losers are clever about kernels and silent about dispatch.
 
-### 12.1 Counter-examples: where a big project is wrong
+### 12.2 Counter-examples: where a big project is wrong
 
 Being widely used is not a correctness argument. Reading the actual source of
 **OneGrade** (`src/CudaKernel.cu`, GPL-3.0 — read for analysis, never copied)
