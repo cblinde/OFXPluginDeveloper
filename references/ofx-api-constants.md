@@ -7,7 +7,7 @@ Every property string, depth support name and named trap, with the quirks that c
 <!-- PATTERN_INDEX.md lines 126-144 -->
 ## 1. OFX constant reference (verified against OFX 1.5.1 headers)
 
-### 5.1 Capability properties (plugin descriptor)
+### 1.1 Capability properties (plugin descriptor)
 
 All are `string × 1` except where noted. Every row was resolved against the pinned
 1.5.1 tree **[V]**:
@@ -46,7 +46,7 @@ Four traps follow from this table:
   is an open proposal (`openfx#283`, Oct 2026), not a header constant. Do not
   reference it in shipped code.
 
-### 5.2 Per-render in-args (Render / BeginSequenceRender / EndSequenceRender only)
+### 1.2 Per-render in-args (Render / BeginSequenceRender / EndSequenceRender only)
 
 | Constant | Type | Meaning |
 | --- | --- | --- |
@@ -65,7 +65,7 @@ present in `GetRegionOfDefinition`, `GetRegionsOfInterest`, `GetFramesNeeded`,
 Begin/Render only. Read whichever the host offers where the answer changes the
 action.
 
-### 5.3 Image handle properties
+### 1.3 Image handle properties
 
 | Constant | Type | Meaning |
 | --- | --- | --- |
@@ -89,7 +89,7 @@ does not have. Short version in [`ai-architectures-and-runtimes.md`](ai-architec
 `onnx-and-tensorrt.md` §4, "Drawing into the frame: the overlay after the model"; full rules in
 [`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §4.
 
-### 5.4 Support names for the depths
+### 1.4 Support names for the depths
 
 The strings above are the C API; the Support library spells them as an enum, and
 the 8-bit case is the one every byte-capable plug-in gets wrong first:
@@ -105,7 +105,7 @@ Advertise a depth only when `render()` handles it. A host that hands over an
 undeclared depth is not converting for you; the templates accept float only and
 the harness proves that a byte image is refused.
 
-### 5.5 Colour management (OFX 1.5)
+### 1.5 Colour management (OFX 1.5)
 
 `ofxColour.h` adds a colour-management contract that the pre-1.5 skill said did
 not exist. The default is still `kOfxImageEffectColourManagementNone`, so legacy
@@ -130,7 +130,7 @@ Rules:
   [`host-resolve.md`](host-resolve.md) §2.9). Feature-
   detect the host's style; never infer it from the host name.
 
-### 5.6 Named traps
+### 1.6 Named traps
 
 - The clip property for the *unmapped* component string is
   `kOfxImageClipPropUnmappedComponents` (`ofxImageEffect.h`). There is no

@@ -202,6 +202,39 @@ def check_links(root, files, texts, report):
                     report.error(path, line, f"anchor #{anchor} does not exist in {relative}")
 
 
+def check_link_numbers(root, files, texts, report):
+    """`[§4](other.md#6-...)` - the number shown must be the number landed on.
+
+    Renumbering moved a heading and its anchor together, but a link's label is
+    hand-written text beside the link. `[§4](x.md#6-external-...)` reads as a
+    promise about §4 and delivers §6, and no renderer objects.
+    """
+    for path in files:
+        text = texts[path]
+        for match in re.finditer(r"\[(?:§\s?)?(\d+(?:\.\d+)*)\.?[^\]]*\]\(([^)\s]+)\)", text):
+            label, target = match.group(1), match.group(2)
+            if target.startswith(("http://", "https://", "mailto:")):
+                continue
+            file_part, _, anchor = target.partition("#")
+            if not anchor:
+                continue
+            if file_part:
+                resolved = os.path.normpath(os.path.join(root, os.path.dirname(path), file_part))
+                if not resolved.endswith(".md") or not os.path.exists(resolved):
+                    continue
+                relative = os.path.relpath(resolved, root).replace(os.sep, "/")
+            else:
+                relative = path
+            title = headings(texts[relative]).get(anchor) if relative in texts else None
+            if title is None:
+                continue                  # an anchor that does not exist: check_links
+            number = re.match(r"\s*(\d+(?:\.\d+)*)", title)
+            if number and number.group(1) != label:
+                line = text.count("\n", 0, match.start()) + 1
+                report.error(path, line,
+                             f"link is labelled §{label} but #{anchor} is §{number.group(1)}")
+
+
 def check_absence_claims(root, files, texts, report):
     """A document that says a file is absent has to be right about it.
 
@@ -245,13 +278,38 @@ def check_section_numbering(root, files, texts, report):
             report.error(path, line,
                          f"sections run {numbers}, not 1..{len(numbers)} in order; "
                          f"number them by position so § references mean one thing")
+        # The same discipline one level down: 5.1 under §2 means the heading
+        # kept a number from the section it was cut out of, and a reader who
+        # follows §2.1 lands nowhere.
+        current, fenced = None, False
+        for line_no, line in enumerate(texts[path].splitlines(), 1):
+            if line.strip().startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
+            section = re.match(r"^## (\d+)\.", line)
+            if section:
+                current = int(section.group(1))
+                continue
+            subsection = re.match(r"^### (\d+)\.(\d+)\b", line)
+            if subsection and current is not None \
+                    and int(subsection.group(1)) != current:
+                report.error(path, line_no,
+                             f"subsection {subsection.group(1)}.{subsection.group(2)} "
+                             f"sits in §{current}; number it {current}.N")
 
 
 def check_section_refs(root, files, texts, report):
     """`FILE.md` §12 / §3.5 - a cross-reference no renderer validates."""
     for path in files:
         text = texts[path]
-        for match in re.finditer(r"([A-Za-z0-9_./-]+\.md)`?\s*§\s*(\d+(?:\.\d+)*)", text):
+        # Both spellings: `FILE.md` §5 and [`FILE.md`](FILE.md) §5. The link
+        # form put `)` between the name and the §, so an optional-backtick
+        # pattern skipped every reference written that way - the whole class
+        # went unchecked.
+        for match in re.finditer(
+                r"([A-Za-z0-9_./-]+\.md)[`'\")\\]]*[ \t]*§[ \t]*(\d+(?:\.\d+)*)", text):
             target, dotted = match.group(1), match.group(2)
             parts = dotted.split(".")
             number = int(parts[0])
@@ -585,6 +643,7 @@ def main():
 
     report = Report()
     check_links(root, files, texts, report)
+    check_link_numbers(root, files, texts, report)
     check_absence_claims(root, files, texts, report)
     check_section_numbering(root, files, texts, report)
     check_section_refs(root, files, texts, report)

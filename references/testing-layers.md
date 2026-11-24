@@ -697,7 +697,7 @@ It is the only layer that tests the product.
 | 9 | Toggle the host's GPU mode (CUDA ↔ CPU) | capability negotiation, CPU fallback |
 | 10 | Save, quit, reopen the project | parameter serialisation, no required external state |
 | 11 | Animate a parameter and undo/redo | `getValueAtTime`, no hidden state |
-| 12 | Force a crash once, restart | the host's blacklist; know where to clear it ([`../SKILL.md`](../SKILL.md) §7) |
+| 12 | Force a crash once, restart | the host's blacklist; know where to clear it ([`debugging-and-symptoms.md`](debugging-and-symptoms.md) §1) |
 
 Add host-specific rows from [`host-resolve.md`](host-resolve.md)
 for the hosts you actually support.
@@ -816,7 +816,7 @@ were run in this checkout.
 Device code does not need hardware to compile: `nvcc`, `ptxas` and `nvlink` are
 CPU programs, and only loading the cubin and running it needs a GPU. That makes
 the architecture selection checkable on any Linux box and in CI, which is how
-the arch handling in [`../SKILL.md`](../SKILL.md) §6 was measured.
+the arch handling in [`cmake-and-linking.md`](cmake-and-linking.md) §5 was measured.
 
 ```bash
 cd templates/minimal-cuda-ofx
@@ -962,7 +962,7 @@ against the real built binaries, with negative controls proving they can fail.
 What remains genuinely unbuilt is L7 (timings), the GPU execution path, and L8
 (a real host): a plug-in that has never rendered in Resolve, Nuke or Natron is
 not verified, no matter how many unit and contract tests pass. That is stated in
-the same terms in [`../SKILL.md`](../SKILL.md) §12 and
+the same terms in [`../SKILL.md`](../SKILL.md) §5 and
 [`reference-projects.md`](reference-projects.md) §9.
 
 ## Provenance labels

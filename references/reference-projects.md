@@ -79,7 +79,7 @@ Three things the samples deliberately do not show, and where to look instead:
 
 | Missing from the samples | Look at |
 |---|---|
-| Packaging (bundle layout, exported symbols, `RUNPATH`) | `templates/minimal-cuda-ofx/CMakeLists.txt`, [`../SKILL.md`](../SKILL.md) §6 |
+| Packaging (bundle layout, exported symbols, `RUNPATH`) | `templates/minimal-cuda-ofx/CMakeLists.txt`, [`cmake-and-linking.md`](cmake-and-linking.md) §2 and §3 |
 | A render-thread-safety statement | `templates/minimal-cuda-ofx/src/Plugin.cpp:317` and the header default quoted in §3.2 |
 | Tests that fail when the pitch, alpha or tiling is wrong | `templates/*/test/`, [§8](#8-how-the-numbers-here-are-reproduced) |
 
@@ -521,19 +521,19 @@ Nine of the ten sources include `OFX::ImageProcessor`:
 
 ## 10. The general-purpose suites: what to read, what to skip
 
-The AI repositories in [§4](ai-architectures-and-runtimes.md#6-external-ai--onnx-plug-ins-what-exists-what-to-learn-what-to-avoid)
+The AI repositories in [§6](ai-architectures-and-runtimes.md#6-external-ai--onnx-plug-ins-what-exists-what-to-learn-what-to-avoid)
 answer "how do I ship a model". These answer "how do I ship a plug-in at all",
 and they are where the host protocol is exercised at a scale one person cannot
 write alone.
 
 Metadata below was checked on **2026-11-22**: every URL resolved with
 `git ls-remote`, the licence was read from the repository's own licence file, and
-the `openfx-misc` pointers in [§5.1](#51-mechanics-and-the-exact-file-to-read)
+the `openfx-misc` pointers in [§10.1](#101-mechanics-and-the-exact-file-to-read)
 were verified in a shallow clone. Still grade **B** — none of it was built here.
 
 | Repository | Licence | What it is | Read it for | Do not read it for |
 |---|---|---|---|---|
-| [`NatronGitHub/openfx-misc`](https://github.com/NatronGitHub/openfx-misc) | GPL-2.0 | 92 node directories — the widest single OFX collection | Declared contexts, clip and parameter shapes, temporal actions; exact files in [§5.1](#51-mechanics-and-the-exact-file-to-read) | GPU work: the repository contains **0** `.cu` or `.cl` files |
+| [`NatronGitHub/openfx-misc`](https://github.com/NatronGitHub/openfx-misc) | GPL-2.0 | 92 node directories — the widest single OFX collection | Declared contexts, clip and parameter shapes, temporal actions; exact files in [§10.1](#101-mechanics-and-the-exact-file-to-read) | GPU work: the repository contains **0** `.cu` or `.cl` files |
 | [`NatronGitHub/openfx-io`](https://github.com/NatronGitHub/openfx-io) | GPL-2.0 | readers/writers on OpenImageIO and FFmpeg, plus OpenColorIO | Generator context, host memory, colour-config initialisation | Pixel effects — it is I/O |
 | [`NatronGitHub/openfx-arena`](https://github.com/NatronGitHub/openfx-arena) | GPL-2.0 | Cairo/Pango text and vector, audio-driven parameters | Overlay drawing, dynamic outputs, non-pixel inputs | GPU code — the drawing is CPU-side Cairo |
 | [`NatronGitHub/openfx-gmic`](https://github.com/NatronGitHub/openfx-gmic) | dual-licensed — read its `COPYING` | G'MIC bridged into OFX | Generating parameters from a foreign engine at `describe` time | Copying: two licences apply and the engine's is not yours |
@@ -542,7 +542,7 @@ were verified in a shallow clone. Still grade **B** — none of it was built her
 | [`purzbeats/purzos-ofx`](https://github.com/purzbeats/purzos-ofx) | MIT | 64 single-file plug-ins, one shared header, built on the Support library | Determinism as a feature: randomness hashed from `(seed, frame, position)`, byte-identical renders | GPU code — CPU pixel loops |
 | [`tuttleofx/TuttleOFX`](https://github.com/tuttleofx/TuttleOFX) | no licence at the root — check subprojects | framework plus bundled plug-ins, default branch `develop` | A C++ abstraction over the C API at framework scale | Assuming it is maintained — check activity first |
 
-### 5.1 Mechanics and the exact file to read
+### 10.1 Mechanics and the exact file to read
 
 All paths are inside `openfx-misc` at its 2026-11-22 `master` (92 node
 directories). The size of each file is part of the lesson: the mechanic is never
@@ -559,7 +559,7 @@ the one-liner an index promises.
 | An OpenGL render suite, with a GPU on/off parameter | `Shadertoy/Shadertoy.cpp:1240`, `:2296` (`setSupportsOpenGLRender`) |
 | Overlay interacts | 18 node sources use `OverlayInteract`; start with `Transform/Transform.cpp`, `Crop/Crop.cpp`, `Card3D/Card3D.cpp` |
 
-### 5.2 Before you trust a third-party index
+### 10.2 Before you trust a third-party index
 
 A "50 OFX plug-ins" index circulating as an AI prompt mixes real repository
 names with API that does not exist. Every row below is one `grep` against
@@ -611,7 +611,7 @@ team already paid for.
 loud about what they actually built, and paranoid about which host they are in.
 The losers are clever about kernels and silent about dispatch.
 
-### 2.3 Counter-examples: where a big project is wrong
+### 12.1 Counter-examples: where a big project is wrong
 
 Being widely used is not a correctness argument. Reading the actual source of
 **OneGrade** (`src/CudaKernel.cu`, GPL-3.0 — read for analysis, never copied)
@@ -619,7 +619,7 @@ shows three patterns this repository deliberately does **not** adopt:
 
 | What that source does | Why it is a problem | What this repo does instead |
 | --- | --- | --- |
-| `cudaMalloc` + `cudaMemcpyAsync` for the parameter vector and the 3D LUT inside `RunCudaKernel`, i.e. **on every render** | `cudaMalloc` is a synchronising call: it serialises with all other device work, so the plugin becomes a pipeline barrier for every other GPU node at 24–60 fps **[D]** | No allocation in the render path at all — the gain travels as kernel arguments. If scratch memory is needed, cache it per instance and release it in the destructor / `purgeCaches()` (§5.1) |
+| `cudaMalloc` + `cudaMemcpyAsync` for the parameter vector and the 3D LUT inside `RunCudaKernel`, i.e. **on every render** | `cudaMalloc` is a synchronising call: it serialises with all other device work, so the plugin becomes a pipeline barrier for every other GPU node at 24–60 fps **[D]** | No allocation in the render path at all — the gain travels as kernel arguments. If scratch memory is needed, cache it per instance and release it in the destructor / `purgeCaches()` (§10.1) |
 | `cudaStreamSynchronize(stream)` right after the launch, then `cudaFree` (which also synchronises the device) | Synchronising on a **host-supplied** stream is precisely what `ofxGPURender.h` says not to do: the host orders its own work against that stream and expects the render action to return **[S]** | Sync only when `_pCudaStream == nullptr`, the one case where the contract requires completion before returning (§7) |
 | The kernel indexes `((y * W) + x) * 4`, assuming tightly packed rows | Correct only while `rowBytes == width * 16`; any host padding shears the image, and it silently ignores a negative pitch **[S]** | Address through `kOfxImagePropRowBytes` in bytes, widened to `int64_t` and signed (§6 of `references/ofx-lifecycle-and-threads.md`) |
 

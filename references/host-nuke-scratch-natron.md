@@ -8,7 +8,7 @@ The parts that differ from Resolve: no GPU buffer path, eager RoD, tiling, error
 Nuke is the strictest and most spec-literal of these hosts, which makes it the
 best place to find out that your code was relying on host leniency.
 
-### 3.1 No GPU buffer path for OFX
+### 1.1 No GPU buffer path for OFX
 
 Nuke's OFX host presents CPU images; the CUDA/OpenCL render properties are not
 offered to third-party plugins **(C)**. Plugins that are GPU-accelerated in Nuke
@@ -29,7 +29,7 @@ If you must use the GPU inside Nuke:
 - Never call `cudaDeviceSynchronize()`; sync your own stream. Nuke renders many
   tiles in parallel and a device-wide sync serialises them all.
 
-### 3.2 Tiling and concurrency
+### 1.2 Tiling and concurrency
 
 Nuke tiles and multithreads aggressively **(C)**. Two consequences:
 
@@ -41,14 +41,14 @@ Nuke tiles and multithreads aggressively **(C)**. Two consequences:
   audited shared state, declare `eRenderInstanceSafe`, not `eRenderFullySafe`;
   or implement your own mutex around the shared part.
 
-### 3.3 RoD and RoI are evaluated eagerly
+### 1.3 RoD and RoI are evaluated eagerly
 
 Nuke evaluates `getRegionOfDefinition` and `getRegionsOfInterest` outside the
 render, sometimes well before the user renders. These actions must be **cheap and
 side-effect free**: no allocation, no GPU work, no logging spam, no reads of
 images.
 
-### 3.4 Errors are surfaced, not swallowed
+### 1.4 Errors are surfaced, not swallowed
 
 Nuke reports thrown OFX statuses to the user with the message from the suite.
 That is a benefit: throw specific codes and set a message via

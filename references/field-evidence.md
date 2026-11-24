@@ -164,8 +164,8 @@ is that the Windows loader path and the OFX actions behave the same as on Linux.
 | Claim | Cited in |
 |---|---|
 | Windows build, bundle directory, generator matrix | [`cmake-and-linking.md`](cmake-and-linking.md) §5, [`../README.md`](../README.md), [`../SKILL.md`](../SKILL.md) |
-| 2 exports, 7 cubins, no CUDA runtime import | [`testing-layers.md`](testing-layers.md) §13, [`../SKILL.md`](../SKILL.md) §6 |
-| 28/28 kernel cases, stream ordering, zero-copy | [`testing-layers.md`](testing-layers.md) §13, [`../SKILL.md`](../SKILL.md) §12 |
+| 2 exports, 7 cubins, no CUDA runtime import | [`testing-layers.md`](testing-layers.md) §13, [`cmake-and-linking.md`](cmake-and-linking.md) §3.6 |
+| 28/28 kernel cases, stream ordering, zero-copy | [`testing-layers.md`](testing-layers.md) §13, [`../SKILL.md`](../SKILL.md) §5 |
 | 0.212 / 0.222 ms at 1080p | [`performance-model.md`](performance-model.md) §3.1 |
 | 74-check host contract through `LoadLibraryExW` | [`testing-layers.md`](testing-layers.md) §3 |
 | `--strict` checker lookup, `System32` ONNX Runtime shadowing | §9, [`cmake-and-linking.md`](cmake-and-linking.md) §5 |

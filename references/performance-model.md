@@ -66,7 +66,7 @@ almost always right.
 
 ## 2. Host-side practices
 
-### 5.1 Never allocate per frame if the size did not change
+### 2.1 Never allocate per frame if the size did not change
 
 `cudaMalloc`/`cudaFree` are synchronising, globally serialising operations **[D]**.
 Calling them inside a render action makes your plugin a pipeline barrier: the
@@ -86,7 +86,7 @@ follow the pattern:
 `postProcess()` for teardown; both are called once per render, around the
 dispatch, in `ofxsProcessing.h` **[S]** — they are *not* per thread.
 
-### 5.2 Your GPU path is called once per render — do not thread it yourself
+### 2.2 Your GPU path is called once per render — do not thread it yourself
 
 `ImageProcessor::process()` dispatches exactly once:
 
@@ -102,7 +102,7 @@ else                             multiThread(nCPUs);   // CPU only
 render window — if you launch per band, or spawn your own threads around it, you
 multiply launches by the CPU count for no gain. The GPU is already parallel.
 
-### 5.3 `supportsTiles` decides how big a window you get
+### 2.3 `supportsTiles` decides how big a window you get
 
 With `setSupportsTiles(false)` **[S]** in the template, the host should hand you
 a whole-image render window. With tiles *on*, the same effect is called many
@@ -131,7 +131,7 @@ distinction is the point: a silent return turns "the host handed me a window I
 cannot write" into a frame that is not drawn while the status says success. If you
 keep a quiet return anywhere, log it once before assuming the GPU failed.
 
-### 5.4 Do not add threads to the CPU path
+### 2.4 Do not add threads to the CPU path
 
 The Support library already slices the render window into contiguous row bands
 and runs them on `nCPUs` threads, where
@@ -161,14 +161,14 @@ pixel components produced bit-identical output. The speedup is still
 **[U]**: it depends on whether the host's build inlines `getPixelAddress`, which
 LTO changes.
 
-### 5.5 Abort checks belong per row, not per pixel
+### 2.5 Abort checks belong per row, not per pixel
 
 `_effect.abort()` is a suite call, and the host sets it when the user cancels.
 Checking it per pixel costs a host call per pixel; checking per row or per
 band of rows responds within a few milliseconds at 4K. `debugging-and-symptoms.md` §1 has the
 long-form rules on which actions may touch it.
 
-### 5.6 One device, restored
+### 2.6 One device, restored
 
 A multi-GPU host can call you on a thread whose current device is 0 while the
 frame lives on GPU 1. `cudaPointerGetAttributes` tells you which device owns the
@@ -176,7 +176,7 @@ pointer; the template's `DeviceGuard` restores the previous device on every exit
 path **[S]**. Skipping the restore leaks your device choice into the host's
 threads, and the symptom appears in *another* plugin's render.
 
-### 5.7 The Support library logs once per render
+### 2.7 The Support library logs once per render
 
 `process()` calls `OFX::Log::print("processing via CUDA")` (or `... CPU`) on
 every render **[S]**. `print` appends to `ofxPluginLog.txt`
@@ -189,7 +189,7 @@ reach the host's UI; see `debugging-and-symptoms.md` §1 for the channel that do
 
 ## 3. Kernel-level performance
 
-### 6.1 One 16-byte load and one 16-byte store per pixel
+### 3.1 One 16-byte load and one 16-byte store per pixel
 
 The template ships two kernels with the same arithmetic: a vectorized fast path
 and a scalar fallback for the buffers that cannot legally be vectorized. Both
@@ -248,7 +248,7 @@ performance lever — reduce traffic (region of interest, half precision,
 fewer passes) before widening loads. This repository has not measured any of
 those alternatives on hardware.
 
-### 6.2 Block and grid
+### 3.2 Block and grid
 
 - Threads per block: a multiple of 32, 128–256 as the initial range **[D]**. The
   template uses 16×16 = 256, inside that range, and gives 2D locality for
@@ -263,7 +263,7 @@ those alternatives on hardware.
   `width`: integer division per thread is measurable at 4K. The template's 2D
   grid already avoids it.
 
-### 6.3 Registers, spills, occupancy
+### 3.3 Registers, spills, occupancy
 
 Compile with `-Xptxas -v` to see registers and spills per kernel **[D]**. The
 template's kernel is 14 registers, 0 spills, 0 stack **[M]** — there is nothing
@@ -274,7 +274,7 @@ into a warning at build time.
 Do not chase 100% occupancy. NVIDIA's own guide says higher occupancy does not
 always mean faster, and that beyond roughly two-thirds it rarely helps **[D]**.
 
-### 6.4 One definition of the maths
+### 3.4 One definition of the maths
 
 The moment you have both `multiThreadProcessImages` and a kernel, you have two
 implementations of the same formula. Every reference project that survives does
@@ -287,7 +287,7 @@ one of two things:
 Pick one before the second effect. Adding the second backend is cheap; reconciling
 four divergent copies of a grade is not.
 
-### 6.5 Precision and fast maths
+### 3.5 Precision and fast maths
 
 - `-use_fast_math` (or `--use_fast_math`) turns on `-ftz=true`, approximate
   division and `__sinf`-class intrinsics **[D]**. For a gain node it is
@@ -328,19 +328,19 @@ first-frame hitches visible instead of moving them to first render.
 
 ## 5. Testing what you cannot see
 
-### 9.1 Odd sizes
+### 5.1 Odd sizes
 
 Render 1919×1081, 1×1, and a 2-pixel-wide window. 1920×1080 is a power of two and
 hides every stride and boundary bug you have. This is the cheapest test that
 exists and the one most often skipped.
 
-### 9.2 Identity and bypass
+### 5.2 Identity and bypass
 
 `isIdentity()` returning the source clip is not an optimisation detail — it is
 how the host knows it can skip your node. A plugin that never claims identity
 forces a full render for every untouched frame. The template implements it **[S]**.
 
-### 9.3 Cross-backend tolerance
+### 5.3 Cross-backend tolerance
 
 Once you have a CPU path and a GPU path, compare them: render a synthetic
 gradient, run both, assert max absolute difference below a threshold you chose
@@ -350,7 +350,7 @@ flipped row order, and a channel swap — none of which a compile can find.
 
 **[U]** There is no such harness in this repo yet. It needs a GPU and a host.
 
-### 9.4 Memory safety
+### 5.4 Memory safety
 
 `compute-sanitizer` (formerly `cuda-memcheck`) catches out-of-bounds device
 access and leaks **[D]**. It is slow — run it on 256×256, not 4K.

@@ -61,9 +61,9 @@ documents.
 Read it four ways:
 
 - **By task** — [§1](#1-by-task-i-need-to) when you know what you are building.
-- **By symptom** — [§2](debugging-and-symptoms.md#3-by-symptom-the-render-is-wrong) when something is
+- **By symptom** — [§3](debugging-and-symptoms.md#3-by-symptom-the-render-is-wrong) when something is
   already broken.
-- **By property** — [§2](ofx-api-constants.md#3-by-property-which-constant-does-what) when you are
+- **By property** — [§3](ofx-api-constants.md#3-by-property-which-constant-does-what) when you are
   staring at a `kOfx*` name and need to know who sets it.
 - **By repository** — [the general-purpose suites](reference-projects.md#10-the-general-purpose-suites-what-to-read-what-to-skip)
   when you would rather read shipping code than prose.
