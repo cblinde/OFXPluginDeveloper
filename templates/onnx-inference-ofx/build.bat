@@ -53,7 +53,7 @@ if not defined ONNXRUNTIME_ROOT (
   echo   Release assets unreachable? The NuGet package has the same files:
   echo     https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/^<version^>
   echo   copy build\native\include\* to include\ and runtimes\win-x64\native\*.dll
-  echo   to bin\. (The .lib is not used; Windows loads the DLL at runtime.)
+  echo   to bin\. ^(The .lib is not used; Windows loads the DLL at runtime.^)
   exit /b 2
 )
 if not exist "%ONNXRUNTIME_ROOT%\include\onnxruntime_cxx_api.h" (
