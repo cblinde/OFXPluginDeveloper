@@ -240,6 +240,35 @@ def check_duplicate_anchors(root, files, texts, report):
                 seen[anchor] = (line_no, title)
 
 
+def check_empty_tables(root, files, texts, report):
+    """A table header and separator with no data row under them.
+
+    README carried `| File | What it is |` and its separator after a restructure
+    deleted the rows and replaced the table further down: nothing was broken, so
+    every link, anchor and count check passed, and the page showed an empty
+    bordered box above the table that had taken its place.
+    """
+    separator = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
+    for path in files:
+        lines = texts[path].splitlines()
+        fenced = False
+        for index, line in enumerate(lines):
+            if line.strip().startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced or not line.lstrip().startswith("|"):
+                continue
+            following = lines[index + 1] if index + 1 < len(lines) else ""
+            if "-" not in following or not separator.match(following):
+                continue                  # not a header row at all
+            after = lines[index + 2] if index + 2 < len(lines) else ""
+            if not after.lstrip().startswith("|"):
+                report.error(path, index + 1,
+                             f"table header '{line.strip()[:48]}' is followed by a "
+                             f"separator and no data row; add the rows or drop the "
+                             f"header, because it renders as an empty box")
+
+
 def check_link_numbers(root, files, texts, report):
     """`[§4](other.md#6-...)` - the number shown must be the number landed on.
 
@@ -703,6 +732,7 @@ def main():
     report = Report()
     check_links(root, files, texts, report)
     check_duplicate_anchors(root, files, texts, report)
+    check_empty_tables(root, files, texts, report)
     check_link_numbers(root, files, texts, report)
     check_absence_claims(root, files, texts, report)
     check_section_numbering(root, files, texts, report)
