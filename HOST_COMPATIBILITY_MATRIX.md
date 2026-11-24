@@ -144,10 +144,12 @@ an official reference for its GPU expectations:
 | Linux | `/opt/resolve/Developer/OpenFX/` |
 | macOS | `/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/OpenFX/` |
 
-Contents include the OFX-1.4 headers, the C++ Support library, and a `GainPlugin`
-with CUDA/OpenCL/Metal kernels plus temporal and random-access variants. Point
-`OFX_SOURCE_DIR` at that directory to build the template without any network
-access:
+Contents include the headers that build shipped (the 18.5-era SDK is OFX-1.4),
+the C++ Support library, and a `GainPlugin` with CUDA/OpenCL/Metal kernels plus
+temporal and random-access variants. The SDK's version is **not** evidence of the
+host's API version: Resolve 21 implements OFX 1.5 colour management while the
+installed developer folder may still be 1.4-era (§2.9). Point `OFX_SOURCE_DIR` at
+that directory to build the template without any network access:
 
 ```bash
 OFX_SOURCE_DIR=/opt/resolve/Developer/OpenFX ./build.sh
@@ -162,6 +164,31 @@ does not implement every optional OFX suite **(B)** — a Blackmagic engineer ha
 said as much publicly. If you need one, feature-detect it (`fetchSuite` returning
 `NULL`) and degrade. A plugin that hard-requires a Resolve extension cannot be
 tested anywhere else, and cannot be validated against the spec.
+
+### 2.9 Version currency: 21.2, and the OFX 1.5 colour APIs
+
+Resolve Studio **21.2** (2026-11-05) is current, with project libraries kept
+compatible with 20.3.2; **21.0.3** (2026-07) lists "Addressed issue with GPU
+support in OpenFX plugins" among its fixes **(B**, Blackmagic forum release posts
+and 21.0.3 notes). Two consequences for a plug-in author:
+
+- **Colour management is now a host capability, not a hope.** Resolve 21
+  implements the OpenFX 1.5 colour-management APIs **(B**, the Resolve 21 New
+  Features Guide). A colour-manipulating effect can declare
+  `kOfxImageEffectPropColourManagementStyle` and read
+  `kOfxImageClipPropColourspace` instead of guessing the working space. Read the
+  style from the instance and degrade to the pre-1.5 assumption (`None`, no
+  conversion) when the host reports nothing; never branch on the host name.
+- **Do not promote that into "Resolve supports 1.5.1".** The three 1.5.1
+  additions (`kOfxImageEffectPropCPURenderSupported`,
+  `kOfxImageEffectPropNoSpatialAwareness`, `kOfxImageEffectPropThumbnailRender`)
+  are separate optional properties, and no public Resolve note was found that
+  names them **(C)**. Set them only on the plugin descriptor, keep the default
+  behaviour correct without them, and treat their absence as normal.
+
+A GPU-mode regression fixed in a point release is also the reason the matrix
+separates "the host offers CUDA" from "your kernel ran": a Resolve update can
+change whether the device path is taken at all, so re-run the §7 table after one.
 
 ---
 
