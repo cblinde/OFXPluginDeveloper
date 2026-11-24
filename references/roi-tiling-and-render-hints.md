@@ -75,8 +75,8 @@ relative to the render window rather than the fetched image bounds.
 
 A tiled plug-in that draws has both bugs at once: the halo decides what the model
 sees, the overlay's placement decides what the user sees. The drawing half is
-[`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §7 and
-[`../ARCHITECTURE_AND_CUDA_PIPELINE.md`](../ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
+[`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §7 and
+[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §13.
 
 **`kOfxImageEffectPropNoSpatialAwareness` (1.5.1), the right way round.** Set it
 `"true"` on the descriptor only if the effect is per-pixel *or* can disable its

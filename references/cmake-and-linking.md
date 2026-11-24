@@ -5,6 +5,7 @@ The one command, the artifact contract, every compile-level requirement with fil
 <!-- BUILD_PLAYBOOK.md lines 21-293 -->
 <!-- BUILD_PLAYBOOK.md lines 362-476 -->
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 561-629 -->
+<!-- BUILD_PLAYBOOK.md lines 1-20 -->
 ## 1. The command
 
 ```bash
@@ -266,7 +267,7 @@ refusal; the string itself is [V]].
 - Because of that, `-D_GLIBCXX_USE_CXX11_ABI` does not need to match the host
   [I]. It *does* matter for a third-party C++ runtime you call across the
   boundary (libtorch is the documented example — see
-  [`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §1).
+  [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §1).
 - Undefined `libstdc++`/`libc` symbols are expected and correct: the host process
   provides them. `nm -D -u` on the reference plug-in lists only GLIBC/GLIBCXX
   symbols [V].
@@ -297,8 +298,8 @@ export list).
 
 For the host-side rules that a compile cannot check (streams, RoD/RoI, threads,
 alpha), continue with
-[`../ARCHITECTURE_AND_CUDA_PIPELINE.md`](../ARCHITECTURE_AND_CUDA_PIPELINE.md) and
-[`../PREFLIGHT_REVIEW_CHECKLIST.md`](../PREFLIGHT_REVIEW_CHECKLIST.md).
+[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) and
+[`checklists.md`](checklists.md).
 
 ---
 
@@ -310,7 +311,7 @@ Every row below was reproduced on a machine with VS 2026 (MSVC 19.50) and VS 202
 Build Tools installed without the C++ workload **[B]** (2026‑11‑22 field test,
 Windows 11, RTX 3060, CUDA 13.0.48, CMake 4.4.4; environment, logs and the
 limits of that run are in
-[`../FIELD_TEST_WINDOWS_CUDA.md`](../FIELD_TEST_WINDOWS_CUDA.md)).
+[`field-evidence.md`](field-evidence.md)).
 
 | Pair | What breaks | Symptom | Fix |
 |---|---|---|---|
@@ -321,7 +322,7 @@ limits of that run are in
 | generator ↔ cached build tree | the second run may pick a different generator than the cache records | `Error: generator … Does not match the generator used previously` | reuse `CMAKE_GENERATOR:INTERNAL` from `build\CMakeCache.txt`, refuse loudly when that generator cannot build CUDA |
 | CUDA ↔ architecture list | `enable_language(CUDA)` caches nvcc's default; a second configure sees a defined variable | `-- CUDA architectures: 75`, one `--generate-code`, SASS only for Volta | record nvcc's default once, and only on a configure that saw no user `CMAKE_CUDA_ARCHITECTURES`; treat a differing value as a user choice. On a tree with no record, tell a `-D` value from `enable_language()`'s by the cache entry's type (`UNINITIALIZED` vs `STRING`) |
 | CUDA 13 ↔ runtime import | the Windows image does not import `cudart64_*.dll` even with device code present | `dumpbin /dependents` lists no CUDA DLL | say "device code present, runtime resolved at load"; never print the import you expected |
-| ONNX Runtime ↔ import library | the Windows package keeps headers in `include\`, the import library in `lib\onnxruntime.lib` and the DLL in `bin\onnxruntime.dll` | the build succeeds, the bundle carries a file named `onnxruntime.dll` that the loader rejects, and the plug-in fails at load | on Windows do **not** link the `.lib`: compile with `ORT_API_MANUAL_INIT`, copy the DLL as `onnxruntime-ofx.dll` and load it by full path (`../AI_MODEL_INTEGRATION.md` §4); Linux/macOS link as usual. The template fails the configure when the DLL is missing |
+| ONNX Runtime ↔ import library | the Windows package keeps headers in `include\`, the import library in `lib\onnxruntime.lib` and the DLL in `bin\onnxruntime.dll` | the build succeeds, the bundle carries a file named `onnxruntime.dll` that the loader rejects, and the plug-in fails at load | on Windows do **not** link the `.lib`: compile with `ORT_API_MANUAL_INIT`, copy the DLL as `onnxruntime-ofx.dll` and load it by full path (`onnx-and-tensorrt.md` §4); Linux/macOS link as usual. The template fails the configure when the DLL is missing |
 | host runtime ↔ bundled runtime | Windows resolves an import by base name, and the host's directory comes first: Resolve 21 ships `onnxruntime.dll` 1.13, Windows ML ships one in `System32` | `render` access-violates; the minidump names the host's `onnxruntime.dll` and not the bundle's | private file name + `ORT_API_MANUAL_INIT` + `LoadLibraryExW` from the module directory; a bound import cannot be overridden by copying a file beside the `.ofx` |
 | `vswhere` ↔ `for /f` | a `for /f` backtick command whose first **and** last characters are quotes loses both before `cmd /c` runs it, so the program path is split at its first space | `Der Befehl "C:\Program" ist entweder falsch geschrieben oder konnte nicht gefunden werden.` — then the checker reports `dumpbin not found` and every `build.bat` aborts after a correct build | end the command with an unquoted argument (`-property installationPath`) and locate the tool with a `for /d` glob; never pass a quoted `-find` pattern there |
 | platform ↔ architecture directory | the directory name is part of the contract: `Linux-x86-64`, `Linux-aarch64`, `MacOS`, `Win64` | an ARM Linux build links, reports success and lands in `Contents/Linux-x86-64`, which no host scans | derive the directory from `WIN32`/`APPLE`/`CMAKE_SYSTEM_PROCESSOR` once, and set both output properties to it |
@@ -350,7 +351,7 @@ into a printed skip in exactly the branch most people use. With `--strict` a
 missing tool fails the build (exit 3); standalone use without the flag keeps the
 named skip. From the field test: 2 exports, 7 cubins
 `sm_75`…`sm_120`, and no CUDA runtime import **[B]**
-([`../FIELD_TEST_WINDOWS_CUDA.md`](../FIELD_TEST_WINDOWS_CUDA.md) §3).
+([`field-evidence.md`](field-evidence.md) §3).
 
 **One command for this template's suites on Windows.**
 `templates\minimal-cuda-ofx\test\run-tests.bat Release` is the counterpart of
@@ -403,7 +404,7 @@ so its evidence remains Linux-only.
 | `-G` | Full device debug. Disables most optimisation — debug builds only. |
 | `--use_fast_math` | Off by default. Enables it changes results (denormals, `sin`/`cos` precision). A grading plugin should not silently change numerics. |
 | `-Xptxas -v` | Register/spill report; check it when occupancy is bad. |
-| `-arch=sm_XY` / CMake `CUDA_ARCHITECTURES` | Target list, see `../SKILL.md` §6. |
+| `-arch=sm_XY` / CMake `CUDA_ARCHITECTURES` | Target list, see `packaging-and-install.md` §6. |
 
 ### PTX and first-launch cost
 
@@ -423,7 +424,7 @@ and PTX for the newest only.
 
 On **Windows with CUDA 13** the packaged runtime is a hybrid: a built template's
 import table lists no `cudart64_*.dll` and uses `cudart_hybrid64.dll`, while the
-device code is present and the module loads (**[B]**, `../SKILL.md` §6). "Depends at
+device code is present and the module loads (**[B]**, `packaging-and-install.md` §6). "Depends at
 load" is therefore a Linux/older-toolkit statement, not a universal one; check the
 import list of the binary you ship.
 
@@ -459,6 +460,26 @@ interface that has been stable for years.
 - `libcudart.so.*` must be findable: either installed by the toolkit, or shipped
   next to the `.ofx` and found via `RPATH=$ORIGIN`. Shipping it is often the
   difference between "works on my machine" and "works on the colourist's".
+
+---
+
+# Build playbook: from a clean checkout to a `.ofx` a host will load
+
+Most build prose is written from headers. This file is written from a build.
+[`templates/minimal-ofx/`](../templates/minimal-ofx/) is compiled by one command
+from a tree that has no OFX headers and no build directory, and the command then
+inspects the `.ofx` it produced instead of trusting the source.
+
+Every claim below is labelled:
+
+- **[V]** verified in this repository — the command was run and its output is
+  quoted, on Linux x86-64 with GCC 13.3 and CMake 3.31.6.
+- **[I]** inferred — from a header or from documented host behaviour, but not
+  demonstrated by a build or a host here.
+
+The headers are the repository's pinned checkout of
+`AcademySoftwareFoundation/openfx` at tag `OFX_Release_1.5.1`; every `file:line`
+below refers to that tree (`.ofx-ref/`, created by the build if absent).
 
 ---
 

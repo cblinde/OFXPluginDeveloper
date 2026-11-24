@@ -5,6 +5,7 @@ The questions to answer before shipping, each settled by a header line or a spec
 <!-- PREFLIGHT_REVIEW_CHECKLIST.md lines 1-151 -->
 <!-- SKILL.md lines 667-723 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 496-509 -->
+<!-- PREFLIGHT_REVIEW_CHECKLIST.md lines 1-21 -->
 # Pre-flight review checklist
 
 A list of questions to answer about **your** plug-in before it ships. Every item
@@ -121,7 +122,7 @@ Stated plainly, because a checklist that overclaims is worse than none:
 | E2 | If you use a GPU execution provider, is the launch on `kOfxImageEffectPropCudaStream`, with EP synchronisation disabled? | `ofxGPURender.h:608-610` ("SHOULD NOT wait … SHOULD NOT call `cudaDeviceSynchronize()` at any time") plus ORT's `user_compute_stream` / `disable_synchronize_execution_providers` options. | `grep -rn "user_compute_stream\|disable_synchronize" src/`. Either both are present, or the plug-in does not advertise a GPU path. |
 | E3 | Do you advertise CUDA only when every op in the model runs on the GPU provider? | `ofxGPURender.h:547-553`: the capability is opt-in ("Default - `"false"` for a plug-in") and the host's descriptor is read-only. | Check the provider's supported-op list for the exact ops in your graph; a single CPU fallback op makes the "GPU" path slower than the CPU one, and the host cannot see that. |
 | E4 | Is the tile halo at least the model's receptive-field radius? | Measured in `templates/onnx-inference-ofx`: `halo=0` differs from whole-frame inference by 0.263 on a single 3×3 convolution; `halo=1` is bit-identical. | Run `./test/run-tests.sh` in that template with your model and your tile size; the negative control tells you whether your halo is doing anything. |
-| E5 | Are channel order, value range and colour space documented next to the model? | The model's training contract, not OFX: see `../AI_MODEL_INTEGRATION.md` §5. The LTX plug-in converts through OCIO before inference for exactly this reason. | Put the three facts in the parameter hint or a README beside the weights. A wrong range is a silent grade error, not a crash. |
+| E5 | Are channel order, value range and colour space documented next to the model? | The model's training contract, not OFX: see `onnx-and-tensorrt.md` §5. The LTX plug-in converts through OCIO before inference for exactly this reason. | Put the three facts in the parameter hint or a README beside the weights. A wrong range is a silent grade error, not a crash. |
 
 ---
 
@@ -208,7 +209,7 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 - [ ] Clean under `SANITIZE=address,undefined`, `SANITIZE=thread` and
       `RUN_VALGRIND=1`; `./test/run-analysis.sh` reports nothing.
 - [ ] Every `kOfx*` property is read with its declared type, and every pre-ship
-      question in `../PREFLIGHT_REVIEW_CHECKLIST.md` has an answer.
+      question in `references/checklists.md` has an answer.
 - [ ] Verification status written down honestly (§12).
 
 ---
@@ -224,5 +225,26 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 7. Tested at 1919×1081, 1×1, identity, and against the CPU path.
 8. Read back with `compute-sanitizer` on a small frame.
 9. `.ofx` installed with the host closed; plugin cache cleared after a crash.
+
+---
+
+# Pre-flight review checklist
+
+A list of questions to answer about **your** plug-in before it ships. Every item
+names the sentence that settles it — a header doc block, a line of the OFX
+reference, or a documented CUDA rule. None of them rests on "the popular repo
+does it this way", because that is how most of these bugs get copied forward.
+
+Three ground rules:
+
+1. **An item is answered from your source, not from memory.** Each one has a
+   mechanical check; if the check needs a judgement call, the item says so.
+2. **"The host didn't crash" is not an answer.** A host can ignore a wrong
+   property type for years and then validate it in a point release.
+3. **If an item does not apply to your plug-in, write down why.** "N/A" with no
+   reason is how a checklist turns into decoration.
+
+Run [§1](#1-mechanical-gates) first — it is automated and takes about a minute.
+Then work through [§2](#2-the-questions) once per release.
 
 ---

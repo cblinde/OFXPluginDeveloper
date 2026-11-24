@@ -6,7 +6,7 @@ L0-L10, what each proves and cannot prove, the failure-injection table, and what
 # Testing OFX plug-ins
 
 How to test an OFX plug-in well enough to ship it, in the order that catches
-failures cheapest-first. This is the "how"; [`../PREFLIGHT_REVIEW_CHECKLIST.md`](../PREFLIGHT_REVIEW_CHECKLIST.md)
+failures cheapest-first. This is the "how"; [`checklists.md`](checklists.md)
 is the "did you". Every mechanism below is either demonstrated by a test in this
 repository (with its measured output) or described with the exact API it needs —
 and where nothing here can test it, the section says so instead of implying
@@ -55,7 +55,7 @@ column perfectly and never ran the right one.
 |---|---|---|---|---|
 | **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | the templates |
 | **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 160 checks (the 136 from a `CPU_ONLY=1` build, so host protocol + CPU path; the 158 are followed by 82 in the tiled-context variant) |
-| **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`../PREFLIGHT_REVIEW_CHECKLIST.md`](../PREFLIGHT_REVIEW_CHECKLIST.md) §1 |
+| **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`checklists.md`](checklists.md) §1 |
 | **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | the templates: `testkit/fake_host.*` |
 | **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | the templates |
 | **L5** memory | ASan, UBSan, TSan, valgrind | an hour | UB, leaks, data races | the templates |
@@ -122,7 +122,7 @@ builds also export five weak `W` helpers in `MinimalCudaGain`, six in
 interpose a strong definition, but they are not intended exports either. The
 reference plug-in pins the export list with a linker version script
 (`templates/minimal-ofx/exports.map`), after which `nm -D --defined-only` has
-exactly two rows — see `../BUILD_PLAYBOOK.md` §3.5.
+exactly two rows — see `cmake-and-linking.md` §3.5.
 
 **dlopen and enumeration.** Twenty lines, and it catches the whole class of
 "file is in the right place but the host never lists it":
@@ -153,7 +153,7 @@ OfxPlugin* (*g)(int) = (OfxPlugin* (*)(int))GetProcAddress(h, "OfxGetPlugin");
 the loader look next to the `.ofx` first, which is how a plug-in finds a runtime
 it ships. Measured externally: the ported harness drove a Windows bundle through
 the whole protocol with 0 failures **[B]**
-([`../FIELD_TEST_WINDOWS_CUDA.md`](../FIELD_TEST_WINDOWS_CUDA.md) §5).
+([`field-evidence.md`](field-evidence.md) §5).
 
 The `OfxPlugin` fields are the ones a host reads before it calls anything
 (`api`, `apiVersion`, `pluginIdentifier`, `pluginVersionMajor`,
@@ -228,7 +228,7 @@ cost seconds and they are the only defence against some classes of bug.
 
 | Gate | Check | Why |
 |---|---|---|
-| Property types | every descriptor `…Supported` read with `propGetString`; every per-render `…Enabled` with `propGetInt` | the strings/ints split is the most common type confusion ([`../REFERENCE_READING_GUIDE.md`](../REFERENCE_READING_GUIDE.md) §3.2) |
+| Property types | every descriptor `…Supported` read with `propGetString`; every per-render `…Enabled` with `propGetInt` | the strings/ints split is the most common type confusion ([`reference-projects.md`](reference-projects.md) §3.2) |
 | No device-wide sync | `grep -rn cudaDeviceSynchronize src/` returns nothing | forbidden by `ofxGPURender.h:610` |
 | No tight-stride assumption | `grep -rn "width \* 4 \* sizeof" src/` returns nothing | shear on padded rows |
 | No `stdout` | `grep -rn "printf\|std::cout" src/` (except test code) | invisible in a GUI host |
@@ -241,7 +241,7 @@ over the template — its sources and its three scripts, not the repository. A
 missing tool is reported as skipped rather than clean: the run ends
 `static analysis: incomplete - N tool(s) ran, M skipped`, and
 `REQUIRE_ANALYSIS=1` turns that into a failure. The gate list as a whole is
-[`../PREFLIGHT_REVIEW_CHECKLIST.md`](../PREFLIGHT_REVIEW_CHECKLIST.md) §1.
+[`checklists.md`](checklists.md) §1.
 
 ---
 
@@ -372,7 +372,7 @@ render deviates by **0** from the whole-frame render (overlapping tiles agree
 bitwise when the halo covers the receptive radius, so the blend is weight-neutral),
 and with the context gone — `halo=0`, or a host that supplies only the window —
 by **0.1875**. 0.02 sits an order of magnitude below the failure and at the same
-threshold `../AI_MODEL_INTEGRATION.md` §7 uses for the halo ladder, so a plug-in
+threshold `onnx-and-tensorrt.md` §7 uses for the halo ladder, so a plug-in
 that drops its context fails the tiled run too rather than sneaking under a loose
 bound.
 
@@ -695,7 +695,7 @@ It is the only layer that tests the product.
 | 11 | Animate a parameter and undo/redo | `getValueAtTime`, no hidden state |
 | 12 | Force a crash once, restart | the host's blacklist; know where to clear it ([`../SKILL.md`](../SKILL.md) §7) |
 
-Add host-specific rows from [`../HOST_COMPATIBILITY_MATRIX.md`](../HOST_COMPATIBILITY_MATRIX.md)
+Add host-specific rows from [`host-resolve.md`](host-resolve.md)
 for the hosts you actually support.
 
 ---
@@ -718,7 +718,7 @@ Each of these has a defined correct answer; test that you produce it.
 | Read-only model directory | a message, not a crash on first render |
 | Host aborts mid-render | return promptly, release images |
 | Sidecar/worker dies | bounded retry or clean error; host survives |
-| Sidecar stalls | bounded timeout, no hang ([`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §3) |
+| Sidecar stalls | bounded timeout, no hang ([`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §3) |
 | Device out of memory | `kOfxStatGPUOutOfMemory` |
 | GPU kernel launch fails | `kOfxStatGPURenderFailed`, with a log |
 
@@ -741,7 +741,7 @@ the 611-byte model exists for this), fixed seeds, a timeout on every test (a han
 must fail, not stall the queue), and **no test whose pass condition is "it did not
 crash"**.
 
-The release gate itself is [`../PREFLIGHT_REVIEW_CHECKLIST.md`](../PREFLIGHT_REVIEW_CHECKLIST.md):
+The release gate itself is [`checklists.md`](checklists.md):
 §1 lists the mechanical gates with their commands and, importantly, what a pass
 does *not* prove; §2–§4 are the questions a reviewer signs off.
 
@@ -829,7 +829,7 @@ cmake --build /tmp/arch-check   # nvcc + link, still no GPU
 
 `--bootstrap-cuda` reads NVIDIA's `Packages.gz` index and unpacks five `.deb`
 files with `ar` and `tar`; the packages, versions and what each contributes are
-listed in [`../README.md`](../README.md#artifacts-the-build-pulls-in). It needs
+listed in [`../README.md`](reference-projects.md#artifacts-the-build-pulls-in). It needs
 `curl`, `tar`, `gzip`, `awk` and `ar` — no `apt`, no root, and nothing is
 installed outside `$OFX_CUDA_TOOLKIT_DIR`. Verified here with CUDA 12.9.41 on a
 machine with no GPU: configure, a full `Kernel.cu` compile for `sm_90` and the
@@ -848,7 +848,7 @@ multi-resolution/tile-protocol test (the fake host does not speak it — §5.4).
 The Windows build, the Windows contract run, the hardware kernel cases and the
 throughput numbers come from a 2026-11-22 field test on another machine and are
 marked **[B]**, archived in
-[`../FIELD_TEST_WINDOWS_CUDA.md`](../FIELD_TEST_WINDOWS_CUDA.md);
+[`field-evidence.md`](field-evidence.md);
 `test/gpu-kernel-test.cu` is the harness that produced them and ships so they can
 be repeated on any GPU:
 
@@ -956,7 +956,7 @@ What remains genuinely unbuilt is L7 (timings), the GPU execution path, and L8
 (a real host): a plug-in that has never rendered in Resolve, Nuke or Natron is
 not verified, no matter how many unit and contract tests pass. That is stated in
 the same terms in [`../SKILL.md`](../SKILL.md) §12 and
-[`../REFERENCE_READING_GUIDE.md`](../REFERENCE_READING_GUIDE.md) §9.
+[`reference-projects.md`](reference-projects.md) §9.
 
 ## Provenance labels
 

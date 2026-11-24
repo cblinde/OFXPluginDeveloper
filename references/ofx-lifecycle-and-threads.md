@@ -5,6 +5,7 @@ Object model, what happens at plugin/instance/render level, which calls may bloc
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 17-182 -->
 <!-- SKILL.md lines 118-139 -->
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 704-750 -->
+<!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 1-16 -->
 ## 1. Object model in one page
 
 A host and a plugin share nothing but C ABI structs. Three ideas cover all of it:
@@ -12,7 +13,7 @@ A host and a plugin share nothing but C ABI structs. Three ideas cover all of it
 - **Handles** are opaque pointers: `OfxImageEffectHandle`, `OfxImageClipHandle`,
   `OfxPropertySetHandle`, `OfxParamSetHandle`.
 - **Properties** are typed, indexed, string-keyed key/value bags attached to
-  handles. Every constant in `../SKILL.md` §5 is a key into one of those bags.
+  handles. Every constant in `ofx-api-constants.md` §5 is a key into one of those bags.
 - **Suites** are tables of function pointers the host exposes
   (`OfxImageEffectSuiteV1`, `OfxPropertySuiteV1`, `OfxParamSuiteV1`,
   `OfxMemorySuiteV1`, `OfxMultiThreadSuiteV1`, `OfxMessageSuiteV1/V2`,
@@ -240,8 +241,26 @@ parts that took the longest to get right.
 
 ---
 
+# Architecture and the CUDA pipeline
+
+Deep-dive companion to [`../SKILL.md`](../SKILL.md). Everything here assumes the
+OpenFX 1.5-era headers (`ofxImageEffect.h`, `ofxGPURender.h`, `ofxParam.h`), the
+C++ Support library (`OFX::ImageEffect`, `OFX::ImageProcessor`), and CUDA 12/13.
+
+**Provenance.** **[V]** verified in this repository (compiled, measured, or
+quoted from the pinned 1.5.1 headers); **[I]** inferred from a header or from the
+API contract, not demonstrated; **[B]** external evidence — a vendor document, a
+shipped project, or the archived 2026-11-22 hardware run
+([`field-evidence.md`](field-evidence.md)) — grade B in
+`references/host-resolve.md`. Unmarked text is
+design guidance.
+
+---
+
 ## Provenance labels
 
 Tags in this document mean exactly what they meant in the document it came from:
 
+- **[B]** external evidence: a run or a report from another machine or project
+- **[I]** inferred from a header, a specification or documented behaviour, not demonstrated here
 - **[V]** verified in this repository - the command ran here

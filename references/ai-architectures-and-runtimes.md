@@ -6,6 +6,7 @@ What shipped plug-ins do, the four architectures, per-language embedding hazards
 <!-- AI_MODEL_INTEGRATION.md lines 329-400 -->
 <!-- AI_MODEL_INTEGRATION.md lines 854-869 -->
 <!-- PATTERN_INDEX.md lines 145-187 -->
+<!-- AI_MODEL_INTEGRATION.md lines 1-24 -->
 ## 1. What shipped plug-ins actually do
 
 Ten repositories were read for this document: eight OFX plug-ins, one Nuke NDK
@@ -269,5 +270,29 @@ evidence grade **B**. Links go to the projects, not to mirrors.
    the licence travels with it. Reading for patterns is fine; copying is not.
 7. **Forks drift.** The LTX plug-in exists in at least three repositories. Pin a
    commit and name the upstream before you learn from one.
+
+---
+
+# AI model integration for OpenFX plug-ins
+
+How to put a neural network inside an OFX plug-in without turning the host into
+a crash reporter. Every claim is graded, every architectural recommendation is
+traceable to a project that shipped it, and the parts that could not be verified
+here say so.
+
+**Evidence grades**, used throughout:
+
+| Grade | Meaning |
+|---|---|
+| **A** | Read from primary source: a header, a specification page, or measured by the test suite in this repository. |
+| **B** | Read from a project's own documentation or source, not independently executed here. |
+| **C** | Reported second-hand (README claim, forum post, issue thread). Treat as a lead. |
+
+No CUDA execution provider has ever been created here, so nothing below is a
+model performance measurement. Where a number appears it is a size, an exact CPU
+result from `templates/onnx-inference-ofx/test`, a **B**-graded figure from a
+project that shipped it, or explicitly labelled as unmeasured. The CUDA *kernel*
+throughput measured on 2026-11-24 is a different thing entirely — see
+[`../README.md`](../README.md) §"What has actually been verified".
 
 ---

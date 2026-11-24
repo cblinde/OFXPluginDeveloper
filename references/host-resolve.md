@@ -4,6 +4,7 @@ Pages, the GPU switch, absent streams, odd sizes, crash blacklisting, Free vs St
 
 <!-- HOST_COMPATIBILITY_MATRIX.md lines 25-194 -->
 <!-- HOST_COMPATIBILITY_MATRIX.md lines 356-377 -->
+<!-- HOST_COMPATIBILITY_MATRIX.md lines 1-24 -->
 ## 1. Master table
 
 | | **DaVinci Resolve Studio** | **Nuke** | **SCRATCH** | **Natron** |
@@ -68,7 +69,7 @@ CUDA or Metal. The default is Auto. Consequences:
 
 Resolve is not observed to populate `kOfxImageEffectPropCudaStream` **(C)**.
 The practical consequence is that the *mode 2* branch in
-[`../ARCHITECTURE_AND_CUDA_PIPELINE.md`](../ARCHITECTURE_AND_CUDA_PIPELINE.md) §5 is the
+[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §5 is the
 one that runs in Resolve almost all the time: you must complete your launch before
 `render()` returns.
 
@@ -195,3 +196,27 @@ The lesson generalises exactly to CUDA:
 The template encodes that rule structurally: `GainProcessor` holds no CUDA
 handles at all, the stream is a borrowed `void*`, and the destructor releases
 nothing but its own C++ members.
+
+# Host compatibility matrix
+
+Deep-dive companion to [`../SKILL.md`](../SKILL.md). What differs between OpenFX hosts,
+what breaks, and what to do instead.
+
+**Read the evidence grade before you rely on a row.** This document distinguishes
+what is in the specification from what has been observed in public bug reports
+from what is simply reported by users. A compatibility matrix that does not make
+that distinction is worse than none, because it turns a guess into a design
+decision.
+
+| Grade | Meaning |
+| --- | --- |
+| **A** | Stated in the OFX specification/headers, or deterministic from the API contract |
+| **B** | Reproducible public evidence: a shipped plugin's issue tracker, vendor forum post from the host's own engineers |
+| **C** | Community report or vendor documentation summary; plausible, unverified here — **test before designing around it** |
+
+Nothing in this file was produced by running a host. No DaVinci Resolve, Nuke,
+SCRATCH or Natron installation was available where this skill was authored. Treat
+every row as a hypothesis with a named source, and confirm it in your own matrix
+before shipping.
+
+---

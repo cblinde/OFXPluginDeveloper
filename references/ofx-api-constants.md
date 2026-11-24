@@ -85,9 +85,9 @@ accessor once per row and reuse it.
 
 Writing back is the same arithmetic against the **destination** image, which has
 its own base pointer, its own signed pitch and its own bounds, plus traps a copy
-does not have. Short version in [`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md)
+does not have. Short version in [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md)
 §7, "Drawing into the frame: the overlay after the model"; full rules in
-[`../ARCHITECTURE_AND_CUDA_PIPELINE.md`](../ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
+[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §13.
 
 ### 5.4 Support names for the depths
 
@@ -127,7 +127,7 @@ Rules:
   never bake a transform you were not asked for, and expose an explicit
   "as-is / no conversion" default when an effect only makes sense in linear light.
 - **Resolve 21 implements the 1.5 colour APIs** (**[B]**,
-  [`../HOST_COMPATIBILITY_MATRIX.md`](../HOST_COMPATIBILITY_MATRIX.md) §2.9). Feature-
+  [`host-resolve.md`](host-resolve.md) §2.9). Feature-
   detect the host's style; never infer it from the host name.
 
 ### 5.6 Named traps
@@ -169,7 +169,7 @@ Found by reading the headers during this pass. Each one has bitten somebody.
    `kOfxImageEffectPropOpenCLEnabled` doc block swaps their parentheticals — the
    property blocks in §693-704 of the header are the authority, and
    `kOfxImageEffectPropOpenCLImage` being set is the runtime discriminator
-   (`../SKILL.md` §5).
+   (`ofx-api-constants.md` §5).
    Guessing by analogy produces a property the host has never heard of, and a
    plugin that silently never gets the GPU.
 

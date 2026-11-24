@@ -45,7 +45,7 @@ OpenFX `OFX_Release_1.5.1`):
 
 - **`./run-tests.sh` executes no SASS** — by design, it has no GPU step; its
   numerics are validated by emulating the thread mapping over the real kernel
-  source (`../BEST_PRACTICES_AND_PERFORMANCE.md` §6.1). The hardware run is
+  source (`performance-model.md` §6.1). The hardware run is
   `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu`: on 2026-11-24 it was
   28/28 bit-exact and measured throughput, the CPU loop and the copy cost
   (`../README.md` §"What has actually been verified"). Multi-GPU binding and real
@@ -53,7 +53,7 @@ OpenFX `OFX_Release_1.5.1`):
 - **One host, and only headless.** `NatronRenderer` rendered one 256×256 frame
   through the template on 2026-11-24 (`testkit/verify-bundle.bat`), pixels
   checked. Resolve, Nuke and SCRATCH are not installed and have never rendered
-  anything, so every host-specific claim in `../HOST_COMPATIBILITY_MATRIX.md`
+  anything, so every host-specific claim in `references/host-resolve.md`
   remains graded B/C rather than verified.
 - **The 1.5.1 render hints are documented, not exercised.** No host here sets
   `kOfxImageEffectPropNoSpatialAwareness` or `kOfxImageEffectPropThumbnailRender`,
@@ -65,7 +65,7 @@ OpenFX `OFX_Release_1.5.1`):
 
 **Executed elsewhere, not here [B]** (2026-11-22 field test: Windows 11, RTX 3060
 sm_86, CUDA 13.0 toolkit on a 13.5 driver, MSVC 19.44/19.50; logs and limits in
-[`../FIELD_TEST_WINDOWS_CUDA.md`](../FIELD_TEST_WINDOWS_CUDA.md)):
+[`field-evidence.md`](field-evidence.md)):
 
 - `.\build.bat` configures and builds; the result is
   `Contents\Win64\<Name>.ofx` with exactly two exports (`dumpbin /exports`) and
@@ -87,7 +87,7 @@ pass; no Nsight capture; no multi-resolution performance work.
 Built and checked on Linux x86-64 with GCC 13.3.0, CUDA 12.9.41, CMake 3.31.6 and
 OpenFX `OFX_Release_1.5.1`. Lines marked **[V]** are measurements or artifact
 inspections from that machine; the commands and the full results are in
-`../TESTING_STRATEGY.md` §13.
+`testing-layers.md` §13.
 
 - CUDA-enabled configure + build compiles `Kernel.cu` with real `nvcc` for
   `75;80;86;89;90;100;120`, links `libcudart.so.12`, and produces
@@ -101,7 +101,7 @@ inspections from that machine; the commands and the full results are in
   symbols (a version script suppresses the five weak `std::` helpers that
   `-fvisibility=hidden` alone leaves); `dlopen` reports
   `OfxImageEffectPluginAPI` v1, `com.ofxplugindeveloper.referencegain` 1.0, with
-  `setHost` and `mainEntry` set. No host was involved — see `../BUILD_PLAYBOOK.md` §5.
+  `setHost` and `mainEntry` set. No host was involved — see `debugging-and-symptoms.md` §5.
 - The vectorized kernel emits one 16-byte load and one 16-byte store per pixel
   at PTX level (`-arch=sm_89`), with 14 registers, no spills and no stack, the
   same register count as the scalar fallback.
@@ -129,7 +129,7 @@ A 2026-11-22 field test on Windows 11 (RTX 3060, sm_86; CUDA 13.0 toolkit on a
 13.5 driver; MSVC 19.44 and 19.50; CMake 4.4.4) executed what this machine could
 not. Those results are **[B]** — external evidence, not reproduced in this
 checkout; the measurements themselves are quoted with their logs in
-[`../FIELD_TEST_WINDOWS_CUDA.md`](../FIELD_TEST_WINDOWS_CUDA.md).
+[`field-evidence.md`](field-evidence.md).
 
 - `.\build.bat` now configures and builds: generator from `vswhere`, canonical
   CUDA paths, Ninja fallback when the installed Visual Studio has no NVIDIA CUDA
@@ -141,7 +141,7 @@ checkout; the measurements themselves are quoted with their logs in
 - The shared contract harness, ported to `LoadLibraryExW`, drives the Windows
   bundle through the whole host protocol with 0 failures (that run predates the
   multi-instance checks this checkout adds, so its check count is not comparable
-  with the ones in `../TESTING_STRATEGY.md` §13).
+  with the ones in `testing-layers.md` §13).
 - `test/gpu-kernel-test.cu` ran the real kernels on the RTX 3060: **28/28 cases
   bit-exact** against the host reference, covering padded and negative pitches,
   4-byte-misaligned bases, render-window offsets, 0-width/0-height, overrun
@@ -170,7 +170,7 @@ iterations; one GPU, one driver, one OS build.
 **Not verified here:** no Resolve, Nuke or SCRATCH is installed, so nothing has
 rendered in them; no CUDA execution provider has ever been created (the inference
 template builds a CPU session); Linux has not been run; and no kernel runs in
-`./run-tests.sh`, which has no GPU step by design. See `../SKILL.md` §12.
+`./run-tests.sh`, which has no GPU step by design. See `verification-status.md` §12.
 
 ## 1. What this pass changed, and what it verified
 
@@ -178,8 +178,8 @@ The review ran a mechanical check of the repo against the official sources.
 
 | Check | Result |
 | --- | --- |
-| Every `kOfx*` identifier cited in the documents, sources and tests exists in OFX 1.5.1 | Checked mechanically by extracting every `kOfx*` token and resolving it against the 1.5.1 tree. Of the 2 that did not resolve, **1 was a real error, now fixed** — `../ARCHITECTURE_AND_CUDA_PIPELINE.md` cited `kOfxImageEffectActionInstanceChanged`; the real action is `kOfxActionInstanceChanged` (`ofxCore.h:447`). The other, `kOfxImageEffectPropUnmappedComponents` in `../SKILL.md`, is a deliberate negative example ("there is no such constant"), so it stays. |
-| The GPU property table in `../SKILL.md` §5 against the headers | 12/12 exist; three descriptions were wrong and are fixed (wrong header for `...OpenCLRenderSupported`, OpenGL declared `C string` not `string`, and the OpenCL Buffers/Images distinction now quoted from the header) |
+| Every `kOfx*` identifier cited in the documents, sources and tests exists in OFX 1.5.1 | Checked mechanically by extracting every `kOfx*` token and resolving it against the 1.5.1 tree. Of the 2 that did not resolve, **1 was a real error, now fixed** — `references/ofx-lifecycle-and-threads.md` cited `kOfxImageEffectActionInstanceChanged`; the real action is `kOfxActionInstanceChanged` (`ofxCore.h:447`). The other, `kOfxImageEffectPropUnmappedComponents` in `../SKILL.md`, is a deliberate negative example ("there is no such constant"), so it stays. |
+| The GPU property table in `ofx-api-constants.md` §5 against the headers | 12/12 exist; three descriptions were wrong and are fixed (wrong header for `...OpenCLRenderSupported`, OpenGL declared `C string` not `string`, and the OpenCL Buffers/Images distinction now quoted from the header) |
 | A committed GPU-free test suite (`templates/minimal-cuda-ofx/test/run-tests.sh`) | predicate table + 3,240-launch kernel comparison + CPU-loop comparison + 6-thread concurrency + PTX counts + memcheck, exit-code gated; clean under ASan+UBSan, TSan and valgrind **[M]** |
 | Every CUDA runtime symbol the template calls (9) is declared in the toolkit headers | all present |
 | The quoted stream-contract text exists verbatim in `ofxGPURender.h` | present at lines 608–617 |

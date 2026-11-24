@@ -6,6 +6,7 @@ What each shipped project contributes, what to copy, what to avoid, and the seve
 <!-- PATTERN_INDEX.md lines 188-258 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 47-88 -->
 <!-- README.md lines 59-158 -->
+<!-- REFERENCE_READING_GUIDE.md lines 1-50 -->
 # Reference reading guide
 
 **If you only read one thing, read this paragraph.** An OFX plug-in is three
@@ -65,7 +66,7 @@ point of this section.
 | Tier | Where it is | Trust it for | Do **not** trust it for |
 |---|---|---|---|
 | **SDK samples** | `.ofx-ref/Support/Plugins/` — ten modules registering eleven plug-ins | The object model, the describe/render split, which actions and overrides exist, parameter types | Packaging, threading, tests, pitch arithmetic, GPU streams, error policy |
-| **Shipped open-source plug-ins** | CorridorKey (×2), LTX, MoGe, DLSS5, Hush — analysed in [`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) | Production architecture: process separation, tiling strategy, temporal chunking, colour handling | Style and correctness — several ship blocking renders or no tiling at all |
+| **Shipped open-source plug-ins** | CorridorKey (×2), LTX, MoGe, DLSS5, Hush — analysed in [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) | Production architecture: process separation, tiling strategy, temporal chunking, colour handling | Style and correctness — several ship blocking renders or no tiling at all |
 | **This repo's templates** | `templates/minimal-cuda-ofx/`, `templates/onnx-inference-ofx/` | The failure-proofing: bundle checks, export counts, golden fixtures, negative controls, sanitizers | Scale — each is deliberately one effect |
 
 The census of the SDK samples is itself a lesson: ten modules register eleven
@@ -240,7 +241,7 @@ Writing *into* the frame rather than copying it through repeats all five rules
 against the destination image, which has its own pitch and bounds, and adds
 three drawing-specific traps: placement in frame coordinates, premultiplied
 plates, and a single rasterising origin. That contract is
-[`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
+[`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §7, "Drawing into the frame:
 the overlay after the model".
 
 ### 3.4 Ownership and error surface
@@ -263,7 +264,7 @@ the overlay after the model".
   `#ifdef DEBUG` (`ofxsLog.cpp:40-47`) — which CMake's `Debug` configuration and
   the templates do not define. The templates use it on every
   failure path, so treat it as a developer-build trace; a user-visible error
-  needs the host's message suite (`setPersistentMessage`, `../SKILL.md` §7).
+  needs the host's message suite (`setPersistentMessage`, `debugging-and-symptoms.md` §7).
 
 ### 3.5 The GPU contract
 
@@ -322,13 +323,13 @@ further rules the template teaches by construction:
   survives an orientation-blind assertion (a copy matches either way up). The
   drawing contract — destination pitch, frame coordinates, premultiplied plates,
   one rasterising origin — is
-  [`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §7, "Drawing into the frame:
+  [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §7, "Drawing into the frame:
   the overlay after the model".
 
 ### 3.7 Model and tensor plumbing
 
 Only relevant if the effect runs a network; the full treatment is
-[`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md). The four facts that decide
+[`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md). The four facts that decide
 correctness and are *not* expressible in OFX: channel order (RGB vs BGR), value
 range (`[0,1]`, `[-1,1]`, display-referred), colour space (convert with OCIO
 before inference if the model was trained on display-referred images), and tensor
@@ -407,7 +408,7 @@ evidence grade B and the architectures — not the numbers — are what transfer
 | 4 | `templates/minimal-cuda-ofx/src/Plugin.cpp` | What the samples omit: per-render int vs descriptor string (`:79`), stream asymmetry (`:119`–`:127`), `InstanceSafe` (`:317`) | 45 min |
 | 5 | `templates/minimal-cuda-ofx/test/run-tests.sh` | How the invariants are proven without a GPU | 20 min |
 | 6 | `templates/onnx-inference-ofx/src/AiCore.cpp` + `templates/onnx-inference-ofx/test/ai_pipeline_test.cpp` | Packing, tiling, golden fixtures, the halo negative control (`:300`) | 45 min |
-| 7 | [`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §1 and §6 | What production inference plug-ins do; when CUDA pays | 20 min |
+| 7 | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §1 and §6 | What production inference plug-ins do; when CUDA pays | 20 min |
 
 Steps 1–3 need the `.ofx-ref` checkout (see the top of this file). Steps 4–7 need
 only this repository.
@@ -446,7 +447,7 @@ shipped projects each leave partly unanswered.
 ## 8. How the numbers here are reproduced
 
 Figures marked **[V]** were produced in this repository (compiled or measured);
-the commands are in `../TESTING_STRATEGY.md` §13. Figures marked **[I]** are
+the commands are in `testing-layers.md` §13. Figures marked **[I]** are
 inferred and have not been reproduced.
 
 Every number in this guide was produced on the machine that wrote it. These are
@@ -507,7 +508,7 @@ Nine of the ten sources include `OFX::ImageProcessor`:
 - **One host, headless.** `NatronRenderer` has rendered a frame through the
   template (`testkit/verify-bundle.bat`, 2026-11-24). Resolve, Nuke and SCRATCH
   have not, so their behaviour still lives in
-  [`../HOST_COMPATIBILITY_MATRIX.md`](../HOST_COMPATIBILITY_MATRIX.md) at grade B/C.
+  [`host-resolve.md`](host-resolve.md) at grade B/C.
 - **One GPU, and only the gain kernel.** The 2026-11-24 run executes the real
   kernels on an RTX 3060 and measures them; no CUDA execution provider executes,
   and nothing runs on a second GPU. Statements about models, other GPUs and host
@@ -568,7 +569,7 @@ index.
 | The index says | OFX 1.5.1 says |
 |---|---|
 | `ofxCUDAImageEffectSuite->getCudaStream(handle, &stream)` | There is no CUDA suite. `grep -rn "CUDA.*Suite" .ofx-ref/include/` matches a comment. The stream arrives as `kOfxImageEffectPropCudaStream` in the render inArgs (`ofxGPURender.h:617`), and only if the effect advertised `kOfxImageEffectPropCudaStreamSupported` (`:588`) |
-| "Ensure explicit stream synchronisation (`cudaStreamSynchronize`, or the host stream)" | Backwards. With a host stream, the plug-in SHOULD NOT wait and SHOULD NOT call `cudaDeviceSynchronize()` at any time (`ofxGPURender.h:608`–`:610`). Wait only when no stream was supplied — see [`../ARCHITECTURE_AND_CUDA_PIPELINE.md`](../ARCHITECTURE_AND_CUDA_PIPELINE.md) |
+| "Ensure explicit stream synchronisation (`cudaStreamSynchronize`, or the host stream)" | Backwards. With a host stream, the plug-in SHOULD NOT wait and SHOULD NOT call `cudaDeviceSynchronize()` at any time (`ofxGPURender.h:608`–`:610`). Wait only when no stream was supplied — see [`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) |
 | Transition progress parameter `TransitionMain` | `kOfxImageEffectTransitionParamName`, value `"Transition"` (`ofxImageEffect.h:1475`) |
 | "`ImageStatistics`: atomic GPU reduction kernels" | One CPU translation unit, `ImageStatistics/ImageStatistics.cpp` (2,959 lines). No GPU code exists anywhere in that repository |
 | `GainPlugin`, `TemporalBlurPlugin`, … under `DaVinci-Resolve-OpenFX-Samples` | No public Blackmagic repository of that name; the only GitHub match is an archived third-party copy. The sample plug-ins ship inside the Resolve installer, which is why the public SDK is the ASWF `openfx` repository |
@@ -583,11 +584,11 @@ header agrees.
 
 | Situation | Shape | Where the reasoning is |
 |---|---|---|
-| Model is ONNX, ops are supported by the C runtime you can ship | in-process | [`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §2, §4 |
+| Model is ONNX, ops are supported by the C runtime you can ship | in-process | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §2, §4 |
 | Model needs PyTorch code, custom ops, or a Python preprocessing stack | sidecar (shared memory + control socket) | §2, §3 |
 | Inference takes longer than a frame budget | staged job + disk cache | §1 above, and the LTX design in §4 |
 | Operation is local and analytic | no model at all | `Hush-OpenNR` in §4 |
-| GPU is available but the host does not hand over device pointers | CPU, or accept one copy per frame and measure | [`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §6 |
+| GPU is available but the host does not hand over device pointers | CPU, or accept one copy per frame and measure | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §6 |
 
 ## 2. What the reference projects teach
 
@@ -599,12 +600,12 @@ team already paid for.
 | **OneGrade** | *"The CPU header is the source of truth… any change to the math is a 4-file change (CPU + 3 kernels). Keep the helper names and formulas identical so they're easy to diff."* **[R]** | Four backends drifting apart is the normal failure mode of a multi-backend plugin, and it shows up as "CUDA looks different from CPU" only after a client notices. Naming parity makes the drift visible in a diff. | Partly: one kernel + one CPU loop, named to match, but no shared pipeline header yet. §6.4 says when to add one. |
 | **OneGrade** | *"Confirm the GPU kernel actually shipped — a plugin built without it looks fine and just renders on the CPU"*, via `cuobjdump --list-elf …ofx`. **[R]** | A silently CPU-only build is indistinguishable from a working one in the UI. This is the single highest-value 10-second check in the whole discipline. | Yes: `build.sh` checks the launcher symbol and `.nv_fatbin`; §8 adds the `cuobjdump` form for the reader's own builds. |
 | **OneGrade** | *"CUDA needs … a CUDA 13.x toolkit (12.x emits no Blackwell/sm_120 code)"*, and OpenCL validated against the CPU pipeline to *"worst deviation well under one 8-bit code value"*. **[R]** | Architecture flags and cross-backend tolerance are both testable facts, not opinions. | Partly: the template emits `100;120` when `CUDAToolkit_VERSION >= 12.8` **[S]**; cross-backend tolerance testing is described in §9.3, not implemented. |
-| **OneGrade** | *"close Resolve first — the plugin is locked while it runs"* **[R]** | Installing over a loaded `.ofx` on Windows fails in a way that looks like a corrupt bundle. | Documented in `../SKILL.md` §7. |
+| **OneGrade** | *"close Resolve first — the plugin is locked while it runs"* **[R]** | Installing over a loaded `.ofx` on Windows fails in a way that looks like a corrupt bundle. | Documented in `debugging-and-symptoms.md` §7. |
 | **Open-DRT-OFX** | SDK *"cloned on demand (not vendored)"*, CMake ≥ 3.20, CI builds all three platforms on every tag. **[R]** | Vendoring the SDK freezes you on a stale spec and drags a licence into your tree; fetching keeps the headers truthful. | Yes: `FetchContent` on tag `OFX_Release_1.5.1`, shallow, or `OFX_SOURCE_DIR` for offline builds. **[S]** |
-| **forge-colorx** | *"GPU where it's safe"* — Metal is gated to a host allow-list because *"Flame's macOS OFX host crashes on a Metal-advertising node"*; CUDA is opt-in at build time (`make WITH_CUDA=1`). **[R]** | Advertising a GPU capability is a promise the host acts on. Advertising one you cannot honour in a specific host is worse than not advertising it. | Philosophical yes (CUDA is advertised only when compiled in **[S]**); per-host gating is not implemented, and this is the strongest argument for keeping `../HOST_COMPATIBILITY_MATRIX.md` in the loop. |
+| **forge-colorx** | *"GPU where it's safe"* — Metal is gated to a host allow-list because *"Flame's macOS OFX host crashes on a Metal-advertising node"*; CUDA is opt-in at build time (`make WITH_CUDA=1`). **[R]** | Advertising a GPU capability is a promise the host acts on. Advertising one you cannot honour in a specific host is worse than not advertising it. | Philosophical yes (CUDA is advertised only when compiled in **[S]**); per-host gating is not implemented, and this is the strongest argument for keeping `references/host-resolve.md` in the loop. |
 | **gyroflow-plugins** | The heavy work (gyro sync, lens profiles, optical flow) happens in the desktop app and is handed to the plugin as a project file; the plugin only renders. **[R]** | Anything expensive and per-clip belongs outside the render path. A render action is called per frame, sometimes per field, sometimes twice. | Yes in principle: the render action does no analysis, only one kernel launch. |
 | **gyroflow-plugins** | Post-mortem of 32 Resolve crashes in 24 days, 31 of them the plugin releasing a host-owned `MTLCommandQueue`. **[R]** | Borrowed GPU objects belong to the host. Destroying one corrupts the host's queue and takes the process down later, somewhere else. | Yes: the stream is stored as an opaque `void*`, never created, never destroyed. **[S]** |
-| **gyroflow-plugins** | Notes that applying the effect on the Edit/Color page *"should work faster"* than in Fusion. **[R]** | Host-side pipeline differences can dominate your kernel. When a user reports slowness, establish which page/composition they are on before optimising anything. | Recorded in `../HOST_COMPATIBILITY_MATRIX.md`. |
+| **gyroflow-plugins** | Notes that applying the effect on the Edit/Color page *"should work faster"* than in Fusion. **[R]** | Host-side pipeline differences can dominate your kernel. When a user reports slowness, establish which page/composition they are on before optimising anything. | Recorded in `references/host-resolve.md`. |
 
 **The pattern across all of them:** the winners are boring about ownership,
 loud about what they actually built, and paranoid about which host they are in.
@@ -620,7 +621,7 @@ shows three patterns this repository deliberately does **not** adopt:
 | --- | --- | --- |
 | `cudaMalloc` + `cudaMemcpyAsync` for the parameter vector and the 3D LUT inside `RunCudaKernel`, i.e. **on every render** | `cudaMalloc` is a synchronising call: it serialises with all other device work, so the plugin becomes a pipeline barrier for every other GPU node at 24–60 fps **[D]** | No allocation in the render path at all — the gain travels as kernel arguments. If scratch memory is needed, cache it per instance and release it in the destructor / `purgeCaches()` (§5.1) |
 | `cudaStreamSynchronize(stream)` right after the launch, then `cudaFree` (which also synchronises the device) | Synchronising on a **host-supplied** stream is precisely what `ofxGPURender.h` says not to do: the host orders its own work against that stream and expects the render action to return **[S]** | Sync only when `_pCudaStream == nullptr`, the one case where the contract requires completion before returning (§7) |
-| The kernel indexes `((y * W) + x) * 4`, assuming tightly packed rows | Correct only while `rowBytes == width * 16`; any host padding shears the image, and it silently ignores a negative pitch **[S]** | Address through `kOfxImagePropRowBytes` in bytes, widened to `int64_t` and signed (§6 of `../ARCHITECTURE_AND_CUDA_PIPELINE.md`) |
+| The kernel indexes `((y * W) + x) * 4`, assuming tightly packed rows | Correct only while `rowBytes == width * 16`; any host padding shears the image, and it silently ignores a negative pitch **[S]** | Address through `kOfxImagePropRowBytes` in bytes, widened to `int64_t` and signed (§6 of `references/ofx-lifecycle-and-threads.md`) |
 
 This does not make OneGrade a bad plugin — it is a colour tool whose pixel work
 dominates its overhead, and its authors validated it in a host. The lesson is
@@ -636,7 +637,7 @@ it.
 Everything here was derived from primary specifications and from reading real
 plugins. Nothing was written from memory of an API. Where a claim could not be
 checked against a running host it is graded in
-[`../HOST_COMPATIBILITY_MATRIX.md`](../HOST_COMPATIBILITY_MATRIX.md) rather than stated
+[`host-resolve.md`](host-resolve.md) rather than stated
 as fact.
 
 ### Primary specifications and SDKs
@@ -692,7 +693,7 @@ informed design decisions only (see [Licensing](#licensing-and-provenance)).
 | Project | What it demonstrated | What this repo took from it |
 | --- | --- | --- |
 | [`gyroflow/gyroflow-plugins`](https://github.com/gyroflow/gyroflow-plugins) | Rust OFX plugin with FFI into a native sensor engine; probes host GPU support per render (`get_cuda_render_supported`, `get_metal_command_queue`, …); runs in Resolve and SCRATCH; installer/UX for host plugins. | The "probe the host, never sniff the host name" rule, and the multi-host support matrix. |
-| [`gyroflow-plugins` issue #64](https://github.com/gyroflow/gyroflow-plugins/issues/64) | 32 Resolve crashes in 24 days; 31 attributable to the plugin releasing a host-owned `MTLCommandQueue`. | The ownership rule — never destroy a borrowed GPU object — and the "GPU lifetime bugs surface in host code" case study in `../HOST_COMPATIBILITY_MATRIX.md` §8. |
+| [`gyroflow-plugins` issue #64](https://github.com/gyroflow/gyroflow-plugins/issues/64) | 32 Resolve crashes in 24 days; 31 attributable to the plugin releasing a host-owned `MTLCommandQueue`. | The ownership rule — never destroy a borrowed GPU object — and the "GPU lifetime bugs surface in host code" case study in `host-resolve.md` §8. |
 | [`Dec18studios/Open-DRT-OFX`](https://github.com/Dec18studios/Open-DRT-OFX) | CMake build for Metal (macOS) + CUDA (Windows/Linux) with a clean host-wrapper / kernel split and a single transform definition reused by both backends; cross-platform CI packaging. | The one-pixel-model-two-backends rule and the CMake structure (bundle output directories, per-architecture folders). |
 | [`MattGrdinic/OneGrade`](https://github.com/MattGrdinic/OneGrade) | Single-node Resolve grade: vendored OFX 1.4 Support, grouped parameter UI, `OneGradePipeline.h` as the single source of truth mirrored by `MetalKernel.mm` / `OpenCLKernel.cpp` / `CudaKernel.cu` with a CPU fallback. | Confirmation that vendored Support + one pipeline header + per-backend kernels is the durable shape; parameter grouping/paging idioms. |
 | [`cnoellert/forge-colorx`](https://github.com/cnoellert/forge-colorx) | Runtime expression evaluation compiled once per render; host coverage across Flame, Resolve, Nuke and Natron; documents host-specific UI quirks. | Evidence for the host-quirk rows, and the "compile per render, evaluate per pixel" separation that the template's processor/launcher split follows. |
@@ -722,12 +723,62 @@ an oversight:
 
 | Not used | Why |
 | --- | --- |
-| TensorRT, ONNX Runtime | `../ARCHITECTURE_AND_CUDA_PIPELINE.md` §9 describes the zero-copy integration pattern (device pointers, `IoBinding`, the CUDA EP compute stream), but the template implements no inference path. Adding either would put a multi-hundred-megabyte dependency into a starter template. |
-| NVTX (`nvtx3/nvToolsExt.h`) | Appears only as a profiling snippet in `../ARCHITECTURE_AND_CUDA_PIPELINE.md` §5. The template neither includes nor links it. |
+| TensorRT, ONNX Runtime | `onnx-and-tensorrt.md` §9 describes the zero-copy integration pattern (device pointers, `IoBinding`, the CUDA EP compute stream), but the template implements no inference path. Adding either would put a multi-hundred-megabyte dependency into a starter template. |
+| NVTX (`nvtx3/nvToolsExt.h`) | Appears only as a profiling snippet in `cuda-streams-and-memory.md` §5. The template neither includes nor links it. |
 | OpenCL, Metal, OpenGL backends | `OFX::ImageProcessor` can dispatch to them, but only CUDA and CPU are implemented; the others are out of scope. |
 | DaVinci Resolve scripting API, DCTL | Different extension mechanisms, not OFX. Useful alongside a plugin, not part of one. |
 | pip CUDA wheels (`nvidia-cuda-nvcc-cu12`, `nvidia-cuda-runtime-cu12`) | Tried and rejected for the bootstrap: the nvcc wheel ships `ptxas` and NVVM but no `nvcc`/`cudafe++`/`nvlink`, so it cannot compile a translation unit. |
 | The GPL reference plugins | Read as engineering evidence only; never vendored or copied — see [Licensing](#licensing-and-provenance). |
+
+---
+
+# Reference reading guide
+
+**If you only read one thing, read this paragraph.** An OFX plug-in is three
+different conversations with the host, and almost every beginner bug is a
+confusion between them. The *descriptor* conversation (`describe()`) is
+declarative: you say what you can do, using **strings**. The *render* conversation
+is negotiated per frame: the host tells you, with **ints and pointers**, where the
+pixels actually are and whether you got a stream. The *image* conversation is
+arithmetic: you receive a base pointer, a **signed** row stride and a window that
+need not start at the origin, and you must not substitute `width * bytesPerPixel`
+for any of them. If you internalise those three and the ownership rule around
+`fetchImage()`, the rest of this guide is an index into why the reference code
+looks the way it does. The single most instructive file in this repository is
+[`templates/minimal-cuda-ofx/src/Plugin.cpp`](../templates/minimal-cuda-ofx/src/Plugin.cpp)
+read next to [`../SKILL.md`](../SKILL.md) §1.
+
+**Where the paths point.** Paths beginning `.ofx-ref/` are inside a checkout of
+the OpenFX standard, which is git-ignored here and **not** part of a fresh clone:
+
+```bash
+git clone --depth 1 --branch OFX_Release_1.5.1 \
+  https://github.com/AcademySoftwareFoundation/openfx.git .ofx-ref
+```
+
+Line numbers for SDK files are for that tag (`OFX_Release_1.5.1`); the build in
+`templates/*/CMakeLists.txt` fetches the same tag. Paths beginning `templates/`
+are in this repository and every one of them was checked against the working
+tree when this guide was written.
+
+## Contents
+
+- [1. The three tiers](#1-the-three-tiers)
+- [2. The five-seam skeleton](#2-the-five-seam-skeleton)
+- [3. Patterns to look for](#3-patterns-to-look-for)
+  - [3.1 Registration and packaging](#31-registration-and-packaging)
+  - [3.2 Declaration versus per-render truth](#32-declaration-versus-per-render-truth)
+  - [3.3 Addressing](#33-addressing)
+  - [3.4 Ownership and error surface](#34-ownership-and-error-surface)
+  - [3.5 The GPU contract](#35-the-gpu-contract)
+  - [3.6 Region of interest and tiling](#36-region-of-interest-and-tiling)
+  - [3.7 Model and tensor plumbing](#37-model-and-tensor-plumbing)
+- [4. Anti-patterns and their tells](#4-anti-patterns-and-their-tells)
+- [5. What each shipped project contributes](#5-what-each-shipped-project-contributes)
+- [6. A seven-step reading plan](#6-a-seven-step-reading-plan)
+- [7. Twelve questions to ask of any OFX code](#7-twelve-questions-to-ask-of-any-ofx-code)
+- [8. How the numbers here are reproduced](#8-how-the-numbers-here-are-reproduced)
+- [9. What this guide does not cover](#9-what-this-guide-does-not-cover)
 
 ---
 

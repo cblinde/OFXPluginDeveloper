@@ -19,7 +19,7 @@ ReferenceGain.ofx.bundle/
 [V for the produced tree.] The `Contents/<arch>` naming and the plugin-directory
 search paths (`/usr/OFX/Plugins`, `C:\Program Files\Common Files\OFX\Plugins`,
 `/Library/OFX/Plugins`) are host behaviour, not something the build can prove
-here [I — see [`../HOST_COMPATIBILITY_MATRIX.md`](../HOST_COMPATIBILITY_MATRIX.md)].
+here [I — see [`host-resolve.md`](host-resolve.md)].
 `Resources/` is optional [I].
 
 The bundle also carries obligations a build log cannot show. If it ships a
@@ -74,12 +74,12 @@ message. Two host-facing facts:
   Neither fact is visible to a fake host, which has nothing loaded and therefore
   always uses the bundle's own DLLs. The reproduction is
   `tools/host_cuda_probe.cpp`; the detail and the measured evidence are
-  [`../AI_MODEL_INTEGRATION.md`](../AI_MODEL_INTEGRATION.md) §7.
+  [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §7.
 - **Check the provider's import table per ORT version.** `dumpbin /dependents` on
   the provider you ship, looking for `onnxruntime.dll`. ORT 1.20.1's provider does
   not import it, which is what makes the `onnxruntime-ofx.dll` sidecar work with
   all 30 files beside it **[B]**; a later provider that does import it needs the
-  sidecar shape instead (`../AI_MODEL_INTEGRATION.md` §2).
+  sidecar shape instead (`ai-architectures-and-runtimes.md` §2).
 
 **One thread budget per node.** An inference plug-in may hold several sessions
 inside a host that holds several instances of the node. Build every session
@@ -88,7 +88,7 @@ parameter whose default is what the plug-in already did, remember the value each
 session was created with, and print it in the status label in **both** provider
 modes — the label is the only evidence the setting reached the session
 (`--label-param` asserts it). It is a CPU-path control: measured on one RTX 3060
-it changed nothing under CUDA **[B]** (`../AI_MODEL_INTEGRATION.md` §7).
+it changed nothing under CUDA **[B]** (`onnx-and-tensorrt.md` §7).
 
 **Install locations.**
 
@@ -112,20 +112,20 @@ appears only when a *second* plugin is installed.
 Visibility is an ELF mechanism. Under MSVC both presets are no-ops and the export
 set comes from the Support library's `OfxExport` (`__declspec(dllexport)`), which
 still yields exactly two exported names, verified with `dumpbin /exports` on a
-built Windows bundle **[B]** ([evidence](../FIELD_TEST_WINDOWS_CUDA.md) §3);
+built Windows bundle **[B]** ([evidence(field-evidence.md) §3);
 `exports.map` is guarded by `if(UNIX AND NOT APPLE)` for the same reason.
 
 **CUDA runtime linkage.** Default to `CUDA::cudart` (shared): the host already has
 a GPU stack. `cudart_static` removes the load-time dependency but gives each
 plug-in its own runtime instance, and mixing the two in one process is undefined
-(`../ARCHITECTURE_AND_CUDA_PIPELINE.md` §10).
+(`cmake-and-linking.md` §10).
 
 On **Windows with CUDA 13**, do not claim a `cudart64_*.dll` import without
 checking: `dumpbin /dependents` on a built template lists KERNEL32, MSVCP140,
 VCRUNTIME140 and the UCRT, no CUDA runtime DLL, while the device code is present
 (seven cubins) and the module loads. The runtime resolves through the hybrid
 runtime and the string in the image is `cudart_hybrid64.dll` **[B]**
-([evidence](../FIELD_TEST_WINDOWS_CUDA.md) §3). The portable statement is "device
+([evidence(field-evidence.md) §3). The portable statement is "device
 code present, runtime resolved at load"; the import list is what a host depends on.
 
 **Architecture targets.** `CMAKE_CUDA_ARCHITECTURES` defaults to
@@ -141,7 +141,7 @@ The CMake trap has two halves. `enable_language(CUDA)` initialises
 `enable_language()` fixes only the first configure: the value is then cached, so
 the second configure keeps nvcc's single architecture — measured: `-- CUDA
 architectures: 75` and one `--generate-code`, where a clean configure had seven
-**[B]** ([evidence](../FIELD_TEST_WINDOWS_CUDA.md) §3). The template records nvcc's
+**[B]** ([evidence(field-evidence.md) §3). The template records nvcc's
 default once in an internal cache variable, only on a configure that saw no user
 value, and treats a differing cached value as a user choice; a tree configured
 before that marker existed is handled by reading the cache entry before
@@ -154,7 +154,7 @@ the kernel runs needs hardware.
 `cudart` directory in `RUNPATH`. The template sets `INSTALL_RPATH` with
 `BUILD_WITH_INSTALL_RPATH ON`, so the `.ofx` resolves a `libcudart` beside it and
 otherwise uses the host's runtime. The token is platform-specific: `$ORIGIN` for
-ELF, `@loader_path` for dyld (`../BUILD_PLAYBOOK.md` §7); the wrong one builds fine
+ELF, `@loader_path` for dyld (`cmake-and-linking.md` §7); the wrong one builds fine
 and cannot resolve at load.
 
 **MSVC.** The CUDA host compiler must use the same runtime library as the rest of

@@ -11,7 +11,7 @@ the default: unless both sides declare a style in
 working space it uses and expects the same space back. OFX 1.5 added the opt-in
 contract in `ofxColour.h` (`kOfxImageClipPropColourspace`,
 `kOfxImageEffectActionGetOutputColourspace`), and Resolve 21 implements it
-(**[B]**, `../HOST_COMPATIBILITY_MATRIX.md` §2.9). Either way the rules below hold;
+(**[B]**, `host-resolve.md` §2.9). Either way the rules below hold;
 the first one is what a declared style turns from advice into a contract:
 
 1. **Never bake in a transform you were not asked for.** A "gain" that silently
@@ -59,7 +59,7 @@ it was built for.
   trusting a memory of how it used to behave.
 - Resolve's Color page evaluates OFX in its own pipeline, and where alpha lands
   there has changed between releases. Test explicitly; see
-  `../HOST_COMPATIBILITY_MATRIX.md`.
+  `references/host-resolve.md`.
 
 ---
 

@@ -309,7 +309,7 @@ is external (**B**).
    reach for a model here) therefore throws on the first frame, by design.
    Supporting one means returning the output shape from `Run()`, mapping it into
    the output RoD in `AiCore`, and scaling the source RoD in
-   `getRegionOfDefinition` — see `../ARCHITECTURE_AND_CUDA_PIPELINE.md` §7 for the
+   `getRegionOfDefinition` — see `roi-tiling-and-render-hints.md` §7 for the
    RoD rules and §5 of this document for the packing side.
 6. A model whose output is not an image — detection (`[1, 4+N, anchors]`),
    classification (`[1, classes]`), segmentation masks, embeddings — does not fit
@@ -333,7 +333,7 @@ through. A plug-in a colourist actually uses takes what the host gives it.
   the matte as image content, so a denoiser learns to preserve the fringe it was
   supposed to remove. Read `kOfxImageEffectPropPreMultiplication`, divide by
   alpha before packing and multiply back after unpacking, and leave pixels with
-  `A == 0` at zero. `../ARCHITECTURE_AND_CUDA_PIPELINE.md` §8 states the rule per
+  `A == 0` at zero. `colour-and-alpha.md` §8 states the rule per
   operation; this is the inference instance of it.
 - **Keep the conversion OFX-free.** Depth and alpha conversion belongs beside
   `Pack*`/`Unpack*`, on plain buffers addressed through the host's signed row
@@ -670,7 +670,7 @@ in a host). The four rules that matter:
 Test it as a bound, not as a pixel value: "ink stays inside the plate", "nothing
 past the right edge", "the box outline is in the top half of the tile". A centred
 probe hides a mirror, and "bytes changed" hides everything else
-([`../TESTING_STRATEGY.md`](../TESTING_STRATEGY.md) §5, L3). The checking side is in
+([`testing-layers.md`](testing-layers.md) §5, L3). The checking side is in
 [`testkit/README.md`](../testkit/README.md): `--image-origin top|bottom` and
 `--negative-pitch` set the two axes independently, the two top-down layouts are
 negative controls, and a pass-through copy satisfies all four while a mark drawn
@@ -685,10 +685,10 @@ Cited back from where the question arises: [`../SKILL.md`](../SKILL.md) §5 (wri
 back is the same pitch arithmetic against the destination) and
 [`../SKILL.md`](../SKILL.md) §8 (a tiled plug-in that draws has a seam bug and a
 placement bug, and they are different), and
-[`../REFERENCE_READING_GUIDE.md`](../REFERENCE_READING_GUIDE.md) §3.3 and §3.6, which
+[`reference-projects.md`](reference-projects.md) §3.3 and §3.6, which
 teach the addressing rules and the tile protocol this section extends. The full rules — clipping to window and
 bounds, premultiplied compositing, and `stb_easy_font` for glyphs without a GUI —
-are [`../ARCHITECTURE_AND_CUDA_PIPELINE.md`](../ARCHITECTURE_AND_CUDA_PIPELINE.md) §13.
+are [`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §13.
 
 ---
 
