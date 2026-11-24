@@ -23,16 +23,18 @@ tools/sweep-vram.sh model.onnx              # largest tile before ORT OOM (needs
 `onnx` to write the files and `onnxruntime` + `numpy` for its self-test; neither
 is a dependency of the suites.
 
+---
+
 ## Read order
 
 | Task | Read, in this order | Skip |
 |---|---|---|
-| New plug-in | `SKILL.md` §4 and §6 → `BUILD_PLAYBOOK.md` → `PATTERN_INDEX.md` §1, then copy `templates/minimal-ofx/` | `AI_MODEL_INTEGRATION.md`, performance synthesis |
-| Debug a symptom | `PATTERN_INDEX.md` §2 (runtime and compile/link) → `SKILL.md` §7 → `ARCHITECTURE_AND_CUDA_PIPELINE.md` | template sources, until the table names a file |
-| AI-model decision | `AI_MODEL_INTEGRATION.md` §1–§2 → `PATTERN_INDEX.md` §1 → `templates/onnx-inference-ofx/` | CUDA kernel detail |
-| Host-specific behaviour | `HOST_COMPATIBILITY_MATRIX.md`, whose grades are A/B/C | anything claiming a host was tested |
-| Check a [B] claim | `FIELD_TEST_WINDOWS_CUDA.md`: the 2026-11-22 run, its logs, its limits | the design docs, until the evidence contradicts them |
+| New plug-in | `SKILL.md` §1 and §4 -> `references/cmake-and-linking.md` -> copy `templates/minimal-cuda-ofx/` | host quirks until a host misbehaves |
+| Debug a symptom | `references/debugging-and-symptoms.md` -> `references/pattern-index.md` -> `references/cuda-streams-and-memory.md` or `references/pixel-formats-and-pitch.md` | the design docs, until the symptom names a file |
+| AI-model decision | `references/ai-architectures-and-runtimes.md` -> `references/onnx-and-tensorrt.md` -> `templates/onnx-inference-ofx/` | CUDA kernel detail |
+| Check a `[B]` claim | `references/verification-status.md` -> its `evidence/` link | the design docs, until the evidence contradicts them |
 
+---
 ## Hard rules
 
 1. **Never claim a host render is verified beyond what ran.** `NatronRenderer` has
@@ -41,7 +43,7 @@ is a dependency of the suites.
    their claims stay unverified.
 2. **Claim nothing a compiler, `nm` or a test did not prove.** `[V]` means the
    command ran in this repository; `[I]` means inferred; `[B]` means external
-   evidence. Labels are defined in `BUILD_PLAYBOOK.md`.
+   evidence. Labels are defined in `references/cmake-and-linking.md`.
 3. **Measure before wording a performance claim.** The gain kernel's throughput,
    the CPU loop it replaces and the cost of a frame copy are measured on one
    RTX 3060 (`evidence/2026-11-24-windows/`); nothing is measured on a second GPU,
@@ -52,7 +54,7 @@ is a dependency of the suites.
 5. **Never commit build output** (`build/`, `*.ofx`, `*.ptx`, `.ofx-ref/`).
 
 Labels: **[V]** verified in this repository, **[I]** inferred, **[B]** external
-evidence. The full definitions are in `BUILD_PLAYBOOK.md`.
+evidence. The full definitions are in `references/cmake-and-linking.md`.
 
-What actually runs, with counts: `TESTING_STRATEGY.md` §13. What a build proves,
-and what it cannot: `BUILD_PLAYBOOK.md` §5.
+What actually runs, with counts: `references/testing-layers.md` §13. What a build proves,
+and what it cannot: `references/debugging-and-symptoms.md` §5.
