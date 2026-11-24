@@ -8,6 +8,7 @@ rem
 rem Linux runs the whole story through g++, nm -D, readelf, dlopen and valgrind.
 rem None of those exist on Windows, so this script runs the equivalents that do:
 rem
+rem   [0/3] build     build.bat, which also verifies the artifact
 rem   [1/3] artifact  testkit\check-ofx-artifact.bat --strict  (dumpbin, cuobjdump)
 rem   [2/3] kernels   nvcc test\gpu-kernel-test.cu, executed on the real GPU -
 rem                   the only check in this repository that runs SASS

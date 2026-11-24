@@ -122,11 +122,12 @@ if [[ "${windows}" == "1" ]]; then
   echo "  docs drift check                (tools/check-docs.py)"
   echo "  reference build + artifact      (minimal-ofx, dumpbin)"
   echo "  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)"
-  echo "  GPU kernels                     (skipped under CPU_ONLY=1)"
+  echo "  GPU kernels                     (as test/run-tests.bat reported above)"
   if [[ "${onnx}" == "0" ]]; then
     echo "  skipped: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
   fi
-  echo "Negative controls are separate: testkit/run-negative-controls.bat"
+  echo "Negative controls are POSIX-only: testkit/run-negative-controls.sh"
+  echo "RUN_VALGRIND and SANITIZE are POSIX-only too; this route has no valgrind"
   echo "=================================================================="
   exit 0
 fi

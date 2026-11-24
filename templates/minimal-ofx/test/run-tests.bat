@@ -9,8 +9,9 @@ rem Linux runs this through g++, nm -D, readelf, dlopen and valgrind. None of
 rem those exist in a Windows developer shell, so the same checks are expressed
 rem with the tools that do:
 rem
-rem   [1/3] artifact  testkit\check-ofx-artifact.bat --strict (dumpbin, cuobjdump)
-rem   [2/3] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
+rem   [1/3] build     build.bat, then the artifact check it already runs
+rem   [2/3] artifact  testkit\check-ofx-artifact.bat --strict (dumpbin, cuobjdump)
+rem   [3/3] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
 rem                   host protocol as dlopen: load, describe, create, render,
 rem                   destroy, unload, twice, with the negative cases
 rem

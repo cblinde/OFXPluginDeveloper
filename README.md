@@ -60,7 +60,8 @@ templates/minimal-ofx/
   src/Plugin.cpp                     the smallest host-loadable plug-in
   exports.map                        version script: exactly two dynamic symbols
   build.sh / build.bat               fetch headers, build, inspect the artifact
-  test/run-tests.sh  .bat            contract harness against the reference plug-in
+  test/run-tests.sh                  contract harness against the reference plug-in
+  test/run-tests.bat                 the same, through LoadLibraryExW and dumpbin
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp       OFX host wrapper: params, dispatch, isIdentity
