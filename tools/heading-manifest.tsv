@@ -249,7 +249,7 @@ SKILL.md	5.6 Named traps	references/ofx-api-constants.md
 SKILL.md	6. Build and packaging standards	references/packaging-and-install.md	
 SKILL.md	7. Debugging quick reference	references/debugging-and-symptoms.md	
 SKILL.md	8. Region of interest, and the 1.5.1 render hints	references/roi-tiling-and-render-hints.md	
-SKILL.md	9. Anti-patterns	references/debugging-and-symptoms.md	
+SKILL.md	9. Anti-patterns	references/debugging-and-symptoms.md	Anti-patterns and their tells
 SKILL.md	10. Checklists	references/checklists.md	
 SKILL.md	11. Mandatory git workflow	SKILL.md	
 SKILL.md	12. Verification status of this skill	SKILL.md	

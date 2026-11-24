@@ -252,55 +252,41 @@ does with it.
 | --- | --- | --- |
 | Black frame, no error | GPU advertised but not compiled in; or `kOfxImageEffectPropCudaEnabled` read as a string | Advertise only under `#ifdef`; use `propGetInt` **[S]** |
 | Plugin vanished from the menu | Host blacklisted it after a crash | Clear the host's plugin cache (`debugging-and-symptoms.md` §1) |
-| Renders on CPU, "CUDA is on" | Device code not in the binary | §8, `cuobjdump`/`nm` |
+| Renders on CPU, "CUDA is on" | Device code not in the binary | `testing-layers.md` §3, `cuobjdump`/`nm` |
 | Image sheared on odd widths | `width * sizeof(pixel)` instead of the host pitch | Use `rowBytes`, widen to `int64_t` **[S]** |
 | Flipped vertically | Negative `rowBytes` treated as unsigned | Signed pitch, arithmetic through `char*` **[S]** |
 | First frame hitches, then fine | Module load + PTX JIT on first launch | `CUDA_MODULE_LOADING=EAGER`, ship SASS for the target **[D]** |
 | Other nodes stall when yours renders | `cudaMalloc`/`cudaFree`/`cudaDeviceSynchronize` inside render | Cache allocations; never sync when a stream was given **[D]** |
 | Host crash minutes later, elsewhere | Plugin destroyed a borrowed GPU object | Never own the stream/queue **[R]** |
-| Different result on GPU vs CPU | Two divergent copies of the maths | §6.4, shared definition or tolerance test |
+| Different result on GPU vs CPU | Two divergent copies of the maths | shared definition or tolerance test |
 | Slow only in Fusion | Different host pipeline, not your kernel | Establish the page first **[R]** |
 
 ---
 
-## 7. Anti-patterns
+## 7. Anti-patterns and their tells
 
-| Anti-pattern | Why it fails | Do instead |
-| --- | --- | --- |
-| `width * 4 * sizeof(float)` as the stride | Hosts pad rows (Resolve renders 208×117 thumbnails through 256-byte-aligned allocators) | `getRowBytes()`, signed 64-bit |
-| `cudaDeviceSynchronize()` in `render` | Explicitly forbidden; serialises the host's whole GPU pipeline | Enqueue on the host stream; sync only the stream you used, only when none was given |
-| `cudaMemcpy` device→device to a private buffer | Doubles bandwidth and defeats the GPU path | Read the host pointer directly |
-| `cudaMalloc` in `render` | Alloc/free per frame destroys throughput and fragments the allocator | Allocate once per sequence/size, reuse, release in `endSequenceRender()` or `purgeCaches()` |
-| Freeing device memory in the destructor | The host may destroy the instance while tearing down its GPU stack; a CUDA call there can fault | Keep the destructor free of CUDA calls; release in `endSequenceRender`/`purgeCaches` |
-| Static CUDA state in globals | Multiple instances share it; instances render on different threads | Per-instance members, or a device-keyed cache with a mutex |
-| Catching everything and returning `kOfxStatOK` | The host composites a wrong frame with no log | Map failures to specific `kOfxStat*` codes |
-| `new` + manual `delete` around `fetchImage` | Any intervening `throw` leaks the host image | `std::unique_ptr` at construction |
-| Omitting `setGPURenderArgs` | The CUDA path silently never runs | Always call it before `process()` |
-| Different maths in CPU and GPU paths | Divergence found by a client | One header/function as source of truth |
-| Testing only in the viewer | Viewer path ≠ render path | Render to file, and to the delivery codec |
-| Drawing the overlay before tiling | The overlay enters the model's receptive field and changes with tile size | Draw after inference, once per frame |
+Reviewing someone else's plug-in is mostly a grep exercise: each tell below is a
+search, and the row says what the code found that way will do to a frame. The
+list is ordered roughly by how often it is the cause.
 
----
-
-## 8. Anti-patterns and their tells
-
-The "tell" column is what to search for when reviewing someone else's plug-in —
-each one is a single grep away.
-
-| Anti-pattern | Tell in the code | Why it fails |
-|---|---|---|
-| Pitch assumed tight | `width * 4 * sizeof(float)`, or `width * 16` | Hosts pad scanlines; the image shears at odd sizes and looks fine in one host |
-| Base pointer treated as the render window | no `(window.y1 - bounds.y1)` term before the row multiply | Offset renders (crop, RoD) shift the image |
-| `int` pitch arithmetic | `int pitch = getRowBytes();` | Overflow on large frames |
-| `getPixelAddress()` per pixel | call inside the `x` loop | Out-of-line call per pixel in the Support library |
-| `cudaDeviceSynchronize()` | `grep -rn cudaDeviceSynchronize src/` | Forbidden by the spec; serialises the host's GPU pipeline |
-| Device→device `cudaMemcpy` into a private buffer | `cudaMemcpy` in a render path with device pointers | Doubles bandwidth and defeats zero-copy |
-| Allocation in `render()` | `cudaMalloc`/`new`/`std::vector` growth inside the render action | Per-frame cost and fragmentation; breaks `FullySafe` claims |
-| Silent failure | `catch (...) { return kOfxStatOK; }` or a bare `return` | Black frame, no log, nothing to diagnose |
-| Raw `fetchImage` pointer | `OFX::Image* img = clip->fetchImage(t);` then `delete` | Any intervening `throw` leaks a host image |
-| Missing `setGPURenderArgs` | `processor.process()` without it | The CUDA path silently never runs; the CPU path hides it |
-| Tile claim without context | `setSupportsTiles(true)` plus no `getRegionsOfInterest` | Host hands over a tile; the effect treats it as a whole frame |
-| Global session/state | `static` session, static scratch buffer | Two instances or two render threads share it |
+| Anti-pattern | Tell in the code | Why it fails | Do instead |
+|---|---|---|---|
+| Pitch assumed tight (`width * 4 * sizeof(float)` as the stride) | `width * 4 * sizeof(float)`, or `width * 16` | Hosts pad rows - Resolve renders 208x117 thumbnails through 256-byte-aligned allocators - so the image shears at odd sizes and looks fine in one host | `getRowBytes()`, signed 64-bit |
+| Base pointer treated as the render window | no `(window.y1 - bounds.y1)` term before the row multiply | Offset renders (crop, RoD) shift the image | Offset by the window's position inside the bounds before the row multiply |
+| `int` pitch arithmetic | `int pitch = getRowBytes();` | Overflow on large frames | `int64_t` for the pitch and every offset derived from it |
+| `getPixelAddress()` per pixel | call inside the `x` loop | An out-of-line call per pixel in the Support library | Compute the first address once, then advance by the pitch |
+| `cudaDeviceSynchronize()` in `render` | `grep -rn cudaDeviceSynchronize src/` | Explicitly forbidden; serialises the host's whole GPU pipeline | Enqueue on the host stream; sync only the stream you used, only when none was given |
+| Device-to-device `cudaMemcpy` into a private buffer | `cudaMemcpy` in a render path with device pointers | Doubles bandwidth and defeats zero-copy | Read the host pointer directly |
+| Allocation in `render()` | `cudaMalloc`/`new`/`std::vector` growth inside the render action | Per-frame cost and fragmentation; breaks `FullySafe` claims | Allocate once per sequence/size, reuse, release in `endSequenceRender()` or `purgeCaches()` |
+| Freeing device memory in the destructor | `cudaFree` in the destructor | The host may destroy the instance while tearing down its GPU stack; a CUDA call there can fault | Keep the destructor free of CUDA calls; release in `endSequenceRender`/`purgeCaches` |
+| Static CUDA state, or a session in a global | `static` session, static scratch buffer | Two instances or two render threads share it | Per-instance members, or a device-keyed cache with a mutex |
+| Catching everything and returning `kOfxStatOK` | `catch (...) { return kOfxStatOK; }` or a bare `return` | The host composites a wrong frame with no log | Map failures to specific `kOfxStat*` codes |
+| `new` + manual `delete` around `fetchImage` | `OFX::Image* img = clip->fetchImage(t);` then `delete` | Any intervening `throw` leaks the host image | `std::unique_ptr` at construction |
+| Omitting `setGPURenderArgs` | `processor.process()` without it | The CUDA path silently never runs; the CPU path hides it | Always call it before `process()` |
+| Tile claim without context | `setSupportsTiles(true)` plus no `getRegionsOfInterest` | The host hands over a tile and the effect treats it as a whole frame | Implement `getRegionsOfInterest` and render only what was asked for |
+| Different maths in the CPU and GPU paths | two copies of the loop, one under `#ifdef` | Divergence found by a client | One header or function as the source of truth |
+| Testing only in the viewer | no render-to-file step anywhere in the plan | The viewer path is not the render path | Render to file, and to the delivery codec |
+| Drawing the overlay before tiling | overlay drawn inside the tile loop | The overlay enters the model's receptive field and changes with tile size | Draw after inference, once per frame |
 
 ---
 
