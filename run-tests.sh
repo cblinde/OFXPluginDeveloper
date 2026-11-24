@@ -180,6 +180,19 @@ else
   echo "== test: onnx-inference-ofx (skipped: ONNXRUNTIME_ROOT unset) =="
 fi
 
+# The controls assert their own failures and exit 0 when every fault is caught,
+# so running them here keeps a green run green. They need a C compiler, which a
+# suite run already implies; without one the stage says so instead of vanishing.
+echo
+if command -v cc >/dev/null 2>&1; then
+  echo "== negative controls: broken plug-ins must fail, the pattern must pass =="
+  "${ROOT}/testkit/run-negative-controls.sh"
+  negative_controls="ran"
+else
+  echo "== negative controls (skipped: no cc) =="
+  negative_controls="skipped"
+fi
+
 echo
 echo "=================================================================="
 echo "all suites passed, every template that was built:"
@@ -190,5 +203,9 @@ echo "  artifact + fake host (all)      memory            (all)"
 if [[ "${onnx}" == "0" ]]; then
   echo "  skipped: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
 fi
-echo "Negative controls are separate: testkit/run-negative-controls.sh"
+if [[ "${negative_controls}" == "ran" ]]; then
+  echo "  negative controls               (testkit/run-negative-controls.sh)"
+else
+  echo "  skipped: negative controls      (no cc)"
+fi
 echo "=================================================================="

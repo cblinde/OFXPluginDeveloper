@@ -323,9 +323,10 @@ fails the build rather than turning the check into a skip.
 
 `testkit/run-negative-controls.sh` proves the harness is not a rubber stamp, and
 `testkit/run-negative-controls.bat` is the same fifteen controls on Windows. The
-`.bat` runs inside `./run-tests.sh` on that platform; the shell script stays a
-manual step there. Both exit 0 only when every fault is caught, so neither turns
-a green run red on purpose.
+`.bat` runs there. `./run-tests.sh` runs both, each on its own platform, as the
+last stage before the summary, and skips the stage by name when there is no C
+compiler. Both exit 0 only when every fault is caught, so neither turns a green
+run red on purpose.
 
 `--roi-context` gets a pair there rather than a single control, because one build
 cannot prove it. The same stub (`negative-controls/stub_roi_context.c`) applies a

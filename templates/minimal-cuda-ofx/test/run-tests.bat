@@ -23,7 +23,8 @@ rem substitute for the PTX count.
 rem
 rem Environment:
 rem   OFX_SOURCE_DIR  openfx checkout; else read from build\CMakeCache.txt
-rem   CUDA_ARCHS      e.g. 86; else the GPU's own compute capability, else 75
+rem   CUDA_ARCHS      e.g. 86, or 86;89 for several; else the GPU's own
+rem                   compute capability, else 75
 rem   CPU_ONLY=1      skip the GPU step and do not demand cubins
 rem ---------------------------------------------------------------------------
 setlocal EnableExtensions EnableDelayedExpansion
@@ -103,10 +104,17 @@ if not defined ARCHS (
     echo [test] no GPU reported by nvidia-smi; building for sm_75
   )
 )
-rem nvcc wants a list of numbers, one sm_ per entry.
+rem One -gencode per architecture: repeating -arch is a fatal redefinition in
+rem nvcc, and CUDA_ARCHS may be the CMake-style list ("86;89"), which used to
+rem reach the compiler as "-arch=sm_86;89" and fail to compile at all. Semicolons
+rem become separators before the loop so both forms work.
+set "ARCHS=!ARCHS:;= !"
 set "NVARCH="
-for %%A in (!ARCHS!) do set "NVARCH=!NVARCH! -arch=sm_%%A"
-if not defined NVARCH set "NVARCH=-arch=sm_!ARCHS!"
+for %%A in (!ARCHS!) do set "NVARCH=!NVARCH! -gencode arch=compute_%%A,code=sm_%%A"
+if not defined NVARCH (
+  echo error: CUDA_ARCHS="%CUDA_ARCHS%" named no architecture
+  goto :error
+)
 
 nvcc -DOFXPLUGIN_WITH_CUDA=1 !NVARCH! -O2 -std=c++17 "%HERE%\gpu-kernel-test.cu" -o "%BUILD_DIR%\gpu-kernel-test.exe" || goto :error
 "%BUILD_DIR%\gpu-kernel-test.exe" || goto :error

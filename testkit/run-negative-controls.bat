@@ -203,6 +203,12 @@ set "STATUS=%ERRORLEVEL%"
 type "%OUT%"
 if /i "%MODE%"=="fail" goto :c_must_fail
 if /i "%MODE%"=="mention" goto :c_must_mention
+if /i "%MODE%"=="pass" goto :c_pass_check
+echo   CONTROL FAILED: unknown mode "%MODE%" - expected fail, pass or mention >&2
+set "FAILED=1"
+exit /b 0
+
+:c_pass_check
 if not "%STATUS%"=="0" goto :c_false_red
 echo   passed, as a plug-in following the pattern must
 exit /b 0
@@ -251,19 +257,28 @@ exit /b 2
 
 :no_msvc
 echo error: no vcvars64.bat with a C++ toolset found; run from a Developer Command Prompt >&2
+call :cleanup
 exit /b 2
 
 :bad_harness
 echo error: the contract harness failed to build >&2
+call :cleanup
 exit /b 2
 
+:cleanup
+rem Every failure path calls this: without it a broken setup - no compiler, no
+rem harness - left the DLLs, the harness and the fixture in %TEMP% for good,
+rem while a run that reached the controls removed them.
+if defined TMPDIR if exist "%TMPDIR%" rmdir /s /q "%TMPDIR%" >nul 2>&1
+exit /b 0
+
 :bad_stub
-rmdir /s /q "%TMPDIR%" >nul 2>&1
+call :cleanup
 exit /b 2
 
 :bad_fixture
 echo error: the varying source fixture was not written (expected 36864 bytes) >&2
-rmdir /s /q "%TMPDIR%" >nul 2>&1
+call :cleanup
 exit /b 2
 
 :controls_failed

@@ -18,10 +18,12 @@
 # honoured build it could be unsatisfiable. The tiled pair covers the tolerance
 # variant without needing the ONNX template's model or bundle.
 #
-# The Windows counterpart, run-negative-controls.bat, builds the same fifteen
-# controls with MSVC and is wired into ../run-tests.sh on that platform, where
-# the shell route cannot run at all. This script stays a manual step on POSIX so
-# a run does not depend on a C compiler beyond the ones the suites already need:
+# ../run-tests.sh runs this after the template suites, and its Windows
+# counterpart - run-negative-controls.bat, the same fifteen controls built with
+# MSVC - after them on that platform. Both exit 0 when every fault is caught, so
+# neither turns a green run red; run-tests.sh skips this stage by name when no C
+# compiler is installed rather than pretending it ran. Run it directly to read
+# the full harness output for one control:
 #
 #   testkit/run-negative-controls.sh [/path/to/openfx]
 set -uo pipefail

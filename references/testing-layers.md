@@ -404,7 +404,8 @@ out/contract_test out/MyPlugin.ofx \
 
 A harness that has only ever passed is untested. Fifteen controls, run by
 `testkit/run-negative-controls.sh`, with `testkit/run-negative-controls.bat` as
-the Windows counterpart that `./run-tests.sh` runs there as a stage of its own.
+the Windows counterpart. `./run-tests.sh` runs each on its own platform as the
+last stage before the summary, and names the skip when no C compiler is present.
 Both exit 0 only when every fault is caught, so the expected failures are
 asserted rather than left to turn a run red:
 
@@ -767,8 +768,9 @@ cd templates/minimal-cuda-ofx && ./build.sh && ./test/run-tests.sh
 cd templates/onnx-inference-ofx && ONNXRUNTIME_ROOT=/path/to/ort \
   ./build.sh && ./test/run-tests.sh
 
-# Proof that the harness detects faults. On Windows this is a stage of ./run-tests.sh
-# above; on POSIX it is a manual step. Both exit 0 when every fault is caught.
+# Proof that the harness detects faults. ./run-tests.sh above runs one of these
+# on its own platform; run them directly to read a single control's full output.
+# Both exit 0 when every fault is caught.
 testkit/run-negative-controls.sh
 cmd //c testkit/run-negative-controls.bat      # the same controls, Windows
 ```
