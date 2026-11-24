@@ -335,9 +335,11 @@ Hosts pad scanlines. Concretely, RGBA32F is 16 bytes/pixel:
 | 208 (thumbnail) | 3 328 B | 3 328 B | none |
 | 117-wide odd tile | 1 872 B | 1 920 B | 48 B/row ⇒ visible skew |
 
-And a stride can be **negative**: a vertically flipped image is legally
-represented by pointing at the last row and using `-rowBytes`. Signed 64-bit
-arithmetic handles it; `size_t` does not.
+And a stride can be **negative**, for CPU images only: `ofxImageEffect.h`
+allows a flipped image to be represented by pointing at the last row and using
+`-rowBytes`, and explicitly excludes CUDA/Metal/OpenCL Buffers (OpenCL Images
+have no row bytes at all). Signed 64-bit arithmetic handles it; `size_t` does
+not.
 
 ### Component and depth matrix
 
@@ -433,8 +435,14 @@ differ.
 
 ## 8. Colour space and alpha
 
-OFX deliberately has **no colour management**. The host hands you pixels in
-whatever working space it uses and expects the same space back. Therefore:
+OFX had **no colour management** before 1.5, and that legacy behaviour is still
+the default: unless both sides declare a style in
+`kOfxImageEffectPropColourManagementStyle`, the host hands you pixels in whatever
+working space it uses and expects the same space back. OFX 1.5 added the opt-in
+contract in `ofxColour.h` (`kOfxImageClipPropColourspace`,
+`kOfxImageEffectActionGetOutputColourspace`), and Resolve 21 implements it
+(**[B]**, `HOST_COMPATIBILITY_MATRIX.md` §2.9). Either way the rules below hold;
+the first one is what a declared style turns from advice into a contract:
 
 1. **Never bake in a transform you were not asked for.** A "gain" that silently
    converts Rec.709 to linear is a bug in every project that already works in
@@ -573,10 +581,16 @@ and PTX for the newest only.
 
 | | `cudart` (shared) | `cudart_static` |
 | --- | --- | --- |
-| Depends on runtime DLL/SO at load | Yes | No |
+| Depends on runtime DLL/SO at load | Yes on Linux and older toolkits | No |
 | CUDA context | Shared with the host | Per-plugin instance of the runtime |
 | Failure mode | Missing/incompatible `libcudart` → plugin fails to load | Two runtimes in one process; undefined behaviour if they both manage the same allocations |
 | Recommendation | Default | Only for closed deployment targets, and never alongside another dynamic-cudart plugin |
+
+On **Windows with CUDA 13** the packaged runtime is a hybrid: a built template's
+import table lists no `cudart64_*.dll` and uses `cudart_hybrid64.dll`, while the
+device code is present and the module loads (**[B]**, `SKILL.md` §6). "Depends at
+load" is therefore a Linux/older-toolkit statement, not a universal one; check the
+import list of the binary you ship.
 
 The mismatch that bites: the host ships its own CUDA runtime version (Resolve
 bundles one), your plugin links another, and the two disagree about the ABI of
