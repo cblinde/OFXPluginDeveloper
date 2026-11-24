@@ -151,7 +151,8 @@ cd templates\minimal-cuda-ofx
 
 `build.bat` has no bootstrap — Windows toolkits come from an installer. It probes
 `CUDA_HOME`, `CUDA_PATH`, `where nvcc` and the default
-`%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v12.9`, and if all of those
+the newest series under `%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v*`,
+and if all of those
 miss it prints the paths it searched plus
 [https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads)
 before failing, so a CPU-only build is never produced silently.
@@ -193,7 +194,7 @@ cache variables, so either layer can be driven directly.
 | Variable | Accepted by | Default | Meaning |
 | --- | --- | --- | --- |
 | `CUDA_HOME` | `build.sh` | unset | Toolkit root containing `bin/nvcc`. Discovery order when unset: `CUDA_HOME`, then `nvcc` on `PATH`, then `/usr/local/cuda`, `/usr/local/cuda-*`, `/opt/cuda`, then a directory bootstrapped by this script. Passed on as `CMAKE_CUDA_COMPILER` and `CUDAToolkit_ROOT`. |
-| `CUDA_PATH` | `build.bat` | unset | Windows equivalent of `CUDA_HOME`. Discovery order: `CUDA_HOME`, `CUDA_PATH`, `where nvcc`, then `%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v12.9`. |
+| `CUDA_PATH` | `build.bat` | unset | Windows equivalent of `CUDA_HOME`. Discovery order: `CUDA_HOME`, `CUDA_PATH`, `where nvcc`, then the newest series under `%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v*` (`dir /o-n`). |
 | `CUDA_ARCHS` | both | unset | Semicolon list, e.g. `86;89`, passed as `CMAKE_CUDA_ARCHITECTURES`. When unset, CMake uses `75;80;86;89;90`, plus `100;120` if the toolkit is ≥ 12.8. |
 | `OFX_SOURCE_DIR` | both, and the CMake cache | empty | Use an existing OpenFX tree instead of fetching. It must contain `include/ofxImageEffect.h` — for Resolve's SDK that is its `OpenFX-1.4` subdirectory, not the `Support/Developer/OpenFX` parent. CMake aborts with a message if the file is missing; the offline build works with this set. |
 | `OFX_CUDA_TOOLKIT_DIR` | `build.sh` | `${XDG_CACHE_HOME:-$HOME/.cache}/ofx-cuda-toolkit` | Where the bootstrap puts `debs/`, `stage/` and the `home` symlink. |
@@ -292,8 +293,8 @@ Plugins. Details in `references/debugging-and-symptoms.md` §7.
 
 | | Linux (verified) | Windows |
 | --- | --- | --- |
-| Compiler | GCC 13.3 as nvcc's host compiler | MSVC 2022 (x64) |
-| CUDA | 12.9 series (nvcc 12.9.41 verified), or `--bootstrap-cuda` | 12.9 toolkit |
+| Compiler | GCC 13.3 as nvcc's host compiler | MSVC 2022 or 2026 (x64). CUDA 13 accepts host compiler 19.44 only, which `build.bat` pins; MSVC 19.50 needs `--allow-unsupported-compiler` |
+| CUDA | 12.9 series (nvcc 12.9.41 verified), or `--bootstrap-cuda` | 13.0 (nvcc 13.0.48 verified), or any series the newest-first scan finds |
 | Bootstrap tooling | `curl`, `tar`, `gzip`, `awk`, binutils (`ar`, `nm`) | not applicable — no bootstrap on Windows |
 | CMake | ≥ 3.21 (verified 3.31.6) | ≥ 3.21 |
 | OpenFX | `OFX_Release_1.5.1`, fetched automatically or `OFX_SOURCE_DIR` | same |

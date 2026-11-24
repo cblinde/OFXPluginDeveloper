@@ -184,6 +184,16 @@ EOF
     fi
   fi
   echo "[build] CUDA toolkit: ${cuda_home}"
+  # This script lets CMake pick its Visual Studio generator, which uses the
+  # newest MSVC toolset; nvcc 13 accepts 19.44 and refuses 19.50 with C1189.
+  # build.bat is the Windows route because it pins the toolset and uses Ninja.
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*)
+      echo "[hint] Windows: the GPU path is built by build.bat, which pins the MSVC" >&2
+      echo "       19.44 toolset nvcc 13 accepts; this script leaves the toolset to" >&2
+      echo "       the VS generator, which picks the newer one and fails with C1189." >&2
+      ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------

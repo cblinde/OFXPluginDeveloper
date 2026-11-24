@@ -44,7 +44,14 @@ if not defined CUDA_FOUND (
     )
   )
 )
-if not defined CUDA_FOUND if exist "%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin\nvcc.exe" set "CUDA_FOUND=%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+rem Newest installed series. `dir /o-n` sorts the version directories
+rem descending, so the first one with an nvcc wins: v13.0 before v12.9, and a
+rem series that does not exist yet needs no edit here.
+if not defined CUDA_FOUND if exist "%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA" (
+  for /f "delims=" %%D in ('dir /b /ad /o-n "%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA" 2^>nul') do (
+    if not defined CUDA_FOUND if exist "%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\%%D\bin\nvcc.exe" set "CUDA_FOUND=%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\%%D"
+  )
+)
 
 if "%CPU_ONLY%"=="1" (
   echo [build] CPU_ONLY=1: building without the CUDA path
@@ -55,18 +62,18 @@ if not defined CUDA_FOUND if not "%CPU_ONLY%"=="1" (
   echo.
   echo error: no CUDA toolkit found, so the CUDA render path cannot be compiled.
   echo.
-  echo   Install the NVIDIA CUDA Toolkit ^(12.9 verified^) from
+  echo   Install the NVIDIA CUDA Toolkit from
   echo     https://developer.nvidia.com/cuda-downloads
   echo   then re-run this script, or point it at an existing install:
   echo.
-  echo     set CUDA_HOME=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9
+  echo     set CUDA_HOME=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
   echo     build.bat Release
   echo.
   echo   Or build only the CPU path, on purpose:
   echo.
   echo     set CPU_ONLY=1 ^&^& build.bat Release
   echo.
-  echo   Searched: %%CUDA_HOME%%, %%CUDA_PATH%%, PATH, %%ProgramFiles%%\NVIDIA GPU Computing Toolkit\CUDA\v12.9
+  echo   Searched: %%CUDA_HOME%%, %%CUDA_PATH%%, PATH, %%ProgramFiles%%\NVIDIA GPU Computing Toolkit\CUDA\v*
   echo.
   exit /b 2
 )
