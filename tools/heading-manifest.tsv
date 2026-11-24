@@ -8,7 +8,14 @@
 # numbering was renumbered on purpose and is ignored when matching, so a
 # section that merely changes number still passes.
 #
-# headings: 263
+# A heading that lived in more than one root document names all of them in the
+# first column, comma separated: references/reference-projects.md inherited
+# "Contents" from both PATTERN_INDEX.md and REFERENCE_READING_GUIDE.md, and one
+# row carries that provenance. Two rows with the same home and heading are
+# rejected by tools/check-docs.py, because a set-based dedupe that drops one of
+# them leaves no row to check and a plausible count.
+#
+# headings: 262
 AGENTS.md	AGENTS.md	AGENTS.md	
 AGENTS.md	Commands	AGENTS.md	
 AGENTS.md	Read order	AGENTS.md	
@@ -159,7 +166,6 @@ HOST_COMPATIBILITY_MATRIX.md	6. Feature detection, not host sniffing	references/
 HOST_COMPATIBILITY_MATRIX.md	7. The compatibility test you should actually run	references/host-detection-and-acceptance.md	
 HOST_COMPATIBILITY_MATRIX.md	8. Known real-world failure, as a case study	references/host-resolve.md	
 PATTERN_INDEX.md	Pattern index	references/pattern-index.md	
-PATTERN_INDEX.md	Contents	references/reference-projects.md	
 PATTERN_INDEX.md	1. By task ("I need to…")	references/pattern-index.md	
 PATTERN_INDEX.md	2. By symptom ("the render is wrong")	references/debugging-and-symptoms.md	
 PATTERN_INDEX.md	Compile and link symptoms	references/debugging-and-symptoms.md	
@@ -202,7 +208,7 @@ README.md	What has actually been verified	README.md
 README.md	Repository layout	README.md	Where everything lives
 README.md	Licence	README.md	
 REFERENCE_READING_GUIDE.md	Reference reading guide	references/reference-projects.md	
-REFERENCE_READING_GUIDE.md	Contents	references/reference-projects.md	
+PATTERN_INDEX.md,REFERENCE_READING_GUIDE.md	Contents	references/reference-projects.md	
 REFERENCE_READING_GUIDE.md	1. The three tiers	references/reference-projects.md	
 REFERENCE_READING_GUIDE.md	2. The five-seam skeleton	references/reference-projects.md	
 REFERENCE_READING_GUIDE.md	3. Patterns to look for	references/reference-projects.md	

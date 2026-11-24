@@ -34,7 +34,10 @@ What it checks, and why each one exists:
    pre-restructure documents carried and the file that holds it now. A heading
    that stops existing is a failed check, so the one failure mode a
    reorganisation cannot hide - a whole section quietly lost - becomes visible
-   as a line number. Renumbering is ignored on purpose: it was the point.
+   as a line number. Renumbering is ignored on purpose: it was the point. Two
+   rows that claim the same heading in the same file are an error rather than
+   tolerance, because a dedupe that keeps one of them removes the other from
+   coverage while leaving a believable row count.
 """
 
 import argparse
@@ -478,6 +481,24 @@ def check_heading_manifest(root, files, texts, report):
     present = {}
     for doc in files:
         present[doc] = {heading_key(title) for title in heading_titles(texts[doc])}
+
+    # A row that duplicates another row's claim covers nothing extra: the two
+    # normalise to one heading, so a later dedupe keeps whichever it meets first
+    # and the count still looks right. That is how PATTERN_INDEX.md's Contents
+    # row disappeared after the split. Reject the shape, name both lines, and let
+    # the fix be one row that lists both sources.
+    seen = {}
+    for number, (source, heading, home, current) in rows:
+        claim = (home, heading_key(current or heading))
+        if claim in seen:
+            first_number, first_heading, first_source = seen[claim]
+            report.error(HEADING_MANIFEST, number,
+                         f"duplicate row: '{heading}' from {source} claims the same "
+                         f"heading in {home} as line {first_number} "
+                         f"('{first_heading}' from {first_source}); make it one row "
+                         f"whose first column names both documents")
+            continue
+        seen[claim] = (number, heading, source)
 
     for number, (source, heading, home, current) in rows:
         if home not in present:
