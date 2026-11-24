@@ -207,3 +207,56 @@ message ("the plug-in ignored the parameter") pointed at the plug-in.
 | `FIELD_TEST_WINDOWS_CUDA.md` §8 | `vcvars64` before `nvcc`; points at the runner |
 | `SKILL.md` §10, `README.md` | Windows verification is `test\run-tests.bat`; `.\build.bat` spelling |
 | `testkit/README.md` | what the checker's line counting must not use |
+---
+
+## 7. Host verification: the official host, and a real renderer
+
+The contract harness proves the bundle honours OFX as this repository understands
+it. It cannot prove that a host agrees. Two tiers were added and run here.
+
+**Tier 1 - the OpenFX project's own host.** `testkit/official-host` builds
+`HostSupport` (openfx 1.5.1) and its headless `cacheDemo` through FetchContent
+(expat 2.6.4, static libraries). With `OFX_PLUGIN_PATH` pointing at the build:
+
+| Observation | Value |
+|---|---|
+| plug-in found | `com.ofxplugindeveloper.minimalcudagain` |
+| contexts | `OfxImageEffectContextFilter`, `General` |
+| grouping | `OFX Plugin Developer` |
+| render | `OfxImageEffectRenderInstanceSafe` |
+| wall clock | 23 s, describing 84 plug-ins - the official cache appends the system plug-in directory after `OFX_PLUGIN_PATH` (`ofxhPluginCache.cpp:240`-`245`) |
+
+**Tier 2 - NatronRenderer 2.5.0, headless.** 256x256 RGBA, one frame,
+`ReadPNG -> plug-in (gain 0.5) -> WritePNG`:
+
+| Observation | Value |
+|---|---|
+| exit status | 0 |
+| geometry | 1920x1080 project, image inserted bottom-left, identical to the baseline |
+| pixel (64,128,192,255) at gain 0.5 | (44,92,140), alpha 255 |
+| expected | `srgb8(0.5 * linear(64,128,192))` = (44,92,140) |
+| mismatch | none - delta 0-1/255 across 9 samples, alpha untouched |
+| wall clock | 3.3 s |
+
+The naive 8-bit expectation (32,64,96) is wrong: Natron colour-manages, so the
+effect sees linear values and the writer re-encodes to sRGB. A linear gain of 0.5
+maps 0.251/0.502/0.753 to 0.1746/0.3624/0.5506, i.e. (44,92,140). The check
+compares against that formula rather than against an eyeballed number.
+
+Negative controls: `--plugin-id com.ofxplugindeveloper.doesnotexist` fails with
+`PLUGIN_NOT_REGISTERED` and exit 1; the plug-in-free baseline reproduces the input
+exactly, so a wrong expectation cannot pass quietly.
+
+Not covered, and not claimed here: a GUI host session, GPU rendering inside a host
+(Natron renders on the CPU on this machine, which is why Tier 2 exercises the
+fallback branch and not the device path), and Linux, which needs a second machine.
+
+### Host bugs found on the way
+
+| Symptom | Cause |
+|---|---|
+| segfault with PFM in and out | Natron 2.5.0's bundled `ReadPFM`/`WritePFM`; the identical graph with PNG renders, so it is the host, not the plug-in |
+| segfault from `app1.render(writer, 1, 1)` | the script API path; the plug-in-free baseline crashes the same way |
+| 250 frames instead of 1 | `NatronRenderer project.ntp` defaults to the project range; the frame range is a positional argument |
+| `-t script.py` hangs | command-line interpreter mode waits on stdin |
+| "Cannot load frame" for an existing file | media paths inside a project resolve against the project's own directory |

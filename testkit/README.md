@@ -32,6 +32,54 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built ten ways (plain or internally tiled with the context read or ignored, two for the label check — one that never writes the label, one that does — one that draws a mark at a fixed position, and two that echo the source clip's `mediaID` label, one re-reading it per render and one caching the first answer, and one that declares no context region at all), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
 | `run-negative-controls.sh` | builds those fifteen controls, asserts each fault is rejected with the right message, and that the context-reading, label-writing and clip-re-reading builds pass while the mark build passes only in both bottom-up layouts and the clip-caching build fails on the second media id |
 
+## Two-tier host verification
+
+Do not answer "does a host accept this bundle?" with a mock alone. A hand-written
+host can omit a mandatory suite or skip an action and still pass. These two tiers
+close that gap, and `verify-bundle.bat` runs both:
+
+```bat
+.\testkit\verify-bundle.bat <build-dir-or-bundle> --plugin-id <id> [--natron <dir>] [--gain 0.5]
+.\testkit\verify-bundle.bat <build> --plugin-id <id> --tier1-only      (CI without Natron)
+```
+
+| Tier | What runs | What it settles |
+| --- | --- | --- |
+| 0 | layout assertion | `Contents\Win64\<Name>.ofx` with `<Name>` equal to the bundle stem, before anything executes |
+| 1 | `testkit/official-host` — the OpenFX project's own `HostSupport` library and headless `cacheDemo`, built unmodified | the plug-in loads, enumerates and describes under a host that is not ours: id, contexts, render safety, supported depths |
+| 2 | `testkit/tier2-natron.py` — `NatronRenderer`, one 256×256 frame, PNG in and out | a real host instantiates the effect and renders it, and the pixels come out right (gain applied once, in linear space, alpha untouched) |
+
+The contract harness in this directory stays: it is the layer that can drive
+single actions, odd pitches and rejected parameters far more precisely than any
+host. The tiers above are what stops that precision from hiding a host-facing bug.
+
+### What these tiers cost, measured
+
+* **Tier 1 is not 0.1 s on a working machine.** `PluginCache` appends the system
+  plugin directory after `OFX_PLUGIN_PATH` (`ofxhPluginCache.cpp:240`-`245`), so it
+  describes all 84 plug-ins installed here and takes **23 s**. Match on the
+  plug-in id; never assume the output contains only your plug-in.
+* **Tier 2 is ~3.3 s** per run at 256×256 with one frame (Natron start-up
+  dominates). Two runs (plug-in and baseline) per invocation.
+
+### Natron and NatronRenderer pitfalls, all measured on 2.5.0
+
+| Symptom | Cause | What the harness does instead |
+| --- | --- | --- |
+| segfault after `Write1 ==> Rendering started` | Natron's bundled `ReadPFM`/`WritePFM` pair crashes here; the same graph with PNG renders | uses `ReadPNG`/`WritePNG` |
+| segfault inside `app1.render(...)` from a script | the API call itself fails this way — the no-plug-in baseline crashes identically | builds the graph, `saveProjectAs`, then renders the `.ntp` file |
+| renders 250 frames | `NatronRenderer project.ntp` defaults to the project range | passes the frame argument: `NatronRenderer project.ntp 1` |
+| hangs forever, "loading in command-line interpreter mode" | `-t script.py` enters an interpreter that waits on stdin | passes the script positionally |
+| "Cannot load frame" for a file that exists | media paths inside a project resolve against the project's directory | writes absolute paths into the project |
+| output is `(44,92,140)` where `(32,64,96)` was expected | Natron converts sRGB→linear on read and back on write | compares `srgb8(gain * linear(input))`, tolerance 2/255 |
+| "Python was not found" from the batch | `where python` returns the Microsoft Store alias stub | each candidate must answer `python -c "import sys"` |
+
+A plug-in that advertises `kOfxImageEffectPropCudaRenderSupported` while the host
+never sets `kOfxImageEffectPropCudaEnabled` is exactly the case Tier 2 covers:
+Natron renders on the CPU, so the plug-in's CPU path is what a wrong
+`isEnabledCudaRender` branch would break. That is a fallback test, not a GPU test —
+only `test/gpu-kernel-test.cu` runs device code.
+
 ## Running it
 
 The templates call it from their own `test/run-tests.sh`; from the repository

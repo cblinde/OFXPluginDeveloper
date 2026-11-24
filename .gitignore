@@ -25,3 +25,9 @@ cmake-build-*/
 # Python bytecode from tools/
 __pycache__/
 *.pyc
+
+# A project-local Natron install for the Tier 2 render check (testkit/verify-bundle.bat)
+.natron/
+
+# Scratch: downloaded hosts, renderers and logs for manual validation runs
+.validation/

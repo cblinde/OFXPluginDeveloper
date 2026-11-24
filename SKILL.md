@@ -695,6 +695,12 @@ a plug-in that can only run on the GPU says so once, instead of throwing from
       it cannot.
 - [ ] `dlopen`/`LoadLibraryEx` succeeds and the plugin enumerates (id, version,
       mainEntry).
+- [ ] `testkit\verify-bundle.bat <build> --plugin-id <id>` — the bundle layout,
+      the official OpenFX host (`HostSupport` + `cacheDemo`: load, describe,
+      contexts) and a headless `NatronRenderer` render of one 256×256 frame whose
+      pixels are checked in linear space. `--tier1-only` is the CI form without
+      Natron. This is a host *process*, not a GUI session: see §12 for what it
+      still leaves unproven.
 - [ ] Rendered in at least one real host, in both GPU and CPU modes.
 - [ ] Identity path verified (no render when params are neutral).
 - [ ] Non-square PAR and odd resolutions tested.
