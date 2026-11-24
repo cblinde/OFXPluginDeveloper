@@ -303,11 +303,14 @@ alpha), continue with
 
 ---
 
-## 5. Windows: the toolchain matrix that decides whether the build works
+## 5. Toolchain matrix: Windows in detail, other platforms where they differ
 
 The Linux build is a compiler and CMake. The Windows build is a **three-way
 match** between CUDA, MSVC and the generator, and each pair can fail on its own.
-Every row below was reproduced on a machine with VS 2026 (MSVC 19.50) and VS 2022
+Two rows are not Windows-specific - the macOS rpath token and the architecture
+directory - and they are here because they fail the same way: a name that
+looks like a path in one toolchain and is a literal in another. Every row
+below was reproduced on a machine with VS 2026 (MSVC 19.50) and VS 2022
 Build Tools installed without the C++ workload **[B]** (2026‑11‑22 field test,
 Windows 11, RTX 3060, CUDA 13.0.48, CMake 4.4.4; environment, logs and the
 limits of that run are in

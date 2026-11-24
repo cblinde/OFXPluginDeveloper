@@ -131,7 +131,7 @@ BUILD_PLAYBOOK.md	3.11 What the host looks for on disk	references/packaging-and-
 BUILD_PLAYBOOK.md	4. Claims this build corrected	references/debugging-and-symptoms.md	
 BUILD_PLAYBOOK.md	5. What this does not prove	references/debugging-and-symptoms.md	
 BUILD_PLAYBOOK.md	6. Reusing the scaffold	references/cmake-and-linking.md	
-BUILD_PLAYBOOK.md	7. Windows: the toolchain matrix that decides whether the build works	references/cmake-and-linking.md	
+BUILD_PLAYBOOK.md	7. Windows: the toolchain matrix that decides whether the build works	references/cmake-and-linking.md	Toolchain matrix: Windows in detail, other platforms where they differ
 FIELD_TEST_WINDOWS_CUDA.md	Field test: Windows 11, CUDA 13.0, RTX 3060 (2026-11-22)	references/field-evidence.md	
 FIELD_TEST_WINDOWS_CUDA.md	1. Environment	references/field-evidence.md	
 FIELD_TEST_WINDOWS_CUDA.md	2. What was executed	references/field-evidence.md	
