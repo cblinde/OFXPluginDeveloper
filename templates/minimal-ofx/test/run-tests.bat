@@ -64,6 +64,10 @@ set "OFX_INC=%OFX_SOURCE_DIR%"
 if not defined OFX_INC if exist "%BUILD_DIR%\CMakeCache.txt" (
   for /f "usebackq tokens=1,* delims==" %%A in (`findstr /B /C:"OFX_SOURCE_DIR:PATH=" "%BUILD_DIR%\CMakeCache.txt"`) do set "OFX_INC=%%B"
 )
+rem build.sh keeps the headers in <repo>/.ofx-ref; the CMake fetch uses _deps.
+if not defined OFX_INC if exist "%ROOT%\..\..\.ofx-ref\include\ofxCore.h" (
+  set "OFX_INC=%ROOT%\..\..\.ofx-ref"
+)
 if not defined OFX_INC (
   for /d %%D in ("%BUILD_DIR%\_deps\openfx-src") do set "OFX_INC=%%~fD"
 )
