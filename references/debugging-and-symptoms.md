@@ -234,7 +234,7 @@ These are the places where building disagreed with prose that already existed.
 |---|---|
 | Does a real host (Resolve/Nuke/Natron/SCRATCH) load, enumerate and instantiate it? | **Natron, headless, once** (2026-11-24): `testkit/verify-bundle.bat` loads it in the official OFX host, then renders one 256×256 frame through `NatronRenderer` and checks the pixels. Resolve, Nuke and SCRATCH remain unverified, and no GUI session has run. |
 | Does `describe`/`describeInContext`/`render` behave under a host's real suite set? | **Partly verified**: the fake host in [`testkit/`](../testkit/) drives those actions (110 checks), holds two instances at once and checks their separate values, but it is not a host. |
-| Do the licence texts of the models, fonts and runtimes in the bundle travel with it? | **Not checked by any build.** A bundle can install and render with no notice file; only a file listing proves it. The copy step and the warning are in §3.11. |
+| Do the licence texts of the models, fonts and runtimes in the bundle travel with it? | **Not checked by any build.** A bundle can install and render with no notice file; only a file listing proves it. The copy step and the warning are in `packaging-and-install.md` §5. |
 | Does the pixel output match a reference? | **Unverified for this plug-in.** The ONNX template has golden-file tests; the reference gain has no golden. |
 | GPU, Windows/MSVC, macOS/Clang paths | **Unverified.** Only Linux x86-64 with GCC 13.3 was built. |
 | Host-specific quirks (blacklist behaviour, bundle caching, install-time locking) | **Unverified.** See [`host-resolve.md`](host-resolve.md), graded B there. |

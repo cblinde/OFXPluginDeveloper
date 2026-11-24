@@ -4,7 +4,7 @@ Where the host looks on disk, the four architecture directories, RPATH, licence 
 
 <!-- BUILD_PLAYBOOK.md lines 294-323 -->
 <!-- SKILL.md lines 405-536 -->
-### 3.11 What the host looks for on disk
+## 5. What the host looks for on disk
 
 `templates/minimal-ofx/build.sh` produces:
 
