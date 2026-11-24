@@ -63,7 +63,7 @@ landed on; full frame only, since an inset destination moves the row origin),
 NAME[=VALUE]` for a string the plug-in sets itself (a read-only label): read
 after the first render, the value must be **written by the plug-in** and
 non-empty, and the check's name carries it — `label parameter 'provider' =
-"CPU (fallback: ...)"` — which is how a suite asserts what the plug-in wrote
+"CPU (1 thread) - fallback: ..."` — which is how a suite asserts what the plug-in wrote
 without a second output channel. A declared default does not count: it is what a
 label that was never set shows, so `FakeHost::paramIsSet()` is part of the check
 rather than a non-empty string being enough. With `=VALUE` the value must also

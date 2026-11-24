@@ -149,9 +149,11 @@ std::shared_ptr<ModelRunner> InferencePlugin::AcquireRunner(const std::string& p
         // picture correct and only changes the clock, so this label is the one
         // place a user can see that CUDA did not load - and the contract test
         // asserts it is set and starts with "CUDA" or "CPU".
+        // The provider already ends in its own bracket ("CPU (1 thread)"), so the
+        // reason is appended after a dash: "CPU (1 thread) - fallback: ...".
         std::string label = fresh->Provider();
         if (!fresh->ProviderReason().empty()) {
-            label += " (fallback: " + fresh->ProviderReason() + ")";
+            label += " - fallback: " + fresh->ProviderReason();
         }
         _provider->setValue(label);
         OFX::Log::print("%s: execution provider %s", kPluginName, label.c_str());

@@ -431,8 +431,9 @@ it into the `provider` label parameter, and the suite asserts the value, which
 reads
 
 ```
-CPU (fallback: Failed to load library libonnxruntime_providers_shared.so with
-error: libonnxruntime_providers_shared.so: cannot open shared object file ...)
+CPU (1 thread) - fallback: Failed to load library
+libonnxruntime_providers_shared.so with error: libonnxruntime_providers_shared.so:
+cannot open shared object file ...
 ```
 
 here — the request was made, it failed, the frame still rendered, and the label
