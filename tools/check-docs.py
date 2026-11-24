@@ -128,6 +128,14 @@ def markdown_files(root):
     return found
 
 
+def slug(title):
+    """The anchor GitHub gives a heading, spelled the way this repo links to it."""
+    bare = re.sub(r"[^\w\s-]", "", title.strip().lower())
+    # GitHub replaces each space, it does not collapse runs: "AI / ONNX" loses
+    # the slash and keeps both spaces, so its anchor has two hyphens.
+    return re.sub(r"\s", "-", bare)
+
+
 def headings(text):
     """heading text -> slug, using the GitHub algorithm this repo's links use."""
     out = {}
@@ -136,11 +144,7 @@ def headings(text):
         if not match:
             continue
         title = match.group(2).strip()
-        slug = re.sub(r"[^\w\s-]", "", title.lower())
-        # GitHub replaces each space, it does not collapse runs: "AI / ONNX"
-        # loses the slash and keeps both spaces, so its anchor has two hyphens.
-        slug = re.sub(r"\s", "-", slug)
-        out[slug] = title
+        out[slug(title)] = title
     return out
 
 
@@ -200,6 +204,40 @@ def check_links(root, files, texts, report):
                 relative = os.path.relpath(resolved, root).replace(os.sep, "/")
                 if relative in texts and anchor not in headings(texts[relative]):
                     report.error(path, line, f"anchor #{anchor} does not exist in {relative}")
+
+
+def check_duplicate_anchors(root, files, texts, report):
+    """Two headings in one file that slug to the same anchor.
+
+    The map in headings() is keyed by anchor, so a duplicate silently overwrote
+    its twin and every link check passed: §1 and §6 of
+    ai-architectures-and-runtimes.md both read "What their own documentation says
+    to avoid", and a link to that anchor always landed in the first one. GitHub
+    disambiguates the later heading to `-1`, which nothing in this tree writes,
+    so the second section was reachable only by scrolling.
+    """
+    for path in files:
+        seen, fenced = {}, False
+        for line_no, line in enumerate(texts[path].splitlines(), 1):
+            if line.strip().startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
+            match = re.match(r"^(#{1,6})\s+(.*?)\s*$", line)
+            if not match:
+                continue
+            title = match.group(2)
+            anchor = slug(title)
+            if anchor in seen:
+                first_line, first_title = seen[anchor]
+                report.error(path, line_no,
+                             f"#{anchor} is already the anchor of '{first_title}' on "
+                             f"line {first_line}; GitHub renames this one to "
+                             f"#{anchor}-1, which no link here uses, so a link to "
+                             f"#{anchor} lands in that other section - rename one")
+            else:
+                seen[anchor] = (line_no, title)
 
 
 def check_link_numbers(root, files, texts, report):
@@ -664,6 +702,7 @@ def main():
 
     report = Report()
     check_links(root, files, texts, report)
+    check_duplicate_anchors(root, files, texts, report)
     check_link_numbers(root, files, texts, report)
     check_absence_claims(root, files, texts, report)
     check_section_numbering(root, files, texts, report)
