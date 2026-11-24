@@ -265,6 +265,12 @@ def check_section_numbering(root, files, texts, report):
     needed, but a contradiction a reader meets on the second screen. It also
     makes every § reference ambiguous - `§5` may be the fifth section or a
     section that no longer exists - so the two checks belong together.
+
+    A section with exactly one numbered child is the third version of the same
+    problem: §12 of reference-projects.md carried 12.1 while its heading also
+    held the practices table, so the file read as half restructured. Two or
+    more children are a structure; one child is a numbering decision nobody
+    finished, and either the other parts get numbers or this one loses its.
     """
     for path in files:
         numbers = [int(m.group(1)) for m in re.finditer(r"^## (\d+)\.", texts[path], re.M)]
@@ -281,23 +287,38 @@ def check_section_numbering(root, files, texts, report):
         # The same discipline one level down: 5.1 under §2 means the heading
         # kept a number from the section it was cut out of, and a reader who
         # follows §2.1 lands nowhere.
-        current, fenced = None, False
+        current, subsections, fenced = None, [], False
+
+        def close_section():
+            if current is None or len(subsections) != 1:
+                return
+            line_no, dotted = subsections[0]
+            report.error(path, line_no,
+                         f"{dotted} is the only numbered subsection of §{current}; "
+                         f"a lone child reads as a half-finished restructure - "
+                         f"number the section's other parts or drop this number")
+
         for line_no, line in enumerate(texts[path].splitlines(), 1):
             if line.strip().startswith("```"):
                 fenced = not fenced
                 continue
             if fenced:
                 continue
-            section = re.match(r"^## (\d+)\.", line)
-            if section:
-                current = int(section.group(1))
+            if line.startswith("## "):
+                close_section()
+                section = re.match(r"^## (\d+)\.", line)
+                current = int(section.group(1)) if section else None
+                subsections = []
                 continue
             subsection = re.match(r"^### (\d+)\.(\d+)\b", line)
-            if subsection and current is not None \
-                    and int(subsection.group(1)) != current:
-                report.error(path, line_no,
-                             f"subsection {subsection.group(1)}.{subsection.group(2)} "
-                             f"sits in §{current}; number it {current}.N")
+            if subsection and current is not None:
+                if int(subsection.group(1)) != current:
+                    report.error(path, line_no,
+                                 f"subsection {subsection.group(1)}.{subsection.group(2)} "
+                                 f"sits in §{current}; number it {current}.N")
+                else:
+                    subsections.append((line_no, f"{current}.{subsection.group(2)}"))
+        close_section()
 
 
 def check_section_refs(root, files, texts, report):

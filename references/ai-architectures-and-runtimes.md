@@ -92,7 +92,7 @@ found; the AI upscalers in the wild are TouchDesigner, C# or ComfyUI nodes, and
 `NNFlowVector` is commercial. `Nuke-ONNX` exists but is a Nuke NDK op, not OFX,
 and its `use_gpu` knob is disabled (**B**).
 
-### 1.1 What their own documentation says to avoid
+### What their own documentation says to avoid
 
 1. **A synchronous daemon blocks the host.** `MoGe-nuke` does per-frame TCP and
    the LTX plug-in explicitly does not ("Flame never waits on the model"); the
@@ -272,7 +272,7 @@ evidence grade **B**. Links go to the projects, not to mirrors.
 | [`houdini-ofx-plugins`](https://github.com/zhangxiao6776/houdini-ofx-plugins) | 8 creative OFX plugs for Houdini Copernicus, incl. depth | **ORT C++ in-process with session caching**, Python subprocess backend, `Auto` fallback; CoreML on Apple Silicon | check repo | A real two-backend design; cross-verification tests between C++ and Python | ONNX Runtime's CoreML EP "partition fragmentation" — native CoreML wins on Apple |
 | [`Nuke-ONNX`](https://github.com/aaronsmithtv/Nuke-ONNX) | ONNX inference for Nuke (**NDK, not OFX**) | ORT in-process, up to 10 inputs, output normalisation | MIT | What an ONNX node looks like when the host gives you a real SDK | Nothing transfers to OFX directly; it is a different API |
 
-### What their own documentation says to avoid
+### What the ONNX projects' documentation says to avoid
 
 1. **libtorch ABI mismatches are not optional detail.** `rvmofx` tells you to use
    the **non-cxx11** build "at least required for use with Davinci Resolve". If

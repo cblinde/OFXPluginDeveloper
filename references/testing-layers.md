@@ -811,7 +811,7 @@ were run in this checkout.
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | shellcheck 0.10.0, `-x --severity=style`, over all **eleven** shell scripts of this repository: no findings (run here). cppcheck was **not installed** in this environment, so `run-analysis.sh` reports it skipped — its cppcheck half is unverified here, not clean |
 
-### 13.1 nvcc without a GPU
+### nvcc without a GPU
 
 Device code does not need hardware to compile: `nvcc`, `ptxas` and `nvlink` are
 CPU programs, and only loading the cubin and running it needs a GPU. That makes
