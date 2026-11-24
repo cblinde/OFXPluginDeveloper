@@ -228,15 +228,13 @@ the binary.
 
 Documented rather than hidden, because each one is a trap for the next reader:
 
-1. **No top-level `LICENSE` file.** The per-file SPDX headers are the operative
-   licence statement (see [Licensing](references/reference-projects.md#licensing-and-provenance)).
-2. **The Windows path was executed on another machine, not here.** The 2026-11-22
+1. **The Windows path was executed on another machine, not here.** The 2026-11-22
    field test built, loaded and rendered through `.\build.bat`; this checkout can
    only syntax-review it, so the graded evidence for the Windows path is the
    archived run **[B]** ([field-evidence](references/field-evidence.md)). A Windows
    machine now runs the same checks through `./run-tests.sh`, which dispatches to
    the `.bat` runners; that is a local run, and it is not new archived evidence.
-3. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
+2. **`install` needs write access** to `OFX_INSTALL_DIR`. The default
    `/usr/OFX/Plugins` is root-owned on most Linux systems, so run that step with
    `sudo` or point `OFX_INSTALL_DIR` at a writable host plugin directory.
    Loading the plug-in outside a host needs `LD_LIBRARY_PATH` pointing at the

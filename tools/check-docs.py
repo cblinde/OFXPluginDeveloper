@@ -202,6 +202,27 @@ def check_links(root, files, texts, report):
                     report.error(path, line, f"anchor #{anchor} does not exist in {relative}")
 
 
+def check_absence_claims(root, files, texts, report):
+    """A document that says a file is absent has to be right about it.
+
+    README described this repository as having "no top-level `LICENSE` file"
+    while `LICENSE` sat in the root and two other paragraphs linked to it. Every
+    link and anchor check passed, because there was nothing broken to find: the
+    reference was not to the file, but to its supposed absence. The claim is
+    cheap to verify - it names a path - so verify it.
+    """
+    claims = [re.compile(r"no top-level `([^`]+)`", re.I),
+              re.compile(r"no `([^`]+)` file (?:at|in) the (?:repository )?root", re.I)]
+    for path in files:
+        for pattern in claims:
+            for match in pattern.finditer(texts[path]):
+                claimed = match.group(1).strip()
+                if os.path.exists(os.path.join(root, claimed)):
+                    line = texts[path][:match.start()].count("\n") + 1
+                    report.error(path, line,
+                                 f"claims there is no `{claimed}`, but it exists")
+
+
 def check_section_numbering(root, files, texts, report):
     """A numbered document's sections run 1..N in reading order.
 
@@ -564,6 +585,7 @@ def main():
 
     report = Report()
     check_links(root, files, texts, report)
+    check_absence_claims(root, files, texts, report)
     check_section_numbering(root, files, texts, report)
     check_section_refs(root, files, texts, report)
     check_counts(root, files, texts, report)

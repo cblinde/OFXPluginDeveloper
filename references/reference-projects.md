@@ -704,8 +704,8 @@ informed design decisions only (see [Licensing](#licensing-and-provenance)).
 
 - The template source files are original code, each marked
   `SPDX-License-Identifier: BSD-3-Clause` in its header (matching the OpenFX
-  headers and Support library it links). Note that the repository currently has
-  **no top-level `LICENSE` file** — the SPDX headers are the operative statement.
+  headers and Support library it links). The same BSD-3-Clause text is the
+  repository's [`LICENSE`](../LICENSE), so the header and the licence file agree.
 - The GPL-3.0 projects above were consulted as documentation and engineering
   evidence. No source, table or shader text was copied from them, so nothing here
   inherits their licence.
