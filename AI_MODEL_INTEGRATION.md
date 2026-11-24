@@ -13,10 +13,12 @@ here say so.
 | **B** | Read from a project's own documentation or source, not independently executed here. |
 | **C** | Reported second-hand (README claim, forum post, issue thread). Treat as a lead. |
 
-This repository has no GPU and no OFX host, so nothing below is a performance
-measurement. Where a number appears it is a size, an exact CPU result from
-`templates/onnx-inference-ofx/test`, a **B**-graded figure from a project that
-shipped it, or explicitly labelled as unmeasured.
+No CUDA execution provider has ever been created here, so nothing below is a
+model performance measurement. Where a number appears it is a size, an exact CPU
+result from `templates/onnx-inference-ofx/test`, a **B**-graded figure from a
+project that shipped it, or explicitly labelled as unmeasured. The CUDA *kernel*
+throughput measured on 2026-11-24 is a different thing entirely — see
+[`README.md`](README.md) §"What has actually been verified".
 
 ---
 
@@ -400,7 +402,7 @@ path rather than on a second one.
 
 A complete, building OFX plug-in that runs an ONNX model, with the parts that
 are usually untested under test. The session this template creates is a CPU
-session, because no GPU exists in the environment it was built in; for a plug-in
+session, because no GPU provider was available when it was written; for a plug-in
 that ships, the CUDA provider is the first path ("The provider belongs in the
 same bundle" below) — that is a change to this template, not a second one.
 
@@ -441,8 +443,8 @@ says why (**V**).
 
 What it does **not** prove: no host has rendered through it, no CUDA session has
 ever been created, and no timing is claimed. The provider *request* is compiled
-and its failure path is tested; the success path is not. There is no GPU and no
-provider binary in this repository, so on a GPU machine the remaining work is to
+and its failure path is tested; the success path is not. No provider binary ships
+in this repository, so on a GPU machine the remaining work is to
 confirm the label flips to `CUDA (device 0, 1 thread, …)` and names the stack, measure the run with
 `tools/bench_ep.py` (one row per provider, plus the providers the session really
 ended up with, so a silent fallback is visible next to the number), and repeat

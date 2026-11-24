@@ -496,15 +496,14 @@ Nine of the ten sources include `OFX::ImageProcessor`:
 
 ## 9. What this guide does not cover
 
-- **No OFX host was available.** Nothing in this repository has rendered a pixel
-  through Resolve, Nuke, SCRATCH or Natron; host-specific behaviour lives in
-  [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) at evidence
-  grade B/C.
-- **No GPU was available here.** No kernel or CUDA execution provider executes
-  in this environment's suites, so the GPU statements above are derived from
-  headers, documentation or host-side emulation — except where `SKILL.md` §12
-  quotes the external 2026-11-22 hardware run **[B]**
-  ([`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md)).
+- **One host, headless.** `NatronRenderer` has rendered a frame through the
+  template (`testkit/verify-bundle.bat`, 2026-11-24). Resolve, Nuke and SCRATCH
+  have not, so their behaviour still lives in
+  [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md) at grade B/C.
+- **One GPU, and only the gain kernel.** The 2026-11-24 run executes the real
+  kernels on an RTX 3060 and measures them; no CUDA execution provider executes,
+  and nothing runs on a second GPU. Statements about models, other GPUs and host
+  scheduling stay derived from headers and documentation.
 - **The SDK samples were read, not executed.** Their line numbers are for tag
   `OFX_Release_1.5.1` and will drift on other tags; re-grep the symbol if a line
   looks wrong.

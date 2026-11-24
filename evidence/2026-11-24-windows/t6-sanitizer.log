@@ -1,0 +1,34 @@
+========= COMPUTE-SANITIZER
+== the minimal-cuda-ofx kernels on real hardware ==
+device 0: NVIDIA GeForce RTX 3060, compute capability 8.6, 28 SMs, 12287 MiB
+runtime : CUDA 13.5 (13050), unified addressing yes, host-mapped yes
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+  200 queued launches on one non-blocking stream, one sync: ok
+[3/6] concurrent launches from host threads
+  8 threads, 0 failing
+[4/6] zero-copy on host-mapped memory
+  128x64 on pinned mapped memory, no device allocation: ok
+[5/6] both kernels launched directly (bypassing the launcher)
+  vec4 (direct)  333x101 exact match
+  scalar (direct) 333x101 exact match
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
+  1080p 1920x1080: 2.1 MPix, 33.2 MB per buffer
+    vec4      4.378 ms/frame     15.2 GB/s effective
+    scalar   17.016 ms/frame      3.9 GB/s effective
+    CPU       3.830 ms/frame      0.9x slower than vec4
+    copy      8.390 ms/frame      7.9 GB/s over PCIe (H2D+D2H, pageable)
+  4K 3840x2160: 8.3 MPix, 132.7 MB per buffer
+    vec4     17.298 ms/frame     15.3 GB/s effective
+    scalar   69.423 ms/frame      3.8 GB/s effective
+    CPU      16.483 ms/frame      1.0x slower than vec4
+    copy     31.517 ms/frame      8.4 GB/s over PCIe (H2D+D2H, pageable)
+  8K 7680x4320: 33.2 MPix, 530.8 MB per buffer
+    vec4     70.458 ms/frame     15.1 GB/s effective
+    scalar  267.958 ms/frame      4.0 GB/s effective
+    CPU      61.868 ms/frame      0.9x slower than vec4
+    copy    122.549 ms/frame      8.7 GB/s over PCIe (H2D+D2H, pageable)
+
+28 launcher cases, 0 failure(s)
+PASS: hardware matches the CPU reference bit for bit
+========= ERROR SUMMARY: 0 errors

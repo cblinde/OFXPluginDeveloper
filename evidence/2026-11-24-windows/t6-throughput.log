@@ -1,0 +1,209 @@
+== [0/3] build skipped (nobuild) ==
+
+== [1/3] artifact (exports, dependents, device code) ==
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    KERNEL32.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+  cuobjdump: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\cuobjdump.exe
+  device code: 7 cubin(s)
+
+== [2/3] GPU harness (real device code, not emulated) ==
+gpu-kernel-test.cu
+tmpxft_00005d38_00000000-7_gpu-kernel-test.cudafe1.cpp
+== the minimal-cuda-ofx kernels on real hardware ==
+device 0: NVIDIA GeForce RTX 3060, compute capability 8.6, 28 SMs, 12287 MiB
+runtime : CUDA 13.5 (13050), unified addressing yes, host-mapped yes
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+  200 queued launches on one non-blocking stream, one sync: ok
+[3/6] concurrent launches from host threads
+  8 threads, 0 failing
+[4/6] zero-copy on host-mapped memory
+  128x64 on pinned mapped memory, no device allocation: ok
+[5/6] both kernels launched directly (bypassing the launcher)
+  vec4 (direct)  333x101 exact match
+  scalar (direct) 333x101 exact match
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
+  1080p 1920x1080: 2.1 MPix, 33.2 MB per buffer
+    vec4      0.209 ms/frame    317.2 GB/s effective
+    scalar    0.217 ms/frame    305.8 GB/s effective
+    CPU       3.456 ms/frame     16.5x slower than vec4
+    copy      6.705 ms/frame      9.9 GB/s over PCIe (H2D+D2H, pageable)
+  4K 3840x2160: 8.3 MPix, 132.7 MB per buffer
+    vec4      0.850 ms/frame    312.3 GB/s effective
+    scalar    0.846 ms/frame    313.8 GB/s effective
+    CPU      13.480 ms/frame     15.9x slower than vec4
+    copy     27.332 ms/frame      9.7 GB/s over PCIe (H2D+D2H, pageable)
+  8K 7680x4320: 33.2 MPix, 530.8 MB per buffer
+    vec4      3.479 ms/frame    305.2 GB/s effective
+    scalar    3.363 ms/frame    315.7 GB/s effective
+    CPU      55.287 ms/frame     15.9x slower than vec4
+    copy    107.396 ms/frame      9.9 GB/s over PCIe (H2D+D2H, pageable)
+
+28 launcher cases, 0 failure(s)
+PASS: hardware matches the CPU reference bit for bit
+
+== [3/3] host contract (LoadLibraryExW + fake host) ==
+Der Befehl "vswhere.exe" ist entweder falsch geschrieben oder
+konnte nicht gefunden werden.
+fake_host.cpp
+contract_main.cpp
+Code wird generiert...
+[stage] render
+[stage] compare parameter
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+[stage] render
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - param 'gainAlpha' declared
+ok 22 - param 'gainAlpha' type
+ok 23 - clip 'Source' declared
+ok 24 - clip 'Output' declared
+ok 25 - kOfxActionCreateInstance
+ok 26 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 27 - identity clip is the source clip
+ok 28 - set param 'gain'
+ok 29 - isIdentity is false once a setting changes the output
+ok 30 - kOfxImageEffectActionRender
+ok 31 - destination is readable
+ok 32 - render applied the parameter value
+ok 33 - alpha is unchanged
+ok 34 - a second instance can be created
+ok 35 - two instances are live at the same time
+ok 36 - baseline gain on instance 0
+ok 37 - baseline gain on instance 1
+ok 38 - instance 0 accepts its own gain
+ok 39 - instance 1 accepts a different gain
+ok 40 - render instance 0 while instance 1 is alive
+ok 41 - render instance 1 with its own settings
+ok 42 - instance 0 used its own value, not its neighbour's
+ok 43 - instance 1 used its own value, not its neighbour's
+ok 44 - instance for parallel worker 2
+ok 45 - baseline gain on instance 2
+ok 46 - instance for parallel worker 3
+ok 47 - baseline gain on instance 3
+ok 48 - set gain on the instance of parallel worker 0
+ok 49 - set gain on the instance of parallel worker 1
+ok 50 - set gain on the instance of parallel worker 2
+ok 51 - set gain on the instance of parallel worker 3
+ok 52 - concurrent renders produced every record
+ok 53 - every concurrent render returned kOfxStatOK
+ok 54 - every concurrent render produced a readable destination
+ok 55 - concurrent instances kept their own parameter values
+ok 56 - destroy instance 3
+ok 57 - destroy instance 2
+ok 58 - destroy instance 1
+ok 59 - render rejects a byte image
+ok 60 - baseline render before the rejected window
+ok 61 - render rejects a window outside the source bounds
+ok 62 - destination is unchanged after the rejected render
+ok 63 - baseline render inside the destination bounds
+ok 64 - render rejects a window outside the destination bounds
+ok 65 - destination is unchanged after the rejected render
+ok 66 - kOfxActionDestroyInstance
+ok 67 - kOfxActionUnload
+ok 68 - unload cycle completed
+ok 69 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx)
+ok 70 - OfxGetNumberOfPlugins is exported
+ok 71 - OfxGetPlugin is exported
+ok 72 - OfxGetNumberOfPlugins() >= 1
+ok 73 - OfxGetPlugin(0) returns a plug-in
+ok 74 - pluginApi
+ok 75 - apiVersion
+ok 76 - pluginIdentifier is non-empty
+ok 77 - pluginIdentifier
+ok 78 - pluginIdentifier stable across loads
+ok 79 - pluginVersion
+ok 80 - setHost is non-null
+ok 81 - mainEntry is non-null
+ok 82 - kOfxActionLoad
+ok 83 - kOfxActionDescribe
+ok 84 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 85 - descriptor lists the requested context
+ok 86 - descriptor sets a legal render thread safety
+ok 87 - param 'gain' declared
+ok 88 - param 'gain' type
+ok 89 - param 'gainAlpha' declared
+ok 90 - param 'gainAlpha' type
+ok 91 - clip 'Source' declared
+ok 92 - clip 'Output' declared
+ok 93 - kOfxActionCreateInstance
+ok 94 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 95 - identity clip is the source clip
+ok 96 - set param 'gain'
+ok 97 - isIdentity is false once a setting changes the output
+ok 98 - kOfxImageEffectAction[stage] compare parameter
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+Render
+ok 99 - destination is readable
+ok 100 - render applied the parameter value
+ok 101 - alpha is unchanged
+ok 102 - a second instance can be created
+ok 103 - two instances are live at the same time
+ok 104 - baseline gain on instance 0
+ok 105 - baseline gain on instance 1
+ok 106 - instance 0 accepts its own gain
+ok 107 - instance 1 accepts a different gain
+ok 108 - render instance 0 while instance 1 is alive
+ok 109 - render instance 1 with its own settings
+ok 110 - instance 0 used its own value, not its neighbour's
+ok 111 - instance 1 used its own value, not its neighbour's
+ok 112 - instance for parallel worker 2
+ok 113 - baseline gain on instance 2
+ok 114 - instance for parallel worker 3
+ok 115 - baseline gain on instance 3
+ok 116 - set gain on the instance of parallel worker 0
+ok 117 - set gain on the instance of parallel worker 1
+ok 118 - set gain on the instance of parallel worker 2
+ok 119 - set gain on the instance of parallel worker 3
+ok 120 - concurrent renders produced every record
+ok 121 - every concurrent render returned kOfxStatOK
+ok 122 - every concurrent render produced a readable destination
+ok 123 - concurrent instances kept their own parameter values
+ok 124 - destroy instance 3
+ok 125 - destroy instance 2
+ok 126 - destroy instance 1
+ok 127 - render rejects a byte image
+ok 128 - baseline render before the rejected window
+ok 129 - render rejects a window outside the source bounds
+ok 130 - destination is unchanged after the rejected render
+ok 131 - baseline render inside the destination bounds
+ok 132 - render rejects a window outside the destination bounds
+ok 133 - destination is unchanged after the rejected render
+ok 134 - kOfxActionDestroyInstance
+ok 135 - kOfxActionUnload
+ok 136 - unload cycle completed
+contract_test: 136 checks, 0 failed
+
+all Windows checks passed

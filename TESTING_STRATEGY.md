@@ -768,7 +768,10 @@ authoring machine; with memcheck enabled (the default when valgrind is on
 `PATH`) it takes close to five. `CPU_ONLY=1` forces the CUDA template's CPU path
 when no toolkit is installed.
 
-Measured on the machine that wrote this document (Linux x86-64, no GPU, no host):
+Measured on the machines this repository has been exercised on: a Linux x86-64
+box with no GPU and no host, and a Windows 11 box with an RTX 3060. The 2026-11-22
+Windows rows are **[B]** (that run was on another machine); the 2026-11-24 rows
+were run in this checkout.
 
 | Suite | Result |
 |---|---|
@@ -788,9 +791,10 @@ Measured on the machine that wrote this document (Linux x86-64, no GPU, no host)
 | Windows artifact | 2 exports (`dumpbin /exports`), 7 cubins `sm_75`…`sm_120` (`cuobjdump -lelf`), no CUDA runtime import **[B]** |
 | Windows contract | whole host protocol, 0 failures, through `LoadLibraryExW` **[B]** |
 | GPU kernels, hardware | 28/28 launcher cases bit-exact on RTX 3060 sm_86; 200 queued launches, 8 host threads, zero-copy **[B]** |
-| GPU throughput | 1920×1080: vec4 0.212 ms / scalar 0.222 ms, ~312/300 GB/s **[B]** |
+| GPU memory, 2026-11-24 | `compute-sanitizer --tool memcheck` over `gpu-kernel-test.exe`: **0 errors**, 28/28 still bit-exact under the tool — device memory checked, not just the results **[V]** |
+| GPU throughput, 2026-11-24 | 1080p/4K/8K, vec4 **0.209 / 0.850 / 3.479 ms** (317/312/305 GB/s), scalar within 5% — both forms bandwidth-bound, so the vec4 form's 4× instruction reduction buys no throughput. CPU loop 3.456/13.480/55.287 ms; pageable H2D+D2H copy 6.705/27.332/107.396 ms, i.e. **32× the 1080p kernel** **[V]** (table and method in `README.md` §"What has actually been verified") |
 | Artifact + fake host (reference) | 110 checks, 0 failed, two load/unload cycles, two live instances with separate values |
-| Artifact + fake host (CUDA) | 136 checks, 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path — it is unverified here (no toolkit, no GPU) |
+| Artifact + fake host (CUDA) | 136 checks, 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path, which the Windows rows above cover |
 | Artifact + fake host (inference) | 160 checks, 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 82 checks for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | shellcheck 0.10.0, `-x --severity=style`, over all **eleven** shell scripts of this repository: no findings (run here). cppcheck was **not installed** in this environment, so `run-analysis.sh` reports it skipped — its cppcheck half is unverified here, not clean |

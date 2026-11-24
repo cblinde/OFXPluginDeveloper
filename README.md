@@ -30,8 +30,9 @@ debug a GPU-accelerated OFX plugin, on Linux or Windows, primarily targeting
 DaVinci Resolve Studio.
 
 **What it is not:** not a plugin *collection*, not a wrapper library, and not a
-substitute for testing in a real host. No pixel in this repository has been
-rendered by a host — see [What has actually been verified](#what-has-actually-been-verified).
+substitute for testing in a real host. One path has been rendered by one host —
+`NatronRenderer`, headless — and nothing has been rendered by Resolve, Nuke or
+SCRATCH. See [What has actually been verified](#what-has-actually-been-verified).
 
 | File | What it is |
 | --- | --- |
@@ -411,12 +412,29 @@ checkout; the measurements themselves are quoted with their logs in
   guards, 200 queued launches, eight host threads and zero-copy.
 - 1920×1080 RGBA32F, 100 iterations: vec4 **0.212 ms** (~312 GB/s), scalar
   **0.222 ms** (~300 GB/s) — both bandwidth-bound, a ~4% difference.
+- The same harness under `compute-sanitizer --tool memcheck`: **0 errors**, and
+  28/28 still bit-exact with the tool instrumenting every access.
 
-**Not verified here:** no GPU is present in this environment, so no kernel runs
-in `./run-tests.sh`; no host is installed, so no pixel has ever been rendered by
-Resolve, Nuke, SCRATCH or Natron; the Windows path was executed on another
-machine, not this one; and no performance number was measured here. See
-`SKILL.md` §12.
+The harness now also measures the GPU path against the CPU loop it replaces and
+against the copy a zero-copy path avoids, in one run on the same RTX 3060:
+
+| Size | vec4 kernel | scalar kernel | CPU loop | H2D+D2H copy (pageable) |
+|---|---|---|---|---|
+| 1080p | 0.209 ms (317 GB/s) | 0.217 ms (306 GB/s) | 3.456 ms | 6.705 ms (9.9 GB/s) |
+| 4K | 0.850 ms (312 GB/s) | 0.846 ms (314 GB/s) | 13.480 ms | 27.332 ms (9.7 GB/s) |
+| 8K | 3.479 ms (305 GB/s) | 3.363 ms (316 GB/s) | 55.287 ms | 107.396 ms (9.9 GB/s) |
+
+Three things this settles that were previously argued from PTX and arithmetic:
+both kernel forms are **bandwidth-bound**, so the vec4 form's 4× instruction
+reduction buys no throughput on this GPU; the kernel is ~16× the CPU loop; and a
+pageable copy of one frame costs **32× the 1080p kernel** — the copy, not the
+maths, is what the zero-copy contract exists to avoid. Mean of 100/30/10
+iterations; one GPU, one driver, one OS build.
+
+**Not verified here:** no Resolve, Nuke or SCRATCH is installed, so nothing has
+rendered in them; no CUDA execution provider has ever been created (the inference
+template builds a CPU session); Linux has not been run; and no kernel runs in
+`./run-tests.sh`, which has no GPU step by design. See `SKILL.md` §12.
 
 ## Repository layout
 
@@ -480,3 +498,15 @@ Install locations: `%COMMONPROGRAMFILES%\OFX\Plugins` on Windows,
 The bootstrapped toolkit keeps `libcudart` in `<toolkit>/lib64`; put it on
 `LD_LIBRARY_PATH` (or beside the `.ofx`) when loading the plugin outside a host
 that ships its own CUDA runtime.
+
+---
+
+## Licence
+
+BSD-3-Clause, in [`LICENSE`](LICENSE); every source file declares it with an SPDX
+identifier on its first line. Third-party code is fetched, not vendored, and what
+each component obliges you to do is in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+Nothing here grants rights in OpenFX, NVIDIA CUDA, DaVinci Resolve, Nuke, SCRATCH
+or Natron beyond what their own licences give you.

@@ -778,14 +778,18 @@ OpenFX `OFX_Release_1.5.1`):
 
 **Still not verified (state this plainly in any downstream report):**
 
-- **No GPU in this environment.** Nothing in `./run-tests.sh` executes SASS here:
-  numerics are validated on the host by emulating the thread mapping over the real
-  kernel source (`BEST_PRACTICES_AND_PERFORMANCE.md` §6.1). Device behaviour beyond
-  the external run below — multi-GPU binding, real async ordering across many
-  streams — remains unverified.
-- **No host.** No Resolve, Nuke, SCRATCH or Natron is installed, so the plugin has
-  never rendered a pixel, and every host-specific claim in
-  `HOST_COMPATIBILITY_MATRIX.md` remains graded B/C rather than verified.
+- **`./run-tests.sh` executes no SASS** — by design, it has no GPU step; its
+  numerics are validated by emulating the thread mapping over the real kernel
+  source (`BEST_PRACTICES_AND_PERFORMANCE.md` §6.1). The hardware run is
+  `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu`: on 2026-11-24 it was
+  28/28 bit-exact and measured throughput, the CPU loop and the copy cost
+  (`README.md` §"What has actually been verified"). Multi-GPU binding and real
+  async ordering across many streams remain unverified.
+- **One host, and only headless.** `NatronRenderer` rendered one 256×256 frame
+  through the template on 2026-11-24 (`testkit/verify-bundle.bat`), pixels
+  checked. Resolve, Nuke and SCRATCH are not installed and have never rendered
+  anything, so every host-specific claim in `HOST_COMPATIBILITY_MATRIX.md`
+  remains graded B/C rather than verified.
 - **The 1.5.1 render hints are documented, not exercised.** No host here sets
   `kOfxImageEffectPropNoSpatialAwareness` or `kOfxImageEffectPropThumbnailRender`,
   and the templates do not yet read them; the rules in §8 follow from the header

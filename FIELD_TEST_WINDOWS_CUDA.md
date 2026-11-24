@@ -51,7 +51,7 @@ not here, and not reproducible on this machine.
 | T7 | throughput, `cudaEvent` | vec4 0.212 ms, scalar 0.222 ms at 1080p |
 | T8 | `ctypes.WinDLL` load and enumerate | 1 plug-in, correct id/version |
 | T9 | `run-tests.sh`, `test/run-tests.sh`, `run-analysis.sh` | not runnable on Windows (no toolchain for them) |
-| T10 | render in Resolve/Nuke/SCRATCH/Natron | **not possible**: no host installed |
+| T10 | render in Resolve/Nuke/SCRATCH/Natron | **not possible in this run**: no host installed. A later headless `NatronRenderer` run is recorded in `evidence/2026-11-24-windows/` |
 
 ## 3. The artifact on Windows
 
@@ -140,8 +140,9 @@ is that the Windows loader path and the OFX actions behave the same as on Linux.
 
 ## 6. What this run does not prove
 
-- **No host.** Nothing rendered in Resolve, Nuke, SCRATCH or Natron; every
-  host-specific claim stays grade B/C in
+- **No host in this run.** Nothing rendered in Resolve, Nuke, SCRATCH or Natron
+  here; a later headless `NatronRenderer` run is in `evidence/2026-11-24-windows/`.
+  Every host-specific claim stays grade B/C in
   [`HOST_COMPATIBILITY_MATRIX.md`](HOST_COMPATIBILITY_MATRIX.md).
 - **One GPU, one driver, one OS build.** No multi-GPU binding, no MIG, no
   Windows 10, no Quadro/RTX A series.

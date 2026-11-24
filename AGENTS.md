@@ -35,13 +35,17 @@ is a dependency of the suites.
 
 ## Hard rules
 
-1. **Never claim a host render is verified.** No Resolve, Nuke, SCRATCH or Natron
-   exists here. "Renders in a host" is always unverified.
+1. **Never claim a host render is verified beyond what ran.** `NatronRenderer` has
+   rendered this template headless (`testkit/verify-bundle.bat`, 2026-11-24) — that
+   is the one host fact marked **[V]**. No Resolve, Nuke or SCRATCH exists here, and
+   their claims stay unverified.
 2. **Claim nothing a compiler, `nm` or a test did not prove.** `[V]` means the
    command ran in this repository; `[I]` means inferred; `[B]` means external
    evidence. Labels are defined in `BUILD_PLAYBOOK.md`.
-3. **Measure before wording a performance claim.** Timings (L7) and GPU execution
-   are unbuilt; there is no GPU here.
+3. **Measure before wording a performance claim.** The gain kernel's throughput,
+   the CPU loop it replaces and the cost of a frame copy are measured on one
+   RTX 3060 (`evidence/2026-11-24-windows/`); nothing is measured on a second GPU,
+   inside a host, or with a CUDA execution provider.
 4. **Keep the docs passing `python3 tools/check-docs.py`.** It runs in
    `./run-tests.sh` and in CI, and checks links, anchors, count drift, duplicated
    measurements and provenance labels.

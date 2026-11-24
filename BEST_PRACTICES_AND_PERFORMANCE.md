@@ -9,16 +9,18 @@ cannot reproduce.
 | Grade | Meaning |
 | --- | --- |
 | **[S]** | Verified by reading `OFX_Release_1.5.1` source (`include/`, `Support/`) while writing this |
-| **[M]** | Measured here with the real toolchain (nvcc 12.9.41, GCC 13.3, CMake 3.31.6) — static/PTX level, no GPU execution |
+| **[M]** | Measured here with the real toolchain (nvcc 12.9.41 / 13.0.48, GCC 13.3, CMake 3.31.6 / 4.4.4) — static and PTX level, and since 2026-11-24 also on an RTX 3060 through `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu` |
 | **[D]** | Stated by official documentation (OpenFX reference, NVIDIA CUDA C++ Best Practices Guide) |
 | **[R]** | Stated by a reference project's own README/source |
 | **[A]** | Arithmetic derived from a formula in this document |
 | **[U]** | Not verified here — treat as a hypothesis and measure it yourself |
 
-Nothing in this document was benchmarked: **there is no GPU in the environment
-that produced it** (`/dev/nvidia*` absent, no `nvidia-smi`). Performance figures
-you see elsewhere in the repo, and any number you get from your own machine, are
-the only real ones.
+Only the gain kernel is benchmarked, and only on one RTX 3060 (2026-11-24): its
+throughput, the CPU loop it replaces and the cost of a frame copy are tabulated in
+[`README.md`](README.md) §"What has actually been verified", with the raw run in
+`evidence/2026-11-24-windows/`. Every other performance statement here — about a
+model, a tiled inference, another GPU, a host's scheduling — is reasoning, and the
+**[U]** grade marks it as such.
 
 ---
 
@@ -507,9 +509,11 @@ access and leaks **[D]**. It is slow — run it on 256×256, not 4K.
 
 ## 12. What is still unverified
 
-- **No runtime measurement of anything.** No GPU exists here. The 4×
-  instruction reduction is PTX-level **[M]**; the speedup is a hypothesis, and
-  no number is given for it.
+- **One kernel measured, nothing else.** Throughput, the CPU loop it replaces and
+  the copy cost are measured on one RTX 3060 (`README.md` §"What has actually been
+  verified"). The 4× instruction reduction stays PTX-level **[M]** — and measured,
+  it produced no throughput difference, because both forms are bandwidth-bound. The
+  instruction claim is about instructions, not speed.
 - **The equivalence proof stopped at the host.** The two kernels and the two CPU
   loop forms were shown to agree byte-for-byte by executing the real kernel
   source on the CPU (§6.1), which is not the same as running SASS on a GPU. The

@@ -5,8 +5,8 @@
 // The template's own suite (test/run-tests.sh) emulates the kernel bodies on the
 // CPU through test/shim/cuda_runtime.h. This harness does the opposite: it
 // compiles the real src/Kernel.cu and executes it on actual hardware, which is
-// what SKILL.md section 12 lists as "Still not verified - No GPU. No kernel has
-// ever executed on hardware."
+// what SKILL.md section 12 used to list as the one thing never verified on
+// hardware. It now is, on one GPU: run it to reproduce or to measure a new one.
 //
 // Covered here and nowhere else in the repository:
 //   1. Device binding in the launcher (cudaPointerGetAttributes + DeviceGuard).
@@ -18,8 +18,9 @@
 //      WaitForDefaultStream() completion contract from Plugin.cpp.
 //   5. Concurrent launches from several host threads on disjoint buffers.
 //   6. Zero-copy on host-mapped (pinned, device-addressable) memory.
-//   7. Throughput for both kernels, so "one 16-byte load and one 16-byte store
-//      per pixel" stops being a PTX-only claim.
+//   7. Throughput for both kernels at 1080p/4K/8K, the CPU loop they replace,
+//      and the cost of the copy a zero-copy path avoids - so "one 16-byte load
+//      and one 16-byte store per pixel" stops being a PTX-only claim.
 //
 // Build (RTX 3060 = sm_86):
 //   nvcc -DOFXPLUGIN_WITH_CUDA=1 -arch=sm_86 -O2 -std=c++17 \
@@ -29,6 +30,7 @@
 
 #include "../src/Kernel.cu" // the real kernels AND the real launcher
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -589,67 +591,142 @@ void runDirectKernelCases()
 
 void runThroughput()
 {
-    std::printf("[6/6] throughput (first numbers this repository has for a real GPU)\n");
-    const int w = 1920;
-    const int h = 1080;
-    const long long pitch = static_cast<long long>(w) * kPixelBytes;
-    const size_t bytes = static_cast<size_t>(pitch) * h;
-    unsigned char* src = nullptr;
-    unsigned char* dst = nullptr;
-    if (cudaMalloc(reinterpret_cast<void**>(&src), bytes) != cudaSuccess ||
-        cudaMalloc(reinterpret_cast<void**>(&dst), bytes) != cudaSuccess) {
-        std::printf("  skipped: cannot allocate two 1080p RGBA32F buffers\n");
-        return;
-    }
-    cudaMemset(src, 0x3f, bytes);
+    std::printf("[6/6] throughput: the kernel, the CPU loop it replaces, and a copy\n");
 
-    const dim3 block(16, 16);
-    const dim3 grid(static_cast<unsigned>((w + 15) / 16), static_cast<unsigned>((h + 15) / 16));
+    // Fixed sizes so a number can be compared with the next run and with another
+    // machine. 8K is here because it is where the frame stops fitting in cache and
+    // the kernel is purely bandwidth-bound.
+    struct Size {
+        int w;
+        int h;
+        int gpuIterations;
+        int cpuIterations;
+        const char* name;
+    };
+    const Size sizes[] = {
+        {1920, 1080, 100, 5, "1080p"},
+        {3840, 2160, 30, 2, "4K"},
+        {7680, 4320, 10, 1, "8K"},
+    };
+
     const float4 g = make_float4(kGain[0], kGain[1], kGain[2], kGain[3]);
-    const int iterations = 100;
     cudaEvent_t start;
     cudaEvent_t stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    for (int which = 0; which < 2; ++which) {
-        // Warm-up, then measure.
-        for (int i = 0; i < 5; ++i) {
-            if (which == 0) {
-                GainKernelRGBA32FVec4<<<grid, block>>>(
-                    reinterpret_cast<const float*>(src), reinterpret_cast<float*>(dst), w, h, pitch,
-                    pitch, g);
-            } else {
-                GainKernelRGBA32FScalar<<<grid, block>>>(
-                    reinterpret_cast<const float*>(src), reinterpret_cast<float*>(dst), w, h, pitch,
-                    pitch, g);
-            }
+    for (const Size& size : sizes) {
+        const long long pitch = static_cast<long long>(size.w) * kPixelBytes;
+        const size_t bytes = static_cast<size_t>(pitch) * size.h;
+        unsigned char* src = nullptr;
+        unsigned char* dst = nullptr;
+        unsigned char* host = static_cast<unsigned char*>(std::malloc(bytes));
+        if (host == nullptr || cudaMalloc(reinterpret_cast<void**>(&src), bytes) != cudaSuccess ||
+            cudaMalloc(reinterpret_cast<void**>(&dst), bytes) != cudaSuccess) {
+            std::printf("  skipped %s: cannot allocate two buffers of %.1f MB\n", size.name,
+                        static_cast<double>(bytes) / 1e6);
+            std::free(host);
+            cudaFree(src);
+            cudaFree(dst);
+            continue;
         }
-        cudaEventRecord(start);
-        for (int i = 0; i < iterations; ++i) {
-            if (which == 0) {
-                GainKernelRGBA32FVec4<<<grid, block>>>(
-                    reinterpret_cast<const float*>(src), reinterpret_cast<float*>(dst), w, h, pitch,
-                    pitch, g);
-            } else {
-                GainKernelRGBA32FScalar<<<grid, block>>>(
-                    reinterpret_cast<const float*>(src), reinterpret_cast<float*>(dst), w, h, pitch,
-                    pitch, g);
+        cudaMemset(src, 0x3f, bytes);
+        std::memset(host, 0x3f, bytes);
+
+        const dim3 block(16, 16);
+        const dim3 grid(static_cast<unsigned>((size.w + 15) / 16),
+                        static_cast<unsigned>((size.h + 15) / 16));
+
+        std::printf("  %s %dx%d: %.1f MPix, %.1f MB per buffer\n", size.name, size.w, size.h,
+                    static_cast<double>(size.w) * size.h / 1e6,
+                    static_cast<double>(bytes) / 1e6);
+
+        double msVec4 = 0.0;
+        for (int which = 0; which < 2; ++which) {
+            for (int i = 0; i < 5; ++i) {
+                if (which == 0) {
+                    GainKernelRGBA32FVec4<<<grid, block>>>(
+                        reinterpret_cast<const float*>(src), reinterpret_cast<float*>(dst), size.w,
+                        size.h, pitch, pitch, g);
+                } else {
+                    GainKernelRGBA32FScalar<<<grid, block>>>(
+                        reinterpret_cast<const float*>(src), reinterpret_cast<float*>(dst), size.w,
+                        size.h, pitch, pitch, g);
+                }
             }
+            cudaEventRecord(start);
+            for (int i = 0; i < size.gpuIterations; ++i) {
+                if (which == 0) {
+                    GainKernelRGBA32FVec4<<<grid, block>>>(
+                        reinterpret_cast<const float*>(src), reinterpret_cast<float*>(dst), size.w,
+                        size.h, pitch, pitch, g);
+                } else {
+                    GainKernelRGBA32FScalar<<<grid, block>>>(
+                        reinterpret_cast<const float*>(src), reinterpret_cast<float*>(dst), size.w,
+                        size.h, pitch, pitch, g);
+                }
+            }
+            cudaEventRecord(stop);
+            cudaEventSynchronize(stop);
+            float ms = 0.0f;
+            cudaEventElapsedTime(&ms, start, stop);
+            const double perFrame = ms / size.gpuIterations;
+            // A full frame read plus a full frame written, per iteration.
+            const double gbs = (static_cast<double>(bytes) * 2.0) / (perFrame / 1000.0) / 1e9;
+            if (which == 0) {
+                msVec4 = perFrame;
+            }
+            std::printf("    %-6s %8.3f ms/frame  %7.1f GB/s effective\n",
+                        which == 0 ? "vec4" : "scalar", perFrame, gbs);
         }
-        cudaEventRecord(stop);
-        cudaEventSynchronize(stop);
-        float ms = 0.0f;
-        cudaEventElapsedTime(&ms, start, stop);
-        const double seconds = ms / 1000.0;
-        const double gbs = (static_cast<double>(bytes) * 2.0 * iterations) / seconds / 1e9;
-        std::printf("  %-6s %dx%d RGBA32F: %.3f ms/frame, %.1f GB/s effective\n",
-                    which == 0 ? "vec4" : "scalar", w, h, ms / iterations, gbs);
+
+        // The CPU loop the kernel replaces: same arithmetic, same bytes, in place.
+        // This is the comparison that decides whether the GPU path earns its copy.
+        {
+            const std::chrono::steady_clock::time_point began = std::chrono::steady_clock::now();
+            for (int iteration = 0; iteration < size.cpuIterations; ++iteration) {
+                float4* pixels = reinterpret_cast<float4*>(host);
+                const size_t count = bytes / sizeof(float4);
+                for (size_t i = 0; i < count; ++i) {
+                    float4 value = pixels[i];
+                    value.x *= g.x;
+                    value.y *= g.y;
+                    value.z *= g.z;
+                    value.w *= g.w;
+                    pixels[i] = value;
+                }
+            }
+            const std::chrono::steady_clock::time_point ended = std::chrono::steady_clock::now();
+            const double msCpu =
+                std::chrono::duration<double, std::milli>(ended - began).count() / size.cpuIterations;
+            std::printf("    CPU    %8.3f ms/frame  %7.1fx slower than vec4\n", msCpu,
+                        msCpu / msVec4);
+        }
+
+        // What a copy-based path pays and a zero-copy path does not: the frame in
+        // and back out over PCIe, pageable memory, no pinned staging buffer.
+        {
+            const int copies = 5;
+            const std::chrono::steady_clock::time_point began = std::chrono::steady_clock::now();
+            for (int i = 0; i < copies; ++i) {
+                cudaMemcpy(src, host, bytes, cudaMemcpyHostToDevice);
+                cudaMemcpy(host, src, bytes, cudaMemcpyDeviceToHost);
+            }
+            const std::chrono::steady_clock::time_point ended = std::chrono::steady_clock::now();
+            const double msCopy =
+                std::chrono::duration<double, std::milli>(ended - began).count() / copies;
+            const double gbs = (static_cast<double>(bytes) * 2.0) / (msCopy / 1000.0) / 1e9;
+            std::printf("    copy   %8.3f ms/frame  %7.1f GB/s over PCIe (H2D+D2H, pageable)\n",
+                        msCopy, gbs);
+        }
+
+        std::free(host);
+        cudaFree(src);
+        cudaFree(dst);
     }
+
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
-    cudaFree(src);
-    cudaFree(dst);
 }
 
 } // namespace
