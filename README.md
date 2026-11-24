@@ -149,6 +149,11 @@ cd templates\minimal-cuda-ofx
 .\build.bat Release install
 ```
 
+The shell script also finishes on Windows: its artifact stage needs `nm` and
+`readelf`, which Git for Windows does not ship, so when they are absent it hands
+the same checks to `testkit/check-ofx-artifact.bat` (dumpbin and cuobjdump) and
+labels the two ELF-only probes as not applicable on PE.
+
 `build.bat` has no bootstrap — Windows toolkits come from an installer. It probes
 `CUDA_HOME`, `CUDA_PATH`, `where nvcc` and the default
 the newest series under `%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v*`,

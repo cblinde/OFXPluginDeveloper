@@ -24,6 +24,26 @@ esac
 
 die() { echo "FAIL: $*" >&2; exit 1; }
 
+# The artifact stage is written for binutils: nm for the export set and the
+# undefined-symbol probe, readelf for RPATH. Neither ships with Git for Windows,
+# and the build used to succeed and then die with "nm: command not found", which
+# reads as a broken build. The same claims are checked by
+# testkit/check-ofx-artifact.bat with dumpbin and cuobjdump - the checker
+# build.bat already calls - so delegate to it instead of parsing dumpbin twice.
+verify_with_dumpbin() {
+  local plugin="$1" extra="${2:-}" checker="${repo}/testkit/check-ofx-artifact.bat"
+  [[ -f "${checker}" ]] || return 3
+  command -v cmd >/dev/null 2>&1 || return 3
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) return 3 ;;
+  esac
+  echo "  nm/readelf absent: verifying with dumpbin (testkit/check-ofx-artifact.bat)"
+  # shellcheck disable=SC2086  # ${extra} is a single optional flag, unquoted on purpose
+  cmd //c "$(cygpath -w "${checker}")" "$(cygpath -w "${plugin}")" ${extra} --strict
+}
+
+
 # ---------------------------------------------------------------------------
 # 1. Headers
 # ---------------------------------------------------------------------------
@@ -64,10 +84,7 @@ ofx_file="$(find "${here}/build/bundle" -name '*.ofx' -type f | head -1)"
 echo "[4/4] verifying ${ofx_file}"
 file "${ofx_file}"
 
-# The verification below needs binutils. On Windows the same checks live in
-# build.bat, which uses dumpbin and cuobjdump; say so instead of dying on
-# "nm: command not found" after a build that already succeeded.
-command -v nm >/dev/null 2>&1 && command -v readelf >/dev/null 2>&1 || die "nm and readelf are not installed, and this step proves the artifact with them; on Windows run build.bat (dumpbin) or test/run-tests.bat"
+if command -v nm >/dev/null 2>&1 && command -v readelf >/dev/null 2>&1; then
 exports="$(nm -D --defined-only "${ofx_file}" | awk '$2 == "T" {print $3}' | sort)"
 expected=$'OfxGetNumberOfPlugins\nOfxGetPlugin'
 if [[ "${exports}" != "${expected}" ]]; then
@@ -102,11 +119,32 @@ if [[ -n "${rpath}" ]]; then
   [[ "${rpath}" == *'$ORIGIN'* ]] || die "the module records a build-machine library path"
 fi
 echo "  RPATH/RUNPATH  : ${rpath:+$ORIGIN-based}${rpath:-none}"
+else
+  # Windows: the export set is the contract. A PE image has no dynamic symbol
+  # table to count and no RPATH to inspect - the loader resolves next to the
+  # module - so those two ELF-only probes are not silently skipped, they are
+  # named as inapplicable.
+  verify_with_dumpbin "${ofx_file}" "" "${repo}/testkit/check-ofx-artifact.bat" \
+    || die "artifact verification needs nm/readelf, or dumpbin through testkit/check-ofx-artifact.bat on Windows"
+  echo "  dynamic symbols: not applicable on PE (the export set above is the check)"
+  echo "  RPATH/RUNPATH  : not applicable on PE (the loader looks next to the module)"
+fi
 
 # The registration hook is only real if a loader can call it. dlopen() the
 # artifact, call the entry point, and read the struct it returns.
-command -v python3 >/dev/null 2>&1 || die "python3 is required for the registration check"
-python3 - "${ofx_file}" <<'PY'
+# "command -v python3" is not enough on Windows: Git Bash resolves it to the
+# Microsoft Store stub, which prints an install advert and exits 49. Ask each
+# candidate to import ctypes, which is what this check needs.
+loader_python=""
+for candidate in python3 python; do
+  if command -v "${candidate}" >/dev/null 2>&1 &&
+     "${candidate}" -c 'import ctypes' >/dev/null 2>&1; then
+    loader_python="${candidate}"
+    break
+  fi
+done
+[[ -n "${loader_python}" ]] || die "python3 (or python) with ctypes is required for the registration check"
+"${loader_python}" - "${ofx_file}" <<'PY'
 import ctypes
 import sys
 

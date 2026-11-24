@@ -44,6 +44,26 @@ done
 
 die() { echo "error: $*" >&2; exit 1; }
 
+# The artifact stage is written for binutils: nm for the export set and the
+# undefined-symbol probe, readelf for RPATH. Neither ships with Git for Windows,
+# and the build used to succeed and then die with "nm: command not found", which
+# reads as a broken build. The same claims are checked by
+# testkit/check-ofx-artifact.bat with dumpbin and cuobjdump - the checker
+# build.bat already calls - so delegate to it instead of parsing dumpbin twice.
+verify_with_dumpbin() {
+  local plugin="$1" extra="${2:-}" checker="$3"
+  [[ -f "${checker}" ]] || return 3
+  command -v cmd >/dev/null 2>&1 || return 3
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) return 3 ;;
+  esac
+  echo "  nm/readelf absent: verifying with dumpbin (testkit/check-ofx-artifact.bat)"
+  # shellcheck disable=SC2086  # ${extra} is a single optional flag, unquoted on purpose
+  cmd //c "$(cygpath -w "${checker}")" "$(cygpath -w "${plugin}")" ${extra} --strict
+}
+
+
 # ---------------------------------------------------------------------------
 # CUDA toolkit discovery
 #
@@ -233,7 +253,15 @@ find "${bundle}" -name '*.ofx' -type f -printf '  %p\n' 2>/dev/null || true
 # Immediate, cheap proof that the intended path was actually compiled in.
 ofx_file="$(find "${bundle}" -name '*.ofx' -type f | head -1)"
 if [[ -n "$ofx_file" ]]; then
-  command -v nm >/dev/null 2>&1 || die "nm is not installed, and this step proves the artifact with it; on Windows run build.bat (dumpbin) or test/run-tests.bat"
+  if ! command -v nm >/dev/null 2>&1; then
+    # No binutils: ask the dumpbin checker, which is the same one build.bat
+    # calls. Its --cuda flag turns "device code present" into a hard check.
+    cuda_check=""
+    [[ -n "${cuda_home:-}" ]] && cuda_check="--cuda"
+    verify_with_dumpbin "$ofx_file" "$cuda_check" "${here}/../../testkit/check-ofx-artifact.bat" \
+      || die "artifact verification needs nm, or dumpbin through testkit/check-ofx-artifact.bat on Windows"
+    echo "  symbol probes: not applicable on PE (exports and device code above are the checks)"
+  else
   exported="$(nm -D --defined-only "$ofx_file" 2>/dev/null | grep -c ' T ' || true)"
   echo "  exported dynamic symbols: ${exported} (expected 2)"
   # Note: no `grep -q` here. With `set -o pipefail`, grep -q exits early, nm dies
@@ -244,5 +272,6 @@ if [[ -n "$ofx_file" ]]; then
     echo "  CUDA launcher: present (${launcher_syms} symbol(s))"
   else
     echo "  CUDA launcher: ABSENT (CPU-only build)"
+  fi
   fi
 fi
