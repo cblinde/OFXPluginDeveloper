@@ -6,7 +6,7 @@ What is verified, by what command, and what remains unverified - the honest bott
 <!-- README.md lines 349-438 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 27-46 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 510-531 -->
-## 12. Verification status of this skill
+## Verification status of this skill
 
 **Verified on the authoring machine** **[V]** (Linux x86-64, Ubuntu 24.04,
 GCC 13.3.0, CUDA 12.9.41 via `./build.sh --bootstrap-cuda`, CMake 3.31.6,
@@ -27,7 +27,7 @@ OpenFX `OFX_Release_1.5.1`):
   `com.ofxplugindeveloper.minimalcudagain` 1.0, `setHost` and `mainEntry` set.
 - `./test/run-tests.sh`, ASan+UBSan, TSan and `RUN_VALGRIND=1` are clean;
   `test/run-analysis.sh` (cppcheck + shellcheck) is clean.
-- Every `kOfx*` constant cited in §5 exists in the pinned headers, including the
+- Every `kOfx*` constant cited in `ofx-api-constants.md` exists in the pinned headers, including the
   three 1.5.1 additions and `ofxColour.h`.
 
 **Currency check, 2026-11-24** (external evidence, re-read before relying on it):
@@ -45,7 +45,7 @@ OpenFX `OFX_Release_1.5.1`):
 
 - **`./run-tests.sh` executes no SASS** — by design, it has no GPU step; its
   numerics are validated by emulating the thread mapping over the real kernel
-  source (`performance-model.md` §6.1). The hardware run is
+  source (`performance-model.md` §3). The hardware run is
   `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu`: on 2026-11-24 it was
   28/28 bit-exact and measured throughput, the CPU loop and the copy cost
   (`../README.md` §"What has actually been verified"). Multi-GPU binding and real
@@ -57,9 +57,9 @@ OpenFX `OFX_Release_1.5.1`):
   remains graded B/C rather than verified.
 - **The 1.5.1 render hints are documented, not exercised.** No host here sets
   `kOfxImageEffectPropNoSpatialAwareness` or `kOfxImageEffectPropThumbnailRender`,
-  and the templates do not yet read them; the rules in §8 follow from the header
+  and the templates do not yet read them; the rules in `roi-tiling-and-render-hints.md` follow from the header
   text **[I]**.
-- **No colour-managed test.** The colour-management paragraph in §5.5 is read from
+- **No colour-managed test.** The colour-management paragraph in `ofx-api-constants.md` is read from
   `ofxColour.h` and Blackmagic's release note; no host and no config were
   exercised **[I]** for the plug-in side.
 
@@ -82,7 +82,7 @@ sm_86, CUDA 13.0 toolkit on a 13.5 driver, MSVC 19.44/19.50; logs and limits in
 Resolve, Nuke, SCRATCH or Natron; one GPU only; no Windows sanitizer or valgrind
 pass; no Nsight capture; no multi-resolution performance work.
 
-## What has actually been verified
+## 1. What has actually been verified
 
 Built and checked on Linux x86-64 with GCC 13.3.0, CUDA 12.9.41, CMake 3.31.6 and
 OpenFX `OFX_Release_1.5.1`. Lines marked **[V]** are measurements or artifact
@@ -170,29 +170,29 @@ iterations; one GPU, one driver, one OS build.
 **Not verified here:** no Resolve, Nuke or SCRATCH is installed, so nothing has
 rendered in them; no CUDA execution provider has ever been created (the inference
 template builds a CPU session); Linux has not been run; and no kernel runs in
-`./run-tests.sh`, which has no GPU step by design. See `verification-status.md` §12.
+`./run-tests.sh`, which has no GPU step by design. See the opening section of this document.
 
-## 1. What this pass changed, and what it verified
+## 2. What this pass changed, and what it verified
 
 The review ran a mechanical check of the repo against the official sources.
 
 | Check | Result |
 | --- | --- |
 | Every `kOfx*` identifier cited in the documents, sources and tests exists in OFX 1.5.1 | Checked mechanically by extracting every `kOfx*` token and resolving it against the 1.5.1 tree. Of the 2 that did not resolve, **1 was a real error, now fixed** — `references/ofx-lifecycle-and-threads.md` cited `kOfxImageEffectActionInstanceChanged`; the real action is `kOfxActionInstanceChanged` (`ofxCore.h:447`). The other, `kOfxImageEffectPropUnmappedComponents` in `../SKILL.md`, is a deliberate negative example ("there is no such constant"), so it stays. |
-| The GPU property table in `ofx-api-constants.md` §5 against the headers | 12/12 exist; three descriptions were wrong and are fixed (wrong header for `...OpenCLRenderSupported`, OpenGL declared `C string` not `string`, and the OpenCL Buffers/Images distinction now quoted from the header) |
+| The GPU property table in `ofx-api-constants.md` §1 against the headers | 12/12 exist; three descriptions were wrong and are fixed (wrong header for `...OpenCLRenderSupported`, OpenGL declared `C string` not `string`, and the OpenCL Buffers/Images distinction now quoted from the header) |
 | A committed GPU-free test suite (`templates/minimal-cuda-ofx/test/run-tests.sh`) | predicate table + 3,240-launch kernel comparison + CPU-loop comparison + 6-thread concurrency + PTX counts + memcheck, exit-code gated; clean under ASan+UBSan, TSan and valgrind **[M]** |
 | Every CUDA runtime symbol the template calls (9) is declared in the toolkit headers | all present |
 | The quoted stream-contract text exists verbatim in `ofxGPURender.h` | present at lines 608–617 |
 | Property types and defaults used by the template | confirmed, see §3 |
-| `ImageProcessor` dispatches the GPU path once per render, not per thread | confirmed, see §5.2 |
-| The CPU path is already threaded by the Support library | confirmed, see §5.4 |
-| Kernel memory instructions, after vectorizing | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** per pixel, 14 registers, 0 spills, 0 stack — measured, see §6.1 |
-| Vec4 path versus scalar path, executing the real kernel source on the host | **3,240 grid launches, 0 mismatches**: widths 0–63 covering every `width % 4`, heights 1/2/3/5, origins (0,0)/(5,3)/(17,9), aligned and padded and misaligned pitches — see §6.1 **[M]** |
-| CPU path: hoisted row pointers versus the previous per-pixel addressing | bit-identical over 1,464 pixel components — see §5.4 **[M]** |
+| `ImageProcessor` dispatches the GPU path once per render, not per thread | confirmed, see `ofx-api-constants.md` |
+| The CPU path is already threaded by the Support library | confirmed, see `ofx-api-constants.md` |
+| Kernel memory instructions, after vectorizing | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** per pixel, 14 registers, 0 spills, 0 stack — measured, see `field-evidence.md` §5 |
+| Vec4 path versus scalar path, executing the real kernel source on the host | **3,240 grid launches, 0 mismatches**: widths 0–63 covering every `width % 4`, heights 1/2/3/5, origins (0,0)/(5,3)/(17,9), aligned and padded and misaligned pitches — see `field-evidence.md` §5 **[M]** |
+| CPU path: hoisted row pointers versus the previous per-pixel addressing | bit-identical over 1,464 pixel components — see `ofx-api-constants.md` **[M]** |
 
 ---
 
-## 13. What is still unverified
+## 3. What is still unverified
 
 - **One kernel measured, nothing else.** Throughput, the CPU loop it replaces and
   the copy cost are measured on one RTX 3060 (`../README.md` §"What has actually been
@@ -201,7 +201,7 @@ The review ran a mechanical check of the repo against the official sources.
   instruction claim is about instructions, not speed.
 - **The equivalence proof stopped at the host.** The two kernels and the two CPU
   loop forms were shown to agree byte-for-byte by executing the real kernel
-  source on the CPU (§6.1), which is not the same as running SASS on a GPU. The
+  source on the CPU (`field-evidence.md` §5), which is not the same as running SASS on a GPU. The
   same checks are committed as `templates/minimal-cuda-ofx/test/run-tests.sh` so
   they can be re-run after any change.
 - **No host has ever loaded these plugins.** Every host-behaviour claim in this

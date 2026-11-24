@@ -12,7 +12,7 @@ any) belongs to whoever redistributes a binary.
 |---|---|---|---|
 | **OpenFX SDK** 1.5.1 (`ofxCore.h`, `ofxImageEffect.h`, `Support/`) | BSD-3-Clause | `FetchContent` on tag `OFX_Release_1.5.1`, shallow; or `OFX_SOURCE_DIR` for an offline build. Headers are compiled into the `.ofx`; no SDK source is redistributed | An installed `.ofx` is a binary redistribution of SDK header material: keep the OpenFX copyright notice and disclaimer with it |
 | **Expat** 2.6.4 | MIT | `FetchContent` in [`testkit/official-host`](testkit/official-host/CMakeLists.txt), static, to build the official OFX host's XML cache | None for this repository — it is a build-time tool, never shipped in a bundle |
-| **ONNX Runtime** | MIT | [`templates/onnx-inference-ofx`](templates/onnx-inference-ofx/) links and loads it when `ONNXRUNTIME_ROOT` is provided | **Yes, when you ship it.** A bundle carrying `onnxruntime*.dll` / `libonnxruntime*.so` must carry ONNX Runtime's MIT notice; [`references/packaging-and-install.md`](references/packaging-and-install.md) §5 is the copy step |
+| **ONNX Runtime** | MIT | [`templates/onnx-inference-ofx`](templates/onnx-inference-ofx/) links and loads it when `ONNXRUNTIME_ROOT` is provided | **Yes, when you ship it.** A bundle carrying `onnxruntime*.dll` / `libonnxruntime*.so` must carry ONNX Runtime's MIT notice; [`references/packaging-and-install.md`](references/packaging-and-install.md) §1 is the copy step |
 | **Natron** 2.5.0 (portable) | GPL-2.0 | Downloaded by the operator into `.validation/` (gitignored) to run Tier 2 of [`testkit/verify-bundle.bat`](testkit/verify-bundle.bat) | None: it is a *host* used to test this code, never linked, bundled or redistributed. A GPL host and a BSD plug-in loaded into it are separate works; nothing here copies Natron code |
 | **CUDA Toolkit** headers and `cudart` | NVIDIA licence | The user's toolkit via `nvcc` | The `.ofx` contains no CUDA runtime; `cudart` is resolved from the host or the driver, never copied into the bundle |
 
@@ -21,9 +21,9 @@ any) belongs to whoever redistributes a binary.
 - No model weights, fonts or tokenizer tables are committed. If you add them, the
   licence text for each belongs with the bundle — that is the F14 finding in
   [`references/field-evidence.md`](references/field-evidence.md) and the reason
-  the §5 section of `references/packaging-and-install.md` exists.
+  the notices section of `references/packaging-and-install.md` exists.
 - No third-party source is pasted into `src/`. The reference projects named in
-  [`references/performance-model.md`](references/performance-model.md) §2 are
+  [`references/performance-model.md`](references/performance-model.md) are
   read for analysis, including GPL-3.0 ones (`OneGrade`, `rvmofx`), and nothing
   from them is copied: a GPL copy would make the BSD grant in `LICENSE`
   inapplicable to this tree.

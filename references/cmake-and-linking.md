@@ -279,7 +279,7 @@ The reference plug-in needs nothing beyond libc/libstdc++, so it records no
 pattern is `$ORIGIN` — and `readelf -d` must not contain the build machine's path
 [I for other libraries; V that `$ORIGIN` is what the ONNX template records].
 
-## 6. Reusing the scaffold
+## 4. Reusing the scaffold
 
 1. Copy `templates/minimal-ofx/` (about 570 lines including build, test and the
 export list).
@@ -303,7 +303,7 @@ alpha), continue with
 
 ---
 
-## 7. Windows: the toolchain matrix that decides whether the build works
+## 5. Windows: the toolchain matrix that decides whether the build works
 
 The Linux build is a compiler and CMake. The Windows build is a **three-way
 match** between CUDA, MSVC and the generator, and each pair can fail on its own.
@@ -324,7 +324,7 @@ limits of that run are in
 | CUDA toolkit ↔ discovery | an installer updates `PATH` for new shells only, and `CUDA_PATH` is often unset in the shell that builds; a hardcoded series (`\v12.9`) then misses a machine that has 13.0 installed | `nvcc not found` on a machine with a toolkit, and a CPU-only build unless `CPU_ONLY` was absent | scan `%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v*` newest-first (`dir /b /ad /o-n`) and take the first with `bin\nvcc.exe`; verified here with five series installed and none of them on `PATH` |
 | CUDA ↔ architecture list | `enable_language(CUDA)` caches nvcc's default; a second configure sees a defined variable | `-- CUDA architectures: 75`, one `--generate-code`, SASS only for Volta | record nvcc's default once, and only on a configure that saw no user `CMAKE_CUDA_ARCHITECTURES`; treat a differing value as a user choice. On a tree with no record, tell a `-D` value from `enable_language()`'s by the cache entry's type (`UNINITIALIZED` vs `STRING`) |
 | CUDA 13 ↔ runtime import | the Windows image does not import `cudart64_*.dll` even with device code present | `dumpbin /dependents` lists no CUDA DLL | say "device code present, runtime resolved at load"; never print the import you expected |
-| ONNX Runtime ↔ import library | the Windows package keeps headers in `include\`, the import library in `lib\onnxruntime.lib` and the DLL in `bin\onnxruntime.dll` | the build succeeds, the bundle carries a file named `onnxruntime.dll` that the loader rejects, and the plug-in fails at load | on Windows do **not** link the `.lib`: compile with `ORT_API_MANUAL_INIT`, copy the DLL as `onnxruntime-ofx.dll` and load it by full path (`onnx-and-tensorrt.md` §4); Linux/macOS link as usual. The template fails the configure when the DLL is missing |
+| ONNX Runtime ↔ import library | the Windows package keeps headers in `include\`, the import library in `lib\onnxruntime.lib` and the DLL in `bin\onnxruntime.dll` | the build succeeds, the bundle carries a file named `onnxruntime.dll` that the loader rejects, and the plug-in fails at load | on Windows do **not** link the `.lib`: compile with `ORT_API_MANUAL_INIT`, copy the DLL as `onnxruntime-ofx.dll` and load it by full path (`onnx-and-tensorrt.md` §1); Linux/macOS link as usual. The template fails the configure when the DLL is missing |
 | host runtime ↔ bundled runtime | Windows resolves an import by base name, and the host's directory comes first: Resolve 21 ships `onnxruntime.dll` 1.13, Windows ML ships one in `System32` | `render` access-violates; the minidump names the host's `onnxruntime.dll` and not the bundle's | private file name + `ORT_API_MANUAL_INIT` + `LoadLibraryExW` from the module directory; a bound import cannot be overridden by copying a file beside the `.ofx` |
 | `vswhere` ↔ `for /f` | a `for /f` backtick command whose first **and** last characters are quotes loses both before `cmd /c` runs it, so the program path is split at its first space | `Der Befehl "C:\Program" ist entweder falsch geschrieben oder konnte nicht gefunden werden.` — then the checker reports `dumpbin not found` and every `build.bat` aborts after a correct build | end the command with an unquoted argument (`-property installationPath`) and locate the tool with a `for /d` glob; never pass a quoted `-find` pattern there |
 | platform ↔ architecture directory | the directory name is part of the contract: `Linux-x86-64`, `Linux-aarch64`, `MacOS`, `Win64` | an ARM Linux build links, reports success and lands in `Contents/Linux-x86-64`, which no host scans | derive the directory from `WIN32`/`APPLE`/`CMAKE_SYSTEM_PROCESSOR` once, and set both output properties to it |
@@ -396,7 +396,7 @@ real checks are the contract harness (`testkit/build-contract-test.bat`) and the
 hardware harness (`test/gpu-kernel-test.cu`); the emulated suite is not ported,
 so its evidence remains Linux-only.
 
-## 10. Toolchain notes that cause real failures
+## 6. Toolchain notes that cause real failures
 
 ### `nvcc` flags
 
@@ -406,7 +406,7 @@ so its evidence remains Linux-only.
 | `-G` | Full device debug. Disables most optimisation — debug builds only. |
 | `--use_fast_math` | Off by default. Enables it changes results (denormals, `sin`/`cos` precision). A grading plugin should not silently change numerics. |
 | `-Xptxas -v` | Register/spill report; check it when occupancy is bad. |
-| `-arch=sm_XY` / CMake `CUDA_ARCHITECTURES` | Target list, see `packaging-and-install.md` §6. |
+| `-arch=sm_XY` / CMake `CUDA_ARCHITECTURES` | Target list, see `packaging-and-install.md` §2. |
 
 ### PTX and first-launch cost
 
@@ -426,7 +426,7 @@ and PTX for the newest only.
 
 On **Windows with CUDA 13** the packaged runtime is a hybrid: a built template's
 import table lists no `cudart64_*.dll` and uses `cudart_hybrid64.dll`, while the
-device code is present and the module loads (**[B]**, `packaging-and-install.md` §6). "Depends at
+device code is present and the module loads (**[B]**, `packaging-and-install.md` §2). "Depends at
 load" is therefore a Linux/older-toolkit statement, not a universal one; check the
 import list of the binary you ship.
 
@@ -465,7 +465,7 @@ interface that has been stable for years.
 
 ---
 
-## Build playbook: from a clean checkout to a `.ofx` a host will load
+## 7. Build playbook: from a clean checkout to a `.ofx` a host will load
 
 Most build prose is written from headers. This file is written from a build.
 [`templates/minimal-ofx/`](../templates/minimal-ofx/) is compiled by one command

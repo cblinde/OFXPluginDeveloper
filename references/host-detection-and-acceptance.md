@@ -3,7 +3,7 @@
 Probe capabilities, never sniff the host name - and the test that decides whether a host accepts the plug-in.
 
 <!-- HOST_COMPATIBILITY_MATRIX.md lines 294-355 -->
-## 6. Feature detection, not host sniffing
+## 1. Feature detection, not host sniffing
 
 The matrix above is for *design*; the code must not branch on host name. Branch
 on capabilities:
@@ -38,7 +38,7 @@ workaround that was only needed in 2019.
 
 ---
 
-## 7. The compatibility test you should actually run
+## 2. The compatibility test you should actually run
 
 Per host, per GPU mode, per page where applicable:
 

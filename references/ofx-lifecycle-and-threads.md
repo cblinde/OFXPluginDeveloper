@@ -13,7 +13,7 @@ A host and a plugin share nothing but C ABI structs. Three ideas cover all of it
 - **Handles** are opaque pointers: `OfxImageEffectHandle`, `OfxImageClipHandle`,
   `OfxPropertySetHandle`, `OfxParamSetHandle`.
 - **Properties** are typed, indexed, string-keyed key/value bags attached to
-  handles. Every constant in `ofx-api-constants.md` §5 is a key into one of those bags.
+  handles. Every constant in `ofx-api-constants.md` §1 is a key into one of those bags.
 - **Suites** are tables of function pointers the host exposes
   (`OfxImageEffectSuiteV1`, `OfxPropertySuiteV1`, `OfxParamSuiteV1`,
   `OfxMemorySuiteV1`, `OfxMultiThreadSuiteV1`, `OfxMessageSuiteV1/V2`,
@@ -172,7 +172,7 @@ zero-copy.
 
 ---
 
-## 13. The layer contract
+## 4. The layer contract
 
 ```
 L4  Application      your effect maths (grade, keyer, model inference)
@@ -194,7 +194,7 @@ depend on CUDA.
 
 ---
 
-## 12. End-to-end walkthrough of the template
+## 5. End-to-end walkthrough of the template
 
 `templates/minimal-cuda-ofx` implements every rule above in ~450 lines **[V]**
 (it builds, and its artifact is inspected by `build.sh`).
@@ -241,7 +241,7 @@ parts that took the longest to get right.
 
 ---
 
-## Architecture and the CUDA pipeline
+## 6. Architecture and the CUDA pipeline
 
 Deep-dive companion to [`../SKILL.md`](../SKILL.md). Everything here assumes the
 OpenFX 1.5-era headers (`ofxImageEffect.h`, `ofxGPURender.h`, `ofxParam.h`), the

@@ -20,7 +20,7 @@ check the declared render thread safety instead of trusting it.
 It is shared by the templates. None of them has its own copy, and nothing
 here links the plug-in: the binary under test is whatever `build.sh` produced.
 
-## Files
+## 1. Files
 
 | File | What it is |
 |---|---|
@@ -28,11 +28,11 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `contract_main.cpp` | the checks and the command line (`.ofx` path + what the plug-in is expected to declare) |
 | `build-contract-test.sh` | compiles the two files into one binary, finding the OFX headers from the template's CMake cache |
 | `build-contract-test.bat` | the same build under MSVC; the loader path in `contract_main.cpp` is `LoadLibraryExW` there |
-| `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping. It counts lines with `set /a` and matches export rows on the eight-digit RVA column, never with the legacy `find` or a loose `[0-9A-Fa-f]*`, which Git-for-Windows' GNU `find` and dumpbin's `00000000 characteristics` header respectively turn into a hung build and a miscount ([`../references/cmake-and-linking.md`](../references/cmake-and-linking.md) §7) |
+| `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping. It counts lines with `set /a` and matches export rows on the eight-digit RVA column, never with the legacy `find` or a loose `[0-9A-Fa-f]*`, which Git-for-Windows' GNU `find` and dumpbin's `00000000 characteristics` header respectively turn into a hung build and a miscount ([`../references/cmake-and-linking.md`](../references/cmake-and-linking.md) §5) |
 | `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built ten ways (plain or internally tiled with the context read or ignored, two for the label check — one that never writes the label, one that does — one that draws a mark at a fixed position, and two that echo the source clip's `mediaID` label, one re-reading it per render and one caching the first answer, and one that declares no context region at all), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
 | `run-negative-controls.sh` | builds those fifteen controls, asserts each fault is rejected with the right message, and that the context-reading, label-writing and clip-re-reading builds pass while the mark build passes only in both bottom-up layouts and the clip-caching build fails on the second media id |
 
-## Two-tier host verification
+## 2. Two-tier host verification
 
 Do not answer "does a host accept this bundle?" with a mock alone. A hand-written
 host can omit a mandatory suite or skip an action and still pass. These two tiers
@@ -80,7 +80,7 @@ Natron renders on the CPU, so the plug-in's CPU path is what a wrong
 `isEnabledCudaRender` branch would break. That is a fallback test, not a GPU test —
 only `test/gpu-kernel-test.cu` runs device code.
 
-## Running it
+## 3. Running it
 
 The templates call it from their own `test/run-tests.sh`; from the repository
 root, `./run-tests.sh` runs everything. To point it at one plug-in by hand:
@@ -240,7 +240,7 @@ the mirrored row`, which is the failure the four-layout table predicts.
 The fake host serves message suite **v1 and v2**. `setPersistentMessage(...)` is
 recorded as `[persistent:<type>] text (id)` and `clearPersistentMessage` as
 `[persistent] cleared`, so the channel recommended in
-[`SKILL.md`](../SKILL.md) §7 can be
+[`SKILL.md`](../SKILL.md) §5 can be
 exercised — Support throws a host-missing-suite exception when only v1 exists,
 which is what a v1-only harness used to do.
 
@@ -285,7 +285,7 @@ would fail a correct pipeline. Default 0 keeps the exact check; the ONNX
 template's suite retries with `1e-5` only after the exact comparison failed. `up_2x_3ch.onnx` is the fixture for the other behaviour — a runner that
 only accepts shape-preserving models must refuse it, not quietly crop.
 
-## Assumptions the checks encode
+## 4. Assumptions the checks encode
 
 Written down because each one is a way for a green run to mean less than it looks:
 
@@ -351,7 +351,7 @@ shown is the declared default`. `-DWITH_LABEL` writes the same label from
 `label parameter 'provider' = "CPU (stub, written by render)"`. Together they
 pin the predicate: the check is about the write, not about the parameter.
 
-## What this host cannot prove
+## 5. What this host cannot prove
 
 1. **The multi-resolution and tile protocol.** It does not set
    `kOfxImageEffectPropTilesRoD` or slice render windows, so `setSupportsTiles(true)`

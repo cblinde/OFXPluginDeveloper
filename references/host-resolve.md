@@ -89,7 +89,7 @@ require 256-byte row alignment fails validation unless rows are padded **(B)**.
 
 For a raw CUDA pointer path there is no upload — but the lesson transfers: the
 host's `rowBytes` is authoritative and is not `width * bytesPerPixel`. See the
-worked table in the architecture doc §6.
+worked table in the architecture doc `ofx-lifecycle-and-threads.md` §6.
 
 ### 2.5 Crashing or hanging plugins are blacklisted
 
@@ -171,11 +171,11 @@ and 21.0.3 notes). Two consequences for a plug-in author:
 
 A GPU-mode regression fixed in a point release is also the reason the matrix
 separates "the host offers CUDA" from "your kernel ran": a Resolve update can
-change whether the device path is taken at all, so re-run the §7 table after one.
+change whether the device path is taken at all, so re-run the §1 table after one.
 
 ---
 
-## 8. Known real-world failure, as a case study
+## 3. Known real-world failure, as a case study
 
 `gyroflow/gyroflow-plugins` issue #64 (August 2026) documents 32 DaVinci Resolve
 crashes in 24 days, 31 of them attributable to one line: the plugin released a
@@ -197,7 +197,7 @@ The template encodes that rule structurally: `GainProcessor` holds no CUDA
 handles at all, the stream is a borrowed `void*`, and the destructor releases
 nothing but its own C++ members.
 
-## Host compatibility matrix
+## 4. Host compatibility matrix
 
 Deep-dive companion to [`../SKILL.md`](../SKILL.md). What differs between OpenFX hosts,
 what breaks, and what to do instead.

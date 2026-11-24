@@ -241,7 +241,7 @@ Writing *into* the frame rather than copying it through repeats all five rules
 against the destination image, which has its own pitch and bounds, and adds
 three drawing-specific traps: placement in frame coordinates, premultiplied
 plates, and a single rasterising origin. That contract is
-[`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §7, "Drawing into the frame:
+[`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) `onnx-and-tensorrt.md` §4, "Drawing into the frame:
 the overlay after the model".
 
 ### 3.4 Ownership and error surface
@@ -264,7 +264,7 @@ the overlay after the model".
   `#ifdef DEBUG` (`ofxsLog.cpp:40-47`) — which CMake's `Debug` configuration and
   the templates do not define. The templates use it on every
   failure path, so treat it as a developer-build trace; a user-visible error
-  needs the host's message suite (`setPersistentMessage`, `debugging-and-symptoms.md` §7).
+  needs the host's message suite (`setPersistentMessage`, `debugging-and-symptoms.md` §1).
 
 ### 3.5 The GPU contract
 
@@ -323,7 +323,7 @@ further rules the template teaches by construction:
   survives an orientation-blind assertion (a copy matches either way up). The
   drawing contract — destination pitch, frame coordinates, premultiplied plates,
   one rasterising origin — is
-  [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §7, "Drawing into the frame:
+  [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §6, "Drawing into the frame:
   the overlay after the model".
 
 ### 3.7 Model and tensor plumbing
@@ -408,7 +408,7 @@ evidence grade B and the architectures — not the numbers — are what transfer
 | 4 | `templates/minimal-cuda-ofx/src/Plugin.cpp` | What the samples omit: per-render int vs descriptor string (`:79`), stream asymmetry (`:119`–`:127`), `InstanceSafe` (`:317`) | 45 min |
 | 5 | `templates/minimal-cuda-ofx/test/run-tests.sh` | How the invariants are proven without a GPU | 20 min |
 | 6 | `templates/onnx-inference-ofx/src/AiCore.cpp` + `templates/onnx-inference-ofx/test/ai_pipeline_test.cpp` | Packing, tiling, golden fixtures, the halo negative control (`:300`) | 45 min |
-| 7 | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §1 and §6 | What production inference plug-ins do; when CUDA pays | 20 min |
+| 7 | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §1 and §4 | What production inference plug-ins do; when CUDA pays | 20 min |
 
 Steps 1–3 need the `.ofx-ref` checkout (see the top of this file). Steps 4–7 need
 only this repository.
@@ -521,7 +521,7 @@ Nine of the ten sources include `OFX::ImageProcessor`:
 
 ## 10. The general-purpose suites: what to read, what to skip
 
-The AI repositories in [§4](ai-architectures-and-runtimes.md#4-external-ai--onnx-plug-ins-what-exists-what-to-learn-what-to-avoid)
+The AI repositories in [§4](ai-architectures-and-runtimes.md#6-external-ai--onnx-plug-ins-what-exists-what-to-learn-what-to-avoid)
 answer "how do I ship a model". These answer "how do I ship a plug-in at all",
 and they are where the host protocol is exercised at a scale one person cannot
 write alone.
@@ -584,11 +584,11 @@ header agrees.
 
 | Situation | Shape | Where the reasoning is |
 |---|---|---|
-| Model is ONNX, ops are supported by the C runtime you can ship | in-process | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §2, §4 |
+| Model is ONNX, ops are supported by the C runtime you can ship | in-process | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §2, §6 |
 | Model needs PyTorch code, custom ops, or a Python preprocessing stack | sidecar (shared memory + control socket) | §2, §3 |
 | Inference takes longer than a frame budget | staged job + disk cache | §1 above, and the LTX design in §4 |
 | Operation is local and analytic | no model at all | `Hush-OpenNR` in §4 |
-| GPU is available but the host does not hand over device pointers | CPU, or accept one copy per frame and measure | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §6 |
+| GPU is available but the host does not hand over device pointers | CPU, or accept one copy per frame and measure | [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §4 |
 
 ## 12. What the reference projects teach
 
@@ -600,7 +600,7 @@ team already paid for.
 | **OneGrade** | *"The CPU header is the source of truth… any change to the math is a 4-file change (CPU + 3 kernels). Keep the helper names and formulas identical so they're easy to diff."* **[R]** | Four backends drifting apart is the normal failure mode of a multi-backend plugin, and it shows up as "CUDA looks different from CPU" only after a client notices. Naming parity makes the drift visible in a diff. | Partly: one kernel + one CPU loop, named to match, but no shared pipeline header yet. §6.4 says when to add one. |
 | **OneGrade** | *"Confirm the GPU kernel actually shipped — a plugin built without it looks fine and just renders on the CPU"*, via `cuobjdump --list-elf …ofx`. **[R]** | A silently CPU-only build is indistinguishable from a working one in the UI. This is the single highest-value 10-second check in the whole discipline. | Yes: `build.sh` checks the launcher symbol and `.nv_fatbin`; §8 adds the `cuobjdump` form for the reader's own builds. |
 | **OneGrade** | *"CUDA needs … a CUDA 13.x toolkit (12.x emits no Blackwell/sm_120 code)"*, and OpenCL validated against the CPU pipeline to *"worst deviation well under one 8-bit code value"*. **[R]** | Architecture flags and cross-backend tolerance are both testable facts, not opinions. | Partly: the template emits `100;120` when `CUDAToolkit_VERSION >= 12.8` **[S]**; cross-backend tolerance testing is described in §9.3, not implemented. |
-| **OneGrade** | *"close Resolve first — the plugin is locked while it runs"* **[R]** | Installing over a loaded `.ofx` on Windows fails in a way that looks like a corrupt bundle. | Documented in `debugging-and-symptoms.md` §7. |
+| **OneGrade** | *"close Resolve first — the plugin is locked while it runs"* **[R]** | Installing over a loaded `.ofx` on Windows fails in a way that looks like a corrupt bundle. | Documented in `debugging-and-symptoms.md` §1. |
 | **Open-DRT-OFX** | SDK *"cloned on demand (not vendored)"*, CMake ≥ 3.20, CI builds all three platforms on every tag. **[R]** | Vendoring the SDK freezes you on a stale spec and drags a licence into your tree; fetching keeps the headers truthful. | Yes: `FetchContent` on tag `OFX_Release_1.5.1`, shallow, or `OFX_SOURCE_DIR` for offline builds. **[S]** |
 | **forge-colorx** | *"GPU where it's safe"* — Metal is gated to a host allow-list because *"Flame's macOS OFX host crashes on a Metal-advertising node"*; CUDA is opt-in at build time (`make WITH_CUDA=1`). **[R]** | Advertising a GPU capability is a promise the host acts on. Advertising one you cannot honour in a specific host is worse than not advertising it. | Philosophical yes (CUDA is advertised only when compiled in **[S]**); per-host gating is not implemented, and this is the strongest argument for keeping `references/host-resolve.md` in the loop. |
 | **gyroflow-plugins** | The heavy work (gyro sync, lens profiles, optical flow) happens in the desktop app and is handed to the plugin as a project file; the plugin only renders. **[R]** | Anything expensive and per-clip belongs outside the render path. A render action is called per frame, sometimes per field, sometimes twice. | Yes in principle: the render action does no analysis, only one kernel launch. |
@@ -693,7 +693,7 @@ informed design decisions only (see [Licensing](#licensing-and-provenance)).
 | Project | What it demonstrated | What this repo took from it |
 | --- | --- | --- |
 | [`gyroflow/gyroflow-plugins`](https://github.com/gyroflow/gyroflow-plugins) | Rust OFX plugin with FFI into a native sensor engine; probes host GPU support per render (`get_cuda_render_supported`, `get_metal_command_queue`, …); runs in Resolve and SCRATCH; installer/UX for host plugins. | The "probe the host, never sniff the host name" rule, and the multi-host support matrix. |
-| [`gyroflow-plugins` issue #64](https://github.com/gyroflow/gyroflow-plugins/issues/64) | 32 Resolve crashes in 24 days; 31 attributable to the plugin releasing a host-owned `MTLCommandQueue`. | The ownership rule — never destroy a borrowed GPU object — and the "GPU lifetime bugs surface in host code" case study in `host-resolve.md` §8. |
+| [`gyroflow-plugins` issue #64](https://github.com/gyroflow/gyroflow-plugins/issues/64) | 32 Resolve crashes in 24 days; 31 attributable to the plugin releasing a host-owned `MTLCommandQueue`. | The ownership rule — never destroy a borrowed GPU object — and the "GPU lifetime bugs surface in host code" case study in `host-resolve.md` §3. |
 | [`Dec18studios/Open-DRT-OFX`](https://github.com/Dec18studios/Open-DRT-OFX) | CMake build for Metal (macOS) + CUDA (Windows/Linux) with a clean host-wrapper / kernel split and a single transform definition reused by both backends; cross-platform CI packaging. | The one-pixel-model-two-backends rule and the CMake structure (bundle output directories, per-architecture folders). |
 | [`MattGrdinic/OneGrade`](https://github.com/MattGrdinic/OneGrade) | Single-node Resolve grade: vendored OFX 1.4 Support, grouped parameter UI, `OneGradePipeline.h` as the single source of truth mirrored by `MetalKernel.mm` / `OpenCLKernel.cpp` / `CudaKernel.cu` with a CPU fallback. | Confirmation that vendored Support + one pipeline header + per-backend kernels is the durable shape; parameter grouping/paging idioms. |
 | [`cnoellert/forge-colorx`](https://github.com/cnoellert/forge-colorx) | Runtime expression evaluation compiled once per render; host coverage across Flame, Resolve, Nuke and Natron; documents host-specific UI quirks. | Evidence for the host-quirk rows, and the "compile per render, evaluate per pixel" separation that the template's processor/launcher split follows. |
@@ -723,8 +723,8 @@ an oversight:
 
 | Not used | Why |
 | --- | --- |
-| TensorRT, ONNX Runtime | `onnx-and-tensorrt.md` §9 describes the zero-copy integration pattern (device pointers, `IoBinding`, the CUDA EP compute stream), but the template implements no inference path. Adding either would put a multi-hundred-megabyte dependency into a starter template. |
-| NVTX (`nvtx3/nvToolsExt.h`) | Appears only as a profiling snippet in `cuda-streams-and-memory.md` §5. The template neither includes nor links it. |
+| TensorRT, ONNX Runtime | `onnx-and-tensorrt.md` §3 describes the zero-copy integration pattern (device pointers, `IoBinding`, the CUDA EP compute stream), but the template implements no inference path. Adding either would put a multi-hundred-megabyte dependency into a starter template. |
+| NVTX (`nvtx3/nvToolsExt.h`) | Appears only as a profiling snippet in `cuda-streams-and-memory.md` §2. The template neither includes nor links it. |
 | OpenCL, Metal, OpenGL backends | `OFX::ImageProcessor` can dispatch to them, but only CUDA and CPU are implemented; the others are out of scope. |
 | DaVinci Resolve scripting API, DCTL | Different extension mechanisms, not OFX. Useful alongside a plugin, not part of one. |
 | pip CUDA wheels (`nvidia-cuda-nvcc-cu12`, `nvidia-cuda-runtime-cu12`) | Tried and rejected for the bootstrap: the nvcc wheel ships `ptxas` and NVVM but no `nvcc`/`cudafe++`/`nvlink`, so it cannot compile a translation unit. |

@@ -7,6 +7,30 @@ What shipped plug-ins do, the four architectures, per-language embedding hazards
 <!-- AI_MODEL_INTEGRATION.md lines 854-869 -->
 <!-- PATTERN_INDEX.md lines 145-187 -->
 <!-- AI_MODEL_INTEGRATION.md lines 1-24 -->
+## AI model integration for OpenFX plug-ins
+
+How to put a neural network inside an OFX plug-in without turning the host into
+a crash reporter. Every claim is graded, every architectural recommendation is
+traceable to a project that shipped it, and the parts that could not be verified
+here say so.
+
+**Evidence grades**, used throughout:
+
+| Grade | Meaning |
+|---|---|
+| **A** | Read from primary source: a header, a specification page, or measured by the test suite in this repository. |
+| **B** | Read from a project's own documentation or source, not independently executed here. |
+| **C** | Reported second-hand (README claim, forum post, issue thread). Treat as a lead. |
+
+No CUDA execution provider has ever been created here, so nothing below is a
+model performance measurement. Where a number appears it is a size, an exact CPU
+result from `templates/onnx-inference-ofx/test`, a **B**-graded figure from a
+project that shipped it, or explicitly labelled as unmeasured. The CUDA *kernel*
+throughput measured on 2026-11-24 is a different thing entirely — see
+[`../README.md`](../README.md) §"What has actually been verified".
+
+---
+
 ## 1. What shipped plug-ins actually do
 
 Ten repositories were read for this document: eight OFX plug-ins, one Nuke NDK
@@ -92,7 +116,7 @@ and its `use_gpu` knob is disabled (**B**).
 
 | Shape | Latency | Crash isolation | Packaging | Best when |
 |---|---|---|---|---|
-| **In-process C/C++ runtime** (ONNX Runtime, TensorRT, libtorch, OpenVINO, NGX) | lowest: no IPC, device pointers can be shared | none: a bad model takes the host down | one `.ofx` + one runtime `.so` (~34 MB for ORT CPU, see §8) | the model is ONNX/plan/TensorRT and the runtime ships as C |
+| **In-process C/C++ runtime** (ONNX Runtime, TensorRT, libtorch, OpenVINO, NGX) | lowest: no IPC, device pointers can be shared | none: a bad model takes the host down | one `.ofx` + one runtime `.so` (~34 MB for ORT CPU, see §5) | the model is ONNX/plan/TensorRT and the runtime ships as C |
 | **Sidecar process** (separate binary, shared memory or socket) | one IPC hop per frame; predictable | full: worker dies, host survives | two binaries, a protocol, and a supervisor | Python/PyTorch stack, heavy deps, or a model you do not trust |
 | **Embedded language runtime** (CPython, .NET, V8, Julia) | depends on the language's call overhead and thread rules | none | you ship a runtime inside a plugin | almost never; see §3 |
 | **Host-native API** (CoreML, Metal/MPS, NGX) | lowest on its platform | none | platform-specific | you are already platform-specific and the host supports it |
@@ -101,7 +125,7 @@ The decision rule that survives contact with the projects above:
 
 1. If the model is ONNX and the ops are supported by a C runtime you can ship,
    **go in-process**. You keep zero-copy on device pointers, which is the only
-   way the GPU path pays for itself (§7).
+   way the GPU path pays for itself (§4).
 2. If the model needs PyTorch code, custom ops, or a Python-only preprocessing
    stack, **go sidecar** and design the frame transport first (shared memory,
    fixed header, explicit width/height/format).
@@ -142,7 +166,7 @@ you are embedding rather than binding, that decision is made for you.
 
 ---
 
-## 6. When CUDA is necessary, helpful, or a waste of time
+## 4. When CUDA is necessary, helpful, or a waste of time
 
 No GPU was available for this work, so this section contains **no measured
 speedups** — only the decision procedure and the structural costs, each of which
@@ -164,11 +188,11 @@ host with no device), not the neutral starting point.
    (`ofxGPURender.h:559-575`) (**A**). If it is 0, the pixels are host memory and
    the CPU path is what you should run.
 2. **A context switch per launch**, plus whatever your framework does at the end
-   of a `Run()` — ORT synchronises the EP unless you disable it (§4).
+   of a `Run()` — ORT synchronises the EP unless you disable it (§6).
 3. **A device-side allocation, if you make one per frame.** `cudaMalloc`/`cudaFree`
    are "expensive operations" and the documented advice is to avoid "potentially
-   costly synchronization of `cudaMalloc` and `cudaFree`" (CUDA Best Practices
-   §10.3, Programming Guide §4.3.2) (**A**).
+   costly synchronization of `cudaMalloc` and `cudaFree`" (CUDA Best Practices Guide
+   §10.3, Programming Guide §6.3.2) (**A**).
 
 ### The decision procedure
 
@@ -214,7 +238,7 @@ path rather than on a second one.
 
 ---
 
-## 8. What this document does not know
+## 5. What this document does not know
 
 - **No performance numbers.** No GPU is present; the CPU figures above are
   exactness checks, not timings. Any claim that a model "runs in real time" here
@@ -230,7 +254,7 @@ path rather than on a second one.
   documented hazards (finalisation crash, sub-interpreter incompatibility) are
   the reason the recommendation is "worker process".
 
-## 4. External AI / ONNX plug-ins: what exists, what to learn, what to avoid
+## 6. External AI / ONNX plug-ins: what exists, what to learn, what to avoid
 
 All of these were read from their published documentation, not built here —
 evidence grade **B**. Links go to the projects, not to mirrors.
@@ -270,29 +294,5 @@ evidence grade **B**. Links go to the projects, not to mirrors.
    the licence travels with it. Reading for patterns is fine; copying is not.
 7. **Forks drift.** The LTX plug-in exists in at least three repositories. Pin a
    commit and name the upstream before you learn from one.
-
----
-
-## AI model integration for OpenFX plug-ins
-
-How to put a neural network inside an OFX plug-in without turning the host into
-a crash reporter. Every claim is graded, every architectural recommendation is
-traceable to a project that shipped it, and the parts that could not be verified
-here say so.
-
-**Evidence grades**, used throughout:
-
-| Grade | Meaning |
-|---|---|
-| **A** | Read from primary source: a header, a specification page, or measured by the test suite in this repository. |
-| **B** | Read from a project's own documentation or source, not independently executed here. |
-| **C** | Reported second-hand (README claim, forum post, issue thread). Treat as a lead. |
-
-No CUDA execution provider has ever been created here, so nothing below is a
-model performance measurement. Where a number appears it is a size, an exact CPU
-result from `templates/onnx-inference-ofx/test`, a **B**-graded figure from a
-project that shipped it, or explicitly labelled as unmeasured. The CUDA *kernel*
-throughput measured on 2026-11-24 is a different thing entirely — see
-[`../README.md`](../README.md) §"What has actually been verified".
 
 ---

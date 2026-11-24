@@ -202,6 +202,30 @@ def check_links(root, files, texts, report):
                     report.error(path, line, f"anchor #{anchor} does not exist in {relative}")
 
 
+def check_section_numbering(root, files, texts, report):
+    """A numbered document's sections run 1..N in reading order.
+
+    The numbers are a section's declared position. The split into references/
+    once left files reading 7, 11, 2, 4, 5, 10, 9, 12 because each section kept
+    the number it had in the root document it came from: not an ordering nobody
+    needed, but a contradiction a reader meets on the second screen. It also
+    makes every § reference ambiguous - `§5` may be the fifth section or a
+    section that no longer exists - so the two checks belong together.
+    """
+    for path in files:
+        numbers = [int(m.group(1)) for m in re.finditer(r"^## (\d+)\.", texts[path], re.M)]
+        if not numbers:
+            continue                      # an unnumbered router or readme
+        if numbers != list(range(1, len(numbers) + 1)):
+            first_wrong = next(i for i, n in enumerate(numbers) if n != i + 1)
+            line = texts[path].splitlines().index(
+                next(l for l in texts[path].splitlines()
+                     if re.match(rf"^## {numbers[first_wrong]}\.", l))) + 1
+            report.error(path, line,
+                         f"sections run {numbers}, not 1..{len(numbers)} in order; "
+                         f"number them by position so § references mean one thing")
+
+
 def check_section_refs(root, files, texts, report):
     """`FILE.md` §12 / §3.5 - a cross-reference no renderer validates."""
     for path in files:
@@ -540,6 +564,7 @@ def main():
 
     report = Report()
     check_links(root, files, texts, report)
+    check_section_numbering(root, files, texts, report)
     check_section_refs(root, files, texts, report)
     check_counts(root, files, texts, report)
     check_measurements(root, files, texts, report)

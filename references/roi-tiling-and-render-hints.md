@@ -4,7 +4,7 @@ RoD/RoI arithmetic, tile interaction and the render hints a host may or may not 
 
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 390-435 -->
 <!-- SKILL.md lines 599-647 -->
-## 7. RoD and RoI
+## 1. RoD and RoI
 
 Both are in **canonical coordinates**, which are the project's coordinate space —
 not the image's pixel space at the current render scale.
@@ -50,7 +50,7 @@ differ.
 
 ---
 
-## 8. Region of interest, and the 1.5.1 render hints
+## 2. Region of interest, and the 1.5.1 render hints
 
 If output(x,y) needs input(x±r, y±r):
 
@@ -75,8 +75,8 @@ relative to the render window rather than the fetched image bounds.
 
 A tiled plug-in that draws has both bugs at once: the halo decides what the model
 sees, the overlay's placement decides what the user sees. The drawing half is
-[`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §7 and
-[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §13.
+[`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §6 and
+[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §4.
 
 **`kOfxImageEffectPropNoSpatialAwareness` (1.5.1), the right way round.** Set it
 `"true"` on the descriptor only if the effect is per-pixel *or* can disable its

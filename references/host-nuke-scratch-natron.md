@@ -3,7 +3,7 @@
 The parts that differ from Resolve: no GPU buffer path, eager RoD, tiling, error surfacing, and Natron's headless renderer.
 
 <!-- HOST_COMPATIBILITY_MATRIX.md lines 195-293 -->
-## 3. Nuke
+## 1. Nuke
 
 Nuke is the strictest and most spec-literal of these hosts, which makes it the
 best place to find out that your code was relying on host leniency.
@@ -17,7 +17,7 @@ and copy frames in and out.
 
 Implication for architecture: if Nuke is a target, the CPU path is the product,
 and GPU is an optional accelerator for other hosts. The layer split in
-[`../SKILL.md`](../SKILL.md) §3 exists precisely so that this is a configuration, not a
+[`../SKILL.md`](../SKILL.md) §1 exists precisely so that this is a configuration, not a
 rewrite.
 
 If you must use the GPU inside Nuke:
@@ -57,7 +57,7 @@ of "unknown error".
 
 ---
 
-## 4. Assimilate SCRATCH
+## 2. Assimilate SCRATCH
 
 SCRATCH's OFX host is comparatively close to the spec and is one of the hosts the
 Gyroflow OpenFX plugin explicitly supports **(B**: documented on the project's
@@ -79,7 +79,7 @@ a kernel bug.
 
 ---
 
-## 5. Natron
+## 3. Natron
 
 Natron is open source and useful precisely because it is *not* the product you
 are shipping to: it is a free, scriptable, mildly incomplete OFX host that will

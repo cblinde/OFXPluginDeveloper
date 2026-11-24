@@ -4,7 +4,7 @@ The one pitch formula, why width*sizeof(pixel) is wrong, the component and depth
 
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 312-389 -->
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 751-790 -->
-## 6. Memory layout, pitch and pixel formats
+## 1. Memory layout, pitch and pixel formats
 
 ### The one formula
 
@@ -82,7 +82,7 @@ to purge. Use `cudaMalloc`/`cudaMallocAsync` for pure scratch. Either way:
 
 ---
 
-## 13. Drawing into the frame (boxes, labels, plates)
+## 2. Drawing into the frame (boxes, labels, plates)
 
 An overlay is still a write into a host buffer, so it fails in the same three
 places a filter does — plus one of its own.

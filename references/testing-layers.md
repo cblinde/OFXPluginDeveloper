@@ -55,7 +55,7 @@ column perfectly and never ran the right one.
 |---|---|---|---|---|
 | **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | the templates |
 | **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 160 checks (the 136 from a `CPU_ONLY=1` build, so host protocol + CPU path; the 158 are followed by 82 in the tiled-context variant) |
-| **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`checklists.md`](checklists.md) §1 |
+| **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`checklists.md`](checklists.md) §2 |
 | **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | the templates: `testkit/fake_host.*` |
 | **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | the templates |
 | **L5** memory | ASan, UBSan, TSan, valgrind | an hour | UB, leaks, data races | the templates |
@@ -241,7 +241,7 @@ over the template — its sources and its three scripts, not the repository. A
 missing tool is reported as skipped rather than clean: the run ends
 `static analysis: incomplete - N tool(s) ran, M skipped`, and
 `REQUIRE_ANALYSIS=1` turns that into a failure. The gate list as a whole is
-[`checklists.md`](checklists.md) §1.
+[`checklists.md`](checklists.md) §2.
 
 ---
 
@@ -373,7 +373,7 @@ render deviates by **0** from the whole-frame render (overlapping tiles agree
 bitwise when the halo covers the receptive radius, so the blend is weight-neutral),
 and with the context gone — `halo=0`, or a host that supplies only the window —
 by **0.1875**. 0.02 sits an order of magnitude below the failure and at the same
-threshold `onnx-and-tensorrt.md` §7 uses for the halo ladder, so a plug-in
+threshold `onnx-and-tensorrt.md` §4 uses for the halo ladder, so a plug-in
 that drops its context fails the tiled run too rather than sneaking under a loose
 bound.
 

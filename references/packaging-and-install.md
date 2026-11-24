@@ -4,7 +4,7 @@ Where the host looks on disk, the four architecture directories, RPATH, licence 
 
 <!-- BUILD_PLAYBOOK.md lines 294-323 -->
 <!-- SKILL.md lines 405-536 -->
-## 5. What the host looks for on disk
+## 1. What the host looks for on disk
 
 `templates/minimal-ofx/build.sh` produces:
 
@@ -34,7 +34,7 @@ repository root **[B]**.
 
 ---
 
-## 6. Build and packaging standards
+## 2. Build and packaging standards
 
 **Bundle layout.** Hosts scan `NAME.ofx.bundle/Contents/<ARCH>/NAME.ofx`, where
 `ARCH` is `Win64`, `Linux-x86-64`, `Linux-aarch64` or `MacOS`. The file must end
@@ -74,7 +74,7 @@ message. Two host-facing facts:
   Neither fact is visible to a fake host, which has nothing loaded and therefore
   always uses the bundle's own DLLs. The reproduction is
   `tools/host_cuda_probe.cpp`; the detail and the measured evidence are
-  [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md) §7.
+  [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md).
 - **Check the provider's import table per ORT version.** `dumpbin /dependents` on
   the provider you ship, looking for `onnxruntime.dll`. ORT 1.20.1's provider does
   not import it, which is what makes the `onnxruntime-ofx.dll` sidecar work with
@@ -88,7 +88,7 @@ parameter whose default is what the plug-in already did, remember the value each
 session was created with, and print it in the status label in **both** provider
 modes — the label is the only evidence the setting reached the session
 (`--label-param` asserts it). It is a CPU-path control: measured on one RTX 3060
-it changed nothing under CUDA **[B]** (`onnx-and-tensorrt.md` §7).
+it changed nothing under CUDA **[B]** (`onnx-and-tensorrt.md` §4).
 
 **Install locations.**
 
@@ -118,7 +118,7 @@ built Windows bundle **[B]** ([`evidence`](field-evidence.md) §3);
 **CUDA runtime linkage.** Default to `CUDA::cudart` (shared): the host already has
 a GPU stack. `cudart_static` removes the load-time dependency but gives each
 plug-in its own runtime instance, and mixing the two in one process is undefined
-(`cmake-and-linking.md` §10).
+(`cmake-and-linking.md` §6).
 
 On **Windows with CUDA 13**, do not claim a `cudart64_*.dll` import without
 checking: `dumpbin /dependents` on a built template lists KERNEL32, MSVCP140,
@@ -154,7 +154,7 @@ the kernel runs needs hardware.
 `cudart` directory in `RUNPATH`. The template sets `INSTALL_RPATH` with
 `BUILD_WITH_INSTALL_RPATH ON`, so the `.ofx` resolves a `libcudart` beside it and
 otherwise uses the host's runtime. The token is platform-specific: `$ORIGIN` for
-ELF, `@loader_path` for dyld (`cmake-and-linking.md` §7); the wrong one builds fine
+ELF, `@loader_path` for dyld (`cmake-and-linking.md` §5); the wrong one builds fine
 and cannot resolve at load.
 
 **MSVC.** The CUDA host compiler must use the same runtime library as the rest of

@@ -5,7 +5,7 @@ Every property string, depth support name and named trap, with the quirks that c
 <!-- SKILL.md lines 262-404 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 89-131 -->
 <!-- PATTERN_INDEX.md lines 126-144 -->
-## 5. OFX constant reference (verified against OFX 1.5.1 headers)
+## 1. OFX constant reference (verified against OFX 1.5.1 headers)
 
 ### 5.1 Capability properties (plugin descriptor)
 
@@ -56,8 +56,8 @@ Four traps follow from this table:
 | `kOfxImageEffectPropOpenCLCommandQueue` | `pointer` | `cl_command_queue` |
 | `kOfxImageEffectPropMetalEnabled` | `int` | Metal buffers in use |
 | `kOfxImageEffectPropMetalCommandQueue` | `pointer` | `id<MTLCommandQueue>` |
-| `kOfxImageEffectPropNoSpatialAwareness` | `string` | **1.5.1**, optional: host asks for a render with no spatial effects (§8) |
-| `kOfxImageEffectPropThumbnailRender` | `string` | **1.5.1**, optional: host considers this a UI thumbnail (§8) |
+| `kOfxImageEffectPropNoSpatialAwareness` | `string` | **1.5.1**, optional: host asks for a render with no spatial effects |
+| `kOfxImageEffectPropThumbnailRender` | `string` | **1.5.1**, optional: host considers this a UI thumbnail |
 
 Both are read-only in-args with default `"false"`. `ThumbnailRender` is also
 present in `GetRegionOfDefinition`, `GetRegionsOfInterest`, `GetFramesNeeded`,
@@ -86,8 +86,8 @@ accessor once per row and reuse it.
 Writing back is the same arithmetic against the **destination** image, which has
 its own base pointer, its own signed pitch and its own bounds, plus traps a copy
 does not have. Short version in [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md)
-§7, "Drawing into the frame: the overlay after the model"; full rules in
-[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §13.
+`onnx-and-tensorrt.md` §4, "Drawing into the frame: the overlay after the model"; full rules in
+[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §4.
 
 ### 5.4 Support names for the depths
 
@@ -143,12 +143,12 @@ Rules:
   OfxRectD&)`. Return `true` only when you set the rect; `false` means "use the
   union of the input clips' RoD" (`ofxsImageEffect.h:1119-1127`).
 - `kOfxImageEffectPropNoSpatialAwareness` on the **descriptor** means "this plugin
-  *can* render without spatial awareness", not "this plugin has none". §8 has the
+  *can* render without spatial awareness", not "this plugin has none". the header has the
   semantics; getting the polarity wrong makes a blur advertise itself as a LUT.
 
 ---
 
-## 3. Verified quirks in the OFX 1.5.1 headers
+## 2. Verified quirks in the OFX 1.5.1 headers
 
 Found by reading the headers during this pass. Each one has bitten somebody.
 
@@ -167,9 +167,9 @@ Found by reading the headers during this pass. Each one has bitten somebody.
 
    The OpenCL pair is two capabilities, not a typo, and the
    `kOfxImageEffectPropOpenCLEnabled` doc block swaps their parentheticals — the
-   property blocks in §693-704 of the header are the authority, and
+   property blocks in lines 693-704 of the header are the authority, and
    `kOfxImageEffectPropOpenCLImage` being set is the runtime discriminator
-   (`ofx-api-constants.md` §5).
+   (`ofx-api-constants.md` §1).
    Guessing by analogy produces a property the host has never heard of, and a
    plugin that silently never gets the GPU.
 
@@ -191,10 +191,10 @@ Found by reading the headers during this pass. Each one has bitten somebody.
 
 ---
 
-## 6. By property ("which constant does what")
+## 3. By property ("which constant does what")
 
 Only the ones that decide correctness; the complete table with header line
-numbers is [`../SKILL.md`](../SKILL.md) §5.
+numbers is [`../SKILL.md`](../SKILL.md) §1.
 
 | Constant | Type | Who sets it | What it decides |
 |---|---|---|---|

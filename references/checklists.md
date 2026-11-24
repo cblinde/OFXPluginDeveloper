@@ -6,7 +6,7 @@ The questions to answer before shipping, each settled by a header line or a spec
 <!-- SKILL.md lines 667-723 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 496-509 -->
 <!-- PREFLIGHT_REVIEW_CHECKLIST.md lines 1-21 -->
-## Pre-flight review checklist
+## 1. Pre-flight review checklist
 
 A list of questions to answer about **your** plug-in before it ships. Every item
 names the sentence that settles it — a header doc block, a line of the OFX
@@ -22,12 +22,12 @@ Three ground rules:
 3. **If an item does not apply to your plug-in, write down why.** "N/A" with no
    reason is how a checklist turns into decoration.
 
-Run [§1](#1-mechanical-gates) first — it is automated and takes about a minute.
-Then work through [§2](#2-the-questions) once per release.
+Run [§2](#2-mechanical-gates) first — it is automated and takes about a minute.
+Then work through [§3](#3-the-questions) once per release.
 
 ---
 
-## 1. Mechanical gates
+## 2. Mechanical gates
 
 All of these run without a GPU and without a host. They live in the template's
 `test/` directory and are committed, so a reviewer can reproduce every claim.
@@ -69,13 +69,13 @@ Stated plainly, because a checklist that overclaims is worse than none:
 
 ---
 
-## 2. The questions
+## 3. The questions
 
 ### A. The render action and device work
 
 | # | Question | Settled by | How to confirm |
 |---|---|---|---|
-| A1 | Does any render path call `cudaMalloc`/`cudaFree`, or copy host↔device, **per render**? | CUDA Programming Guide §4.3.2 *Stream-Ordered Memory Allocator*: "Application performance can be improved by avoiding potentially costly synchronization of `cudaMalloc` and `cudaFree`." The Best Practices Guide §10.3 adds that both "are expensive operations". | `grep -n "cudaMalloc\|cudaFree\|cudaMemcpy" src/` — every hit must be in setup/teardown, not inside the function the render action calls. |
+| A1 | Does any render path call `cudaMalloc`/`cudaFree`, or copy host↔device, **per render**? | CUDA Programming Guide §5.3.2 *Stream-Ordered Memory Allocator*: "Application performance can be improved by avoiding potentially costly synchronization of `cudaMalloc` and `cudaFree`." The Best Practices Guide §6.3 adds that both "are expensive operations". | `grep -n "cudaMalloc\|cudaFree\|cudaMemcpy" src/` — every hit must be in setup/teardown, not inside the function the render action calls. |
 | A2 | Do you ever wait on the device — `cudaDeviceSynchronize`, `cudaStreamSynchronize`, or an event `Synchronize()` — in the render path? | `ofxGPURender.h` doc block of `kOfxImageEffectPropCudaStream` (lines 608-610): "the plug-in SHOULD NOT wait for final asynchronous operations to complete before returning from the render action, and SHOULD NOT call `cudaDeviceSynchronize()` at any time." | `grep -rn "cudaDeviceSynchronize\|cudaStreamSynchronize\|cudaEventSynchronize" src/` must be empty, or every hit must be on a stream you created for your own staging work — and then explain why. |
 | A3 | Is the launch on the stream the host passed in `kOfxImageEffectPropCudaStream`, and do you behave correctly when it is absent? | `ofxGPURender.h` lines 600-616: if the property is not set, "the plug-in SHOULD ensure that any asynchronous operations it enqueues have completed before returning from the render action." | Read your render function once per release and answer both halves: which stream, and what happens when the property is missing. |
 | A4 | When `kOfxImageEffectPropCudaEnabled` is 0 or absent, do you treat `kOfxImagePropData` as CPU memory? | `ofxGPURender.h` lines 559-575: the host "MAY set this property" (Type - `int X 1`) only when both sides advertise CUDA; value 0 means "a CPU memory pointer". `ofxImageEffect.h` lines 1299-1305 list every shape `kOfxImagePropData` can take. | Follow the branch: what does render do when the flag reads 0? If the answer is "crash" or "silently assume CUDA", fix it. |
@@ -122,11 +122,11 @@ Stated plainly, because a checklist that overclaims is worse than none:
 | E2 | If you use a GPU execution provider, is the launch on `kOfxImageEffectPropCudaStream`, with EP synchronisation disabled? | `ofxGPURender.h:608-610` ("SHOULD NOT wait … SHOULD NOT call `cudaDeviceSynchronize()` at any time") plus ORT's `user_compute_stream` / `disable_synchronize_execution_providers` options. | `grep -rn "user_compute_stream\|disable_synchronize" src/`. Either both are present, or the plug-in does not advertise a GPU path. |
 | E3 | Do you advertise CUDA only when every op in the model runs on the GPU provider? | `ofxGPURender.h:547-553`: the capability is opt-in ("Default - `"false"` for a plug-in") and the host's descriptor is read-only. | Check the provider's supported-op list for the exact ops in your graph; a single CPU fallback op makes the "GPU" path slower than the CPU one, and the host cannot see that. |
 | E4 | Is the tile halo at least the model's receptive-field radius? | Measured in `templates/onnx-inference-ofx`: `halo=0` differs from whole-frame inference by 0.263 on a single 3×3 convolution; `halo=1` is bit-identical. | Run `./test/run-tests.sh` in that template with your model and your tile size; the negative control tells you whether your halo is doing anything. |
-| E5 | Are channel order, value range and colour space documented next to the model? | The model's training contract, not OFX: see `onnx-and-tensorrt.md` §5. The LTX plug-in converts through OCIO before inference for exactly this reason. | Put the three facts in the parameter hint or a README beside the weights. A wrong range is a silent grade error, not a crash. |
+| E5 | Are channel order, value range and colour space documented next to the model? | The model's training contract, not OFX: see `onnx-and-tensorrt.md` §2. The LTX plug-in converts through OCIO before inference for exactly this reason. | Put the three facts in the parameter hint or a README beside the weights. A wrong range is a silent grade error, not a crash. |
 
 ---
 
-## 3. The five failures this checklist exists to prevent
+## 4. The five failures this checklist exists to prevent
 
 Each of these has been observed in a real open-source OFX plug-in, and each one
 is cheap to check and expensive to debug in a host.
@@ -139,7 +139,7 @@ is cheap to check and expensive to debug in a host.
 | Metal advertised from `#ifdef __APPLE__` | Crashes in the hosts that never implemented the path; fine in the one the author used. | D1 |
 | Synchronising the host's stream | Correct output, no error, but every downstream node waits for this one. | A2, A3 |
 
-## 4. Reviewer's sign-off
+## 5. Reviewer's sign-off
 
 Copy this into the pull request. "N/A" needs the reason next to it.
 
@@ -157,7 +157,7 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 [ ] Not verified: <device execution / host render / timing> - stated in the PR
 ```
 
-## 10. Checklists
+## 6. Checklists
 
 **Before the first build**
 
@@ -216,7 +216,7 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 
 ---
 
-## 11. Checklist for a new GPU effect
+## 7. Checklist for a new GPU effect
 
 1. Maths in one place, or a test that proves two copies agree.
 2. One launch per render; no per-frame allocation; no sync when a stream exists.

@@ -103,7 +103,7 @@ answers it.
 
 Start with [`SKILL.md`](SKILL.md). §1 (ground rules) and the pre-flight
 [checklists](references/checklists.md) are the parts that prevent the expensive
-mistakes; the workflow in §3 is the order to build in. If you are an AI agent, `SKILL.md` is written to be the entry point:
+mistakes; the workflow in `SKILL.md` §3 is the order to build in. If you are an AI agent, `SKILL.md` is written to be the entry point:
 it names the invariants, the exact constants, and the files to copy.
 
 ### 2. Start a plugin from the template
@@ -257,7 +257,7 @@ readelf -S "$O" | grep nv_fatbin            # device code is embedded
 ```
 
 Then install and work through the per-host protocol in
-[`host-resolve.md`](references/host-resolve.md) §7 — in a real
+[`host-resolve.md`](references/host-resolve.md) — in a real
 host, render to file, at an odd resolution such as 1919×1081 (1920×1080 hides
 stride bugs).
 
@@ -284,11 +284,11 @@ RUN_VALGRIND=1             ./test/run-tests.sh   # memcheck, full leak check
 
 Each stage prints why it skipped if a tool is missing, so a run with no sanitizer
 installed cannot look like a clean run. What these checks can and cannot prove is
-tabulated in [`checklists.md`](references/checklists.md) §1.
+tabulated in [`checklists.md`](references/checklists.md) §2.
 
 If the plugin stops loading after a crash, the host has blacklisted it: clear
 Resolve's `OFXPluginCacheV2.xml` and re-enable it under Preferences → Video
-Plugins. Details in `references/debugging-and-symptoms.md` §7.
+Plugins. Details in `references/debugging-and-symptoms.md` §1.
 
 ---
 

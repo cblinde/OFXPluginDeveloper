@@ -3,7 +3,7 @@
 What the host hands you, premultiplication, the 1.5 colour APIs and where alpha lands.
 
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 436-495 -->
-## 8. Colour space and alpha
+## 1. Colour space and alpha
 
 OFX had **no colour management** before 1.5, and that legacy behaviour is still
 the default: unless both sides declare a style in
@@ -11,7 +11,7 @@ the default: unless both sides declare a style in
 working space it uses and expects the same space back. OFX 1.5 added the opt-in
 contract in `ofxColour.h` (`kOfxImageClipPropColourspace`,
 `kOfxImageEffectActionGetOutputColourspace`), and Resolve 21 implements it
-(**[B]**, `host-resolve.md` §2.9). Either way the rules below hold;
+(**[B]**, `host-resolve.md` §2). Either way the rules below hold;
 the first one is what a declared style turns from advice into a contract:
 
 1. **Never bake in a transform you were not asked for.** A "gain" that silently

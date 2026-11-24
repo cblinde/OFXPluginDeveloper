@@ -5,7 +5,7 @@ The exact ORT API names, tensor plumbing bugs, device-pointer handoff, and the i
 <!-- AI_MODEL_INTEGRATION.md lines 160-328 -->
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 496-560 -->
 <!-- AI_MODEL_INTEGRATION.md lines 401-853 -->
-## 4. ONNX Runtime: the facts that matter, with exact names
+## 1. ONNX Runtime: the facts that matter, with exact names
 
 Verified against the 1.32.0 headers (`ORT_API_VERSION 32`) and the ORT
 documentation (**A** unless marked).
@@ -148,7 +148,7 @@ load; `templates/onnx-inference-ofx/CMakeLists.txt` has the per-platform branch.
 
 ---
 
-## 5. Tensor plumbing: where the silent bugs are
+## 2. Tensor plumbing: where the silent bugs are
 
 These are the same three failures as the CUDA template, plus three that only
 appear with models.
@@ -174,7 +174,7 @@ only compares tiled-to-tiled would never notice.
 
 ---
 
-## 9. AI pipelines: TensorRT and ONNX Runtime on OFX device pointers
+## 3. AI pipelines: TensorRT and ONNX Runtime on OFX device pointers
 
 The pattern for an AI-based OFX plugin (upscale, denoise, matte) is identical in
 shape to the CUDA kernel path, with three additions: a model, a persistent
@@ -232,14 +232,14 @@ without a single host-side synchronise.
    exit, and an exit crash looks like your plugin to the user.
 6. **Never let the runtime create its own stream and assume ordering.** If ORT/TensorRT
    will not accept yours, enqueue on your own stream and synchronise **that**
-   stream before returning when the host gave you none. See §5.
+   stream before returning when the host gave you none. See §2.
 7. **Ship the model as a bundle resource.** `NAME.ofx.bundle/Contents/Resources/`
    is the documented place for non-code assets; resolve it from the plugin's own
    path, never from an absolute path on the build machine.
 
 ---
 
-## 7. The template: `templates/onnx-inference-ofx`
+## 4. The template: `templates/onnx-inference-ofx`
 
 A complete, building OFX plug-in that runs an ONNX model, with the parts that
 are usually untested under test. The session this template creates is a CPU
@@ -263,7 +263,7 @@ export ONNXRUNTIME_ROOT=/path/to/onnxruntime-linux-x64-1.32.0
 SANITIZE=address,undefined ./test/run-tests.sh
 ```
 
-What this template proves, on this machine: see §5's measurements, plus the
+What this template proves, on this machine: see §2's measurements, plus the
 bundle exports exactly two symbols, records `NEEDED libonnxruntime.so.1` and
 `RUNPATH $ORIGIN` on Linux (`@loader_path` on macOS, where the runtime keeps its
 versioned `.dylib` name), ships one copy of the runtime, `dlopen` enumerates one
@@ -309,8 +309,8 @@ is external (**B**).
    reach for a model here) therefore throws on the first frame, by design.
    Supporting one means returning the output shape from `Run()`, mapping it into
    the output RoD in `AiCore`, and scaling the source RoD in
-   `getRegionOfDefinition` — see `roi-tiling-and-render-hints.md` §7 for the
-   RoD rules and §5 of this document for the packing side.
+   `getRegionOfDefinition` — see `roi-tiling-and-render-hints.md` §1 for the
+   RoD rules and §2 of this document for the packing side.
 6. A model whose output is not an image — detection (`[1, 4+N, anchors]`),
    classification (`[1, classes]`), segmentation masks, embeddings — does not fit
    this template's plumbing at all. `ModelRunner` requires
@@ -333,11 +333,11 @@ through. A plug-in a colourist actually uses takes what the host gives it.
   the matte as image content, so a denoiser learns to preserve the fringe it was
   supposed to remove. Read `kOfxImageEffectPropPreMultiplication`, divide by
   alpha before packing and multiply back after unpacking, and leave pixels with
-  `A == 0` at zero. `colour-and-alpha.md` §8 states the rule per
+  `A == 0` at zero. `colour-and-alpha.md` §1 states the rule per
   operation; this is the inference instance of it.
 - **Keep the conversion OFX-free.** Depth and alpha conversion belongs beside
   `Pack*`/`Unpack*`, on plain buffers addressed through the host's signed row
-  bytes (the pitch trap in §5), which is what lets a test round-trip every depth,
+  bytes (the pitch trap in §2), which is what lets a test round-trip every depth,
   padded rows and a negative stride without a host.
 
 #### Models that only accept certain sizes
@@ -403,7 +403,7 @@ re-measurement against. A plug-in that loaded it during `render` would be readin
 a build artefact per frame; keep the reader in the build, not in the effect. On a 256×192
 frame with 128-pixel tiles, `halo=0` deviates by 0.1745 at the interior tile
 boundary (128,127) and `halo=1` is exact — the same story as the `halo=0`
-control in §5, from a second witness, and the reason the ladder may include 0:
+control in §2, from a second witness, and the reason the ladder may include 0:
 a measurement that cannot produce the failure cannot be trusted to recognise
 success.
 
@@ -414,7 +414,7 @@ model time (**A**: arithmetic from the formula).
 
 #### The provider belongs in the same bundle, and it is the first path
 
-§6 answers *how much* CUDA is worth. For a per-frame inference plug-in the order
+`ai-architectures-and-runtimes.md` §4 answers *how much* CUDA is worth. For a per-frame inference plug-in the order
 is fixed — request the CUDA provider first, keep a CPU session as the fallback,
 make the choice visible — and the consequence is packaging, not a second build:
 
@@ -512,7 +512,7 @@ make the choice visible — and the consequence is packaging, not a second build
   decides whether it can is the provider's **import table**, not the platform:
   the Windows bundle ships the core as `onnxruntime-ofx.dll`, because that private
   name is what keeps a host's own runtime (Resolve 21: 1.13) from capturing the
-  import (§4), so a provider that imports `onnxruntime.dll` by base name would
+  import (§1), so a provider that imports `onnxruntime.dll` by base name would
   bind to nothing (or to the host's runtime). For ORT **1.20.1** the CUDA provider
   does not: `dumpbin /dependents onnxruntime_providers_cuda.dll` lists cublas,
   cublasLt, cufft, cudart, cuDNN and `onnxruntime_providers_shared` only, and a
@@ -664,7 +664,7 @@ in a host). The four rules that matter:
 - **Rasterise from one stated origin.** Glyph quads and plate rows are computed in
   a top-down canvas; if `kOfxImagePropData` addresses `bounds.y1` (the bottom), a
   rasteriser that assumes top-down draws the whole page upside down and still
-  changes pixels. Rebase once (base at `(h - 1) * rowBytes`, negated stride; §5's
+  changes pixels. Rebase once (base at `(h - 1) * rowBytes`, negated stride; §2's
   row) and keep every overlay coordinate in that one space.
 
 Test it as a bound, not as a pixel value: "ink stays inside the plate", "nothing
@@ -681,14 +681,14 @@ passes in both bottom-up layouts and fails `the mark is at the mirrored row` in
 both top-down ones (**V**). A 94-check `tile_window_test` that draws per layout
 also exists in the reporting tree, not in this repository **[B]**.
 
-Cited back from where the question arises: [`../SKILL.md`](../SKILL.md) §5 (writing
+Cited back from where the question arises: [`../SKILL.md`](../SKILL.md) §2 (writing
 back is the same pitch arithmetic against the destination) and
-[`../SKILL.md`](../SKILL.md) §8 (a tiled plug-in that draws has a seam bug and a
+[`../SKILL.md`](../SKILL.md) (a tiled plug-in that draws has a seam bug and a
 placement bug, and they are different), and
 [`reference-projects.md`](reference-projects.md) §3.3 and §3.6, which
 teach the addressing rules and the tile protocol this section extends. The full rules — clipping to window and
 bounds, premultiplied compositing, and `stb_easy_font` for glyphs without a GUI —
-are [`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §13.
+are [`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §4.
 
 ---
 

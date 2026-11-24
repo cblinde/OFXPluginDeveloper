@@ -4,7 +4,7 @@ The stream contract in full, why cudaDeviceSynchronize is banned, what zero-copy
 
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 183-311 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 402-422 -->
-## 4. Zero copy: what it actually means
+## 1. Zero copy: what it actually means
 
 "Zero copy" here means **the plugin never copies pixels it could read in place**:
 
@@ -62,7 +62,7 @@ surprised.
 
 ---
 
-## 5. Streams: the contract, in full
+## 2. Streams: the contract, in full
 
 The specification is short and unambiguous (`ofxGPURender.h`,
 `kOfxImageEffectPropCudaStream`):
@@ -133,7 +133,7 @@ nvtxRangePop();
 
 ---
 
-## 7. Streams, and what changes when the host gives you one
+## 3. Streams, and what changes when the host gives you one
 
 - The stream property is `pointer X 1` in the `inArgs` of **Render**,
   **BeginSequenceRender** and **EndSequenceRender** **[S]**. Treat it as opaque:

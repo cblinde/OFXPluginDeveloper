@@ -168,7 +168,7 @@ HOST_COMPATIBILITY_MATRIX.md	8. Known real-world failure, as a case study	refere
 PATTERN_INDEX.md	Pattern index	references/pattern-index.md	
 PATTERN_INDEX.md	1. By task ("I need to…")	references/pattern-index.md	
 PATTERN_INDEX.md	2. By symptom ("the render is wrong")	references/debugging-and-symptoms.md	
-PATTERN_INDEX.md	Compile and link symptoms	references/debugging-and-symptoms.md	
+PATTERN_INDEX.md	Compile and link symptoms	references/debugging-and-symptoms.md	Build and load symptoms, by stage
 PATTERN_INDEX.md	3. By property ("which constant does what")	references/ofx-api-constants.md	
 PATTERN_INDEX.md	4. External AI / ONNX plug-ins: what exists, what to learn, what to avoid	references/ai-architectures-and-runtimes.md	
 PATTERN_INDEX.md	5. The general-purpose suites: what to read, what to skip	references/reference-projects.md	

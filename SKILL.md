@@ -67,7 +67,7 @@ crash with no stack trace.
     reload the module in one process. A function-local `static` whose destructor
     calls into CUDA, a thread pool or an inference runtime runs it at
     `DLL_PROCESS_DETACH` and breaks the **next** load. Allocate such state with
-    `new` and never free it (`references/onnx-and-tensorrt.md` §4).
+    `new` and never free it (`references/onnx-and-tensorrt.md` §1).
 12. **Verify, then claim.** A plug-in that compiles is not a plug-in that renders.
     State exactly which hosts and GPU paths you exercised, in the `[V]`/`[I]`/`[B]`
     vocabulary.
@@ -126,7 +126,7 @@ Write down, before code:
 - Pixel formats: start with `eBitDepthFloat` + `ePixelComponentRGBA`.
 - Spatial: does output(x,y) depend only on input(x,y)? This decides
   `kOfxImageEffectPropNoSpatialAwareness`
-  (`references/roi-tiling-and-render-hints.md` §8).
+  (`references/roi-tiling-and-render-hints.md` §2).
 - Temporal: needs frames other than `time`?
 - `isIdentity`: expressible? It is the cheapest optimisation you have.
 - Declarations from OFX 1.5.1 that apply: CPU fallback
@@ -136,7 +136,7 @@ Write down, before code:
   `references/colour-and-alpha.md`).
 
 If the effect needs neighbouring pixels, read
-`references/roi-tiling-and-render-hints.md` §8 before writing the kernel: the
+`references/roi-tiling-and-render-hints.md` §2 before writing the kernel: the
 answer changes the architecture, not just the code.
 
 ### Phase 1 — Scaffold
@@ -145,7 +145,7 @@ answer changes the architecture, not just the code.
 | --- | --- | --- |
 | CPU-only pixel maths | `templates/minimal-ofx/` | smallest host-loadable module; no CUDA, no model |
 | CUDA path with CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
-| ONNX model per frame | `templates/onnx-inference-ofx/` | session, packing, tiling, goldens; CUDA EP first, CPU fallback (`references/onnx-and-tensorrt.md` §7) |
+| ONNX model per frame | `templates/onnx-inference-ofx/` | session, packing, tiling, goldens; CUDA EP first, CPU fallback (`references/onnx-and-tensorrt.md` §4) |
 | Model whose output is not an image | `templates/onnx-inference-ofx/` for session and packaging only | `ModelRunner` requires out shape == in shape; the head decoder is yours |
 
 When generating a new plugin, copy a template's structure instead of re-deriving
@@ -228,7 +228,7 @@ means `CUDA_VISIBILITY_PRESET` is missing (`references/cmake-and-linking.md` §3
 ### Phase 7 — Install and smoke test
 
 Copy the bundle into the host's plugin directory (`references/packaging-and-install.md`
-§5), start the host, then:
+§1), start the host, then:
 
 1. Does the plugin appear under the expected group?
 2. Apply it: does the image change as expected?
@@ -239,7 +239,7 @@ Copy the bundle into the host's plugin directory (`references/packaging-and-inst
 
 ### Phase 8 — Debug and profile
 
-`references/debugging-and-symptoms.md` §7. The host-visible channel is
+`references/debugging-and-symptoms.md` §1. The host-visible channel is
 `setPersistentMessage`, not `printf` and not
 `OFX::Log::print` (which writes a file only in a `DEBUG` build).
 

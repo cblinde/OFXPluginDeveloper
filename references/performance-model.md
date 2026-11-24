@@ -5,14 +5,40 @@ What costs time on the host and in the kernel, the measured numbers, and how to 
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 132-401 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 423-478 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 1-26 -->
-## 4. The cost model: what actually costs time
+## Best Practices and Performance
+
+A review of this repository and of the reference projects that already ship
+GPU-accelerated OFX plugins, reduced to rules you can act on. Every claim
+carries an evidence grade, because the difference between "the spec says" and
+"someone's blog says" is the difference between a bug you can fix and a bug you
+cannot reproduce.
+
+| Grade | Meaning |
+| --- | --- |
+| **[S]** | Verified by reading `OFX_Release_1.5.1` source (`include/`, `Support/`) while writing this |
+| **[M]** | Measured here with the real toolchain (nvcc 12.9.41 / 13.0.48, GCC 13.3, CMake 3.31.6 / 4.4.4) — static and PTX level, and since 2026-11-24 also on an RTX 3060 through `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu` |
+| **[D]** | Stated by official documentation (OpenFX reference, NVIDIA CUDA C++ Best Practices Guide) |
+| **[R]** | Stated by a reference project's own README/source |
+| **[A]** | Arithmetic derived from a formula in this document |
+| **[U]** | Not verified here — treat as a hypothesis and measure it yourself |
+
+Only the gain kernel is benchmarked, and only on one RTX 3060 (2026-11-24): its
+throughput, the CPU loop it replaces and the cost of a frame copy are tabulated in
+[`../README.md`](../README.md) §"What has actually been verified", with the raw run in
+`evidence/2026-11-24-windows/`. Every other performance statement here — about a
+model, a tiled inference, another GPU, a host's scheduling — is reasoning, and the
+**[U]** grade marks it as such.
+
+---
+
+## 1. The cost model: what actually costs time
 
 **The GPU path is the first path, not the fallback.** For anything
 compute-bound — a convolution, a model run per frame, an iterative solver —
 write the GPU path first and keep the CPU path as its comparison and as what
 runs when the host gives no device. The table below decides whether the GPU path
 pays on your frame; it does not decide whether to have one. The model case, with
-the provider and its packaging, is `ai-architectures-and-runtimes.md` §6–§7.
+the provider and its packaging, is `ai-architectures-and-runtimes.md` §4–§6.
 
 Before optimising, know the shape of the budget. One render action, 1920×1080
 RGBA32F, one thread per pixel:
@@ -38,7 +64,7 @@ almost always right.
 
 ---
 
-## 5. Host-side practices
+## 2. Host-side practices
 
 ### 5.1 Never allocate per frame if the size did not change
 
@@ -139,7 +165,7 @@ LTO changes.
 
 `_effect.abort()` is a suite call, and the host sets it when the user cancels.
 Checking it per pixel costs a host call per pixel; checking per row or per
-band of rows responds within a few milliseconds at 4K. `debugging-and-symptoms.md` §7 has the
+band of rows responds within a few milliseconds at 4K. `debugging-and-symptoms.md` §1 has the
 long-form rules on which actions may touch it.
 
 ### 5.6 One device, restored
@@ -157,11 +183,11 @@ every render **[S]**. `print` appends to `ofxPluginLog.txt`
 (`OFX_PLUGIN_LOGFILE`), and only when the code was compiled with `DEBUG`, which
 neither CMake's `Debug` configuration nor the templates define — so the call
 always costs nothing and never grows the file unless you opt in. It does not
-reach the host's UI; see `debugging-and-symptoms.md` §7 for the channel that does.
+reach the host's UI; see `debugging-and-symptoms.md` §1 for the channel that does.
 
 ---
 
-## 6. Kernel-level performance
+## 3. Kernel-level performance
 
 ### 6.1 One 16-byte load and one 16-byte store per pixel
 
@@ -256,7 +282,7 @@ one of two things:
 
 - puts the maths in a shared header of `__host__ __device__` inline functions
   used by both (OneGrade's `OneGradePipeline.h` approach **[R]**), or
-- keeps them separate and enforces equality with tests (§9.3).
+- keeps them separate and enforces equality with tests (§5.3).
 
 Pick one before the second effect. Adding the second backend is cheap; reconciling
 four divergent copies of a grade is not.
@@ -275,7 +301,7 @@ four divergent copies of a grade is not.
 
 ---
 
-## 8. Prove what you built (10 seconds, catches the worst class of bug)
+## 4. Prove what you built (10 seconds, catches the worst class of bug)
 
 Compiled CUDA and silent CPU fallback look identical in a host's UI. Verify the
 artifact, not the intent:
@@ -300,7 +326,7 @@ first-frame hitches visible instead of moving them to first render.
 
 ---
 
-## 9. Testing what you cannot see
+## 5. Testing what you cannot see
 
 ### 9.1 Odd sizes
 
@@ -328,32 +354,6 @@ flipped row order, and a channel swap — none of which a compile can find.
 
 `compute-sanitizer` (formerly `cuda-memcheck`) catches out-of-bounds device
 access and leaks **[D]**. It is slow — run it on 256×256, not 4K.
-
----
-
-## Best Practices and Performance
-
-A review of this repository and of the reference projects that already ship
-GPU-accelerated OFX plugins, reduced to rules you can act on. Every claim
-carries an evidence grade, because the difference between "the spec says" and
-"someone's blog says" is the difference between a bug you can fix and a bug you
-cannot reproduce.
-
-| Grade | Meaning |
-| --- | --- |
-| **[S]** | Verified by reading `OFX_Release_1.5.1` source (`include/`, `Support/`) while writing this |
-| **[M]** | Measured here with the real toolchain (nvcc 12.9.41 / 13.0.48, GCC 13.3, CMake 3.31.6 / 4.4.4) — static and PTX level, and since 2026-11-24 also on an RTX 3060 through `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu` |
-| **[D]** | Stated by official documentation (OpenFX reference, NVIDIA CUDA C++ Best Practices Guide) |
-| **[R]** | Stated by a reference project's own README/source |
-| **[A]** | Arithmetic derived from a formula in this document |
-| **[U]** | Not verified here — treat as a hypothesis and measure it yourself |
-
-Only the gain kernel is benchmarked, and only on one RTX 3060 (2026-11-24): its
-throughput, the CPU loop it replaces and the cost of a frame copy are tabulated in
-[`../README.md`](../README.md) §"What has actually been verified", with the raw run in
-`evidence/2026-11-24-windows/`. Every other performance statement here — about a
-model, a tiled inference, another GPU, a host's scheduling — is reasoning, and the
-**[U]** grade marks it as such.
 
 ---
 
