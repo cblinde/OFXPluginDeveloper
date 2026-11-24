@@ -1,0 +1,209 @@
+# OFXPluginDeveloper - second Windows/CUDA field test
+
+**Subject:** `cblinde/OFXPluginDeveloper` at `main`, cloned 2026-11-24
+**Machine:** Windows 11 (10.0.26300), RTX 3060 (sm_86, driver 621.24 / CUDA UMD 13.5)
+**Toolchain:** CUDA 13.0.48, MSVC 19.44.35224 (VS 18 BuildTools, `-vcvars_ver=14.44`),
+MSVC 19.50 also present, CMake 4.4.4, Ninja 1.10.2, Git Bash (MSYS2)
+**Scope:** re-run the documented Windows path end to end, on hardware, and fix what breaks.
+
+Every command below was executed in a clone of this repository. Build trees and
+the OpenFX FetchContent checkout stayed inside the project directory
+(`templates/*/build/`, which `.gitignore` already covers) and were deleted before
+committing. Nothing outside the project folder was written: no toolkit install,
+no `pip`, no plugin installed into `%COMMONPROGRAMFILES%\OFX\Plugins`.
+
+---
+
+## 1. Verdict
+
+The **reference material holds up**: pitch arithmetic, the CUDA/CPU split, the
+stream policy, the visibility-and-export rules and the architecture-list fix all
+survive a real toolkit, a real compiler and a real GPU. The kernels are bit-exact
+on hardware, the bundle exports exactly two symbols, and the host-contract harness
+passes every check against both templates.
+
+The **verification plumbing still had three defects**, all of them in
+`testkit/check-ofx-artifact.bat` / `build.bat`, and all of them of the same
+family: a check that reports the wrong thing while the build says "success".
+Two of the three made a *correct* build fail, and the third made a *CPU-only*
+build assert CUDA device code it does not contain.
+
+No defect was found in the plug-in sources, the CMake wiring, or `Kernel.cu`.
+
+---
+
+## 2. Tests executed
+
+| # | Test | Command | Result |
+|---|---|---|---|
+| T1 | documented Windows build | `.\build.bat Release` (bare `build.bat` is not found: `NoDefaultCurrentDirectoryInExePath=1`) | **failed**, then passed after the fixes in §3 |
+| T2 | real GPU execution | `nvcc -DOFXPLUGIN_WITH_CUDA=1 -arch=sm_86 -O2 -std=c++17 test\gpu-kernel-test.cu` then run | **28/28 cases, bit-exact**, 0 failures |
+| T3 | host contract, CUDA template | `testkit\build-contract-test.bat` + `LoadLibraryExW` | **136 checks, 0 failed** |
+| T4 | host contract, reference template | same harness, documented flags | **110 checks, 0 failed** |
+| T5 | CPU-only build | `CPU_ONLY=1 .\build.bat Release` | passed (VS 18 generator, no nvcc) - after F3 |
+| T6 | negative control, device code | `check-ofx-artifact.bat <cpu-only .ofx> --cuda --strict` | **exit 1, "contains no cubin"** - the check still has teeth |
+| T7 | second configure of the same tree | `.\build.bat Release` again | 7 architectures kept (`75;80;86;89;90;100;120`), F7 of the 2026-11-22 run confirmed fixed |
+| T8 | new Windows test runner | `test\run-tests.bat Release nobuild` | **exit 0**: artifact, 28/28 GPU cases, 136 contract checks |
+| T9 | documentation drift | `python3 tools/check-docs.py` | 0 problems |
+| T10 | host render (Resolve/Nuke) | - | **not possible**: no OFX host is installed on this machine |
+
+---
+
+## 3. Findings and fixes
+
+Severity: **S1** blocks the documented workflow, **S2** a wrong claim or a false
+pass, **S3** polish.
+
+### F1 - the artifact checker walks all of `C:\` (S1)
+
+`testkit/check-ofx-artifact.bat` counted export rows with the legacy
+`find /c /v ""`. Git-for-Windows ships **GNU** `find.exe` and puts `usr\bin`
+ahead of `System32`, so the pipeline ran GNU find with `/c` as a path:
+
+```
+find: '/c/$Recycle.Bin/S-1-5-18': Permission denied         (4000+ lines, minutes)
+```
+
+The build had already linked successfully; it simply never returned, and the
+first observation was the tool timing out. Only the export-count step is
+affected, so the failure appears *after* a correct link, which is exactly where
+a reader stops looking.
+
+**Fixed:** every count uses `set /a` over a `for /f` loop, with no external tool.
+The hazard is documented in the file header and in `BUILD_PLAYBOOK.md` §7.
+
+### F2 - a loose regex counted dumpbin's header line as an export (S1)
+
+With F1 fixed, the count became 3 for a DLL with exactly two exports:
+
+```
+FAIL: dumpbin reports 3 exported names, expected 2
+    00000000 characteristics          <-- matches [0-9A-Fa-f]*: 'c' is a hex digit
+          1    0 000105B0 OfxGetNumberOfPlugins
+          2    1 000105D0 OfxGetPlugin
+```
+
+The same loose pattern was in the original one-liner, so this check had never
+produced "2" on Windows; the 2026-11-22 report's export table (§5.3) was read by
+hand, not by this script.
+
+**Fixed:** the RVA is matched as eight explicit hex digits. Verified 2 for the
+CUDA bundle, and the negative control still fails.
+
+### F3 - a CPU-only build claimed device code it does not have (S2)
+
+`build.bat` passed `--cuda` whether or not a CUDA path had been compiled, and the
+checker counted every line of `cuobjdump -lelf` output as a cubin. For a binary
+with no device code cuobjdump prints
+
+```
+cuobjdump info    : File '....ofx' does not contain device code
+```
+
+which counted as `device code: 1 cubin(s)`. So `CPU_ONLY=1 build.bat` passed a
+check it should have failed, by believing a message that says the opposite.
+
+**Fixed:** `--cuda` is passed only when a CUDA path was compiled, and the checker
+counts only lines naming a `.cubin`. Verified: CUDA build 7 cubins, CPU-only
+build no device-code line, `--cuda` on the CPU-only binary exits 1.
+
+### F4 - `nvcc` needs `cl.exe`, which the documented recipe did not mention (S3)
+
+The reproduction block in `FIELD_TEST_WINDOWS_CUDA.md` §8 ran `nvcc` from a plain
+shell:
+
+```
+nvcc fatal   : Cannot find compiler 'cl.exe' in PATH
+```
+
+That is the first thing a reader hits when following the documented GPU check.
+
+**Fixed:** the section now shows the `vcvars64.bat -vcvars_ver=14.44` call first,
+and points at the new `test\run-tests.bat`, which enters the MSVC environment
+itself.
+
+### F5 - the CUDA template had no Windows test runner (S2, documentation gap)
+
+`test/run-tests.sh` needs `g++`, `nm -D`, `readelf`, `dlopen` and valgrind; none
+exists here. `TESTING_STRATEGY.md` and `SKILL.md` §10 therefore listed a
+verification step that a Windows user could not perform, for the platform the
+skill says it supports.
+
+**Fixed:** `templates/minimal-cuda-ofx/test/run-tests.bat` runs the three checks
+that have Windows equivalents - artifact (dumpbin/cuobjdump), the real GPU
+harness, and the contract harness through `LoadLibraryExW` - and states which
+Linux-only checks it does not replace.
+
+### F6 - the reference template fails `--set gain=…`, confusingly (S3)
+
+`ReferenceGain` multiplies all four channels; the harness's `--set` comparison
+assumes an RGB-only gain and asserts alpha is unchanged. Nothing in the suite
+passes `--set` for that plugin, so this surfaced only when run by hand, and the
+message ("the plug-in ignored the parameter") pointed at the plug-in.
+
+**Fixed:** the failure text now names the assumption and the flag
+(`--set-status-only`). The plug-in's maths is unchanged.
+
+---
+
+## 4. What passed on real hardware
+
+* **Kernels.** 28/28 launcher cases bit-exact against the CPU reference:
+  padded and negative pitches, 4-byte-aligned bases (routed to the scalar
+  kernel), window offsets inside bounds, 1x1 / 3x5 / 17x1 / 129x7 / 208x117,
+  zero-size windows, overrun guards on every padding byte, host stream,
+  default-stream completion, 8 concurrent host threads, zero-copy on pinned
+  mapped memory, and both kernels launched directly.
+* **Throughput** (1920x1080 RGBA32F, `cudaEvent`, 100 iterations, RTX 3060):
+  vec4 0.219 ms/frame (~303 GB/s), scalar 0.242 ms (~274 GB/s). Bandwidth-bound
+  on both paths; consistent with the 0.212/0.222 ms recorded in the 2026-11-22
+  run, which remains the number quoted in the documents.
+* **Artifact.** `dumpbin /exports` -> exactly `OfxGetNumberOfPlugins` and
+  `OfxGetPlugin`; `cuobjdump -lelf` -> 7 cubins, `sm_75`...`sm_120`;
+  `dumpbin /dependents` -> no CUDA runtime import (CUDA 13 on Windows resolves
+  it at load), matching `SKILL.md` §6.
+* **Host protocol.** 136 checks for the CUDA template (two load/unload cycles,
+  four instances, three concurrent renders, byte-destination rejection,
+  negative pitch, rejected out-of-bounds windows) and 110 for the reference
+  template, 0 failures in both.
+* **CPU-only path** builds under the Visual Studio generator and lands in
+  `Contents\Win64` with no `/Release` subdirectory, so the `$<1:...>` output
+  wrapper works for both generator families.
+
+---
+
+## 5. Limits of this run
+
+* **No OFX host.** No Resolve, Nuke, SCRATCH or Natron on this machine, so no
+  pixel was rendered by a host and `HOST_COMPATIBILITY_MATRIX.md` stays graded
+  B/C. Plugin discovery, parameter UI and stream handling inside a real host
+  remain unverified.
+* **8/16-bit paths** are exercised only as *rejection*: both templates declare
+  `eBitDepthFloat` and `render()` refuses a byte image (`--byte-dst-rejected`).
+  There is no 8-bit or 16-bit implementation to test.
+* **Single GPU**, so `DeviceGuard`'s save/restore is exercised on one device.
+* **No sanitizer or memcheck pass on Windows**; `kernel_equivalence.cpp` does not
+  compile under MSVC (`posix_memalign`), and the CPU emulation suite stays Linux-only.
+* **`onnx-inference-ofx`** was not built here (no ONNX Runtime in this project).
+* **`install-bundle`** was deliberately not run: it writes into
+  `%COMMONPROGRAMFILES%\OFX\Plugins`, outside the project folder.
+* Environment noise worth knowing: Microsoft's `vcvars64.bat` prints
+  `Der Befehl "vswhere.exe" …` on this machine. It comes from the VS installer
+  script (its `Installer` directory is not on this shell's `PATH`), not from this
+  repository, and it is harmless - the scripts resolve `vswhere` by full path.
+
+---
+
+## 6. Files changed
+
+| File | Change |
+|---|---|
+| `testkit/check-ofx-artifact.bat` | counts rows with `set /a` instead of the legacy `find`; matches the 8-digit RVA column; counts only `.cubin` lines; header documents the tool-shadowing hazard |
+| `templates/minimal-cuda-ofx/build.bat` | passes `--cuda` only when a CUDA path was compiled |
+| `templates/minimal-cuda-ofx/test/run-tests.bat` | **new**: Windows counterpart of `test/run-tests.sh` (artifact, GPU harness, contract) |
+| `testkit/build-contract-test.bat` | `/D_CRT_SECURE_NO_WARNINGS`; the harness's `sscanf` was the only warning it produced |
+| `testkit/contract_main.cpp` | the alpha assumption is stated in the failure text |
+| `BUILD_PLAYBOOK.md` §7 | three new trap rows (`find` shadowing, `dumpbin` row regex, `--cuda` vs CPU-only) and the Windows test runner |
+| `FIELD_TEST_WINDOWS_CUDA.md` §8 | `vcvars64` before `nvcc`; points at the runner |
+| `SKILL.md` §10, `README.md` | Windows verification is `test\run-tests.bat`; `.\build.bat` spelling |
+| `testkit/README.md` | what the checker's line counting must not use |

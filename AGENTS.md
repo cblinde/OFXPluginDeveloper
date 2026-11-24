@@ -9,6 +9,7 @@ reasoning lives in the documents it points at. Keep it a router.
 ./run-tests.sh                              # docs check + every build + every suite
 templates/minimal-ofx/build.sh              # one plug-in, from a clean checkout
 templates/minimal-ofx/test/run-tests.sh     # artifact inspection + fake-host contract
+templates/minimal-cuda-ofx/test/run-tests.bat  # same three checks on Windows
 python3 tools/check-docs.py                 # documentation drift, ~1 s
 tools/measure-halo.sh model.onnx            # tile overlap per model, writes <model>.halo.json
 python3 tools/make-testmodels.py --out build/testmodels   # synthetic 1/3/4-channel and 2x models

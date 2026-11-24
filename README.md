@@ -204,7 +204,7 @@ Windows (the leading `.\` matters when `NoDefaultCurrentDirectoryInExePath=1`):
 
 ```bat
 cd templates\minimal-cuda-ofx
-build.bat Release install
+.\build.bat Release install
 ```
 
 `build.bat` has no bootstrap — Windows toolkits come from an installer. It probes
@@ -213,6 +213,12 @@ build.bat Release install
 miss it prints the paths it searched plus
 [https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads)
 before failing, so a CPU-only build is never produced silently.
+
+The template's checks are one command on Windows too: `test\run-tests.bat
+Release` runs the artifact check, executes `test/gpu-kernel-test.cu` on the real
+GPU, and drives the built `.ofx` through the contract harness. It is the
+counterpart of `test/run-tests.sh` where `g++`, `nm -D`, `readelf`, `dlopen` and
+valgrind do not exist.
 
 #### Arguments accepted by the scripts
 

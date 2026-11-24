@@ -173,9 +173,15 @@ On a Windows machine with an NVIDIA GPU and the CUDA toolkit:
 .\build.bat Release
 testkit\build-contract-test.bat contract_test.exe "%OFX_SOURCE_DIR%\include"
 contract_test.exe build\bundle\MinimalCudaGain.ofx.bundle --id com.ofxplugindeveloper.minimalcudagain
+
+rem nvcc needs cl.exe on PATH, which a plain cmd does not have:
+call "%ProgramFiles(x86)%\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
 nvcc -arch=sm_86 templates\minimal-cuda-ofx\test\gpu-kernel-test.cu -o gpu-kernel-test.exe
 gpu-kernel-test.exe
 ```
+
+All of it - the artifact check, the GPU harness and the contract run - is one
+command: `templates\minimal-cuda-ofx\test\run-tests.bat Release`.
 
 The GPU harness prints its device line first; if it reports no CUDA device, the
 run is invalid, not a pass.

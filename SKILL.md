@@ -703,8 +703,10 @@ a plug-in that can only run on the GPU says so once, instead of throwing from
 - [ ] Every error path logs and throws.
 - [ ] `./test/run-tests.sh` passes: predicate, kernel equivalence, CPU loop,
       concurrency, PTX counts, bundle hygiene.
-- [ ] Windows: `test/gpu-kernel-test.cu` run on the target GPU (`nvcc -arch=sm_XX`,
-      28 cases) — the only check that executes real SASS.
+- [ ] Windows: `test\run-tests.bat` — the artifact check, `test/gpu-kernel-test.cu`
+      on the target GPU (28 cases, the only check that executes real SASS) and
+      the contract harness through `LoadLibraryExW`; the Linux equivalents come
+      from `./test/run-tests.sh`, and neither replaces a host render.
 - [ ] Clean under `SANITIZE=address,undefined`, `SANITIZE=thread` and
       `RUN_VALGRIND=1`; `./test/run-analysis.sh` reports nothing.
 - [ ] Every `kOfx*` property is read with its declared type, and every pre-ship

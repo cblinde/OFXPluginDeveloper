@@ -406,6 +406,9 @@ limits of that run are in
 | host runtime ↔ bundled runtime | Windows resolves an import by base name, and the host's directory comes first: Resolve 21 ships `onnxruntime.dll` 1.13, Windows ML ships one in `System32` | `render` access-violates; the minidump names the host's `onnxruntime.dll` and not the bundle's | private file name + `ORT_API_MANUAL_INIT` + `LoadLibraryExW` from the module directory; a bound import cannot be overridden by copying a file beside the `.ofx` |
 | `vswhere` ↔ `for /f` | a `for /f` backtick command whose first **and** last characters are quotes loses both before `cmd /c` runs it, so the program path is split at its first space | `Der Befehl "C:\Program" ist entweder falsch geschrieben oder konnte nicht gefunden werden.` — then the checker reports `dumpbin not found` and every `build.bat` aborts after a correct build | end the command with an unquoted argument (`-property installationPath`) and locate the tool with a `for /d` glob; never pass a quoted `-find` pattern there |
 | platform ↔ architecture directory | the directory name is part of the contract: `Linux-x86-64`, `Linux-aarch64`, `MacOS`, `Win64` | an ARM Linux build links, reports success and lands in `Contents/Linux-x86-64`, which no host scans | derive the directory from `WIN32`/`APPLE`/`CMAKE_SYSTEM_PROCESSOR` once, and set both output properties to it |
+| `find` ↔ Git-for-Windows | Git Bash puts its own `usr\bin` ahead of `System32`, and `find.exe` exists in both. The legacy `find /c /v ""` idiom used to count lines is parsed by **GNU** find, which reads `/c` as a path | thousands of `find: '/c/…': Permission denied` lines and a build that appears to hang *after* a correct link; measured on the CUDA template | count with `set /a` in a `for /f` loop, or call `%SystemRoot%\System32\find.exe` by full path. `findstr`, `where`, `dumpbin` and `cuobjdump` have no MSYS namesake and are safe |
+| `dumpbin` ↔ export-row regex | the file-header line `00000000 characteristics` matches a loose `[0-9A-Fa-f]*` RVA group, because `c` is a hex digit | `FAIL: dumpbin reports 3 exported names, expected 2` on a DLL with exactly two | match the eight-digit RVA column explicitly (`[0-9A-Fa-f]` repeated eight times), never `[0-9A-Fa-f]*` |
+| `--cuda` ↔ CPU-only build | `build.bat` asked the checker for cubins even when it had just built the CPU path, and `cuobjdump`'s "does not contain device code" info line counted as a cubin | the CPU-only build printed `device code: 1 cubin(s)` about a binary with no device code, and passed only because of it | pass `--cuda` only when a CUDA path was compiled, and count only lines that name a `.cubin` |
 
 **Artifact check, Windows side.** `nm -D`, `readelf` and `dlopen` have direct
 equivalents, and `testkit/check-ofx-artifact.bat` runs them so the claim is a
@@ -429,6 +432,15 @@ missing tool fails the build (exit 3); standalone use without the flag keeps the
 named skip. From the field test: 2 exports, 7 cubins
 `sm_75`…`sm_120`, and no CUDA runtime import **[B]**
 ([`FIELD_TEST_WINDOWS_CUDA.md`](FIELD_TEST_WINDOWS_CUDA.md) §3).
+
+**One command for this template's suites on Windows.**
+`templates\minimal-cuda-ofx\test\run-tests.bat Release` is the counterpart of
+`test/run-tests.sh` on the platform where `g++`, `nm -D`, `readelf`, `dlopen` and
+valgrind do not exist: the artifact check, `test/gpu-kernel-test.cu` executed on
+the real GPU, and the contract harness through `LoadLibraryExW` **[V]** (Windows
+11, RTX 3060 sm_86, CUDA 13.0.48, MSVC 19.44: 2 exports, 7 cubins, 28/28 kernel
+cases, 136 contract checks). The CPU-emulated equivalence suite and memcheck stay
+Linux-only, and the script says so rather than skipping them silently.
 
 **Start the script with `.\build.bat`.** With `NoDefaultCurrentDirectoryInExePath=1`
 set (a common policy), `cmd.exe` will not find a bare `build.bat` in the current
