@@ -402,8 +402,10 @@ out/contract_test out/MyPlugin.ofx \
 ### 5.3 Proof that it can fail
 
 A harness that has only ever passed is untested. Fifteen controls, run by
-`testkit/run-negative-controls.sh` (deliberately **not** part of `./run-tests.sh`,
-so the normal run stays green):
+`testkit/run-negative-controls.sh`, with `testkit/run-negative-controls.bat` as
+the Windows counterpart that `./run-tests.sh` runs there as a stage of its own.
+Both exit 0 only when every fault is caught, so the expected failures are
+asserted rather than left to turn a run red:
 
 ```
 --- negative control: describe returns kOfxStatReplyDefault ---

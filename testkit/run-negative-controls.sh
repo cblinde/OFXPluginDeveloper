@@ -18,9 +18,10 @@
 # honoured build it could be unsatisfiable. The tiled pair covers the tolerance
 # variant without needing the ONNX template's model or bundle.
 #
-# This is intentionally NOT wired into ../run-tests.sh: a normal run must stay
-# green, and a run that always has two failing tests would train people to
-# ignore red output. Run it by hand after changing the harness:
+# The Windows counterpart, run-negative-controls.bat, builds the same fifteen
+# controls with MSVC and is wired into ../run-tests.sh on that platform, where
+# the shell route cannot run at all. This script stays a manual step on POSIX so
+# a run does not depend on a C compiler beyond the ones the suites already need:
 #
 #   testkit/run-negative-controls.sh [/path/to/openfx]
 set -uo pipefail
