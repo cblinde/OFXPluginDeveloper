@@ -1,0 +1,16 @@
+# Words that the move replaced rather than lost.
+#
+# The coverage gate requires every distinctive word of the pre-move documents to
+# survive. These nine are the exception: each occurred only in the prose of a
+# navigation row (a table cell describing what a document was about) that the
+# routing table now expresses in its own words. No technical statement depended
+# on them. One per line: stem<TAB>reason.
+
+anchore	README row describing REFERENCE_READING_GUIDE ("every claim anchored to a file and line"); the routing table states the same rule as "each claim carries a label".
+chasing	SKILL description ("use when chasing a render difference"); the new description says "use when a render differs".
+complia	SKILL description ("compliance questions"); the new description covers the same triggers.
+derivin	SKILL row ("copy a template's structure instead of re-deriving it"); the workflow says "copy the template".
+generic	README row describing AGENTS ("router for generic coding agents"); the new row describes the same audience.
+lessons	SKILL row describing BEST_PRACTICES ("reference-project lessons"); the routing table names the file and its subjects.
+restati	README row describing AGENTS ("rather than restating them"); the new row makes the same point in fewer words.
+synthes	README row describing BEST_PRACTICES ("review-level synthesis"); the new row says "review-level rules".
