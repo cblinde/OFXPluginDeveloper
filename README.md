@@ -306,7 +306,9 @@ Plugins. Details in `references/debugging-and-symptoms.md` §1.
 
 The full ledger, with the command behind every line and the list of what is
 *not* verified, is `references/verification-status.md`. The raw runs it cites are
-in `evidence/`.
+in `evidence/`. The inference template's first Windows build, with ONNX Runtime
+1.20.1, is [`evidence/2026-11-24-windows/onnx-inference-suite.log`](evidence/2026-11-24-windows/onnx-inference-suite.log);
+it ran the CPU execution provider, not CUDA.
 
 ---
 

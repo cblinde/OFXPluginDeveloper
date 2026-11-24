@@ -169,6 +169,7 @@ is that the Windows loader path and the OFX actions behave the same as on Linux.
 | 0.212 / 0.222 ms at 1080p | [`performance-model.md`](performance-model.md) §3.1 |
 | 74-check host contract through `LoadLibraryExW` | [`testing-layers.md`](testing-layers.md) §3 |
 | `--strict` checker lookup, `System32` ONNX Runtime shadowing | §9, [`cmake-and-linking.md`](cmake-and-linking.md) §5 |
+| Windows ONNX inference suite, ONNX Runtime 1.20.1 (CPU provider) | [`testing-layers.md`](testing-layers.md) §13, [`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log) |
 
 ## 8. Reproducing it
 

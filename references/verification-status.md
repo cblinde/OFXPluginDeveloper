@@ -169,7 +169,9 @@ iterations; one GPU, one driver, one OS build.
 
 **Not verified here:** no Resolve, Nuke or SCRATCH is installed, so nothing has
 rendered in them; no CUDA execution provider has ever been created (the inference
-template builds a CPU session); Linux has not been run; and no kernel runs in
+template builds a CPU session, which now has a Windows run behind it —
+[`evidence/2026-11-24-windows/onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log));
+Linux has not been run; and no kernel runs in
 `./run-tests.sh`, which has no GPU step by design. See the opening section of this document.
 
 ## 2. What this pass changed, and what it verified
