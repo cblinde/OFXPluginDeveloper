@@ -374,6 +374,34 @@ def check_link_shape(root, files, texts, report):
                          f"malformed link {match.group(0)[:60]!r}: missing `]` before `(`")
 
 
+# The entry points use a bare "§3" for "§3 of SKILL.md". That was safe while
+# one long file held every section. After the split into references/ the numbers
+# are not contiguous any more, so a bare number that names a section SKILL no
+# longer has - the checklists' old §10, verification status's old §12 - reads as
+# a live pointer to nothing. Qualified citations ("references/x.md §3.8") are
+# checked by check_section_refs; this one covers the short form.
+BARE_SECTION_FILES = ("README.md", "AGENTS.md", "SKILL.md")
+
+
+def check_bare_sections(root, files, texts, report):
+    skill_sections = section_numbers(texts.get("SKILL.md", ""))
+    for path in BARE_SECTION_FILES:
+        text = texts.get(path)
+        if text is None:
+            continue
+        for line_number, line in enumerate(text.splitlines(), 1):
+            for match in re.finditer(r"\u00a7\s?(L?\d+)", line):
+                before = line[:match.start()]
+                if ".md" in before:
+                    continue          # qualified: check_section_refs has it
+                number = match.group(1)
+                if number.startswith("L") or int(number) not in skill_sections:
+                    report.error(path, line_number,
+                                 f"bare §{number} names no section of SKILL.md "
+                                 f"(it has {sorted(skill_sections)}); cite the file, "
+                                 f"e.g. 'references/x.md §{number}'")
+
+
 def check_agents(root, report):
     path = os.path.join(root, "AGENTS.md")
     if not os.path.exists(path):
@@ -406,6 +434,7 @@ def main():
     check_labels(root, files, texts, report)
     check_anchors(root, files, texts, report)
     check_link_shape(root, files, texts, report)
+    check_bare_sections(root, files, texts, report)
     check_agents(root, report)
 
     status = report.show()

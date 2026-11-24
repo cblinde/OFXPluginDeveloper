@@ -2,7 +2,10 @@
 
 A complete engineering reference and starting template for **CUDA-accelerated
 OpenFX (OFX) plugins** — the effect plugin format used by DaVinci Resolve Studio,
-Nuke, Assimilate SCRATCH and Natron.
+Nuke, Assimilate SCRATCH and Natron. It is also packaged as an agent skill:
+`SKILL.md` carries the frontmatter, ground rules and routing table an AI coding
+agent loads first, `AGENTS.md` is the shorter router, and `references/` is what
+they route to.
 
 ## Purpose
 
@@ -98,9 +101,9 @@ answers it.
 
 ### 1. Read the skill first
 
-Start with [`SKILL.md`](SKILL.md). §1 (ground rules) and §10 (checklists) are the
-parts that prevent the expensive mistakes; the workflow in §4 is the order to
-build in. If you are an AI agent, `SKILL.md` is written to be the entry point:
+Start with [`SKILL.md`](SKILL.md). §1 (ground rules) and the pre-flight
+[checklists](references/checklists.md) are the parts that prevent the expensive
+mistakes; the workflow in §3 is the order to build in. If you are an AI agent, `SKILL.md` is written to be the entry point:
 it names the invariants, the exact constants, and the files to copy.
 
 ### 2. Start a plugin from the template

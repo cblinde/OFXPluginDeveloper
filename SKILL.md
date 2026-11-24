@@ -14,7 +14,7 @@ Windows (MSVC + CUDA Toolkit) and Linux (GCC/Clang + CUDA Toolkit).
 **[B]** external evidence, grade B in `references/host-resolve.md`; the
 2026-11-22 Windows runs (CUDA field test and ONNX review) are archived in
 [`field-evidence.md`](references/field-evidence.md). Unmarked statements
-are design guidance that follows from the model, not measurements. §12 records
+are design guidance that follows from the model, not measurements. §5 records
 what that vocabulary currently covers, including the 2026-11-24 currency check.
 
 Read this file first, then only the companion whose subject the task touches:
@@ -107,7 +107,7 @@ relative to this file.
 | Run it: artifact + contract with no host, then a headless host render | `testkit/README.md` | prose |
 | Copy a working scaffold | `templates/minimal-ofx/` (CPU), `templates/minimal-cuda-ofx/` (CUDA + fallback), `templates/onnx-inference-ofx/` (model per frame) | the docs |
 
-Two rules for this table. If the task is "make it work at all", it is §4 below,
+Two rules for this table. If the task is "make it work at all", it is §3 below,
 not a reference file. If two rows seem to apply, the narrower one is the one to
 load first; the other is usually a consequence.
 
@@ -125,15 +125,18 @@ Write down, before code:
 - Context: `filter` (`eContextFilter`) and/or `general`.
 - Pixel formats: start with `eBitDepthFloat` + `ePixelComponentRGBA`.
 - Spatial: does output(x,y) depend only on input(x,y)? This decides
-  `kOfxImageEffectPropNoSpatialAwareness` (§8).
+  `kOfxImageEffectPropNoSpatialAwareness`
+  (`references/roi-tiling-and-render-hints.md` §8).
 - Temporal: needs frames other than `time`?
 - `isIdentity`: expressible? It is the cheapest optimisation you have.
 - Declarations from OFX 1.5.1 that apply: CPU fallback
   (`kOfxImageEffectPropCPURenderSupported`), thumbnail behaviour
   (`kOfxImageEffectPropThumbnailRender`), colour management
-  (`kOfxImageEffectPropColourManagementStyle`, §5).
+  (`kOfxImageEffectPropColourManagementStyle`,
+  `references/colour-and-alpha.md`).
 
-If the effect needs neighbouring pixels, read §8 before writing the kernel: the
+If the effect needs neighbouring pixels, read
+`references/roi-tiling-and-render-hints.md` §8 before writing the kernel: the
 answer changes the architecture, not just the code.
 
 ### Phase 1 — Scaffold
@@ -220,11 +223,12 @@ The requirement is **exactly two exported entry-point names**,
 the build: `-fvisibility=hidden` alone still exports five weak `std::` helpers
 (measured: 7 symbols **[V]**); the version script in
 `templates/minimal-ofx/exports.map` removes those too, to 2. A count of 5 `T`
-means `CUDA_VISIBILITY_PRESET` is missing (§6).
+means `CUDA_VISIBILITY_PRESET` is missing (`references/cmake-and-linking.md` §3.5).
 
 ### Phase 7 — Install and smoke test
 
-Copy the bundle into the host's plugin directory (§6), start the host, then:
+Copy the bundle into the host's plugin directory (`references/packaging-and-install.md`
+§5), start the host, then:
 
 1. Does the plugin appear under the expected group?
 2. Apply it: does the image change as expected?
@@ -235,7 +239,8 @@ Copy the bundle into the host's plugin directory (§6), start the host, then:
 
 ### Phase 8 — Debug and profile
 
-§7. The host-visible channel is `setPersistentMessage`, not `printf` and not
+`references/debugging-and-symptoms.md` §7. The host-visible channel is
+`setPersistentMessage`, not `printf` and not
 `OFX::Log::print` (which writes a file only in a `DEBUG` build).
 
 ---

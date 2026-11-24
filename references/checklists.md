@@ -170,7 +170,8 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 - [ ] CPU fallback implemented and reachable, or
       `kOfxImageEffectPropCPURenderSupported` set `"false"` on purpose.
 - [ ] Spatial/thumbnail/colour-management declarations from Phase 0 are written
-      down (§5, §8).
+      down ([`colour-and-alpha.md`](colour-and-alpha.md),
+      [`roi-tiling-and-render-hints.md`](roi-tiling-and-render-hints.md)).
 - [ ] Global accesses go through the host pitch, and the hot path uses one vector
       load/store per pixel where the pointers allow it (`./test/run-tests.sh`
       asserts this in PTX).
@@ -192,8 +193,9 @@ Copy this into the pull request. "N/A" needs the reason next to it.
       the official OpenFX host (`HostSupport` + `cacheDemo`: load, describe,
       contexts) and a headless `NatronRenderer` render of one 256×256 frame whose
       pixels are checked in linear space. `--tier1-only` is the CI form without
-      Natron. This is a host *process*, not a GUI session: see §12 for what it
-      still leaves unproven.
+      Natron. This is a host *process*, not a GUI session: see
+      [`verification-status.md`](verification-status.md) for what it still leaves
+      unproven.
 - [ ] Rendered in at least one real host, in both GPU and CPU modes.
 - [ ] Identity path verified (no render when params are neutral).
 - [ ] Non-square PAR and odd resolutions tested.
@@ -209,8 +211,8 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 - [ ] Clean under `SANITIZE=address,undefined`, `SANITIZE=thread` and
       `RUN_VALGRIND=1`; `./test/run-analysis.sh` reports nothing.
 - [ ] Every `kOfx*` property is read with its declared type, and every pre-ship
-      question in `references/checklists.md` has an answer.
-- [ ] Verification status written down honestly (§12).
+      question in this file has an answer.
+- [ ] Verification status written down honestly ([`verification-status.md`](verification-status.md)).
 
 ---
 
@@ -224,4 +226,4 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 6. Artifact verified by `nm`/`readelf`/`cuobjdump`, not by trust.
 7. Tested at 1919×1081, 1×1, identity, and against the CPU path.
 8. Read back with `compute-sanitizer` on a small frame.
-9. `.ofx` installed with the host closed; plugin cache cleared after a crash.
+9. `.ofx` installed with the host closed; plugin cache cleared after a crash.
