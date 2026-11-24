@@ -321,8 +321,11 @@ compiles the same two files with MSVC, and the same flags apply. Every template'
 and device-code claims are checked on the platform too - and a missing `dumpbin`
 fails the build rather than turning the check into a skip.
 
-`testkit/run-negative-controls.sh` proves the harness is not a rubber stamp. It
-is deliberately not part of `./run-tests.sh`: a normal run has to stay green.
+`testkit/run-negative-controls.sh` proves the harness is not a rubber stamp, and
+`testkit/run-negative-controls.bat` is the same fifteen controls on Windows. The
+`.bat` runs inside `./run-tests.sh` on that platform; the shell script stays a
+manual step there. Both exit 0 only when every fault is caught, so neither turns
+a green run red on purpose.
 
 `--roi-context` gets a pair there rather than a single control, because one build
 cannot prove it. The same stub (`negative-controls/stub_roi_context.c`) applies a

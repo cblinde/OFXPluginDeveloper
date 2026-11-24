@@ -31,7 +31,8 @@ die() { echo "FAIL: $*" >&2; exit 1; }
 # testkit/check-ofx-artifact.bat with dumpbin and cuobjdump - the checker
 # build.bat already calls - so delegate to it instead of parsing dumpbin twice.
 verify_with_dumpbin() {
-  local plugin="$1" extra="${2:-}" checker="${repo}/testkit/check-ofx-artifact.bat"
+  local plugin="$1" extra="${2:-}"
+  local checker="${repo}/testkit/check-ofx-artifact.bat"
   [[ -f "${checker}" ]] || return 3
   command -v cmd >/dev/null 2>&1 || return 3
   case "$(uname -s 2>/dev/null || true)" in
@@ -124,7 +125,7 @@ else
   # table to count and no RPATH to inspect - the loader resolves next to the
   # module - so those two ELF-only probes are not silently skipped, they are
   # named as inapplicable.
-  verify_with_dumpbin "${ofx_file}" "" "${repo}/testkit/check-ofx-artifact.bat" \
+  verify_with_dumpbin "${ofx_file}" "" \
     || die "artifact verification needs nm/readelf, or dumpbin through testkit/check-ofx-artifact.bat on Windows"
   echo "  dynamic symbols: not applicable on PE (the export set above is the check)"
   echo "  RPATH/RUNPATH  : not applicable on PE (the loader looks next to the module)"

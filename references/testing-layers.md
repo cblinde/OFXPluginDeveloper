@@ -308,6 +308,7 @@ and the templates share it rather than each carrying a copy.
 | `testkit/contract_main.cpp` | ~500 | the checks, the `dlopen`, and the command line |
 | `testkit/build-contract-test.sh` | ~50 | compiles both into one binary; finds headers from the template's `CMakeCache.txt` |
 | `testkit/negative-controls/` | 2 stubs + 1 ten-way | deliberately broken plug-ins that prove the harness fails, plus one ROI stub built plain or internally tiled with the context read or ignored, twice more for the label check (`-DNO_LABEL` never writes it, `-DWITH_LABEL` does), once that draws a mark (`-DDRAW_MARK`), and once that answers `GetRegionsOfInterest` with the request itself (`-DROI_SELF`, a global effect) |
+| `testkit/run-negative-controls.bat` | ~270 | the same fifteen controls on Windows: `cl /LD /TC` DLLs with `/link /EXPORT` for the two entry points (a PE image exports nothing by default), the harness from `build-contract-test.bat`, and the varying source fixture written by PowerShell and size-checked; `./run-tests.sh` runs it there |
 | `testkit/run-negative-controls.sh` | ~240 | builds the fifteen controls, asserts each fault is rejected with the right message **and** that the context-reading, label-writing and clip-re-reading builds pass while the mark build passes only in the bottom-up layouts and the clip-caching build fails on the second media id |
 
 Coverage, precisely: all **18** `OfxPropertySuiteV1` functions (including the `*N`
@@ -766,8 +767,10 @@ cd templates/minimal-cuda-ofx && ./build.sh && ./test/run-tests.sh
 cd templates/onnx-inference-ofx && ONNXRUNTIME_ROOT=/path/to/ort \
   ./build.sh && ./test/run-tests.sh
 
-# Proof that the harness detects faults (two deliberate failures, not in the run above)
+# Proof that the harness detects faults. On Windows this is a stage of ./run-tests.sh
+# above; on POSIX it is a manual step. Both exit 0 when every fault is caught.
 testkit/run-negative-controls.sh
+cmd //c testkit/run-negative-controls.bat      # the same controls, Windows
 ```
 
 `./run-tests.sh` exits 0 with `RUN_VALGRIND=0` in about two minutes on the

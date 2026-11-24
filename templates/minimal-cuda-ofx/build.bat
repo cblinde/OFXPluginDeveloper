@@ -44,13 +44,39 @@ if not defined CUDA_FOUND (
     )
   )
 )
-rem Newest installed series. `dir /o-n` sorts the version directories
-rem descending, so the first one with an nvcc wins: v13.0 before v12.9, and a
-rem series that does not exist yet needs no edit here.
-if not defined CUDA_FOUND if exist "%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA" (
-  for /f "delims=" %%D in ('dir /b /ad /o-n "%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA" 2^>nul') do (
-    if not defined CUDA_FOUND if exist "%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\%%D\bin\nvcc.exe" set "CUDA_FOUND=%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\%%D"
+rem Newest installed series, compared as numbers. `dir /o-n` sorts by name,
+rem where "v9.0" outranks "v13.0" and "v12.10" outranks "v12.9" - measured on a
+rem machine holding both v9.0 and v13.0, the name sort picked v9.0 and a CUDA 13
+rem build silently became a CUDA 9 one. So every directory that actually holds a
+rem bin\nvcc.exe is compared as major.minor and the largest wins; a series that
+rem does not exist yet needs no edit here.
+if not defined CUDA_FOUND (
+  set "CUDA_ROOT=%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA"
+  set "BEST_MAJOR=-1"
+  set "BEST_MINOR=-1"
+  set "BEST_DIR="
+  if exist "!CUDA_ROOT!" (
+    for /f "delims=" %%D in ('dir /b /ad "!CUDA_ROOT!" 2^>nul') do (
+      if exist "!CUDA_ROOT!\%%D\bin\nvcc.exe" (
+        for /f "tokens=1,2 delims=v." %%A in ("%%D") do (
+          set "MAJ=%%A"
+          set "MIN=%%B"
+          if not defined MIN set "MIN=0"
+          if !MAJ! GTR !BEST_MAJOR! (
+            set "BEST_MAJOR=!MAJ!"
+            set "BEST_MINOR=!MIN!"
+            set "BEST_DIR=%%D"
+          ) else (
+            if !MAJ! EQU !BEST_MAJOR! if !MIN! GTR !BEST_MINOR! (
+              set "BEST_MINOR=!MIN!"
+              set "BEST_DIR=%%D"
+            )
+          )
+        )
+      )
+    )
   )
+  if defined BEST_DIR set "CUDA_FOUND=!CUDA_ROOT!\!BEST_DIR!"
 )
 
 if "%CPU_ONLY%"=="1" (

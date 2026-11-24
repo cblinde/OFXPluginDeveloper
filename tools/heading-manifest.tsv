@@ -8,7 +8,7 @@
 # numbering was renumbered on purpose and is ignored when matching, so a
 # section that merely changes number still passes.
 #
-# headings: 262
+# headings: 263
 AGENTS.md	AGENTS.md	AGENTS.md	
 AGENTS.md	Commands	AGENTS.md	
 AGENTS.md	Read order	AGENTS.md	
@@ -159,6 +159,7 @@ HOST_COMPATIBILITY_MATRIX.md	6. Feature detection, not host sniffing	references/
 HOST_COMPATIBILITY_MATRIX.md	7. The compatibility test you should actually run	references/host-detection-and-acceptance.md	
 HOST_COMPATIBILITY_MATRIX.md	8. Known real-world failure, as a case study	references/host-resolve.md	
 PATTERN_INDEX.md	Pattern index	references/pattern-index.md	
+PATTERN_INDEX.md	Contents	references/reference-projects.md	
 PATTERN_INDEX.md	1. By task ("I need to…")	references/pattern-index.md	
 PATTERN_INDEX.md	2. By symptom ("the render is wrong")	references/debugging-and-symptoms.md	
 PATTERN_INDEX.md	Compile and link symptoms	references/debugging-and-symptoms.md	
