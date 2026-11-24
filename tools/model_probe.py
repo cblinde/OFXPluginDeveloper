@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Answer, from the model file alone, what `AI_MODEL_INTEGRATION.md` §7 asks.
+"""Answer, from the model file alone, what `references/onnx-and-tensorrt.md` §7 asks.
 
     python3 tools/model_probe.py model.onnx
     python3 tools/model_probe.py model.onnx --size 64x64 --json
@@ -12,7 +12,7 @@ multiple of 8/16/32, and which execution providers this runtime has. It loads th
 model once, on the CPU: whether a provider can run the file is
 `tools/bench_ep.py`'s question, not this one.
 
-The alignment probe is the one `AI_MODEL_INTEGRATION.md` §7 describes: one run
+The alignment probe is the one `references/onnx-and-tensorrt.md` §7 describes: one run
 at 63, 72, 80 and 96 pixels square. A model that reshapes to H/8, H/16 or H/32
 throws at the sizes that are not a multiple, so the smallest size that runs
 names the factor. The factor printed here is the largest power of two dividing
@@ -34,7 +34,7 @@ from pathlib import Path
 
 from _ort_common import first_line, make_input, ort, parse_size, session_options
 
-# The ladder from AI_MODEL_INTEGRATION.md section 7, in pixels square.
+# The ladder from references/onnx-and-tensorrt.md section 7, in pixels square.
 LADDER = (63, 72, 80, 96)
 
 

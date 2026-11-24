@@ -129,7 +129,9 @@ def headings(text):
             continue
         title = match.group(2).strip()
         slug = re.sub(r"[^\w\s-]", "", title.lower())
-        slug = re.sub(r"\s+", "-", slug)
+        # GitHub replaces each space, it does not collapse runs: "AI / ONNX"
+        # loses the slash and keeps both spaces, so its anchor has two hyphens.
+        slug = re.sub(r"\s", "-", slug)
         out[slug] = title
     return out
 
@@ -255,7 +257,7 @@ def check_counts(root, files, texts, report):
                 # count of five or more can be a claim about the whole set.
                 if stated >= 5 and stated != layer_count:
                     report.error(path, line_number,
-                                 f"says {match.group(1)} layers but TESTING_STRATEGY.md has "
+                                 f"says {match.group(1)} layers but references/testing-layers.md has "
                                  f"{layer_count} L-sections (L0-L{layer_count - 1})")
 
             for match in re.finditer(
@@ -267,7 +269,7 @@ def check_counts(root, files, texts, report):
                 if stated != ai_rows:
                     report.error(path, line_number,
                                  f"says {match.group(1)} shipped projects but "
-                                 f"AI_MODEL_INTEGRATION.md §1 lists {ai_rows} repositories")
+                                 f"references/ai-architectures-and-runtimes.md §1 lists {ai_rows} repositories")
 
 
 def check_measurements(root, files, texts, report):
@@ -282,7 +284,7 @@ def check_measurements(root, files, texts, report):
                 if pattern.search(line) and not any(mark in line for mark in PROVENANCE_MARKS):
                     report.error(path, line_number,
                                  f"duplicated measurement '{label}' ({what}) without a "
-                                 f"provenance mark; link to TESTING_STRATEGY.md §13 or mark "
+                                 f"provenance mark; link to references/testing-layers.md §13 or mark "
                                  f"the line [V]")
 
 
@@ -312,7 +314,7 @@ def check_labels(root, files, texts, report):
         unknown = sorted(used - allowed)
         if unknown:
             report.error(path, 1, f"unknown provenance label(s) {unknown}; see the legend in "
-                                  f"BEST_PRACTICES_AND_PERFORMANCE.md or BUILD_PLAYBOOK.md")
+                                  f"references/performance-model.md")
         for tag in sorted(used):
             if not re.search(rf"\*\*\[{tag}\]\*\*", text):
                 line = next((i for i, l in enumerate(text.splitlines(), 1) if f"[{tag}]" in l), 1)

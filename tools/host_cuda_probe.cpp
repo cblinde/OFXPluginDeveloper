@@ -9,7 +9,7 @@
 // host, so a candidate fix costs seconds instead of a host restart.
 //
 // Windows only, one file, no dependencies. The source is the handover's
-// (FIELD_TEST_WINDOWS_CUDA.md, F33), where it was compiled with MSVC and run
+// (references/field-evidence.md, F33), where it was compiled with MSVC and run
 // against DaVinci Resolve 21.2.0.5; it has not been compiled in this repository,
 // which has no MSVC and no Windows headers. Rebuild it yourself before trusting
 // its output on another machine.

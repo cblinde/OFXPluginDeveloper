@@ -521,7 +521,7 @@ Nine of the ten sources include `OFX::ImageProcessor`:
 
 ## 10. The general-purpose suites: what to read, what to skip
 
-The AI repositories in [§4](ai-architectures-and-runtimes.md#4-external-ai-onnx-plug-ins-what-exists-what-to-learn-what-to-avoid)
+The AI repositories in [§4](ai-architectures-and-runtimes.md#4-external-ai--onnx-plug-ins-what-exists-what-to-learn-what-to-avoid)
 answer "how do I ship a model". These answer "how do I ship a plug-in at all",
 and they are where the host protocol is exercised at a scale one person cannot
 write alone.

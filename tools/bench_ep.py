@@ -10,7 +10,7 @@ because a provider that silently falls back still answers `run()` with numbers
 that look fine. A provider that is not installed is reported as skipped, not
 timed.
 
-`AI_MODEL_INTEGRATION.md` §7 asks for CUDA first with a CPU fallback and a
+`references/onnx-and-tensorrt.md` §7 asks for CUDA first with a CPU fallback and a
 provider the user can see. This is the measurement behind that: the same file,
 the same input, one row per provider, on the machine that will run it. Nothing
 here is a quality check — use the template's own render for that — and a timing

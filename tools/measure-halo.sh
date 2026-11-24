@@ -4,7 +4,7 @@
 # Measure the tile overlap a model actually needs, and write the number next to
 # the model so the next person does not guess it again.
 #
-# This is the recipe in AI_MODEL_INTEGRATION.md section 7 as a command: the
+# This is the recipe in references/onnx-and-tensorrt.md section 7 as a command: the
 # overlap ladder is walked through the plug-in's own tiling code
 # (templates/onnx-inference-ofx/src/AiCore.cpp, not a reimplementation), the
 # frame border is excluded from the comparison, a real interior tile edge is

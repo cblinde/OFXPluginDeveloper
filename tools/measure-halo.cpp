@@ -14,7 +14,7 @@
 // Why the border is excluded: a tile clipped at the frame edge sees content no
 // interior tile ever sees, and the largest deviation lands there. Including it
 // buys an overlap several times too large - reported as 0.38 on the right border
-// of an otherwise pixel-identical model (AI_MODEL_INTEGRATION.md section 7).
+// of an otherwise pixel-identical model (references/onnx-and-tensorrt.md section 7).
 //
 // Why a real interior tile edge is required: if the frame is only one tile wide
 // the comparison says nothing about blending, because no two tiles meet.
