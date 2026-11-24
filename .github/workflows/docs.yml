@@ -29,16 +29,46 @@ jobs:
   templates:
     # The suites were runnable only on the author's machine, which is how a
     # release can pass review with a broken template. CPU_ONLY builds the CUDA
-    # template through its shim; the ONNX template is skipped by name when
-    # ONNXRUNTIME_ROOT is unset, rather than failing the run.
+    # template through its shim, and ONNX Runtime is installed below so the
+    # inference template is built and tested rather than skipped by name - the
+    # run-tests.sh summary fails any CI run that skips it anyway.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: ONNX Runtime
+        # Without this the ONNX template is skipped by name, which is how its
+        # Windows build stayed broken while the run stayed green. The package is
+        # the same one the docs point at, unpacked into the release layout the
+        # template expects (include/ + lib/).
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/ort.nupkg \
+            https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.20.1
+          python3 - <<'PY'
+          import os, shutil, zipfile
+          root = os.path.expanduser("~/ort")
+          with zipfile.ZipFile("/tmp/ort.nupkg") as z:
+              for name in z.namelist():
+                  if name.startswith("build/native/include/") and name.endswith(".h"):
+                      os.makedirs(f"{root}/include", exist_ok=True)
+                      with z.open(name) as src, open(f"{root}/include/{os.path.basename(name)}", "wb") as dst:
+                          shutil.copyfileobj(src, dst)
+                  elif name == "runtimes/linux-x64/native/libonnxruntime.so":
+                      os.makedirs(f"{root}/lib", exist_ok=True)
+                      with z.open(name) as src, open(f"{root}/lib/libonnxruntime.so", "wb") as dst:
+                          shutil.copyfileobj(src, dst)
+          PY
+          test -f ~/ort/include/onnxruntime_cxx_api.h
+          test -f ~/ort/lib/libonnxruntime.so
+          echo "ONNXRUNTIME_ROOT=$HOME/ort" >> "$GITHUB_ENV"
 
       - name: Template suites
         env:
           CPU_ONLY: "1"
           RUN_VALGRIND: "0"
+          # ONNXRUNTIME_ROOT comes from the step above; without it this run now
+          # fails instead of skipping the inference template.
         run: ./run-tests.sh
 
       - name: Negative controls

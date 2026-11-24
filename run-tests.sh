@@ -68,13 +68,59 @@ fi
 # A missing ONNX Runtime skips one template, it does not abort the run. The
 # reference and CUDA plug-ins need nothing, and exiting here meant a machine
 # without ONNX Runtime never tested them at all.
+#
+# Skipping is not the same as passing, and the difference has to survive the
+# log: this template's Windows build was broken for months while every run
+# printed "all suites passed" and exited 0, because nothing failed - the
+# template simply never ran. Three rules follow: the summary says what did NOT
+# run, a CI run fails unless the hole is accepted explicitly, and the skip is
+# never counted as a suite that passed.
 onnx=1
 if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
   onnx=0
-  echo "[onnx] ONNXRUNTIME_ROOT is unset: templates/onnx-inference-ofx is skipped by name"
+  echo "[onnx] ONNXRUNTIME_ROOT is unset: templates/onnx-inference-ofx will NOT be built or tested"
   echo "       Point it at a directory with include/onnxruntime_cxx_api.h and"
   echo "       lib/libonnxruntime.so (see templates/onnx-inference-ofx/build.sh --help)."
 fi
+
+# A run that claims to cover everything is only allowed to stay green without
+# the template when a human says so. CI defines CI=true, GitHub Actions
+# GITHUB_ACTIONS, Azure Pipelines TF_BUILD and Buildkite BUILDKITE; any of them
+# turns the skip into a failure, because that is where a silently unbuilt
+# template hid.
+in_ci() {
+  [[ -n "${CI:-}${GITHUB_ACTIONS:-}${TF_BUILD:-}${BUILDKITE:-}" ]]
+}
+
+# The block a reader sees before the counts, so "all suites passed" is never the
+# last word while one template was skipped.
+report_skipped_onnx() {
+  [[ "${onnx}" == "0" ]] || return 0
+  echo
+  echo "------------------------------------------------------------------"
+  echo "NOT VERIFIED: templates/onnx-inference-ofx"
+  echo "  ONNXRUNTIME_ROOT is unset, so nothing in that template was built or"
+  echo "  tested: not its build, not its host contract, not its ai_pipeline test."
+  echo "  The counts above do not cover it."
+  echo "  Close it with: ONNXRUNTIME_ROOT=/path/to/onnxruntime ./run-tests.sh"
+  echo "------------------------------------------------------------------"
+}
+
+# Called after the summary, so a CI failure still carries the full result.
+require_onnx_in_ci() {
+  [[ "${onnx}" == "0" ]] || return 0
+  in_ci || return 0
+  if [[ "${ALLOW_SKIPPED_TEMPLATES:-0}" == "1" ]]; then
+    echo "warning: CI without ONNXRUNTIME_ROOT, accepted by ALLOW_SKIPPED_TEMPLATES=1" >&2
+    return 0
+  fi
+  echo "error: this is a CI run without ONNXRUNTIME_ROOT, so the" >&2
+  echo "       onnx-inference-ofx template was never exercised. That is how its" >&2
+  echo "       Windows build stayed broken while every run went green." >&2
+  echo "       Provide ONNXRUNTIME_ROOT, or set ALLOW_SKIPPED_TEMPLATES=1 to" >&2
+  echo "       accept the hole in this run on purpose." >&2
+  exit 1
+}
 
 # ---------------------------------------------------------------------------
 # Platform
@@ -122,17 +168,23 @@ if [[ "${windows}" == "1" ]]; then
   echo
   echo
   echo "=================================================================="
-  echo "all suites passed, every template that was built:"
+  if [[ "${onnx}" == "1" ]]; then
+    echo "all suites passed, every template that was built:"
+  else
+    echo "all suites that ran passed, but one template was not built:"
+  fi
   echo "  docs drift check                (tools/check-docs.py)"
   echo "  reference build + artifact      (minimal-ofx, dumpbin)"
   echo "  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)"
   echo "  GPU kernels                     (as test/run-tests.bat reported above)"
   echo "  negative controls               (testkit/run-negative-controls.bat)"
   if [[ "${onnx}" == "0" ]]; then
-    echo "  skipped: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
+    echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
   fi
   echo "RUN_VALGRIND and SANITIZE are POSIX-only; this route has no valgrind"
   echo "=================================================================="
+  report_skipped_onnx
+  require_onnx_in_ci
   exit 0
 fi
 
@@ -195,17 +247,23 @@ fi
 
 echo
 echo "=================================================================="
-echo "all suites passed, every template that was built:"
+if [[ "${onnx}" == "1" ]]; then
+  echo "all suites passed, every template that was built:"
+else
+  echo "all suites that ran passed, but one template was not built:"
+fi
 echo "  docs drift check                (tools/check-docs.py)"
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
 if [[ "${onnx}" == "0" ]]; then
-  echo "  skipped: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
+  echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
 fi
 if [[ "${negative_controls}" == "ran" ]]; then
   echo "  negative controls               (testkit/run-negative-controls.sh)"
 else
-  echo "  skipped: negative controls      (no cc)"
+  echo "  NOT RUN: negative controls      (no cc)"
 fi
 echo "=================================================================="
+report_skipped_onnx
+require_onnx_in_ci

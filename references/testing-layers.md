@@ -758,8 +758,10 @@ Reproduce all of it from a clean checkout; nothing needs a GPU or a host.
 ```bash
 # Everything, every template: reference build, unit, image, artifact, fake host, memcheck
 ONNXRUNTIME_ROOT=/path/to/ort ./run-tests.sh
-# Without ONNXRUNTIME_ROOT the inference template is skipped by name (not an
-# error): the reference and CUDA suites still build and run.
+# Without ONNXRUNTIME_ROOT the inference template is skipped: the reference and
+# CUDA suites still build and run, the summary prints a NOT VERIFIED block, and
+# any CI run (CI/GITHUB_ACTIONS/TF_BUILD/BUILDKITE set) fails unless
+# ALLOW_SKIPPED_TEMPLATES=1 accepts the hole.
 ./run-tests.sh
 
 # Or one template at a time:

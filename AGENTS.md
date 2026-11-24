@@ -18,10 +18,10 @@ python3 tools/bench_ep.py model.onnx        # median/p90 per execution provider
 tools/sweep-vram.sh model.onnx              # largest tile before ORT OOM (needs a GPU)
 ```
 
-`./run-tests.sh` needs `ONNXRUNTIME_ROOT` for the inference template, and
-`CPU_ONLY=1` when no CUDA toolkit is installed. `tools/make-testmodels.py` needs
-`onnx` to write the files and `onnxruntime` + `numpy` for its self-test; neither
-is a dependency of the suites.
+`./run-tests.sh` needs `ONNXRUNTIME_ROOT` for the inference template (a CI run
+without it fails, a local one marks it NOT VERIFIED) and `CPU_ONLY=1` when no
+CUDA toolkit is installed. `tools/make-testmodels.py` needs `onnx` to write the
+files and `onnxruntime` + `numpy` for its self-test; neither is a dependency.
 
 ---
 
