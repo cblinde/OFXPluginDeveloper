@@ -152,6 +152,19 @@ answer changes the architecture, not just the code.
 
 ### Phase 1 — Scaffold
 
+Ask the machine before choosing, not after the build fails:
+
+```bash
+python3 tools/probe-env.py          # what it has; --json for the contract
+```
+
+It reports the compilers, every CUDA toolkit that actually has an `nvcc`, the
+device, whether Resolve is installed and (with `--connect`) whether that Resolve
+is Studio, plus the ONNX Runtime tree - and then names, per repository suite,
+whether this machine can run it and which capability is missing. A template whose
+capability is absent is not a template to start from; the table below is what the
+probe is choosing between.
+
 | Effect | Start from | Why that one |
 | --- | --- | --- |
 | CPU-only pixel maths | `templates/minimal-ofx/` | smallest host-loadable module; no CUDA, no model |

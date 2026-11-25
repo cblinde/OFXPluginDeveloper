@@ -30,7 +30,7 @@ A `.venv/` in the root wins over `PATH`; recipe: `references/testing-layers.md` 
 
 | Task | Read, in this order | Skip |
 |---|---|---|
-| New plug-in | `SKILL.md` §1 and §3 -> `references/cmake-and-linking.md` -> copy `templates/minimal-cuda-ofx/` | host quirks until a host misbehaves |
+| New plug-in | `python3 tools/probe-env.py` -> `SKILL.md` §1 and §3 -> `references/cmake-and-linking.md` -> copy `templates/minimal-cuda-ofx/` | host quirks until a host misbehaves |
 | Debug a symptom | `references/debugging-and-symptoms.md` -> `references/pattern-index.md` -> `references/cuda-streams-and-memory.md` or `references/pixel-formats-and-pitch.md` | the design docs, until the symptom names a file |
 | AI-model decision | `references/ai-architectures-and-runtimes.md` -> `references/onnx-and-tensorrt.md` -> `templates/onnx-inference-ofx/` | CUDA kernel detail |
 | Check a `[B]` claim | `references/verification-status.md` -> its `evidence/` link | the design docs, until the evidence contradicts them |

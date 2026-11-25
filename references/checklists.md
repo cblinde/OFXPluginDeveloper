@@ -22,8 +22,57 @@ Three ground rules:
 3. **If an item does not apply to your plug-in, write down why.** "N/A" with no
    reason is how a checklist turns into decoration.
 
-Run [§2](#2-mechanical-gates) first — it is automated and takes about a minute.
-Then work through [§3](#3-the-questions) once per release.
+Run [the probe](#probe-the-machine-then-choose-a-template) first: it takes
+seconds, and it is what stops a run from starting with a template the machine
+cannot build. Then [§2](#2-mechanical-gates) — automated, about a minute — and
+work through [§3](#3-the-questions) once per release.
+
+---
+
+## Probe the machine, then choose a template
+
+```bash
+python3 tools/probe-env.py            # what this machine has, and what that unblocks
+python3 tools/probe-env.py --json     # the same as a contract a skill can route on
+python3 tools/probe-env.py --connect  # also ask a running Resolve whether it is Studio
+python3 tools/probe-env.py --need compile.cuda,run.cuda   # exit 1 unless both hold
+```
+
+Nothing in this repository is built by guessing at the host: a CUDA template needs
+an `nvcc`, a device suite needs a GPU, the inference template needs an ONNX
+Runtime tree, and the Resolve suite needs a **Studio** seat with external
+scripting. The probe answers those from the machine and names, per suite, whether
+it can run.
+
+What it reports, with the command that produced each fact in `sources`:
+
+| Fact | How it is established |
+|---|---|
+| platform | `platform` module; on Windows the build number decides 10 vs 11, because `release()` answers "10" for both |
+| compilers | `cmake --version`, `ninja --version`, `gcc`/`clang --version`, and MSVC through `vswhere -requires …VC.Tools.x86.x64` |
+| CUDA toolkits | every `CUDA_HOME`/`CUDA_PATH` and every default toolkit directory that actually contains `bin/nvcc`, each version parsed from `nvcc --version` |
+| device | `nvidia-smi --query-gpu=name,driver_version,memory.total,compute_cap`; the `compute_cap` field is dropped and retried when the driver is too old for it |
+| Resolve | `RESOLVE_EXE`, `PATH`, then the default install location on **each** drive - the registry has no Blackmagic key, so nothing else names it |
+| Resolve SDK | `RESOLVE_SCRIPT_API`, else the documented `%PROGRAMDATA%` (or `/opt/resolve/Developer/Scripting`) location |
+| Studio / scripting | only with `--connect`: `scriptapp`, then `GetProductName`, `GetVersionString`, `IsStudio` |
+| OFX | the platform's scan directories, with a bundle count per directory |
+| ONNX Runtime | `ONNXRUNTIME_ROOT`, then `include/onnxruntime_cxx_api.h`, `ORT_API_VERSION` and the libraries beside it |
+
+Two rules make the report usable instead of decorative:
+
+1. **A capability that could not be probed is `null`, never `false` and never
+   `true`.** The Resolve suite then reads `unknown`, which is different from
+   `blocked`: a machine that has not shown whether Resolve is Studio has not
+   shown that it is not.
+2. **A missing capability blocks the suite that needs it, by name.**
+   `templates/minimal-cuda-ofx/test/gpu-kernel-test.cu` without `compile.cuda`
+   says `blocked: compile.cuda`, and `--need compile.cuda` exits 1 for a script
+   that would rather stop than skip.
+
+The decision table itself is tested: `python3 tools/probe-env.py --self-test`
+feeds canned `nvcc`, `nvidia-smi` and capability inputs through the parsers and
+through `evaluate()`, and fails when a missing capability stops blocking or an
+unprobed one starts reading as ready. `./run-tests.sh` runs it on both routes.
 
 ---
 

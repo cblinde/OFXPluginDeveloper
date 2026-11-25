@@ -167,6 +167,13 @@ run_tool_self_tests() {
   echo "== glibc bound self-test: the comparison must fail on a bound that is too low =="
   "${ROOT}/tools/check-glibc.sh" --max 2.17 --selftest
 
+  # The probe decides which templates and suites a machine may use, so its
+  # decision table is shown failing for a missing capability before a "ready"
+  # is credited.
+  echo
+  echo "== environment probe: a missing capability must block its suite =="
+  "${documentation_python}" "${ROOT}/tools/probe-env.py" --self-test
+
   # The Resolve suite needs a host; its two host-free halves do not.
   echo
   echo "== resolve pixel checks: a uniform, black or wrong-sized frame must fail =="
@@ -193,6 +200,7 @@ run_tool_self_tests() {
 summary_tool_tests() {
   echo "  halo value check                (models/test_conv.onnx)"
   echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
+  echo "  environment probe self-test     (tools/probe-env.py --self-test)"
   echo "  resolve pixel checks            (tests/resolve/checks.py)"
   echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
   if [[ "${fixtures}" == "ran" ]]; then
