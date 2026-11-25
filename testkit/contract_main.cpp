@@ -674,11 +674,14 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   const int hostMultiRes = host.hostInteger(kOfxImageEffectPropSupportsMultiResolution);
   const int wantShape = spec.profile == testkit::HostProfile::TilesAndMultiRes ? 1 : 0;
   if (hostTiles != wantShape || hostMultiRes != wantShape) {
-    std::fprintf(stderr,
-                 "error: the fake host reports supportsTiles=%d supportsMultiResolution=%d, "
-                 "the run asked for %d: the profile did not reach the property set\n",
-                 hostTiles, hostMultiRes, wantShape);
-    return failCycle(host);
+    // A recorded failure, not just a message: the summary line has to say that
+    // something failed, or a log would read "0 failed" for a run that stopped.
+    if (!check("host profile reaches the property set", false,
+               "reports supportsTiles=" + std::to_string(hostTiles) +
+                   " supportsMultiResolution=" + std::to_string(hostMultiRes) +
+                   ", the run asked for " + std::to_string(wantShape))) {
+      return failCycle(host);
+    }
   }
   const OfxStatus loadStatus = host.load();
   if (!check("kOfxActionLoad", loadStatus == kOfxStatOK, statusName(loadStatus))) return failCycle(host);

@@ -459,8 +459,9 @@ bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
             // template's suite uses.
             { "use_tf32", "0" },
             // HEURISTIC asks cuDNN once. EXHAUSTIVE benchmarks every algorithm
-            // against the real tensors at session creation, which costs minutes
-            // at 1080p before the first tile.
+            // against the real tensors before the first tile - minutes at 1080p
+            // the first time on a machine, milliseconds afterwards, because
+            // cuDNN caches the chosen plans on disk.
             { "cudnn_conv_algo_search", "HEURISTIC" },
             // 0 = cuDNN may not take the largest workspace it finds; the plan it
             // picks has to fit the small one. 1 is the default and reserves a
@@ -484,9 +485,15 @@ bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
 /// What the fallback probe found in one model.
 struct NodeCoverage
 {
+    /// Whether the probe got as far as asking: a provider that disappeared
+    /// between the two attempts leaves the question open rather than answered.
+    bool probed = false;
     bool allOnDevice = false;
-    /// The runtime's own words for the part it could not place - normally the
-    /// node name, which is the one piece of information the label was missing.
+    /// The runtime's own words for what it could not place. On 1.32.0 that is
+    /// "This session contains graph nodes that are assigned to the default CPU
+    /// EP, but ..." - a statement, not a node name. The label carries the fact;
+    /// naming the node needs the verbose log (section 6 of
+    /// references/onnx-and-tensorrt.md).
     std::string reason;
 };
 
@@ -523,6 +530,7 @@ NodeCoverage ProbeNodeCoverage(const std::string& modelPath, int intraThreads)
         // blame a node.
         coverage.reason = "provider request failed: " + providerReason;
     } else {
+        coverage.probed = true;
         try {
 #ifdef _WIN32
             const std::wstring wide = WidePath(modelPath);
@@ -587,7 +595,12 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
         // sits on the CPU EP and the session still builds. The probe settles it,
         // and its answer goes where a reader looks - the label.
         const NodeCoverage coverage = ProbeNodeCoverage(modelPath, intraThreads);
-        if (coverage.allOnDevice) {
+        if (!coverage.probed) {
+            // The probe could not ask. Saying "nodes left on CPU" would be a
+            // guess about a question nobody answered.
+            _impl->provider += ", node coverage unknown)";
+            _impl->providerReason = coverage.reason;
+        } else if (coverage.allOnDevice) {
             _impl->provider += ", all nodes on CUDA)";
         } else {
             // Not fatal on purpose: a model with one unsupported node is still
