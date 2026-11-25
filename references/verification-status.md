@@ -57,8 +57,11 @@ OpenFX `OFX_Release_1.5.1`):
   1920×1080 PNG each time: at the default gain the pixels are identical to the
   source (the host is entitled to skip `render()`), and with the bundle built at
   `-DREFERENCE_GAIN_DEFAULT=2.0` they are the source times two to the byte, so the
-  kernel did run inside that host. Nuke and SCRATCH have run nothing, and every
-  host-specific claim in `references/host-resolve.md` remains graded B/C.
+  kernel did run inside that host. The failure path was measured as well: killing
+  the host with a job in flight ends the run `fail` with the host's exit code in
+  47 s and leaves no process behind (`resolve-poc-kill.log`). Nuke and SCRATCH
+  have run nothing, and every host-specific claim in
+  `references/host-resolve.md` remains graded B/C.
 - **The 1.5.1 render hints are documented, not exercised.** No host here sets
   `kOfxImageEffectPropNoSpatialAwareness` or `kOfxImageEffectPropThumbnailRender`,
   and the templates do not yet read them; the rules in `roi-tiling-and-render-hints.md` follow from the header

@@ -211,7 +211,9 @@ because the plug-in is identity at its default gain and the API cannot set the
 parameter. The second run rebuilt the bundle with `-DREFERENCE_GAIN_DEFAULT=2.0`
 and required the frame to be the source times two; it matched to the byte
 (`mae 0.0`, `max 0`, `resolve-poc-gain.log`), so `render()` ran inside the host.
-5 has never been tried.
+5 holds as well: `--kill-render-after 0.5` kills the host with a job in flight,
+and the run ends `fail` in 47 s with `the host exited (code 1) while render ...
+was in flight`, no process left behind (`resolve-poc-kill.log`, §14.12).
 
 ## 10. Where it can run
 
@@ -999,6 +1001,52 @@ measured caveats in their docstrings. Copy the second, not the first: the script
 owns argument parsing and the report, the module owns the calls. §15 is the map
 behind the run: which calls exist, since which version, and what the API cannot
 do at all.
+
+### 14.12 The failure path: kill the host with a job in flight
+
+A harness that has only ever succeeded is a harness nobody has tested.
+
+```bash
+python tests/resolve/poc.py ... --kill-render-after 0.5 --timeout 240
+```
+
+`--kill-render-after N` kills the host once the job has been rendering for `N`
+seconds. The kill is issued **from the render loop** (`on_poll`), so it lands with
+the job in flight by construction rather than by luck: a wall-clock timer outside
+the loop fired after a fast render had already finished, which is how three
+attempts in a row managed to test nothing.
+
+```
+  kill      sent     pid 6792 with the render in flight
+  error     fail     RuntimeError: the host exited (code 1) while render f152f638-... was in flight
+  quit      pass     API quit, then the recorded PID
+```
+
+Exit code 1 after 47 s, no Resolve process left behind, report written
+(`../evidence/2026-11-25-windows/resolve-poc-kill.log`). Three things make that
+work, and each one was added because its absence showed up as a hang or a lie:
+
+- **Every call in the render path is bounded.** `call_with_deadline` runs the
+  blocking call in a daemon thread and gives up after its budget; a host that
+  stops answering becomes a failure instead of a wait.
+- **Liveness is checked between polls, and the exit code is waited for.** The
+  scripting layer reports a dead host as whatever its last socket call left
+  behind (`'NoneType' object is not callable` was the common one), so `_exit_code()`
+  waits briefly and turns that into `exited (code 1)`.
+- **Cleanup cannot hang either.** Closing the project and quitting the host are
+  bounded calls too; on a dead host they fail, and the report records it
+  (`close_error`) instead of blocking.
+
+Two harness bugs only this test could find, both of them the same shape - state
+that a killed run cannot clean up after itself:
+
+- **The project survived the kill.** `CreateProject` refuses a name that already
+  exists, so the next run died before rendering anything. `new_project` now
+  clears a stale project of the same name.
+- **The output directory survived too**, and `newest_new_file` accepted only names
+  that did not exist before - so a second run into the same directory could never
+  pass. It now accepts a file that is new *or changed*, and `test_stale_file.py`
+  keeps the stale case failing (case 2) while the overwrite case passes (case 3).
 
 ## 15. The API surface a plug-in developer needs
 

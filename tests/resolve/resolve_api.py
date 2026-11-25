@@ -130,11 +130,25 @@ def find_effect(resolve, name):
 
 
 def new_project(resolve, name):
-    """Create an empty project; returns (manager, project)."""
+    """Create an empty project; returns (manager, project).
+
+    A run that died mid-render leaves its project behind - the kill test does
+    exactly that, and `close_project` cannot help because the host it would ask
+    is gone. So a name that already exists is cleared here rather than ending the
+    next run: `CreateProject` refuses a duplicate, and a harness that can only be
+    run once is not a harness.
+    """
     manager = resolve.GetProjectManager()                 # RUN
     project = manager.CreateProject(name)                 # RUN
     if not project:
-        raise RuntimeError(f"CreateProject refused {name!r}; a project of that name exists")
+        stale = manager.LoadProject(name)                 # RUN: after a killed run
+        if stale:
+            manager.CloseProject(stale)
+            manager.DeleteProject(name)
+            project = manager.CreateProject(name)
+    if not project:
+        raise RuntimeError(f"CreateProject refused {name!r}, and the project of "
+                           "that name could not be removed")
     return manager, project
 
 
@@ -211,11 +225,58 @@ def close_project(manager, project, name):
     return closed and deleted
 
 
-def render_one_frame(project, output_directory, custom_name, timeout):
+def _exit_code(process, grace=5.0):
+    """The host's exit code if it has exited, else None.
+
+    `poll()` alone is not enough after a kill: the process object only learns the
+    code once the OS has finished with it, so a call that fails immediately after
+    the kill would otherwise be reported as "stopped answering" instead of
+    "exited with code 1" - the difference between a guess and a fact.
+    """
+    if process is None:
+        return None
+    if process.poll() is not None:
+        return process.returncode
+    try:
+        return process.wait(timeout=grace)
+    except Exception:
+        return None
+
+
+def _host_call(function, process, what):
+    """Call one API method; a dead host becomes a sentence, not a TypeError.
+
+    Every call in `render_one_frame` goes through here: when the host has exited,
+    the scripting layer fails in whatever way its last socket operation left
+    behind (`'NoneType' object is not callable` is the common one), and the exit
+    code is the fact a reader needs.
+    """
+    try:
+        return function()
+    except Exception as error:
+        code = _exit_code(process)
+        if code is not None:
+            raise RuntimeError(f"the host exited (code {code}) while {what} was "
+                               "in flight") from error
+        raise
+
+
+def render_one_frame(project, output_directory, custom_name, timeout, process=None,
+                     poll=0.25, on_poll=None):
     """Queue one render, wait, and return the file it says it wrote.
 
     The render settings are `set_png_output`'s job; this function assumes the
     directory is already configured.
+
+    `process` is the host this run started. With it, a host that dies while the
+    job is in flight is reported within `poll` seconds instead of being waited
+    for until the deadline - which is what the kill test
+    (`--kill-render-after`) exists to prove.
+
+    `on_poll(seconds_in_flight)` is called once per iteration, only while the job
+    is still rendering. That is where the kill test pulls the plug: from this
+    thread, so the kill is guaranteed to land with the job in flight, and no
+    second thread touches the scripting API.
     """
     out = Path(output_directory)
     out.mkdir(parents=True, exist_ok=True)
@@ -225,23 +286,44 @@ def render_one_frame(project, output_directory, custom_name, timeout):
     # writes nothing fails instead of grading the previous run's output.
     before = output_files.snapshot(out, custom_name)
 
-    job_id = project.AddRenderJob()                       # RUN: "" on failure
+    job_id = _host_call(project.AddRenderJob, process, "queuing the render")   # RUN: "" on failure
     if not job_id:
         raise RuntimeError("AddRenderJob returned no job id")
 
-    if not project.StartRendering([job_id], isInteractiveMode=False):   # RUN
+    if not _host_call(lambda: project.StartRendering([job_id], isInteractiveMode=False),
+                      process, "starting the render"):                # RUN
         raise RuntimeError("StartRendering refused the job")
 
     deadline = time.monotonic() + timeout
+    in_flight_since = time.monotonic()
     while time.monotonic() < deadline:
-        if not project.IsRenderingInProgress():            # RUN
+        # Liveness first: a killed host makes every later call a question nobody
+        # will answer, and a socket that is merely closed can take its own time
+        # to say so.
+        code = _exit_code(process, grace=0)
+        if code is not None:
+            raise RuntimeError(f"the host exited (code {code}) while render "
+                               f"{job_id} was in flight")
+        try:
+            rendering = project.IsRenderingInProgress()    # RUN
+        except Exception as error:
+            code = _exit_code(process)
+            if code is not None:
+                raise RuntimeError(f"the host exited (code {code}) while render "
+                                   f"{job_id} was in flight") from error
+            raise RuntimeError(f"the host stopped answering while render {job_id} "
+                               f"was in flight: {type(error).__name__}: {error}")
+        if not rendering:
             break
-        time.sleep(2)
+        if on_poll is not None:
+            on_poll(time.monotonic() - in_flight_since)
+        time.sleep(poll)
     else:
         project.StopRendering()                           # NOT RUN: no render timed out here
         raise TimeoutError(f"render {job_id} exceeded {timeout}s")
 
-    status = project.GetRenderJobStatus(job_id)           # RUN: dict OR error string
+    status = _host_call(lambda: project.GetRenderJobStatus(job_id),
+                        process, "reading the job status")   # RUN: dict OR error string
     if not isinstance(status, dict):
         raise RuntimeError(f"GetRenderJobStatus returned a string: {status}")
     if status.get("JobStatus") != "Complete":

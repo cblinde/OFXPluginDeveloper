@@ -70,6 +70,23 @@ def run_cases():
         finally:
             shutil.rmtree(directory, ignore_errors=True)
 
+    def second_run_overwriting_its_own_name_is_accepted():
+        """A render into a directory that already holds its name still counts.
+
+        This is the case the kill test exposed: a killed run leaves its partial
+        frame, and the next run writes the same name.
+        """
+        directory = tempfile.mkdtemp(prefix="stale-file-")
+        try:
+            simulate_render(directory, "poc_0001.dpx", size=1024)
+            before = output_files.snapshot(directory, PREFIX)
+            written = simulate_render(directory, "poc_0001.dpx", size=2048)
+            got = output_files.newest_new_file(directory, PREFIX, before)
+            return (got.name == written.name and got.stat().st_size == 2048,
+                    f"returned {got.name} with {got.stat().st_size} bytes")
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+
     def fresh_file_wins_over_a_newer_stale_one():
         """Selection is by the snapshot, so a stale mtime cannot win."""
         directory = tempfile.mkdtemp(prefix="stale-file-")
@@ -112,6 +129,8 @@ def run_cases():
 
     case("the first run returns the file it wrote", first_run_returns_its_own_file)
     case("a second run without a new file fails", second_run_writes_nothing)
+    case("a second run that overwrites its own name is accepted",
+         second_run_overwriting_its_own_name_is_accepted)
     case("a fresh file beats a newer stale one", fresh_file_wins_over_a_newer_stale_one)
     case("a fresh but empty file fails", a_fresh_empty_file_fails)
     case("a file with another prefix is not a candidate", another_prefix_is_not_a_candidate)

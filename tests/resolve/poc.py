@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import shutil
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,42 @@ STEPS = ("validate", "install", "launch", "connect", "load", "build", "render", 
 
 def stamp():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def call_with_deadline(function, seconds, what):
+    """Run one blocking host call; a host that stops answering is a failure.
+
+    A dead host can leave a socket call waiting on a timeout nobody set, which is
+    the difference between a harness that fails and a harness that hangs. The
+    call therefore runs in a daemon thread and the wait is bounded here; the
+    thread is deliberately not joined on the way out, because the process must be
+    able to exit while it is stuck.
+    """
+    answer = {}
+
+    def target():
+        try:
+            answer["value"] = function()
+        except BaseException as error:      # reported below, not swallowed
+            answer["error"] = error
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    if thread.is_alive():
+        raise TimeoutError(f"{what} did not answer within {seconds}s")
+    if "error" in answer:
+        raise answer["error"]
+    return answer["value"]
+
+
+def kill_host(process, report):
+    """Kill the host on purpose: the failure path, tested like the success path."""
+    if process is None or process.poll() is not None:
+        return
+    process.kill()
+    report["killed"] = {"pid": process.pid, "at": stamp()}
+    print(f"  kill      sent     pid {process.pid} with the render in flight", flush=True)
 
 
 def default_ofx_dir():
@@ -205,7 +242,17 @@ def run(args, report):
 
         started = time.monotonic()
         resolve_api.set_png_output(project, args.out, "poc", mark=1, size=render_size)
-        rendered = resolve_api.render_one_frame(project, args.out, "poc", args.timeout)
+        def killer(seconds_in_flight):
+            """Called from the render loop, so the job is in flight by definition."""
+            if (args.kill_render_after is not None
+                    and seconds_in_flight >= args.kill_render_after):
+                kill_host(process, report)
+
+        rendered = call_with_deadline(
+            lambda: resolve_api.render_one_frame(project, args.out, "poc",
+                                                 args.timeout, process=process,
+                                                 on_poll=killer),
+            args.timeout + 30, "the render")
         step(report, "render", "pass", Path(rendered["file"]).name,
              time.monotonic() - started)
 
@@ -242,12 +289,25 @@ def run(args, report):
         return 1
     finally:
         started = time.monotonic()
+        # Every one of these talks to the host, and the host may be the thing that
+        # just died: each call is bounded, so cleanup cannot become the hang.
         if project is not None and manager is not None and project_name:
-            resolve_api.close_project(manager, project, project_name)
-        resolve_api.quit_resolve(resolve, process)
+            try:
+                call_with_deadline(
+                    lambda: resolve_api.close_project(manager, project, project_name),
+                    20, "closing the project")
+            except Exception as error:
+                report["close_error"] = f"{type(error).__name__}: {error}"
+        try:
+            call_with_deadline(lambda: resolve_api.quit_resolve(resolve, process), 45,
+                               "quitting the host")
+            quit_detail = "API quit, then the recorded PID"
+        except Exception as error:
+            quit_detail = f"{type(error).__name__}: {error}"
+            report["quit_error"] = quit_detail
         if installed is not None and not args.keep:
             shutil.rmtree(installed, ignore_errors=True)
-        step(report, "quit", "pass", "API quit, then the recorded PID",
+        step(report, "quit", "pass", quit_detail,
              time.monotonic() - started)
 
     report["result"] = "pass"
@@ -281,6 +341,9 @@ def main(argv=None):
                              "for a bundle built with -DREFERENCE_GAIN_DEFAULT")
     parser.add_argument("--expect", help="WxH the render must have")
     parser.add_argument("--timeout", type=int, default=600, help="startup and render time-out, seconds")
+    parser.add_argument("--kill-render-after", type=float, metavar="SECONDS",
+                        help="kill the host once the job has been rendering this "
+                             "long, to prove the harness fails instead of hanging")
     parser.add_argument("--plan", action="store_true", help="run only what needs no host")
     parser.add_argument("--keep", action="store_true", help="leave the installed bundle in place")
     args = parser.parse_args(argv)

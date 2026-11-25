@@ -1,0 +1,10 @@
+resolve proof of concept (run)
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\ReferenceGain.ofx.bundle
+  launch    pass     pid 6792
+  connect   pass     DaVinci Resolve Studio 21.2.0.5
+  build     pass     poc-kill: Reference Gain on source8k.png
+  kill      sent     pid 6792 with the render in flight
+  error     fail     RuntimeError: the host exited (code 1) while render f152f638-aa5c-43c5-82c2-de2cfda6e0b5 was in flight
+  quit      pass     API quit, then the recorded PID
+report: Z:\Tools-DEV\OFXPluginDeveloper_Local\tests\resolve\reports\poc-2026-11-25T21-30-27+00-00.json

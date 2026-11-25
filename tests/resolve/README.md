@@ -1,7 +1,7 @@
 # tests/resolve - one frame through DaVinci Resolve
 
 The milestone from [`references/resolve-automation.md`](../../references/resolve-automation.md)
-§9 and backlog row 23: install the bundle, launch Resolve with `-nogui`, connect
+§9: install the bundle, launch Resolve with `-nogui`, connect
 through the scripting API, build a project, render one frame, decode it, check the
 pixels, quit, write a JSON report.
 
@@ -41,10 +41,11 @@ a wrong channel count, a reference that differs by one pixel, or a frame that
 skipped the render at a non-default gain.
 
 `test_stale_file.py` covers the rule `output_files.py` owns: a render is credited
-with the file that appeared after the directory was snapshotted, so a second run
-in the same directory that writes nothing is a failure rather than a pass on the
-first run's output. It stands in for the host by writing files; nothing about the
-OFX path is simulated.
+with the file that appeared after the directory was snapshotted **or changed
+since**, so a second run in the same directory that writes nothing is a failure
+rather than a pass on the first run's output, while a second run that overwrites
+its own name counts as a write. It stands in for the host by writing files;
+nothing about the OFX path is simulated.
 
 ## The run
 
@@ -126,8 +127,37 @@ check nobody has tested.
 
 What neither run proves: the **GPU** path (this plug-in has none, and the CUDA
 template has never rendered in Resolve), **tiling or multi-resolution** (Resolve's
-profile asks for neither), **parameter round-trips** (no accessor in the API), and
-the **failure path** (kill mid-render, backlog row 23).
+profile asks for neither), and **parameter round-trips** (no accessor in the API).
+
+## The failure path
+
+A harness that has only ever succeeded is a harness nobody has tested, so the
+same script can kill the host with a job in flight:
+
+```bash
+python tests/resolve/poc.py ... --kill-render-after 0.5 --timeout 240
+```
+
+The kill is issued from the render loop itself (`on_poll`), so it lands while the
+job is rendering - a wall-clock timer outside the loop fired after a fast render
+had already finished.
+
+```
+  kill      sent     pid 6792 with the render in flight
+  error     fail     RuntimeError: the host exited (code 1) while render f152f638-... was in flight
+  quit      pass     API quit, then the recorded PID
+```
+
+Exit code 1 after 47 s, no Resolve process left behind, report written
+([`evidence/2026-11-25-windows/resolve-poc-kill.log`](../../evidence/2026-11-25-windows/resolve-poc-kill.log)).
+`call_with_deadline` bounds the blocking calls, `_exit_code()` turns the
+scripting layer's `'NoneType' object is not callable` into the host's exit code,
+and cleanup is bounded too - the report records a failed close instead of
+hanging on one.
+
+Two bugs only this test could find, both state a killed run leaves behind: the
+**project** (cleared by `new_project` on the next run) and the **partial frame**
+(a second run into the same directory now counts an overwritten file as written).
 
 ## What is not here yet
 
@@ -135,7 +165,8 @@ the **failure path** (kill mid-render, backlog row 23).
   built project, and a non-default parameter no longer needs a project either
   (run 2 sets it at build time). A `.drp` would only add the GUI-authored case.
 - HTML and JUnit reports, the CPU/GPU comparison and the test matrix: that is
-  backlog row 24, and it waits for row 23 to prove the pixel path.
+  backlog row 24, and it no longer waits for anything: the host path, the pixel
+  path and the kill path have all been measured.
 - Anything that would select a render backend: Resolve's GPU mode is a user
   preference, so the plug-in has to declare which path it took and the harness has
   to read that declaration back.
