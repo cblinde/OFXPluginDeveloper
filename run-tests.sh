@@ -174,12 +174,13 @@ run_tool_self_tests() {
   echo "== resolve stale-file test: a second run in one directory must not pass =="
   "${documentation_python}" "${ROOT}/tests/resolve/test_stale_file.py"
 
-  # Writing the fixtures and loading them back is a test of the tool. `onnx` is
-  # the one package gate - without it the call ends in an import traceback - and
-  # past that the tool's exit code is the verdict.
+  # Writing the fixtures and loading them back is a test of the tool. It imports
+  # all three packages, so all three are asked for in one line - a missing one
+  # would otherwise end the run inside an import traceback instead of naming the
+  # hole. Past the gate the tool's exit code is the verdict.
   echo
-  if ! "${documentation_python}" -c 'import onnx' >/dev/null 2>&1; then
-    echo "== test fixtures (skipped: the onnx package is not installed)"
+  if ! "${documentation_python}" -c 'import numpy, onnx, onnxruntime' >/dev/null 2>&1; then
+    echo "== test fixtures (skipped: numpy, onnx or onnxruntime is not installed)"
     fixtures="skipped"
     return 0
   fi
@@ -196,7 +197,7 @@ summary_tool_tests() {
   if [[ "${fixtures}" == "ran" ]]; then
     echo "  test fixtures                   (tools/make-testmodels.py)"
   else
-    echo "  NOT RUN: test fixtures          (the onnx package is not installed)"
+    echo "  NOT RUN: test fixtures          (numpy, onnx or onnxruntime is missing)"
   fi
 }
 
