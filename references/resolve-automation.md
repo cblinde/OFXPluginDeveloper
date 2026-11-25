@@ -251,17 +251,16 @@ appendix is code in the tree: no file imports it, no test runs it, and
 ### 13.1 A - process management (`runner/resolve_process.py`)
 
 ```python
-# NOT RUN. Every DaVinciResolveScript-adjacent call here is unverified.
+# NOT RUN. Nothing here touches DaVinciResolveScript; what is unverified is
+# whether -nogui is enough to reach a usable API, and that is 13.2's question.
 import subprocess
-import time
 from pathlib import Path
 
 
 class ResolveProcess:
 
-    def __init__(self, executable, startup_timeout=180, use_nogui=True):
+    def __init__(self, executable, use_nogui=True):
         self.executable = Path(executable)
-        self.startup_timeout = startup_timeout
         self.use_nogui = use_nogui
         self.process = None
         self.pid = None
@@ -299,8 +298,10 @@ class ResolveProcess:
 ```
 
 Startup is **not** proven by `start()`: readiness is `connect_to_resolve()` in
-13.2 returning a project-backed object. A started process that never initialises
-is the failure this split exists to make visible.
+13.2 returning a project-backed object, and that call owns the startup timeout.
+A started process that never initialises is the failure this split exists to make
+visible; a timeout kept here as well would only be a second number to keep in
+step.
 
 ### 13.2 B - connection (`runner/resolve_api.py`)
 
@@ -375,11 +376,15 @@ def render_project(project, output_directory, custom_name="test", timeout=600):
         "TargetDir": str(out),          # unverified: key names per the shipped API doc
         "CustomName": custom_name,
         "SelectAllFrames": True,
-        "MarkIn": 0,                    # unverified: frame numbers, not timecode
-        "MarkOut": 0,
     }
+    # A range test sets MarkIn/MarkOut *instead of* SelectAllFrames; setting both
+    # is how a test silently renders frame 0 and calls it a pass.
     if not project.SetRenderSettings(settings):        # unverified
         raise RuntimeError("SetRenderSettings refused the map")
+
+    # What is already in the directory decides what this run produced: a stale
+    # file from the previous run would otherwise satisfy every check below.
+    before = {path.name for path in out.glob(f"{custom_name}*")}
 
     job_id = project.AddRenderJob()                    # unverified: "" on failure
     if not job_id:
@@ -407,13 +412,14 @@ def render_project(project, output_directory, custom_name="test", timeout=600):
 
     # "Complete" is a claim about the job, not about the file: a file that is
     # still being flushed looks exactly like one that finished.
-    produced = sorted(out.glob(f"{custom_name}*"))
+    produced = sorted(path for path in out.glob(f"{custom_name}*") if path.name not in before)
     if not produced:
-        raise RuntimeError(f"job Complete but nothing in {out}")
-    if produced[-1].stat().st_size == 0:
-        raise RuntimeError(f"job Complete but {produced[-1].name} is empty")
+        raise RuntimeError(f"job Complete but it wrote nothing new in {out}")
+    newest = max(produced, key=lambda path: path.stat().st_mtime)
+    if newest.stat().st_size == 0:
+        raise RuntimeError(f"job Complete but {newest.name} is empty")
 
-    return {"job": job_id, "status": status, "file": str(produced[-1])}
+    return {"job": job_id, "status": status, "file": str(newest)}
 ```
 
 ### 13.4 D - prepared projects (`projects/`)
@@ -429,7 +435,7 @@ schema moves between versions.
 | `rgba_test.drp` | alpha | RGBA and alpha survive the host |
 | `gpu_test.drp` | CUDA | the declared GPU path renders |
 | `parameter_low.drp` / `parameter_high.drp` | parameter bounds | the edges of the parameter range |
-| `resolution_test.drp` | 4K | a tile the size of a real frame |
+| `resolution_test.drp` | 4K | the largest window a host without tiling hands you |
 
 ### 13.5 E - image integrity (`validation/image_integrity.py`)
 
@@ -504,6 +510,15 @@ def compare_images(reference, rendered, tolerance):
                 f"shape {rendered.shape} != reference {reference.shape}"}
 
     difference = np.abs(reference - rendered)
+    # A single-channel image arrives as HxW; give it the channel axis so the
+    # per-channel loop below does not index a row.
+    if difference.ndim == 2:
+        difference = difference[..., None]
+
+    for key in ("max_mae", "max_pixel_error"):
+        if key not in tolerance:
+            raise KeyError(f"tolerance is missing {key}")
+
     mae = float(np.mean(difference))
     worst = float(np.max(difference))
     rmse = float(np.sqrt(np.mean(difference ** 2)))
@@ -550,18 +565,21 @@ from pathlib import Path
 from validation.image_comparison import compare_images
 
 
-def run_cpu_gpu_comparison(render, load, cpu_project, gpu_project, output_dir,
-                           cpu_backend, gpu_backend, tolerance):
+def run_cpu_gpu_comparison(render, load, backend_of, cpu_project, gpu_project,
+                           output_dir, cpu_backend, gpu_backend, tolerance):
     # The backend is declared by the plug-in, not inferred from which project
     # rendered: Resolve's GPU mode is a user preference, so two projects do not
-    # prove two backends. `render` returns that declaration with its file.
+    # prove two backends. `render` writes the file; `backend_of` reads the
+    # declaration the plug-in left beside it (a log line, a sidecar, a param).
     cpu = render(cpu_project, Path(output_dir) / "cpu")
     gpu = render(gpu_project, Path(output_dir) / "gpu")
 
-    if cpu["backend"] != cpu_backend:
-        raise RuntimeError(f"CPU run declared {cpu['backend']!r}, wanted {cpu_backend!r}")
-    if gpu["backend"] != gpu_backend:
-        raise RuntimeError(f"GPU run declared {gpu['backend']!r}, wanted {gpu_backend!r}")
+    cpu_declared = backend_of(cpu["file"])
+    gpu_declared = backend_of(gpu["file"])
+    if cpu_declared != cpu_backend:
+        raise RuntimeError(f"CPU run declared {cpu_declared!r}, wanted {cpu_backend!r}")
+    if gpu_declared != gpu_backend:
+        raise RuntimeError(f"GPU run declared {gpu_declared!r}, wanted {gpu_backend!r}")
 
     result = compare_images(load(cpu["file"]), load(gpu["file"]), tolerance)
     result["cpu"] = cpu
@@ -581,6 +599,15 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# The dependencies the task asks for, checked before anything starts: a missing
+# interpreter or an unset API path otherwise surfaces as "could not connect".
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "python is not on PATH; install it or call the orchestrator directly"
+}
+if (-not $env:RESOLVE_SCRIPT_API) {
+    throw "RESOLVE_SCRIPT_API is not set; point it at the Resolve scripting folder"
+}
 
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 if (-not (Test-Path $PluginPath)) { throw "plugin not found: $PluginPath" }
@@ -621,7 +648,8 @@ falls back to terminating the recorded PID.
 ```python
 # NOT RUN. Pseudocode from the task, made concrete; every call into Resolve is
 # unverified. Imports omitted: time, ResolveProcess, connect_to_resolve,
-# load_project, render_project, validate_image, compare_images, write_reports.
+# load_project, render_project, validate_image, compare_images, load,
+# load_test_cases, validate_plugin, install_plugin, write_reports, sys.
 def run_test_suite(config):
     results = []
     resolve = None
@@ -649,6 +677,7 @@ def run_test_suite(config):
                         raise RuntimeError(f"reference mismatch: {verdict['failures']}")
                 results.append({"name": case.name, "status": "PASS",
                                 "seconds": time.monotonic() - started,
+                                "integrity": integrity,
                                 "artifacts": [rendered["file"]]})
             except Exception as error:
                 results.append({"name": case.name, "status": "FAIL",
@@ -662,7 +691,12 @@ def run_test_suite(config):
                 pass
         if process is not None:
             process.stop()              # only the PID this run started
-        write_reports(results, config.report_dir)   # JSON, HTML, JUnit XML
+        # Reports are written here rather than after the loop so a crash still
+        # leaves them; a reporting bug must not replace the failure it describes.
+        try:
+            write_reports(results, config.report_dir)   # JSON, HTML, JUnit XML
+        except Exception as error:
+            print(f"could not write reports: {error}", file=sys.stderr)
 
     return results
 ```
