@@ -26,14 +26,14 @@
 //    not already own that base name: an import resolves by base name, so a
 //    second copy of cudnn64_9.dll next to the host's puts two minor versions in
 //    one process. cuFFTW is skipped - the provider never imports it, and loading
-//    it is what took the whole GPU path down (references/onnx-and-tensorrt.md section 7).
+//    it is what took the whole GPU path down (references/onnx-and-tensorrt.md section 4).
 //  * The provider label names the thread count and, on Windows, whether the CUDA
 //    stack is the bundle's or the host's: the only evidence that a setting
 //    reached the session.
 //  * The CUDA branch has never run on a GPU. This repository builds against the
 //    CPU package of ONNX Runtime, where the request throws; that path is
 //    compiled and reviewed here, not measured. See references/ai-architectures-and-runtimes.md
-//    section 7 for what a GPU machine still has to verify.
+//    section 5 for what a GPU machine still has to verify.
 
 #ifndef AIOFX_MODEL_RUNNER_H
 #define AIOFX_MODEL_RUNNER_H

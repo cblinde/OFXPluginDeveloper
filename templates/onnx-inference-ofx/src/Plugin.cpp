@@ -20,7 +20,7 @@
 // Scope, so a reader does not expect more than this: a 1x filter on float RGBA.
 // The model must return the shape it was handed, so an upscaler or a detection
 // head needs its own runner rather than a new .onnx file
-// (references/onnx-and-tensorrt.md section 7, items 5 and 6). Depth and alpha conversion
+// (references/onnx-and-tensorrt.md section 4, items 5 and 6). Depth and alpha conversion
 // belongs beside Pack/Unpack, and its rules are the "What the host hands you is
 // not float RGBA" subsection there.
 

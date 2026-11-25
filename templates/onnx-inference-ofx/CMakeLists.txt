@@ -233,7 +233,7 @@ if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
   # built or tested on this machine. A shipping plug-in adds
   # onnxruntime_providers_cuda and the DLLs it imports (cuDNN, cuBLAS/cuBLASLt,
   # cuFFT, cudart) to the same directory, requests the provider first and falls
-  # back to this CPU session - references/onnx-and-tensorrt.md section 7, which also has
+  # back to this CPU session - references/onnx-and-tensorrt.md section 4, which also has
   # the size budget (2.4-2.7 GB) and the error 1114/126 traps.
   #
   # Ship the file name each platform's loader actually looks for; the branches

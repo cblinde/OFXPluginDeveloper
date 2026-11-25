@@ -18,7 +18,8 @@ in this repository once already (see references/improvement-backlog.md row 13).
 
 No ONNX Runtime install, no numpy, no compiler: it reads the files. PE and ELF
 are parsed in the standard library so the same command works on a Windows zip, a
-Linux tarball and a wheel. Anything it cannot read is named as unread rather than
+Linux tarball and a wheel. A Mach-O `.dylib` is not parsed and is reported as
+unreadable rather than guessed at - a silence there would read as "no provider". Anything it cannot read is named as unread rather than
 skipped, because a silent skip is how a missing export becomes a surprise in a
 host.
 
@@ -231,13 +232,22 @@ def binary_facts(path):
 
 
 def redistributables(names):
-    """cudnn64_9.dll -> ('cuDNN', 9), deduplicated and ordered."""
+    """cudnn64_9.dll -> ('cuDNN', 9), deduplicated and ordered.
+
+    Two spellings reach this: the Windows one carries the major inside the base
+    name (`cudnn64_9.dll`) and the Linux one in the SONAME suffix
+    (`libcudnn.so.9`). Both are normalised before matching, or the Linux column
+    would silently print nothing - a blank that reads like "no CUDA" instead of
+    "not looked at".
+    """
     found = []
     for name in names:
-        stem = re.split(r"[._]", name, 1)[0].lower()
+        base = re.split(r"[._]", name, 1)[0].lower()
+        stem = re.sub(r"^lib", "", base)
+        stem = re.sub(r"\d+$", "", stem)
         for prefix, (label, _version) in REDISTRIBUTABLES.items():
             if stem.startswith(prefix.lower()):
-                match = re.search(r"_(\d+)", name)
+                match = re.search(r"[._](\d+)", name)
                 major = int(match.group(1)) if match else None
                 item = (label, major)
                 if item not in found:
@@ -255,7 +265,12 @@ def library_files(root):
             if not (lower.endswith(".dll") or ".so" in lower or lower.endswith(".dylib")):
                 continue
             path = os.path.join(base, name)
-            stem = lower.split(".so")[0]
+            # Linux and macOS put a `lib` in front and the version after the
+            # suffix (`libonnxruntime_providers_cuda.so.1`); without stripping it
+            # the provider was classified as neither core nor provider, and a
+            # Linux root reported "no CUDA provider" for a provider sitting in
+            # its own lib/ directory.
+            stem = re.sub(r"^lib", "", lower.split(".so")[0])
             if stem.startswith("onnxruntime_providers"):
                 if "cuda" in stem or "tensorrt" in stem:
                     providers.append(path)
@@ -313,15 +328,20 @@ def blocked(report, require_api, require_plugin):
     problems = []
     header = report["header"]
     if header["api_version"] is None:
-        problems.append("no include/onnxruntime_c_api.h with ORT_API_VERSION")
+        # A bundle is a legitimate target: it has no headers and the provider
+        # question is still answerable. Missing headers are only a failure when a
+        # gate asked for an API version, which is the run that needs them.
+        if require_api is not None:
+            problems.append("no include/onnxruntime_c_api.h with ORT_API_VERSION, "
+                            "but --require-api was given")
     elif require_api is not None and header["api_version"] < require_api:
         problems.append("API version %d, but %d was required"
                         % (header["api_version"], require_api))
     if require_plugin:
         # The gate is about the CUDA provider, not about every provider in the
-        # package: TensorRT ships as a built-in provider and 1.32 says the legacy
-        # TensorRT EP is compatibility-only, so gating on it would fail a root
-        # that is perfectly able to run CUDA as a plugin.
+        # package: TensorRT still ships as a built-in provider in 1.32 (its own
+        # EP, not the removed NvTensorRT RTX bridge), so gating on it would fail
+        # a root that is perfectly able to run CUDA as a plugin.
         cuda = [e for e in report["providers"] if "cuda" in e["name"].lower()]
         if not cuda:
             problems.append("no CUDA provider library in this root")
@@ -338,7 +358,8 @@ def describe(report):
     lines = ["root: %s" % report["root"]]
     header = report["header"]
     if header["api_version"] is None:
-        lines.append("header: none (no include/onnxruntime_c_api.h)")
+        lines.append("header: none in this root (a bundle, or a package shipped "
+                     "without headers); the provider facts below still apply")
     else:
         lines.append("header: ORT_API_VERSION %d  (%s)"
                      % (header["api_version"], header["path"]))

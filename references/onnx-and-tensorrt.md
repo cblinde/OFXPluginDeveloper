@@ -971,7 +971,10 @@ version, and both are answerable from the files alone - no compiler, no GPU:
 `tools/check-runtime.py` answers both. It parses the header and the binary's
 export and import tables in the standard library - PE and ELF - so it runs on a
 Windows zip, a Linux tarball and a pip wheel alike, and it says "unreadable" for
-anything it cannot parse instead of skipping it.
+anything it cannot parse instead of skipping it. Pointed at a built bundle it
+still answers the provider half and says the headers are not there; only
+`--require-api` turns that absence into a failure, because a bundle is a
+legitimate thing to inspect.
 
 ```bash
 python3 tools/check-runtime.py .validation/ort-gpu-1.32.0
@@ -1013,7 +1016,7 @@ surprise:
 |---|---|---|---|
 | `use_tf32` can be switched off at all | 1.18 | nothing - TF32 was always on before, with no flag | CUDA EP option table (**[B]**) |
 | CUDA EP registration as a plugin library | 1.22 | `SessionOptionsAppendExecutionProvider_CUDA_V2` for bundles that ship their own provider | `onnxruntime_c_api.h` (**[V]**) |
-| Legacy TensorRT EP | marked compatibility-only in 1.32 | "the NVIDIA TensorRT RTX plugin EP via `OrtApi::RegisterExecutionProviderLibrary`" | a comment above `OrtCUDAProviderOptions` in the 1.32 header, quoted (**[V]**) |
+| The **NvTensorRT RTX** provider bridge | removed in 1.32; its options class stays for source compatibility | "Use the NVIDIA TensorRT RTX plugin EP via `OrtApi::RegisterExecutionProviderLibrary` instead" | `\deprecated` block above `NvTensorRtRtxProviderOptions` in the 1.32 header, quoted (**[V]**) - note this is *not* the classic TensorRT EP, which 1.32 still ships as a built-in provider (`onnxruntime_providers_tensorrt.dll`, one export, imports `nvinfer_10`) |
 | cuDNN as one DLL | 9 | ten DLLs under one dispatcher (`cudnn_engines_*`, `cudnn_ops`, ...) | the bundle listing in §4 (**[V]**) |
 | `ep.cuda.*` option namespace | with the plugin EP | the bare key names the built-in append takes | documented as canonical for the plugin EP (**[B]**) - **not verified here**: no run of this repository reached registration, so no `ep.cuda.*` key has ever been accepted or rejected by a runtime |
 

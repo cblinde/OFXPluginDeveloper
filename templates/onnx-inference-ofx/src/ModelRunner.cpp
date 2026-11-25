@@ -150,7 +150,7 @@ bool StartsWith(const std::wstring& name, const wchar_t* prefix)
 /// The base names onnxruntime_providers_cuda's import table holds, as groups:
 /// the provider imports cudnn64_9, cublas64_12, cublasLt64_12, cufft64_11 and
 /// cudart64_12, and the loader resolves each by base name (see
-/// references/onnx-and-tensorrt.md section 7). cuFFTW is the same group as cuFFT but is
+/// references/onnx-and-tensorrt.md section 4). cuFFTW is the same group as cuFFT but is
 /// never imported by the provider, and is skipped by name.
 enum class CudaGroup { other, cudnn, cublas, cufft, cudart };
 

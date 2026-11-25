@@ -715,8 +715,15 @@ def check_heading_manifest(root, files, texts, report):
 CODE_SUFFIXES = (".cpp", ".h", ".c", ".hpp", ".bat", ".sh", ".py", ".cmake")
 CODE_SKIP_DIRS = {".git", ".validation", ".ofx-ref", "build", "build-sanitize",
                   "__pycache__", "cmake-build-debug"}
-# `references/onnx-and-tensorrt.md` section 4 / `foo.md` §4 / bar.md §4.5
-SECTION_REF = re.compile(r"([A-Za-z0-9_][A-Za-z0-9_.-]*\.md)`?\s*(?:section|§)\s*(\d+)")
+# `references/onnx-and-tensorrt.md` section 4 / `foo.md` §4 / bar.md §4.5.
+# One optional line break between the name and the marker, and the break has to
+# carry a comment marker: a wrapped reference is the normal case ("... see
+# references/foo.md\n# section 7"), while a bare line break would let a name at the
+# end of one paragraph claim a "section 3" from the next.
+SECTION_REF = re.compile(
+    r"([A-Za-z0-9_][A-Za-z0-9_.-]*\.md)`?[ \t]*"
+    r"(?:\n[ \t]*(?:#|//|\*)[ \t]*)?"
+    r"(?:section|§)[ \t]*(\d+)")
 
 
 def code_files(root):
@@ -748,17 +755,17 @@ def check_code_section_refs(root, files, texts, report):
             text = read(os.path.join(root, path))
         except OSError:
             continue
-        for line_number, line in enumerate(text.splitlines(), 1):
-            for match in SECTION_REF.finditer(line):
-                name, number = match.group(1), int(match.group(2))
-                candidates = [f"references/{name}", name]
-                target = next((c for c in candidates if c in sections), None)
-                if target is None:
-                    continue  # a document this tree does not hold: not our claim
-                if number not in sections[target]:
-                    report.error(path, line_number,
-                                 f"says {name} section {number}, but that document has "
-                                 f"sections {sorted(sections[target]) or 'none'}")
+        for match in SECTION_REF.finditer(text):
+            name, number = match.group(1), int(match.group(2))
+            candidates = [f"references/{name}", name]
+            target = next((c for c in candidates if c in sections), None)
+            if target is None:
+                continue  # a document this tree does not hold: not our claim
+            if number not in sections[target]:
+                line_number = text.count("\n", 0, match.start()) + 1
+                report.error(path, line_number,
+                             f"says {name} section {number}, but that document has "
+                             f"sections {sorted(sections[target]) or 'none'}")
 
 
 def check_agents(root, report):
