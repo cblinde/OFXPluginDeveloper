@@ -854,6 +854,13 @@ What it does not prove is that a real `readelf` reports a real `.ofx` the way th
 canned one does - that still needs a Linux build and
 `tools/check-glibc.sh --max 2.17 <bundle>`.
 
+The restructure gate runs in the same job: `tools/coverage-check.py` derives its
+baseline from commit `4290e68` - which is why that job checks out with
+`fetch-depth: 0` - and fails when a distinctive word of the pre-move corpus no
+longer occurs anywhere in the tree, so what it proves is that moving the
+documents into `references/` lost no vocabulary, not that every sentence survived
+word for word.
+
 `./run-tests.sh` exits 0 with `RUN_VALGRIND=0` in about two minutes on the
 authoring machine; with memcheck enabled (the default when valgrind is on
 `PATH`) it takes close to five. `CPU_ONLY=1` forces the CUDA template's CPU path

@@ -14,9 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The coverage gate below derives its baseline from commit 4290e68, so
+          # this job needs the history the default shallow clone drops.
+          fetch-depth: 0
 
       - name: Documentation drift
         run: python3 tools/check-docs.py
+
+      - name: Documentation coverage gate
+        # Every distinctive word of the corpus as it stood at 4290e68 - the last
+        # commit before the move into references/ - must still occur somewhere in
+        # the tree; a dropped paragraph takes its rare words with it. The baseline
+        # is derived from that commit rather than checked in, so there is nothing
+        # to regenerate when the prose moves.
+        run: |
+          python3 tools/coverage-check.py baseline
+          python3 tools/coverage-check.py check
 
       - name: Tool self-tests
         # Both are a tool's own check, both cost a second, and neither needs
