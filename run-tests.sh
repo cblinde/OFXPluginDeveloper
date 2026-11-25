@@ -98,6 +98,20 @@ elif ! command -v nvcc >/dev/null 2>&1; then
   export CPU_ONLY=1
 fi
 
+# The line above the list. It names every hole the list then spells out: a run
+# that skipped the ONNX template and the GPU step must not be summarised as if
+# only one thing was missing.
+summary_headline() {
+  local holes=()
+  [[ "${onnx}" == "1" ]] || holes+=("one template was not built")
+  [[ "${gpu_mode}" == "CUDA" ]] || holes+=("the GPU step did not run")
+  case ${#holes[@]} in
+    0) echo "all suites passed, every template that was built:" ;;
+    1) echo "all suites that ran passed, but ${holes[0]}:" ;;
+    *) echo "all suites that ran passed, but ${holes[0]} and ${holes[1]}:" ;;
+  esac
+}
+
 # A run that claims to cover everything is only allowed to stay green without
 # the template when a human says so. CI defines CI=true, GitHub Actions
 # GITHUB_ACTIONS, Azure Pipelines TF_BUILD and Buildkite BUILDKITE; any of them
@@ -197,11 +211,7 @@ if [[ "${windows}" == "1" ]]; then
   echo
   echo
   echo "=================================================================="
-  if [[ "${onnx}" == "1" ]]; then
-    echo "all suites passed, every template that was built:"
-  else
-    echo "all suites that ran passed, but one template was not built:"
-  fi
+  summary_headline
   echo "  docs drift check                (tools/check-docs.py)"
   echo "  reference build + artifact      (minimal-ofx, dumpbin)"
   echo "  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)"
@@ -274,11 +284,7 @@ fi
 
 echo
 echo "=================================================================="
-if [[ "${onnx}" == "1" ]]; then
-  echo "all suites passed, every template that was built:"
-else
-  echo "all suites that ran passed, but one template was not built:"
-fi
+summary_headline
 echo "  docs drift check                (tools/check-docs.py)"
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
