@@ -60,16 +60,28 @@ endif()
 # not under the current root and search again. ONNXRUNTIME_DLL is the same trap
 # for the bundle: the copy step kept pulling the previous root's onnxruntime.dll
 # while the headers came from the new one.
+#
+# The test is containment, not a prefix. A cached .../ort-gpu/include/... starts
+# with ".../ort", so a bare string(FIND) let a root of .../ort keep the GPU
+# runtime's header path: the configure then printed the old include directory as
+# if it belonged to the new root and succeeded. Only the root itself, or a real
+# child (root followed by the separator), counts as still valid.
 if(ONNXRUNTIME_ROOT)
+  # One spelling per path before comparing: cache entries use forward slashes,
+  # and a root typed with a trailing separator would never match its children.
+  file(TO_CMAKE_PATH "${ONNXRUNTIME_ROOT}" _ort_root)
+  string(REGEX REPLACE "/+$" "" _ort_root "${_ort_root}")
   foreach(_ort_cached ONNXRUNTIME_INCLUDE_DIR ONNXRUNTIME_LIBRARY ONNXRUNTIME_DLL)
     if(DEFINED ${_ort_cached})
-      string(FIND "${${_ort_cached}}" "${ONNXRUNTIME_ROOT}" _ort_at)
-      if(NOT _ort_at EQUAL 0)
+      file(TO_CMAKE_PATH "${${_ort_cached}}" _ort_value)
+      string(FIND "${_ort_value}" "${_ort_root}/" _ort_at)
+      if(NOT _ort_at EQUAL 0 AND NOT "${_ort_value}" STREQUAL "${_ort_root}")
         unset(${_ort_cached} CACHE)
         unset(${_ort_cached})
       endif()
     endif()
   endforeach()
+  unset(_ort_root)
 endif()
 
 find_path(ONNXRUNTIME_INCLUDE_DIR
