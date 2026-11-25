@@ -75,7 +75,7 @@ has the layout the template expects: `include\` and `bin\onnxruntime.dll`. It
 also carries `lib\onnxruntime.lib`, which the template does not link on Windows
 (see the next paragraph). When the GitHub release assets are not reachable, the
 NuGet package carries the same files under a different layout (**B**, field-tested
-with `Microsoft.ML.OnnxRuntime` 1.20.1):
+with `Microsoft.ML.OnnxRuntime` 1.20.1 and 1.32.0 - the layout did not change):
 
 ```text
 https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/<version>   (.nupkg = zip)
@@ -517,7 +517,13 @@ make the choice visible — and the consequence is packaging, not a second build
   does not: `dumpbin /dependents onnxruntime_providers_cuda.dll` lists cublas,
   cublasLt, cufft, cudart, cuDNN and `onnxruntime_providers_shared` only, and a
   bundle with all 30 files (2.8 GB) ran on a RTX 3060 and passed the contract test
-  (**B**). That is a property of one binary, not a documented contract, so the
+  (**B**). **1.32.0** passes the same check and needs fewer files: its provider
+  imports `cublas64_13`, `cublasLt64_13`, `dxgi` and
+  `onnxruntime_providers_shared`, and loads cuDNN, cuFFT and cudart at run time
+  instead of at load time, so 16 files (1.54 GB) carry it. That provider is also
+  built as an EP plugin - it exports `CreateEpFactories` - yet the template's
+  `AppendExecutionProvider_CUDA` still reaches it through the provider bridge,
+  which is why the C++ source needed no change for the upgrade. That is a property of one binary, not a documented contract, so the
   check belongs in the build notes of a Windows GPU bundle: run `dumpbin
   /dependents` on the provider you ship and look for `onnxruntime.dll`. If a later
   version imports it, the copy is a bundle that fails at load and the working

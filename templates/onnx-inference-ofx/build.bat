@@ -2,7 +2,7 @@
 rem ---------------------------------------------------------------------------
 rem Out-of-source build for the ONNX inference plug-in (Windows / MSVC).
 rem
-rem   set ONNXRUNTIME_ROOT=C:\onnxruntime-win-x64-1.20.1
+rem   set ONNXRUNTIME_ROOT=C:\onnxruntime-win-x64-1.32.0
 rem   .\build.bat                  Release
 rem   .\build.bat Debug            another configuration
 rem   .\build.bat Release install  build, then copy the bundle into

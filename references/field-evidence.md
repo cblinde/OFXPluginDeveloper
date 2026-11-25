@@ -171,6 +171,8 @@ is that the Windows loader path and the OFX actions behave the same as on Linux.
 | `--strict` checker lookup, `System32` ONNX Runtime shadowing | §9, [`cmake-and-linking.md`](cmake-and-linking.md) §5 |
 | Windows ONNX inference suite, ONNX Runtime 1.20.1 (CPU provider) | [`testing-layers.md`](testing-layers.md) §13, [`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log) |
 | The same suite on the CUDA provider, bundled with cuDNN 9 | [`testing-layers.md`](testing-layers.md) §13, [`onnx-and-tensorrt.md`](onnx-and-tensorrt.md), [`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log) |
+| ONNX Runtime 1.32.0, CUDA 13, CUDA provider as an EP plugin | [`testing-layers.md`](testing-layers.md) §13, [`onnx-and-tensorrt.md`](onnx-and-tensorrt.md), [`onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log) |
+| ONNX Runtime 1.32.0 CPU path matches the 1.20.1 golden exactly | [`testing-layers.md`](testing-layers.md) §13, [`onnx-inference-cpu-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cpu-1.32.log) |
 
 ## 8. Reproducing it
 

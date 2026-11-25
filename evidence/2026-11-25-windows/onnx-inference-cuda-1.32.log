@@ -1,0 +1,457 @@
+# ONNX inference template on ONNX Runtime 1.32.0, CUDA provider, Windows.
+#
+# Command: ONNXRUNTIME_ROOT=<repo>/.validation/ort-gpu-1.32.0 ./run-tests.sh
+# Runtime: Microsoft.ML.OnnxRuntime 1.32.0 and Microsoft.ML.OnnxRuntime.Gpu.Windows
+#   1.32.0 (NuGet, 2026-11-13). Headers and the import library come from the CPU
+#   package, as before; the GPU package contributes onnxruntime.dll (21.0 MB),
+#   onnxruntime_providers_cuda.dll (195.5 MB), onnxruntime_providers_shared.dll
+#   and onnxruntime_providers_tensorrt.dll, which the bundle does not copy.
+# CUDA stack: 13.0/13.1, taken from NVIDIA's redist archives and one wheel, no
+#   toolkit installed:
+#     cudart64_13.dll   13.0.96   (cuda_cudart archive)
+#     cublas64_13.dll   13.1.0.3  (libcublas archive, 51.6 MB)
+#     cublasLt64_13.dll 13.1.0.3  (same archive, 480.4 MB)
+#     cufft64_12.dll    12.0.0.61 (libcufft archive; cuFFT kept major 12 in CUDA 13)
+#     cuDNN 9.28.1.4     (nvidia-cudnn-cu13 wheel, 10 DLLs)
+#   PyPI has no binaries for nvidia-cublas-cu13 or nvidia-cuda-runtime-cu13: both
+#   resolve to 0.0.0a0 stubs, which is why the archives are used.
+# Provider shape: onnxruntime_providers_cuda.dll exports CreateEpFactories (an EP
+#   plugin) and its import table holds only cublas64_13, cublasLt64_13, dxgi and
+#   onnxruntime_providers_shared - cuDNN, cuFFT and cudart are resolved at run
+#   time. It does not import onnxruntime.dll, so the renamed core keeps working.
+#   The template's AppendExecutionProvider_CUDA reaches the plugin through the
+#   provider bridge unchanged; no C++ change was needed for the upgrade.
+# Bundle: 16 files, 1540 MB (1.20.1 with CUDA 12: 30 files, 2686 MB).
+# Machine: Windows 11 (10.0.26300), RTX 3060 (sm_86, driver 621.24),
+#   Visual Studio 18 BuildTools (MSVC 14.50.35717), CMake 4.4.4.
+# Date: 2026-11-25.
+#
+# Unedited section between "== build + test: onnx-inference-ofx ==" and
+# "== negative controls:". Provider label in both contract runs:
+#   CUDA (device 0, 1 thread, bundled CUDA)
+# The exact golden comparison still fails on the device and the suite retries at
+# 1e-5 (line 551 below): the golden was rendered by 1.20.1's CPU provider, and
+# the CUDA EP sums in a different order. The CPU path of this same runtime still
+# matches the golden exactly, with no retry: evidence/2026-11-25-windows/
+# onnx-inference-cpu-1.32.log.
+#
+# What this does not show: a second GPU vendor or driver, and whether a larger
+# model strays further (use_tf32 is still at the ORT default). CUDA 13 needs a
+# driver of the 580 series or newer; this machine has 621.24.
+== build + test: onnx-inference-ofx ==
+[build] generator: Visual Studio 18 2026
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- ONNX Runtime include: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-gpu-1.32.0/include
+-- ONNX Runtime library: not linked (loaded from beside the .ofx)
+-- CUDA provider bundle: 16 file(s), 1540 MB
+-- OFX plugin : OnnxInference
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+-- Configuring done (0.0s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
+MSBuild-Version 18.4.0+6e61e96ac für .NET Framework
+
+  Checking File Globs
+  1>Checking Build System
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+  OnnxInference.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx
+  Bundling ONNX Runtime next to the .ofx as onnxruntime-ofx.dll	Bundling onnxruntime_providers_cuda.dll for the CUDA execution provider	Bundling onnxruntime_providers_shared.dll for the CUDA execution provider	Bundling cudnn64_9.dll for the CUDA execution provider	Bundling cudnn_adv64_9.dll for the CUDA execution provider	Bundling cudnn_cnn64_9.dll for the CUDA execution provider	Bundling cudnn_engines_precompiled64_9.dll for the CUDA execution provider	Bundling cudnn_engines_runtime_compiled64_9.dll for the CUDA execution provider	Bundling cudnn_engines_tensor_ir64_9.dll for the CUDA execution provider	Bundling cudnn_ext64_9.dll for the CUDA execution provider	Bundling cudnn_graph64_9.dll for the CUDA execution provider	Bundling cudnn_heuristic64_9.dll for the CUDA execution provider	Bundling cudnn_ops64_9.dll for the CUDA execution provider	Bundling cublas64_13.dll for the CUDA execution provider	Bundling cublasLt64_13.dll for the CUDA execution provider	Bundling cufft64_12.dll for the CUDA execution provider	Bundling cudart64_13.dll for the CUDA execution provider
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+  ai_pipeline_test.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\Release\ai_pipeline_test.exe
+  Copying onnxruntime-ofx.dll next to ai_pipeline_test.exe
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+
+Bundle: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle
+  Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx
+  Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\onnxruntime-ofx.dll
+
+Exports and load-time imports:
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    KERNEL32.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+== [1/5] build (Release) ==
+[build] generator: Visual Studio 18 2026
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- ONNX Runtime include: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-gpu-1.32.0/include
+-- ONNX Runtime library: not linked (loaded from beside the .ofx)
+-- CUDA provider bundle: 16 file(s), 1540 MB
+-- OFX plugin : OnnxInference
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+-- Configuring done (0.0s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
+MSBuild-Version 18.4.0+6e61e96ac für .NET Framework
+
+  Checking File Globs
+  1>Checking Build System
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+  OnnxInference.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx
+  Bundling ONNX Runtime next to the .ofx as onnxruntime-ofx.dll	Bundling onnxruntime_providers_cuda.dll for the CUDA execution provider	Bundling onnxruntime_providers_shared.dll for the CUDA execution provider	Bundling cudnn64_9.dll for the CUDA execution provider	Bundling cudnn_adv64_9.dll for the CUDA execution provider	Bundling cudnn_cnn64_9.dll for the CUDA execution provider	Bundling cudnn_engines_precompiled64_9.dll for the CUDA execution provider	Bundling cudnn_engines_runtime_compiled64_9.dll for the CUDA execution provider	Bundling cudnn_engines_tensor_ir64_9.dll for the CUDA execution provider	Bundling cudnn_ext64_9.dll for the CUDA execution provider	Bundling cudnn_graph64_9.dll for the CUDA execution provider	Bundling cudnn_heuristic64_9.dll for the CUDA execution provider	Bundling cudnn_ops64_9.dll for the CUDA execution provider	Bundling cublas64_13.dll for the CUDA execution provider	Bundling cublasLt64_13.dll for the CUDA execution provider	Bundling cufft64_12.dll for the CUDA execution provider	Bundling cudart64_13.dll for the CUDA execution provider
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+  ai_pipeline_test.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\Release\ai_pipeline_test.exe
+  Copying onnxruntime-ofx.dll next to ai_pipeline_test.exe
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+
+Bundle: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle
+  Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx
+  Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\onnxruntime-ofx.dll
+
+Exports and load-time imports:
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    KERNEL32.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+
+== [2/5] inference pipeline (ai_pipeline_test) ==
+model : Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models/test_conv.onnx  (c=3 h=48 w=64)
+  model channel count matches the fixture                  ok
+[1/4] PackRGB / UnpackRGB round-trip
+  tight rows, origin (0,0) : pack 64x48                    ok  (0)
+  tight rows, origin (0,0) : pack 1x1                      ok  (0)
+  tight rows, origin (0,0) : pack 32x16                    ok  (0)
+  tight rows, origin (0,0) : pack 3x5                      ok  (0)
+  tight rows, origin (0,0) : RGB written                   ok
+  tight rows, origin (0,0) : alpha untouched               ok
+  padded rows (+3 px), origin (2,1) : pack 1x1             ok  (0)
+  padded rows (+3 px), origin (2,1) : pack 32x16           ok  (0)
+  padded rows (+3 px), origin (2,1) : pack 3x5             ok  (0)
+  padded rows (+3 px), origin (2,1) : RGB written          ok
+  padded rows (+3 px), origin (2,1) : alpha untouched      ok
+  negative row stride : pack 64x48                         ok  (0)
+  negative row stride : pack 1x1                           ok  (0)
+  negative row stride : pack 32x16                         ok  (0)
+  negative row stride : pack 3x5                           ok  (0)
+  negative row stride : RGB written                        ok
+  negative row stride : alpha untouched                    ok
+[2/4] whole-frame inference vs Python golden
+  max |c++ - python| over the frame                        ok  (0)
+[3/4] tiled inference vs whole-frame inference
+  tile=5 halo=1 matches whole                              ok  (0)
+  tile=13 halo=1 matches whole                             ok  (0)
+  tile=17 halo=1 matches whole                             ok  (0)
+  tile=256 halo=1 matches whole                            ok  (0)
+  odd 1x1 tiled matches whole                              ok  (0)
+  odd 7x5 tiled matches whole                              ok  (0)
+  odd 64x3 tiled matches whole                             ok  (0)
+  odd 3x48 tiled matches whole                             ok  (0)
+  tile=13 halo=-1 is clamped to halo=0                     ok  (0)
+  tile=13 halo=-7 is clamped to halo=0                     ok  (0)
+[4/4] negative controls: wrong blending, negative halo, bad rect
+  tile=13 halo=0 disagrees with whole (expected)           ok  (0.263276)
+  Add rejects a core rect outside its data rect            ok
+
+PASS: inference pipeline behaves as specified
+
+== [3/5] host contract (LoadLibraryExW + fake host), exact golden ==
+Der Befehl "vswhere.exe" ist entweder falsch geschrieben oder
+konnte nicht gefunden werden.
+fake_host.cpp
+contract_main.cpp
+Code wird generiert...
+  Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx
+  exact comparison failed; retrying with --golden-tolerance 1e-5 for a golden rendered by another provider
+[stage] render
+[stage] compare golden
+[stage] concurrency
+[stage] byte destination
+[stage] roi region
+[stage] roi context
+[stage] unload
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - read source fixture Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_input.bin
+ok 15 - kOfxActionLoad
+ok 16 - kOfxActionDescribe
+ok 17 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 18 - descriptor lists the requested context
+ok 19 - descriptor sets a legal render thread safety
+ok 20 - param 'modelPath' declared
+ok 21 - param 'modelPath' type
+ok 22 - param 'tileSize' declared
+ok 23 - param 'tileSize' type
+ok 24 - param 'halo' declared
+ok 25 - param 'halo' type
+ok 26 - clip 'Source' declared
+ok 27 - clip 'Output' declared
+ok 28 - kOfxActionCreateInstance
+ok 29 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 30 - identity clip is the source clip
+ok 31 - set param 'modelPath'
+ok 32 - set param 'halo'
+ok 33 - isIdentity is false once a setting changes the output
+ok 34 - kOfxImageEffectActionRender
+ok 35 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA)"
+ok 36 - read golden Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.bin
+ok 37 - destination is readable
+ok 38 - render matches the golden within 0.000010
+ok 39 - a second instance can be created
+ok 40 - two instances are live at the same time
+ok 41 - baseline modelPath on instance 0
+ok 42 - baseline halo on instance 0
+ok 43 - baseline modelPath on instance 1
+ok 44 - baseline halo on instance 1
+ok 45 - render instance 0 while instance 1 is alive
+ok 46 - render instance 1 with its own settings
+ok 47 - two instances with identical settings produce identical pixels
+ok 48 - instance for parallel worker 2
+ok 49 - baseline modelPath on instance 2
+ok 50 - baseline halo on instance 2
+ok 51 - instance for parallel worker 3
+ok 52 - baseline modelPath on instance 3
+ok 53 - baseline halo on instance 3
+ok 54 - concurrent renders produced every record
+ok 55 - every concurrent render returned kOfxStatOK
+ok 56 - every concurrent render produced a readable destination
+ok 57 - concurrent renders with identical settings are identical
+ok 58 - destroy instance 3
+ok 59 - destroy instance 2
+ok 60 - destroy instance 1
+ok 61 - render rejects a byte image
+ok 62 - getRegionsOfInterest answers for the source clip
+ok 63 - source RoI is the requested region grown by its halo
+ok 64 - getRegionsOfInterest answers at the source bounds
+ok 65 - source RoI is clamped to the source bounds
+ok 66 - roi context: whole-frame render
+ok 67 - roi context: destination is readable
+ok 68 - roi context: render of an inset window
+ok 69 - roi context: the inset window matches the whole frame bit for bit
+ok 70 - roi context: render of the same window without a context region
+ok 71 - roi context: without a context region the same window differs
+ok 72 - baseline render before the rejected window
+ok 73 - render rejects a window outside the source bounds
+ok 74 - destination is unchanged after the rejected render
+ok 75 - baseline render inside the destination bounds
+ok 76 - render rejects a window outside the destination bounds
+ok 77 - destination is unchanged after the rejected render
+ok 78 - kOfxActionDestroyInstance
+ok 79 - kOfxActionUnload
+ok 80 - unload cycle completed
+ok 81 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx)
+ok 82 - OfxGetNumberOfPlugins is exported
+ok 83 - OfxGetPlugin is exported
+ok 84 - OfxGetNumberOfPlugins() >= 1
+ok 85 - OfxGetPlugin(0) returns a plug-in
+ok 86 - pluginApi
+ok 87 - apiVersion
+ok 88 - pluginIdentifier is non-empty
+ok 89 - pluginIdentifier
+ok 90 - plugi[stage] render
+[stage] compare golden
+[stage] concurrency
+[stage] byte destination
+[stage] roi region
+[stage] roi context
+[stage] unload
+nIdentifier stable across loads
+ok 91 - pluginVersion
+ok 92 - setHost is non-null
+ok 93 - mainEntry is non-null
+ok 94 - read source fixture Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_input.bin
+ok 95 - kOfxActionLoad
+ok 96 - kOfxActionDescribe
+ok 97 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 98 - descriptor lists the requested context
+ok 99 - descriptor sets a legal render thread safety
+ok 100 - param 'modelPath' declared
+ok 101 - param 'modelPath' type
+ok 102 - param 'tileSize' declared
+ok 103 - param 'tileSize' type
+ok 104 - param 'halo' declared
+ok 105 - param 'halo' type
+ok 106 - clip 'Source' declared
+ok 107 - clip 'Output' declared
+ok 108 - kOfxActionCreateInstance
+ok 109 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 110 - identity clip is the source clip
+ok 111 - set param 'modelPath'
+ok 112 - set param 'halo'
+ok 113 - isIdentity is false once a setting changes the output
+ok 114 - kOfxImageEffectActionRender
+ok 115 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA)"
+ok 116 - read golden Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.bin
+ok 117 - destination is readable
+ok 118 - render matches the golden within 0.000010
+ok 119 - a second instance can be created
+ok 120 - two instances are live at the same time
+ok 121 - baseline modelPath on instance 0
+ok 122 - baseline halo on instance 0
+ok 123 - baseline modelPath on instance 1
+ok 124 - baseline halo on instance 1
+ok 125 - render instance 0 while instance 1 is alive
+ok 126 - render instance 1 with its own settings
+ok 127 - two instances with identical settings produce identical pixels
+ok 128 - instance for parallel worker 2
+ok 129 - baseline modelPath on instance 2
+ok 130 - baseline halo on instance 2
+ok 131 - instance for parallel worker 3
+ok 132 - baseline modelPath on instance 3
+ok 133 - baseline halo on instance 3
+ok 134 - concurrent renders produced every record
+ok 135 - every concurrent render returned kOfxStatOK
+ok 136 - every concurrent render produced a readable destination
+ok 137 - concurrent renders with identical settings are identical
+ok 138 - destroy instance 3
+ok 139 - destroy instance 2
+ok 140 - destroy instance 1
+ok 141 - render rejects a byte image
+ok 142 - getRegionsOfInterest answers for the source clip
+ok 143 - source RoI is the requested region grown by its halo
+ok 144 - getRegionsOfInterest answers at the source bounds
+ok 145 - source RoI is clamped to the source bounds
+ok 146 - roi context: whole-frame render
+ok 147 - roi context: destination is readable
+ok 148 - roi context: render of an inset window
+ok 149 - roi context: the inset window matches the whole frame bit for bit
+ok 150 - roi context: render of the same window without a context region
+ok 151 - roi context: without a context region the same window differs
+ok 152 - baseline render before the rejected window
+ok 153 - render rejects a window outside the source bounds
+ok 154 - destination is unchanged after the rejected render
+ok 155 - baseline render inside the destination bounds
+ok 156 - render rejects a window outside the destination bounds
+ok 157 - destination is unchanged after the rejected render
+ok 158 - kOfxActionDestroyInstance
+ok 159 - kOfxActionUnload
+ok 160 - unload cycle completed
+contract_test: 160 checks, 0 failed
+  provider label names CUDA or CPU
+
+== [4/5] host contract with the plug-in's own tiling (tileSize=16) ==
+  tolerance 0.02: feathered overlap is exact only at halo >= radius
+[stage] render
+[stage] roi context
+[stage] unload
+[stage] render
+[stage] roi context
+[stage] unload
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'modelPath' declared
+ok 20 - param 'modelPath' type
+ok 21 - param 'tileSize' declared
+ok 22 - param 'tileSize' type
+ok 23 - param 'halo' declared
+ok 24 - param 'halo' type
+ok 25 - clip 'Source' declared
+ok 26 - clip 'Output' declared
+ok 27 - kOfxActionCreateInstance
+ok 28 - set param 'modelPath'
+ok 29 - set param 'halo'
+ok 30 - set param 'tileSize'
+ok 31 - kOfxImageEffectActionRender
+ok 32 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 33 - roi context: whole-frame render
+ok 34 - roi context: destination is readable
+ok 35 - roi context: render of an inset window
+ok 36 - roi context: the inset window stays within the tolerance of the whole frame
+ok 37 - roi context: render of the same window without a context region
+ok 38 - roi context: without a context region the same window leaves the tolerance
+ok 39 - kOfxActionDestroyInstance
+ok 40 - kOfxActionUnload
+ok 41 - unload cycle completed
+ok 42 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx)
+ok 43 - OfxGetNumberOfPlugins is exported
+ok 44 - OfxGetPlugin is exported
+ok 45 - OfxGetNumberOfPlugins() >= 1
+ok 46 - OfxGetPlugin(0) returns a plug-in
+ok 47 - pluginApi
+ok 48 - apiVersion
+ok 49 - pluginIdentifier is non-empty
+ok 50 - pluginIdentifier
+ok 51 - pluginIdentifier stable across loads
+ok 52 - pluginVersion
+ok 53 - setHost is non-null
+ok 54 - mainEntry is non-null
+ok 55 - kOfxActionLoad
+ok 56 - kOfxActionDescribe
+ok 57 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 58 - descriptor lists the requested context
+ok 59 - descriptor sets a legal render thread safety
+ok 60 - param 'modelPath' declared
+ok 61 - param 'modelPath' type
+ok 62 - param 'tileSize' declared
+ok 63 - param 'tileSize' type
+ok 64 - param 'halo' declared
+ok 65 - param 'halo' type
+ok 66 - clip 'Source' declared
+ok 67 - clip 'Output' declared
+ok 68 - kOfxActionCreateInstance
+ok 69 - set param 'modelPath'
+ok 70 - set param 'halo'
+ok 71 - set param 'tileSize'
+ok 72 - kOfxImageEffectActionRender
+ok 73 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 74 - roi context: whole-frame render
+ok 75 - roi context: destination is readable
+ok 76 - roi context: render of an inset window
+ok 77 - roi context: the inset window stays within the tolerance of the whole frame
+ok 78 - roi context: render of the same window without a context region
+ok 79 - roi context: without a context region the same window leaves the tolerance
+ok 80 - kOfxActionDestroyInstance
+ok 81 - kOfxActionUnload
+ok 82 - unload cycle completed
+contract_test: 82 checks, 0 failed
+
+== [5/5] fixtures and artifact ==
+  models\test_conv.onnx
+  models\test_input.bin
+  models\test_golden.bin
+  models\test_shape.txt
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    KERNEL32.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+
+all checks passed

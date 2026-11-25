@@ -4,7 +4,7 @@ rem ---------------------------------------------------------------------------
 rem Windows counterpart of test\run-tests.sh: the same five steps, in the same
 rem order, for the ONNX inference template.
 rem
-rem   set ONNXRUNTIME_ROOT=C:\onnxruntime-win-x64-1.20.1
+rem   set ONNXRUNTIME_ROOT=C:\onnxruntime-win-x64-1.32.0
 rem   test\test.bat                  Release
 rem   test\test.bat Debug            another configuration
 rem   test\test.bat Release nobuild  reuse build\ instead of calling build.bat

@@ -76,10 +76,11 @@ message. Two host-facing facts:
   `tools/host_cuda_probe.cpp`; the detail and the measured evidence are
   [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md).
 - **Check the provider's import table per ORT version.** `dumpbin /dependents` on
-  the provider you ship, looking for `onnxruntime.dll`. ORT 1.20.1's provider does
-  not import it, which is what makes the `onnxruntime-ofx.dll` sidecar work with
-  all 30 files beside it **[B]**; a later provider that does import it needs the
-  sidecar shape instead (`ai-architectures-and-runtimes.md` §2).
+  the provider you ship, looking for `onnxruntime.dll`. Neither the 1.20.1 nor
+  the 1.32.0 provider imports it, which is what makes the `onnxruntime-ofx.dll`
+  sidecar work with all 30 files beside it in the first case and 16 in the
+  second **[B]**; a later provider that does import it needs the sidecar shape
+  instead (`ai-architectures-and-runtimes.md` §2).
 
 **One thread budget per node.** An inference plug-in may hold several sessions
 inside a host that holds several instances of the node. Build every session

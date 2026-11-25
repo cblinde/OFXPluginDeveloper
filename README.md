@@ -310,6 +310,10 @@ in `evidence/`. The inference template's first Windows build, with ONNX Runtime
 1.20.1, is [`evidence/2026-11-24-windows/onnx-inference-suite.log`](evidence/2026-11-24-windows/onnx-inference-suite.log);
 it ran the CPU execution provider. The CUDA provider followed on 2026-11-25, bundled
 from the GPU package with cuDNN 9: [`evidence/2026-11-25-windows/onnx-inference-cuda.log`](evidence/2026-11-25-windows/onnx-inference-cuda.log).
+The template is exercised with ONNX Runtime **1.32.0** as well; its GPU package is
+built against CUDA 13 and ships the CUDA provider as an EP plugin, which needs no
+change in the template's source:
+[`evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log`](evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log).
 
 ---
 

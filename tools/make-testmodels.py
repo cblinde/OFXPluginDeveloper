@@ -43,8 +43,9 @@ except ImportError:  # pragma: no cover - the message is the point
     raise SystemExit(2)
 
 OPSET = 13
-# ONNX Runtime 1.20 (the version the template is built against) reads IR <= 10.
-# A newer writer defaults higher; pinning keeps the models loadable there.
+# ONNX Runtime 1.20, the oldest root the template still builds against, reads
+# IR <= 10. A newer writer defaults higher; pinning keeps the fixtures loadable
+# by every runtime this repository has been exercised with, 1.20.1 and 1.32.0.
 IR_VERSION = 8
 
 

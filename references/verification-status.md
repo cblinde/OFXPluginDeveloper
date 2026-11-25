@@ -173,7 +173,10 @@ rendered in them; the inference template's CPU session has a Windows run behind 
 and so does its CUDA session, with the provider bundled from the GPU package and
 cuDNN 9/cuBLAS/cuFFT/cudart taken from wheels, label
 `CUDA (device 0, 1 thread, bundled CUDA)`
-([`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log));
+([`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)),
+and again on ONNX Runtime 1.32.0, whose GPU package is built against CUDA 13 and
+ships the provider as an EP plugin
+([`onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log));
 no host has been given device memory by any of these runs; Linux has not been run; and no kernel runs in
 `./run-tests.sh`, which has no GPU step by design. See the opening section of this document.
 
