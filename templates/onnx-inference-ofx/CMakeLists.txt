@@ -52,6 +52,26 @@ if(NOT ONNXRUNTIME_ROOT AND DEFINED ENV{ONNXRUNTIME_ROOT})
   set(ONNXRUNTIME_ROOT "$ENV{ONNXRUNTIME_ROOT}")
 endif()
 
+# find_path and find_library cache their answer, so pointing ONNXRUNTIME_ROOT at
+# a different runtime in an existing build tree kept the old paths: the configure
+# step printed the previous root's include directory and the build then failed
+# with "onnxruntime_cxx_api.h: No such file or directory". Switching from the CPU
+# package to the GPU one is exactly that move, so drop any cached answer that is
+# not under the current root and search again. ONNXRUNTIME_DLL is the same trap
+# for the bundle: the copy step kept pulling the previous root's onnxruntime.dll
+# while the headers came from the new one.
+if(ONNXRUNTIME_ROOT)
+  foreach(_ort_cached ONNXRUNTIME_INCLUDE_DIR ONNXRUNTIME_LIBRARY ONNXRUNTIME_DLL)
+    if(DEFINED ${_ort_cached})
+      string(FIND "${${_ort_cached}}" "${ONNXRUNTIME_ROOT}" _ort_at)
+      if(NOT _ort_at EQUAL 0)
+        unset(${_ort_cached} CACHE)
+        unset(${_ort_cached})
+      endif()
+    endif()
+  endforeach()
+endif()
+
 find_path(ONNXRUNTIME_INCLUDE_DIR
   NAMES onnxruntime_cxx_api.h
   HINTS "${ONNXRUNTIME_ROOT}/include" "${ONNXRUNTIME_ROOT}/onnxruntime/capi"
