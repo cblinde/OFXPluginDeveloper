@@ -187,12 +187,17 @@ Copy this into the pull request. "N/A" needs the reason next to it.
       is 2.17 (CentOS 7, the vfx-2021/2022 baseline the SDK is built against); a
       newer container links `memcpy@GLIBC_2.14` without noticing and then fails
       at load time on an older host with `GLIBC_2.28 not found`, before any OFX
-      code runs ([`cmake-and-linking.md`](cmake-and-linking.md) §5). One line,
-      compared by eye against the target:
-      `readelf --version-info build/bundle/*/Contents/*/*.ofx | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1`.
-      Nothing in this repository measures this: every Linux run here happens in
-      one container, so it proves the build runs where it was built and nothing
-      about an older host.
+      code runs ([`cmake-and-linking.md`](cmake-and-linking.md) §5).
+      `tools/check-glibc.sh --max 2.17 <bundle>` is that check as a command: it
+      reads the version table of the `.ofx` and of every `.so` the bundle ships,
+      prints the highest `GLIBC_` version per object, and exits non-zero when one
+      of them is above the bound. An object it cannot read is an error as well,
+      because a member nobody inspected is not a pass. `--selftest` drives the
+      same comparison with a canned `readelf` and fails on a bound that is one
+      step too low, so the checker itself can be seen failing. Nothing in this
+      repository has run the real check: every Linux run here happens in one
+      container, so it proves the build runs where it was built and nothing about
+      an older host.
 - [ ] Windows: `dumpbin /exports <Name>.ofx` shows the same two names and nothing
       else; `cuobjdump -lelf` lists the cubins when CUDA is on. Both are checked
       by `testkit/check-ofx-artifact.bat` with `--strict`, which finds

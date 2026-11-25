@@ -415,7 +415,10 @@ container, so it proves the build runs where it was built and nothing about an
 older host. The check is cheap and belongs in a release checklist, so it is one:
 [`checklists.md`](checklists.md) §6, "before calling it done", asks for
 `readelf --version-info` on the `.ofx` and on every bundled `.so`, with the
-highest `GLIBC_` version compared against the target platform's.
+highest `GLIBC_` version compared against the target platform's - and it is a
+command rather than a paragraph, `tools/check-glibc.sh --max 2.17 <bundle>`,
+whose `--selftest` proves the comparison fails on a bound that is one step too
+low.
 
 ## 6. Toolchain notes that cause real failures
 
