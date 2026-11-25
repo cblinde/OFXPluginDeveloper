@@ -34,6 +34,7 @@ marks the template NOT VERIFIED) and `CPU_ONLY=1` without a CUDA toolkit.
 | AI-model decision | `references/ai-architectures-and-runtimes.md` -> `references/onnx-and-tensorrt.md` -> `templates/onnx-inference-ofx/` | CUDA kernel detail |
 | Check a `[B]` claim | `references/verification-status.md` -> its `evidence/` link | the design docs, until the evidence contradicts them |
 | Host behaviour differs | `references/host-resolve.md` -> `references/host-nuke-scratch-natron.md`, grades A/B/C | anything claiming a host was tested |
+| Test in Resolve | `references/resolve-automation.md` §14 -> `tests/resolve/README.md` | the host quirks until a run fails |
 | Plan an improvement | `references/improvement-backlog.md` -> the document that owns the subject | nothing: a row is a candidate, not a claim |
 
 ---
@@ -55,6 +56,4 @@ marks the template NOT VERIFIED) and `CPU_ONLY=1` without a CUDA toolkit.
    measurements and provenance labels.
 5. **Never commit build output** (`build/`, `*.ofx`, `*.ptx`, `.ofx-ref/`).
 
-**Labels:** **[V]** verified here, **[I]** inferred, **[B]** external evidence; definitions in `references/cmake-and-linking.md`.
-
-What actually runs, with counts: `references/testing-layers.md` §13. What a build proves, and what it cannot: `references/debugging-and-symptoms.md` §5.
+**Labels:** **[V]** verified here, **[I]** inferred, **[B]** external evidence; definitions in `references/cmake-and-linking.md`. What actually runs, with counts: `references/testing-layers.md` §13. What a build proves, and what it cannot: `references/debugging-and-symptoms.md` §5.

@@ -28,23 +28,26 @@ architecture.
 | Queue and start | `AddRenderJob()`, `StartRendering([ids], isInteractiveMode=False)` | **[B]** | job id, then polling |
 | Job status | `GetRenderJobStatus(jobId)` → dict, or an error string | **[B]** | `JobStatus`, `CompletionPercentage`, `EstimatedTimeRemainingInMs`, `TimeTakenToRenderInMs`, `Error` |
 | Clean exit | `resolve.Quit()` | **[B]** | preferred over `TerminateProcess` |
-| Free vs Studio | external Python scripting is Studio-only since 21.1 | **[B]** | the free version runs scripts from its console only |
+| Free vs Studio | external Python scripting is Studio-only: the SDK documents the preference under Studio and the listener on TCP 1144 as Studio's | **[B]** | on free there is no listener, so `scriptapp` cannot connect and this harness cannot run (§14.1) |
+| Is it Studio? | `resolve.IsStudio()` | **[V]** | `True` on 21.2.0.5; assert it first so a free machine fails with a reason, not a timeout |
 
 Two of those rows are the whole project. Everything else is plumbing.
 
 ## 2. What has to exist before the first line
 
-- **A Studio licence.** The scripting README says "Scripting API for DaVinci
-  Resolve Studio", and the 21.1 free release notes are quoted as moving Python
-  scripting to Studio ("the Python API was being used to hack studio features
-  into the free version") **[B]**. A free install can still run Lua and Python
-  from its own console; an external process cannot connect. Confirm against the
-  installed build before promising anything.
+- **A Studio licence.** The scripting README documents external scripting only
+  under Studio, and the socket it opens (TCP 1144) as Studio's; the free version
+  runs scripts from its own Workspace > Scripts menu and Console **[B]**. For
+  this harness that is decisive rather than limiting: `poc.py` is an external
+  process, so on free `scriptapp` answers `None` until the timeout and there is
+  no render to check. §14.1 has the long form, and `resolve.IsStudio()` is the
+  runtime check (**[V]**: `True` on 21.2.0.5).
 - **`Preferences > System > General > External scripting using = Local`** **[B]**.
   Network mode listens on TCP 1144 and is a different decision (it exposes the
-  API to the LAN).
+  API to the LAN). It was already set to `Local` on the machine that ran
+  `tests/resolve/`, which is why nothing had to be clicked.
 - **Three environment variables** so an external interpreter finds the bridge
-  **[B]**:
+  **[B]** (all three measured, §14.3):
   - `RESOLVE_SCRIPT_API` — `%PROGRAMDATA%\Blackmagic Design\DaVinci Resolve\Support\Developer\Scripting`
   - `RESOLVE_SCRIPT_LIB` — `C:\Program Files\Blackmagic Design\DaVinci Resolve\fusionscript.dll`
   - `PYTHONPATH` — `%RESOLVE_SCRIPT_API%\Modules\`
@@ -52,12 +55,16 @@ Two of those rows are the whole project. Everything else is plumbing.
   The values are documented with quotes around them; on Windows the quotes break
   the connection, so set them without **[B]**.
 - **Discovery, not hard-coding.** `%PROGRAMDATA%` is fixed, the application
-  directory is not: read it from the registry or from the `Resolve` key, and let
-  a config file override it. A path hard-coded to `C:\Program Files\...` is the
-  first thing that breaks on a second machine.
+  directory is not - and the registry is no help: `HKCU\Software\Blackmagic
+  Design\DaVinci Resolve` does not exist and `where Resolve.exe` finds nothing
+  (**[V]** on the machine that ran this, where Resolve sat on `E:`). What worked
+  was looking for `<drive>:\Program Files\Blackmagic Design\DaVinci Resolve\` on
+  each drive. A path hard-coded to `C:\Program Files\...` is the first thing
+  that breaks on a second machine - including inside the SDK module itself.
 - **A project open.** `scriptapp("Resolve")` hands back `None` while Resolve is
   still on the project manager, so "connected" is a state to poll, not a fact
-  that follows from process creation **[B]**.
+  that follows from process creation **[V]**: 18.2 s from `Popen` to a live
+  `scriptapp` here.
 
 ## 3. Headless: what `-nogui` promises, and what it does not
 
@@ -98,15 +105,25 @@ assertion is a rendered file whose pixels pass §7.
 ## 5. OFX on the timeline: the gap that decides the architecture
 
 The scripting API exposes Resolve's own objects — project, media pool, timeline,
-timeline items, render queue, Fusion comps, gallery. It does not expose "add
-effect X to this clip and set parameter Y": the shipped API documentation
-enumerates no such call **[I]**, and no third-party wrapper in this research
-found one either.
+timeline items, render queue, Fusion comps, gallery. This section used to say it
+did not expose "add effect X to this clip": the shipped README enumerates no such
+call, and that absence was read as a missing capability. The shipped `.pyi` has
+it — `TimelineItem.AddEffect(category, id)` with `category="ofx"` — and on 21.2
+it works (**[V]**, §14.6). What the API still does not expose is a **parameter**:
+`Effect` offers `GetInfo`, `GetIsEnabled`, `SetIsEnabled`, `GetFusionComp`,
+`GetIndex` and `SetIndex`, and nothing else.
 
-So the honest architecture is the one the task already proposes: **prepared
-`.drp` projects**, each with the plug-in already applied, parameters already set
-and a render range already defined. The test framework varies the *project*, not
-the parameters.
+So the architecture splits in two, and only the second half needs prepared
+projects:
+
+- **Applying the plug-in needs no `.drp`.** Import a still, cut a timeline, call
+  `AddEffect("ofx", id)` with the id from `GetEffectsList()`. That is what
+  `tests/resolve/poc.py --build-project` does, and it is the shortest path from a
+  built bundle to a rendered frame.
+- **Varying a parameter still needs one**, because there is no setter. A project
+  with the parameter already at a non-default value, or an effect whose default
+  is not identity, is the only way to make the host call `render()` instead of
+  skipping the effect as identity.
 
 What follows from that, and what does not:
 
@@ -187,6 +204,13 @@ exercises every unknown in §1, and it is done when:
 Everything after that — the matrix of projects, reports, JUnit — is engineering
 on a foundation that either works or does not.
 
+**Status, 2026-11-25:** 1, 2 and 4 hold on Resolve Studio 21.2.0.5
+(`evidence/2026-11-25-windows/resolve-poc.log`, exit 0, no process left behind).
+3 holds for size, channel count and decodability, and not for a pixel
+*difference*: the effect is identity at its default gain and the API cannot set
+the parameter, so the frame matches its source exactly (§14.10). 5 has never been
+tried.
+
 ## 10. Where it can run
 
 | Environment | Verdict |
@@ -235,8 +259,9 @@ What each one has to settle, in the order the milestone needs them:
    machine without a Studio seat.
 6. What the `.drp` format actually is in the installed version, and whether a
    project saved by a newer Resolve opens in an older one.
-7. How long a cold start takes on the target machine, which sets the timeout that
-   the whole harness inherits.
+7. ~~How long a cold start takes on the target machine, which sets the timeout
+   that the whole harness inherits.~~ 18.2 s to a live `scriptapp` on the machine
+   that ran this, so the 120 s default in `resolve_api.connect()` has room.
 8. Whether the plug-in's own log is reachable from the harness without reading
    the host's log directory.
 
@@ -704,11 +729,252 @@ def run_test_suite(config):
     return results
 ```
 
+## 14. Testing against Resolve, hands-on
+
+Everything in this section is what a second person needs to repeat the run, and
+most of it cost a failed attempt to learn. The numbers are from
+`tests/resolve/poc.py --build-project` on 2026-11-25: Windows 11, RTX 3060,
+DaVinci Resolve Studio 21.2.0.5, Python 3.10.6 (64-bit), ffmpeg on `PATH`. The
+log is `../evidence/2026-11-25-windows/resolve-poc.log`.
+
+### 14.1 Studio or free, and why free cannot carry this harness
+
+The SDK's own README decides it before any code does:
+
+- "**In DaVinci Resolve Studio**, Preferences > System > General, you can
+  configure: External scripting, i.e. whether external scripts can connect to
+  Resolve (None, Local, or Network)." The preference that opens the door is
+  documented under Studio.
+- "DaVinci Resolve **Studio** and Fusion Studio scripting listens on port 1144
+  (registered with IANA for this purpose)." The listener a remote process
+  connects to is Studio's.
+- The free version runs scripts **internally**: Workspace > Scripts and the
+  Workspace > Console window. The API surface is a common superset, and a call
+  that is Studio-only "can return with a False status" on free.
+
+Why that makes the free version useless **for this repository** rather than merely
+limited: the harness is an external Python process. `poc.py` starts the host,
+then waits for `DaVinciResolveScript.scriptapp("Resolve")` to return an object.
+With no listener there is nothing to return, so the call answers `None` forever
+and `resolve_api.connect()` times out after its 120 s budget - no project, no
+render, no report, no exit code. The internal fallback is not a substitute: a
+human would paste a script into the Console on every run and read the result off
+the screen, which is a manual check, cannot run unattended or in CI, and produces
+nothing a test can assert on. Studio is therefore a hard prerequisite of the
+milestone, not an optimisation.
+
+Measured on the Studio install, and worth asserting in any harness so a free
+machine fails fast instead of timing out:
+
+| Call | Answer on 21.2.0.5 |
+|---|---|
+| `resolve.IsStudio()` | `True` |
+| `resolve.GetProductName()` | `DaVinci Resolve Studio` |
+| `resolve.GetVersionString()` | `21.2.0.5` |
+
+Two more Studio-only facts that bite later: multi-frame random access for OFX
+plugins (§2.6) and, per the SDK, the AI/Extras-backed functions.
+
+### 14.2 Where the pieces are on Windows
+
+| Piece | Default location |
+|---|---|
+| `Resolve.exe` | `C:\Program Files\Blackmagic Design\DaVinci Resolve\` |
+| `fusionscript.dll` | beside `Resolve.exe` - **not** in the SDK folder |
+| SDK module | `%PROGRAMDATA%\Blackmagic Design\DaVinci Resolve\Support\Developer\Scripting\Modules\DaVinciResolveScript.py` |
+| Type stubs and README | the parent of `Modules` (`DaVinciResolveScript.pyi`, `CHANGELOG.md`) |
+| OFX scan directory | `C:\Program Files\Common Files\OFX\Plugins` |
+| OFX cache | `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\OFXPluginCacheV2.xml` |
+| Host log | `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\logs\ResolveDebug.txt` |
+| Project library | `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Resolve Project Library` |
+
+The install path is the one thing that is never the same twice. On the machine
+that produced these numbers Resolve sat on `E:`, the SDK sat on `C:`, and neither
+the registry (`HKCU\Software\Blackmagic Design\DaVinci Resolve` does not exist)
+nor `where Resolve.exe` found it - `%PATH%` has no entry either. What worked was
+looking for `<drive>:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe`
+on each drive. The SDK module's own fallback is hard-coded to `C:\Program
+Files\...`, which is why 14.3 exists.
+
+### 14.3 Environment: three variables, one of them optional in theory only
+
+| Variable | Value | Why |
+|---|---|---|
+| `RESOLVE_SCRIPT_API` | the `Scripting` directory (parent of `Modules`) | where `DaVinciResolveScript` is imported from; the module does not find itself |
+| `RESOLVE_SCRIPT_LIB` | `<install>\fusionscript.dll` | **mandatory when Resolve is not on `C:`** - see below |
+| `PYTHONPATH` | `%RESOLVE_SCRIPT_API%\Modules` | convenience; `sys.path.insert` does the same |
+
+Without `RESOLVE_SCRIPT_LIB` on a non-`C:` install the import fails even though
+the module is found, with `ImportError: DLL load failed while importing
+fusionscript: Das angegebene Modul wurde nicht gefunden.` (the message is
+localised; on an English system it reads "The specified module could not be
+found"). The reason is in `DaVinciResolveScript.py`: it tries `import
+fusionscript`, then `RESOLVE_SCRIPT_LIB`, then a hard-coded
+`C:\Program Files\Blackmagic Design\DaVinci Resolve\fusionscript.dll`. Deriving
+the path from the executable's directory is what `resolve_api.library_path()`
+does, and it removes a variable the caller would otherwise have to get right.
+
+Python must be **64-bit** and 3.6 or newer; 3.10.6 worked. The `python3` that a
+fresh Windows shell may resolve to can be a Store stub that prints an advert and
+exits 0 - check the interpreter, not just the exit code.
+
+### 14.4 Launch and connect
+
+```python
+process = subprocess.Popen([exe, "-nogui"], cwd=str(Path(exe).parent))
+# then poll: dvr.scriptapp("Resolve") until it returns an object
+```
+
+- `-nogui` is documented as "the user interface is disabled, the various scripting
+  APIs will continue to work as expected", and that held: 18.2 s from launch to a
+  live `scriptapp` on this machine, with a project open and `GetProjectManager()`
+  answering.
+- `scriptapp` returns `None` while the host is down and an object once it is up.
+  If Resolve is **already running**, the call attaches to that instance instead of
+  starting another - convenient for iterating, and a reason to check for a
+  running host before launching one.
+- Poll, do not sleep a fixed amount: cold start varies with the project library.
+  `resolve_api.connect()` polls every 2 s against a deadline and reports the last
+  error it saw.
+- `-nogui` ran here in an interactive desktop session with a display attached to
+  the GPU. Whether it works from a service session, a scheduled task with no
+  desktop, or a machine without a display is **not** measured.
+
+### 14.5 Install the bundle before the host starts, then prove the host saw it
+
+Resolve scans `C:\Program Files\Common Files\OFX\Plugins` at startup and records
+what it found in `OFXPluginCacheV2.xml`. Three consequences:
+
+1. **Copy the bundle before launching.** A bundle that appears afterwards is not
+   in the list until the next start.
+2. **The `.ofx` is locked while the host runs.** Replacing the bundle under a
+   live Resolve fails with `PermissionError: [WinError 5]`; quit first.
+3. **The load is in the host's log**, which is the cheapest proof that a bundle
+   was seen at all: `ResolveDebug.txt` carries
+   `OpenFX | OFX: loading com.ofxplugindeveloper.referencegain`.
+
+A plugin that crashed once is blacklisted and silently skipped (§2.5): delete the
+cache with the host closed, then look again.
+
+### 14.6 Build the project through the API (this is what removes the `.drp`)
+
+```python
+manager, project = resolve_api.new_project(resolve, "poc")
+resolve_api.set_timeline_size(project, 1920, 1080)          # a new project is 3840x2160
+pool = project.GetMediaPool()
+item = pool.ImportMedia([str(still.resolve())])[0]          # list of absolute strings
+pool.CreateTimelineFromClips("poc", [{"mediaPoolItem": item}])
+effect = timeline.GetItemListInTrack("video", 1)[0].AddEffect("ofx", effect_id)
+```
+
+- `ImportMedia` takes a **list of paths**, not a list of `{"FilePath": ...}`
+dicts: the dict form answered `0` items on 21.2 while the string form answered 1.
+- Paths must be **absolute**. A relative still imports and then fails at render
+  time with `Failed (Full resolution media not found for source.png at
+  01:00:00:00.)`.
+- `AddEffect` takes the id the host lists, **not** the OFX identifier. Ask for it:
+  `GetEffectsList()` returns dicts like
+  `{"id": "Open FX/OFX Plugin Developer/Reference Gain", "category": "ofx", "name": "Reference Gain"}`
+  - 225 entries on this machine, built-ins and third-party together. The id is
+  `Open FX/<Grouping>/<Name>`, so match on `name` and take `id` from the same
+  entry.
+- `timelineItem.GetEffects("ofx")` then reports the applied effect, which is the
+  assertion worth making before a render.
+
+### 14.7 Render one frame, and what the settings are called
+
+```python
+project.SetCurrentRenderFormatAndCodec("png", "RGB8")
+project.SetRenderSettings({"TargetDir": str(out.resolve()), "CustomName": "poc",
+                            "SelectAllFrames": False, "MarkIn": 1, "MarkOut": 1,
+                            "FormatWidth": 1920, "FormatHeight": 1080})
+job = project.AddRenderJob()
+project.StartRendering([job], isInteractiveMode=False)
+while project.IsRenderingInProgress():
+    time.sleep(2)
+status = project.GetRenderJobStatus(job)
+```
+
+- The codec argument is the **internal name** `RGB8`, not the menu label
+  "RGB 8 bits": the label is refused (`False`, format stays `mov`).
+  `GetRenderCodecs("png")` returns `{"RGB 16 bits": "RGB16", "RGB 8 bits": "RGB8"}`,
+  so the value is the second half of each pair.
+- `TargetDir` must be **absolute**: a relative path that exists makes
+  `SetRenderSettings` answer `True` and `AddRenderJob` return an empty id.
+- A new project is **3840x2160**, so a 1920x1080 still is rendered scaled up
+  unless the timeline resolution is set (14.6) or `FormatWidth`/`FormatHeight`
+  say otherwise.
+- `GetRenderJobStatus` returns a dict - `JobStatus`, `CompletionPercentage`,
+  `TimeTakenToRenderInMs`, and `Error` on failure - or a plain string when the
+  call itself fails. One 1920x1080 PNG took 750 ms; `JobStatus` was `Complete`.
+- The file is named after the **timeline's** frame number, not 1: the run wrote
+  `poc00108000.png` for its single frame. Do not assume `<name>00000001.png`.
+- `Complete` is a claim about the job, not about the file; `output_files.py` is
+  the rule that decides which file counts (and fails a run that wrote none).
+
+### 14.8 Tear down without leaving a host behind
+
+```python
+manager.CloseProject(project)     # a loaded project cannot be deleted
+manager.DeleteProject(name)
+resolve.Quit()                    # then wait for the pid, terminate, kill
+```
+
+`DeleteProject` returns `False` for the project that is currently loaded, which
+reads like a permissions problem and is not one. After `Quit()` the process took
+about 14 s to exit here; the harness waits, then terminates, then kills, and
+asserts that no process is left.
+
+### 14.9 The traps, as a table
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ImportError: DLL load failed while importing fusionscript` | module fell back to `C:\Program Files\...` | set `RESOLVE_SCRIPT_LIB`, or derive it from the executable |
+| `connect` times out, `scriptapp` stays `None` | host not up, or a **free** install (no listener), or External scripting is `None` | wait for the host; use Studio; set the preference to `Local` |
+| `GetEffectsList()` has no entry for the bundle | bundle copied after startup, or the plugin is blacklisted | install first; clear the cache with the host closed |
+| `AddEffect` returns `None` | wrong id (OFX identifier instead of the listed id), or not scanned | take `id` from `GetEffectsList()` |
+| `ImportMedia` returns 0 items | list of dicts, or a path the host cannot resolve | list of absolute strings |
+| `AddRenderJob` returns `""` | relative `TargetDir` | absolute path |
+| job `Failed (Full resolution media not found ...)` | relative import path | absolute import path |
+| PNG comes out 3840x2160 | new-project default resolution | set the timeline size, or `FormatWidth`/`FormatHeight` |
+| format call returns `False` | `"RGB 8 bits"` label | `"RGB8"` |
+| `DeleteProject` returns `False` | project still loaded | `CloseProject` first |
+| `PermissionError: [WinError 5]` on the bundle | `.ofx` locked by a running host | quit Resolve before replacing it |
+| rendered pixels identical to the source | plug-in is identity at its default gain | expected, not a failure - see 14.10 |
+
+### 14.10 What a green run does not prove
+
+The run's frame was pixel-identical to its source (`mae 0.0`, `max 0`), and that is
+the correct result rather than a pass. This plug-in returns `isIdentity()` at its
+default gain of 1.0, so the host may skip `render()` entirely - and the scripting
+API cannot set an OFX parameter at all. `Effect` exposes `GetInfo`,
+`GetIsEnabled`, `SetIsEnabled`, `GetFusionComp`, `GetIndex` and `SetIndex`, and
+nothing else; `GetInfo()` returns `id`, `name` and `category`. There is no
+`SetParameter` on 21.2 and none in the shipped `.pyi`.
+
+So a run like this verifies the **host path** - scan, list, instantiate, apply,
+queue, `Complete`, decode - and not the pixel maths. A host-side proof of
+`render()` needs one of two things, and neither exists in this repository yet:
+
+- a project with the parameter set to a non-default value, which needs one GUI
+  step or a `.drp` authored elsewhere, or
+- an effect whose default is not identity, so the host cannot skip it.
+
+Either one turns `mae 0.0` into a measurement; until then the harness in
+`testkit/` remains the instrument for the kernel.
+
+### 14.11 The shortest reusable recipe
+
+`tests/resolve/poc.py --build-project` is the whole sequence as one command, and
+`tests/resolve/resolve_api.py` is the same sequence as functions with the
+measured caveats in their docstrings. Copy the second, not the first: the script
+owns argument parsing and the report, the module owns the calls.
+
 ## Provenance labels
 
 **[V]** verified in this repository — a command ran here and its output is in
 `evidence/`. **[I]** inferred from a header or a document, not demonstrated.
 **[B]** external evidence: Blackmagic's own README and release notes, or a
-third-party project that measured it. This document contains no **[V]** — every
-statement in it is external or inferred, and the milestone in §9 is what would
-produce the first.
+third-party project that measured it. §14 is **[V]** (the 2026-11-25 run); the
+rest of this document is external or inferred, and §12 says which parts are
+still inferences.

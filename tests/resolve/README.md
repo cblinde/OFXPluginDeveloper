@@ -14,6 +14,11 @@ The `.drp` the design assumed turned out not to be necessary: the scripting API
 can import a still, cut a timeline and attach an OFX effect itself. What is still
 not proved is one paragraph down, and it matters more than the pass.
 
+The reusable form of all of it - where the host and the SDK live, the three
+environment variables, launch and connect, every API call with its measured
+caveat, and a table of the traps - is
+[`references/resolve-automation.md`](../../references/resolve-automation.md) §14.
+
 ## What runs anywhere
 
 ```bash
