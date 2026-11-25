@@ -17,6 +17,8 @@ import sys
 import time
 from pathlib import Path
 
+import output_files
+
 
 class NotRun(RuntimeError):
     """The step needs a host this machine does not have."""
@@ -81,7 +83,10 @@ def render_one_frame(project, output_directory, custom_name, timeout):
     out = Path(output_directory)
     out.mkdir(parents=True, exist_ok=True)
 
-    before = {path.name for path in out.glob(f"{custom_name}*")}
+    # The one part of this function that is tested: `output_files` decides what
+    # counts as this run's file, and `test_stale_file.py` proves that a run which
+    # writes nothing fails instead of grading the previous run's output.
+    before = output_files.snapshot(out, custom_name)
 
     settings = {"TargetDir": str(out), "CustomName": custom_name, "SelectAllFrames": True}
     if not project.SetRenderSettings(settings):           # NOT RUN
@@ -109,12 +114,7 @@ def render_one_frame(project, output_directory, custom_name, timeout):
     if status.get("JobStatus") != "Complete":
         raise RuntimeError(f"render failed: {status.get('JobStatus')} ({status.get('Error')})")
 
-    produced = [path for path in out.glob(f"{custom_name}*") if path.name not in before]
-    if not produced:
-        raise RuntimeError(f"job Complete but it wrote nothing new in {out}")
-    newest = max(produced, key=lambda path: path.stat().st_mtime)
-    if newest.stat().st_size == 0:
-        raise RuntimeError(f"job Complete but {newest.name} is empty")
+    newest = output_files.newest_new_file(out, custom_name, before)
 
     return {"job": job_id, "file": str(newest), "status": status}
 

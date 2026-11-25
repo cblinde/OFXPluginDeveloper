@@ -17,6 +17,7 @@ steps as `not-run` rather than pretending.
 python tests/resolve/poc.py --bundle build/bundle/Name.ofx.bundle --plan
 python tests/resolve/poc.py --bundle build/bundle/Name.ofx.bundle --plan --expect 1920x1080
 python tests/resolve/checks.py          # the pixel checks, with their self-test
+python tests/resolve/test_stale_file.py # two runs in one directory, the second must fail
 ```
 
 `--plan` validates everything that needs no host - the bundle layout
@@ -27,6 +28,12 @@ writes. Its exit code is 2 when a path is wrong.
 `checks.py` is pure Python on bytes and has nine cases of its own; the self-test
 fails when the checks stop catching a uniform frame, a black frame, a wrong size,
 a wrong channel count or a reference that differs by one pixel.
+
+`test_stale_file.py` covers the rule `output_files.py` owns: a render is credited
+with the file that appeared after the directory was snapshotted, so a second run
+in the same directory that writes nothing is a failure rather than a pass on the
+first run's output. It stands in for the host by writing files; nothing about the
+OFX path is simulated.
 
 ## What needs a machine with Resolve Studio
 
