@@ -1,6 +1,12 @@
 # ONNX inference template: Windows build and full test suite.
 #
-# Command: ONNXRUNTIME_ROOT=C:/Tools/onnxruntime-win-x64-1.20.1 ./run-tests.sh
+# Command: CI=true ONNXRUNTIME_ROOT=C:/Tools/onnxruntime-win-x64-1.20.1 ./run-tests.sh
+#   CI=true is what makes this the CI scenario rather than a local run: a CI
+#   run without ONNXRUNTIME_ROOT fails instead of skipping the template, which
+#   is the gate .github/workflows/docs.yml relies on. Nothing in the section
+#   below branches on CI - it changes the summary and the skip handling, not a
+#   single check - but a reader reproducing this run needs the variable to get
+#   the same summary and the same exit code.
 # ONNX Runtime: 1.20.1, CPU package (Microsoft.ML.OnnxRuntime via NuGet),
 #   include/onnxruntime_cxx_api.h + bin/onnxruntime.dll + lib/onnxruntime.lib.
 # Machine: Windows 11 (10.0.26300), RTX 3060 (sm_86, driver 621.24),
