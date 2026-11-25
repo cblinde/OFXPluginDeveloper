@@ -18,21 +18,16 @@ jobs:
       - name: Documentation drift
         run: python3 tools/check-docs.py
 
-      - name: glibc bound self-test
-        # The bound is a version comparison, and it can regress while every
-        # template stays unchanged - the damage then appears on a platform that
-        # cannot load the bundle. The self-test feeds a canned readelf, so it
-        # needs no binutils and costs a second: a pull request fails here in
-        # seconds instead of after three template builds. run-tests.sh runs it as
-        # well, for the runs that never reach CI.
-        run: bash tools/check-glibc.sh --max 2.17 --selftest
-
-      - name: halo value check
-        # The committed model carries the tile overlap that was measured for it.
-        # Replacing the model without re-measuring leaves a number describing the
-        # old file, and nothing else in the tree would notice. Hashes the model
-        # and reads the JSON: no compiler, no ONNX Runtime.
-        run: tools/measure-halo.sh templates/onnx-inference-ofx/models/test_conv.onnx --check
+      - name: Tool self-tests
+        # Both are a tool's own check, both cost a second, and neither needs
+        # binutils, a compiler or a harness: the first feeds a canned readelf and
+        # fails when the version comparison stops refusing a bound that is one
+        # step too low, the second hashes the committed model and reads the JSON
+        # beside it, so a model replaced without re-measuring cannot pass.
+        # run-tests.sh runs the same two, for the runs that never reach CI.
+        run: |
+          bash tools/check-glibc.sh --max 2.17 --selftest
+          tools/measure-halo.sh templates/onnx-inference-ofx/models/test_conv.onnx --check
 
       - name: Script syntax
         run: |

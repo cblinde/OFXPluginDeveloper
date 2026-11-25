@@ -149,13 +149,34 @@ report_skipped_gpu() {
   echo "------------------------------------------------------------------"
 }
 
-# The fixture self-test is the one stage that needs Python packages. Its
-# dependencies are the tool's own - `onnx` to write the models, plus onnxruntime
-# and numpy to load them back - so the stage is a direct call and its exit code
-# decides. The single gate is a missing `onnx`, which would otherwise end the run
-# on an import traceback; a machine that can write the models but not load them
-# has the tool's `--no-self-test` for that.
-run_test_fixtures() {
+# The self-tests every route runs: five checks of a tool or a module, none of
+# which needs a host, a GPU or a C compiler. The halo check hashes a file, the
+# glibc one feeds a canned readelf, the Resolve ones are plain Python, and the
+# fixture self-test needs one package. Written once, because both routes run the
+# same list.
+run_tool_self_tests() {
+  echo
+  echo "== halo value: the stored overlap must still belong to this model =="
+  "${ROOT}/tools/measure-halo.sh" \
+    "${ROOT}/templates/onnx-inference-ofx/models/test_conv.onnx" --check
+
+  # A comparison can regress while every template stays unchanged, so the tool
+  # that compares glibc versions is shown failing before it is credited.
+  echo
+  echo "== glibc bound self-test: the comparison must fail on a bound that is too low =="
+  "${ROOT}/tools/check-glibc.sh" --max 2.17 --selftest
+
+  # The Resolve suite needs a host; its two host-free halves do not.
+  echo
+  echo "== resolve pixel checks: a uniform, black or wrong-sized frame must fail =="
+  "${documentation_python}" "${ROOT}/tests/resolve/checks.py"
+  echo
+  echo "== resolve stale-file test: a second run in one directory must not pass =="
+  "${documentation_python}" "${ROOT}/tests/resolve/test_stale_file.py"
+
+  # Writing the fixtures and loading them back is a test of the tool. `onnx` is
+  # the one package gate - without it the call ends in an import traceback - and
+  # past that the tool's exit code is the verdict.
   echo
   if ! "${documentation_python}" -c 'import onnx' >/dev/null 2>&1; then
     echo "== test fixtures (skipped: the onnx package is not installed)"
@@ -167,7 +188,11 @@ run_test_fixtures() {
   fixtures="ran"
 }
 
-summary_fixtures() {
+summary_tool_tests() {
+  echo "  halo value check                (models/test_conv.onnx)"
+  echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
+  echo "  resolve pixel checks            (tests/resolve/checks.py)"
+  echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
   if [[ "${fixtures}" == "ran" ]]; then
     echo "  test fixtures                   (tools/make-testmodels.py)"
   else
@@ -235,34 +260,7 @@ if [[ "${windows}" == "1" ]]; then
   echo "== negative controls: broken plug-ins must fail, the pattern must pass =="
   cmd //c "$(cygpath -w "${ROOT}/testkit/run-negative-controls.bat")"
 
-  # The committed model carries the overlap that was measured for it; a model
-  # replaced without re-measuring is exactly the drift this check is for. It
-  # hashes the model and reads the JSON, so it needs no compiler, no ONNX
-  # Runtime and no GPU - only sha256sum, which Git Bash has.
-  echo
-  echo "== halo value: the stored overlap must still belong to this model =="
-  "${ROOT}/tools/measure-halo.sh" \
-    "${ROOT}/templates/onnx-inference-ofx/models/test_conv.onnx" --check
-
-  # The glibc bound is a version comparison, and a comparison can regress while
-  # every template stays unchanged. Its self-test feeds a canned readelf, so it
-  # needs neither binutils nor an ELF binary - which is why it runs on this route
-  # too, unlike the suites above.
-  echo
-  echo "== glibc bound self-test: the comparison must fail on a bound that is too low =="
-  "${ROOT}/tools/check-glibc.sh" --max 2.17 --selftest
-
-  # The Resolve suite cannot run without a host, but its two host-free halves can:
-  # the pixel checks and the stale-render rule. Without these they would only run
-  # when someone remembered, and both are the kind of logic that rots silently.
-  echo
-  echo "== resolve pixel checks: a uniform, black or wrong-sized frame must fail =="
-  "${documentation_python}" "${ROOT}/tests/resolve/checks.py"
-  echo
-  echo "== resolve stale-file test: a second run in one directory must not pass =="
-  "${documentation_python}" "${ROOT}/tests/resolve/test_stale_file.py"
-
-  run_test_fixtures
+  run_tool_self_tests
 
   echo
   echo "== comparator self-test: the golden comparison must fail on a corrupt reference =="
@@ -280,11 +278,7 @@ if [[ "${windows}" == "1" ]]; then
     echo "  NOT RUN: GPU kernels            (${gpu_mode})"
   fi
   echo "  negative controls               (testkit/run-negative-controls.bat)"
-  echo "  halo value check                (models/test_conv.onnx)"
-  echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
-  echo "  resolve pixel checks            (tests/resolve/checks.py)"
-  echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
-  summary_fixtures
+  summary_tool_tests
   echo "  comparator self-test            (testkit/selftest-compare.bat)"
   if [[ "${onnx}" == "0" ]]; then
     echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
@@ -347,31 +341,7 @@ else
   negative_controls="skipped"
 fi
 
-# The overlap stored beside the committed model is a measurement, and a model
-# replaced without re-measuring leaves a number that describes the old file. The
-# check hashes the model and reads the JSON: no compiler, no ONNX Runtime.
-echo
-echo "== halo value: the stored overlap must still belong to this model =="
-"${ROOT}/tools/measure-halo.sh" \
-  "${ROOT}/templates/onnx-inference-ofx/models/test_conv.onnx" --check
-
-# The glibc bound is a comparison too, and it can regress without any template
-# changing. It is a tool the release depends on, so it gets the same treatment as
-# the comparator: shown failing before it is credited with passing.
-echo
-echo "== glibc bound self-test: the comparison must fail on a bound that is too low =="
-"${ROOT}/tools/check-glibc.sh" --max 2.17 --selftest
-
-# Same for the Resolve suite: the host half cannot run here, the two host-free
-# halves must. They are plain Python on bytes and on the filesystem.
-echo
-echo "== resolve pixel checks: a uniform, black or wrong-sized frame must fail =="
-"${documentation_python}" "${ROOT}/tests/resolve/checks.py"
-echo
-echo "== resolve stale-file test: a second run in one directory must not pass =="
-"${documentation_python}" "${ROOT}/tests/resolve/test_stale_file.py"
-
-run_test_fixtures
+run_tool_self_tests
 
 # The comparator's own test: the suites trust it, so it has to be shown failing
 # on a corrupt reference before it is credited with passing a good one.
@@ -384,11 +354,7 @@ echo "=================================================================="
 summary_headline
 echo "  docs drift check                (tools/check-docs.py)"
 echo "  comparator self-test            (testkit/selftest-compare.sh)"
-echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
-echo "  resolve pixel checks            (tests/resolve/checks.py)"
-echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
-echo "  halo value check                (models/test_conv.onnx)"
-summary_fixtures
+summary_tool_tests
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
