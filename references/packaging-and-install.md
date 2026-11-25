@@ -82,6 +82,71 @@ message. Two host-facing facts:
   second **[B]**; a later provider that does import it needs the sidecar shape
   instead (`ai-architectures-and-runtimes.md` §2).
 
+**Bundling NVIDIA's libraries is a redistribution, not a build detail.**
+`-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` copies four things that are not ONNX
+Runtime's and not this repository's: **cuDNN 9**, **cuBLAS/cuBLASLt**, **cuFFT**
+and the **CUDA runtime (cudart)**. Measured on the 1.32.0 bundle: 16 files,
+1540 MB, of which ONNX Runtime contributes exactly two - the provider and
+`onnxruntime_providers_shared` (**[V]**, the bundle row in
+[`testing-layers.md`](testing-layers.md) §13 and its evidence log). ONNX
+Runtime's GPU package **does not ship** cuDNN, cuBLAS, cuFFT or cudart at all:
+those come from NVIDIA's redistributables, which is why the
+build takes `-DOFXPLUGIN_CUDA_RUNTIME_DIRS` and why the missing-file warnings
+name them one by one. A bundle built this way therefore carries **two licences
+with different owners** - ONNX Runtime's MIT and NVIDIA's EULA - and the build
+copies **no licence text with either**.
+
+What NVIDIA's terms actually grant (**[B]**, the two agreements, not a lawyer's
+reading):
+
+| Document | What it says about this bundle |
+|---|---|
+| [CUDA Toolkit EULA](https://docs.nvidia.com/cuda/eula/index.html) | grants the right to *"distribute those portions of the SDK that are identified in this Agreement as distributable, as incorporated in object code format into a software application"*, and lists the redistributable files in its Attachment A - `cudart`, `cublas`, `cublasLt`, `cufft` are in it |
+| Distribution requirements, same document | the application *"must have material additional functionality, beyond the included portions of the SDK"*; the distributable portions *"shall only be accessed by your application"*; and the terms you distribute under must be consistent with the EULA and protect NVIDIA's IP |
+| [cuDNN SLA](https://docs.nvidia.com/deeplearning/cudnn/latest/reference/eula.html) | same shape, naming the libraries explicitly: *"the following portions of the SDK are distributable under the Agreement: the runtime files .so and .dll"* |
+
+Three consequences for whoever ships such a bundle:
+
+- **The plug-in has to be the application, and the host is the process.** "Material
+  additional functionality" is about what the end user gets, not about the file
+  count: a bundle that is only NVIDIA's runtime plus a passthrough would not meet
+  it, and an effect that computes something is exactly the case the grant exists
+  for. The requirement that the distributable portions *"shall only be accessed by
+  your application"* is the one a host complicates - the DLLs sit inside the host's
+  process and the host may load its own copy first, which is the collision case the
+  bullets above describe. That is an argument for
+  `-DOFXPLUGIN_CUDA_FROM_HOST=ON` beyond size.
+- **The notice NVIDIA asks for is narrower than people assume.** The quoted EULA
+  notice - *"This software contains source code provided by NVIDIA Corporation."* -
+  is required for modifications and derivative works of **sample source code**.
+  Redistributing the runtime DLLs unmodified is covered by the distribution grant
+  above, not by that sentence. Copying the EULA into the bundle is the safe habit
+  and the one to follow; claiming the sentence itself is mandatory would be wrong.
+- **Version pinning becomes a licence fact.** Replacing `cudnn64_9.dll` with the
+  host's cuDNN 9.x changes which vendor build the user runs; a bundle that pins
+  its own is reproducible, and the EULA's consistency requirement is what makes
+  the pinning worth stating in the release notes rather than in a build script.
+
+None of this is in the OFX specification, which says nothing about licences,
+signing or redistribution - the loader is the operating system and the terms come
+from the vendor (**[I]**, from the spec reading in §1). What this repository does
+and does not do:
+
+- `THIRD_PARTY_NOTICES.md` names ONNX Runtime's MIT obligation and, since this
+  section existed without it, the CUDA row there said the bundle never carries a
+  CUDA runtime - true for the templates before the provider bundle, false for
+  every `BUNDLE_CUDA_PROVIDER=ON` build. The row now states both cases.
+- **The build copies no licence file.** `_cuda_files` in
+  `templates/onnx-inference-ofx/CMakeLists.txt` is a list of DLLs and `.so` files;
+  nothing in it is a `LICENSE`, `EULA` or `THIRD_PARTY` text. If you ship this
+  bundle, add the two licence texts beside the binaries (a `Resources/`
+  subdirectory the host never loads is the natural place) and record the four
+  library versions in the release notes - the build log prints the file count and
+  size, not the versions.
+- **Nothing here has been reviewed by a lawyer, and no NVIDIA redistribution
+  agreement beyond the public EULA exists in this repository.** The table above is
+  a summary of two public documents with links, not advice.
+
 **One thread budget per node.** An inference plug-in may hold several sessions
 inside a host that holds several instances of the node. Build every session
 through one `MakeSessionOptions(threads)` helper, make the intra-op count a
