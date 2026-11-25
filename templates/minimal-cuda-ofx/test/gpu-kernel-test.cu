@@ -360,6 +360,11 @@ void runGeometryCases()
     runCase("base+4 32x16", 32, 16, 0, 0, 0, 0, 0, 4, 4, false, false);
     // Window offset inside the image bounds (Plugin.cpp's origin arithmetic).
     runCase("window offset 40x24", 40, 24, 5, 3, 0, 0, 0, 0, 0, true, false);
+    // A negative rowBytes is legal for CPU images only (ofxImageEffect.h line
+    // 1350 excludes CUDA/Metal/OpenCL buffers), so the two cases below are not a
+    // host configuration a conforming host can hand over: they exercise the
+    // launcher's signed arithmetic on device memory. A device buffer with a
+    // negative stride is a host defect, not an input to support.
     // Negative pitch, multiple of 16 -> vec4 (flipped image).
     runCase("negative pitch 48x32", 48, 32, 0, 0, 0, -(48 + 2) * 16LL, -(48 + 2) * 16LL, 0, 0,
             true, false);

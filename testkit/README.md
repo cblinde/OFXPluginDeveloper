@@ -225,7 +225,7 @@ combinations are buildable and in-buffer:
 | Layout | memory | `img->data` | stride | a real host? |
 | --- | --- | --- | --- | --- |
 | Bottom + positive (**default**) | bottom-first | row of `y1` | + | yes — Resolve |
-| Bottom + negative | top-first | row of `y1` | − | yes |
+| Bottom + negative | top-first | row of `y1` | − | yes for CPU images; `ofxImageEffect.h` line 1350 excludes CUDA/Metal/OpenCL buffers |
 | Top + positive | top-first | row of `y2-1` | + | no: the pointer is the frame's top, `bounds` says `y1` |
 | Top + negative | bottom-first | row of `y2-1` | − | no, same lie |
 

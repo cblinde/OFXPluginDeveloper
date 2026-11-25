@@ -87,7 +87,7 @@ Stated plainly, because a checklist that overclaims is worse than none:
 | # | Question | Settled by | How to confirm |
 |---|---|---|---|
 | B1 | Is every pixel address computed from `kOfxImagePropRowBytes`, never from `width * components * sizeof(float)`? | `ofxImageEffect.h` lines 1347-1348: "This property indicates the number of bytes in a row of pixels. This will be at least `sizeof(PIXEL) * (bounds.x2-bounds.x1)`." | `grep -n "rowBytes\|getRowBytes" src/` — and then look for any `y * w * 4`-shaped expression next to it. |
-| B2 | Do you handle a **negative** row bytes? | `ofxImageEffect.h` line 1350: "row bytes can be negative, which allows hosts with a native top down row order to pass image into OFX without having to repack pixels." | The template answers this by construction: signed 64-bit (`long long`) arithmetic in the launcher and a signed modulo in `IsVec4Addressable`, so a negative multiple of 16 still takes the vector path. The predicate table in `run-tests.sh` covers it. |
+| B2 | Do you handle a **negative** row bytes? | `ofxImageEffect.h` line 1350, in full: "Note that (for CPU images only, not CUDA/Metal/OpenCL Buffers, nor OpenGL textures accessed via the OpenGL Render Suite) row bytes can be negative, which allows hosts with a native top down row order to pass image into OFX without having to repack pixels." | CPU images: yes, by construction - signed 64-bit (`long long`) arithmetic in the launcher and a signed modulo in `IsVec4Addressable`, so a negative multiple of 16 still takes the vector path. CUDA/Metal/OpenCL buffers: the spec excludes them, so a negative stride there is a host defect rather than an input to support; the two device-side cases in `gpu-kernel-test.cu` prove the launcher's arithmetic, not a host configuration. |
 | B3 | If you touch OpenCL **Images**, do you avoid row-bytes arithmetic? | `ofxImageEffect.h` line 1351: "Row bytes is not supported for OpenCL Images." | If your OpenCL path is Buffers-only, say so in `describe()` and skip this; otherwise the access pattern has to come from the image, not a stride. |
 | B4 | Does your `(x, y) → address` mapping take the origin from `kOfxImagePropBounds` instead of assuming `(0, 0)`? | `ofxImageEffect.h` lines 1315-1321: "X values are x1 <= X < x2, Y values are y1 <= Y < y2"; for partial images the bounds are contained by the region of definition. | Render at a non-zero window origin. The harness does this for the kernels (`ox`, `oy` in the fixtures) but cannot do it for your host integration. |
 | B5 | Is the loop bound the render **window** while the addressing uses the **bounds**? | Same lines 1315-1321, plus the render action's `kOfxImageEffectPropRenderWindow` argument. | Two different rects, two different jobs: window says which pixels to write, bounds say where the image starts. Mixing them writes outside the destination. |
@@ -216,7 +216,10 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 - [ ] Identity path verified (no render when params are neutral).
 - [ ] Non-square PAR and odd resolutions tested.
 - [ ] `isEnabledCudaRender` false path tested (force OpenCL/CPU).
-- [ ] No `cudaDeviceSynchronize` anywhere: `grep -rn cudaDeviceSynchronize src/`.
+- [ ] No `cudaDeviceSynchronize` anywhere: `grep -rn cudaDeviceSynchronize src/`. The
+      supported form is a stream sync (`cudaStreamSynchronize` on the stream you
+      used, or nothing when the host supplied one); a device sync is a SHOULD NOT
+      with no case in this template.
 - [ ] Every error path logs and throws.
 - [ ] `./test/run-tests.sh` passes: predicate, kernel equivalence, CPU loop,
       concurrency, PTX counts, bundle hygiene.

@@ -42,12 +42,20 @@ crash with no stack trace.
    top-down view (`data + (h-1)*rowBytes`, negated stride) instead of scattering
    flips through the code. A **negative** stride is legal for CPU images only;
    `ofxImageEffect.h` excludes CUDA/Metal/OpenCL Buffers, and OpenCL Images have
-   no row bytes at all.
+   no row bytes at all. Handle it where it can occur and do not build a device
+   path around it: a CUDA buffer with a negative stride is a host defect, not an
+   input to support.
 4. **Honour the stream contract exactly.** Host stream present: enqueue on it and
-   return without waiting. No stream: enqueue on your own (or the default) stream
-   and **synchronise that stream before returning**. `cudaDeviceSynchronize()` is
-   forbidden at any time — it blocks every stream on the device, deadlocks against
-   hosts that submit from another thread, and destroys the host's pipelining.
+   return without waiting — the spec says the plug-in SHOULD NOT wait for
+   completion and SHOULD NOT call `cudaDeviceSynchronize()` at any time. No
+   stream: enqueue on your own (or the default) stream and **synchronise that
+   stream before returning**, because the host may read the pixels the moment
+   `render()` returns. `cudaDeviceSynchronize()` is the wrong tool in both modes:
+   it blocks every stream on the device, deadlocks against hosts that submit from
+   another thread, and destroys the host's pipelining. It is a SHOULD NOT, not a
+   prohibition — if you conclude a case needs it, name the property the host does
+   not set, say why a stream sync cannot replace it, and write that down beside
+   the call.
 5. **Never destroy, reset or free anything the host owns** — stream, command
    queue, context, or image buffers. You may only free what you allocated.
 6. **Never switch devices without restoring the previous one.** RAII immediately
@@ -206,7 +214,8 @@ runs and nobody notices, because the CPU path still produces a correct image.
 - `__restrict__` on both pointers; no atomics; no shared memory unless measured.
 - `dim3(16,16)` to start; grid rounded up.
 - `cudaGetLastError()` checked immediately after the launch.
-- No `cudaDeviceSynchronize()` anywhere.
+- No `cudaDeviceSynchronize()` in the kernel; the host wrapper synchronises the
+  stream it used (rule 4).
 
 ### Phase 6 — Build
 

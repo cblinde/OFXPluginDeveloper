@@ -1,6 +1,6 @@
 # CUDA streams, zero-copy and GPU memory ownership
 
-The stream contract in full, why cudaDeviceSynchronize is banned, what zero-copy actually means, and who owns GPU objects.
+The stream contract in full, why cudaDeviceSynchronize is the wrong call in both modes, what zero-copy actually means, and who owns GPU objects.
 
 <!-- ARCHITECTURE_AND_CUDA_PIPELINE.md lines 183-311 -->
 <!-- BEST_PRACTICES_AND_PERFORMANCE.md lines 402-422 -->
@@ -82,10 +82,10 @@ modes:
 
 | Host supplied a stream | Plugin behaviour |
 | --- | --- |
-| **Yes** | Enqueue on it. Return immediately. Do not sync. Do not call `cudaDeviceSynchronize()` — ever. |
+| **Yes** | Enqueue on it. Return immediately. Do not sync. Do not call `cudaDeviceSynchronize()` at any time — the quote above is a SHOULD NOT, and the host's stream is what makes waiting unnecessary. |
 | **No** | Enqueue on the default stream (or your own) and **synchronise that stream before returning**. |
 
-### Why `cudaDeviceSynchronize()` is banned
+### Why `cudaDeviceSynchronize()` is the wrong call in both modes
 
 It is not about performance. `cudaDeviceSynchronize()` blocks until *every*
 stream on the device is idle — including the host's own queued work for other
@@ -142,7 +142,7 @@ nvtxRangePop();
   `kOfxImageEffectPropCudaStreamSupported = "true"` **[S]**. The template
   advertises it and does not depend on it.
 - With a host stream: enqueue and return. The host orders its own work against
-  that stream, and the spec forbids waiting — *"the plug-in SHOULD NOT wait for
+  that stream, and the spec says not to wait — *"the plug-in SHOULD NOT wait for
   final asynchronous operations to complete… SHOULD NOT call
   cudaDeviceSynchronize() at any time"* **[S]**.
 - Without a stream: your work must be complete before `render` returns **[S]**.

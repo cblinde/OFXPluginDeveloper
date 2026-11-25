@@ -51,7 +51,7 @@ ARCHITECTURE_AND_CUDA_PIPELINE.md	Thread safety	references/ofx-lifecycle-and-thr
 ARCHITECTURE_AND_CUDA_PIPELINE.md	3. The GPU negotiation handshake	references/ofx-lifecycle-and-threads.md	
 ARCHITECTURE_AND_CUDA_PIPELINE.md	4. Zero copy: what it actually means	references/cuda-streams-and-memory.md	
 ARCHITECTURE_AND_CUDA_PIPELINE.md	5. Streams: the contract, in full	references/cuda-streams-and-memory.md	
-ARCHITECTURE_AND_CUDA_PIPELINE.md	Why `cudaDeviceSynchronize()` is banned	references/cuda-streams-and-memory.md	
+ARCHITECTURE_AND_CUDA_PIPELINE.md	Why `cudaDeviceSynchronize()` is banned	references/cuda-streams-and-memory.md	Why `cudaDeviceSynchronize()` is the wrong call in both modes
 ARCHITECTURE_AND_CUDA_PIPELINE.md	Why the sync in the no-stream case is mandatory	references/cuda-streams-and-memory.md	
 ARCHITECTURE_AND_CUDA_PIPELINE.md	Default stream pitfalls	references/cuda-streams-and-memory.md	
 ARCHITECTURE_AND_CUDA_PIPELINE.md	Ordering you get for free, and ordering you must not assume	references/cuda-streams-and-memory.md	
