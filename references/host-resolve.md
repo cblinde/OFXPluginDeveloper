@@ -175,9 +175,11 @@ change whether the device path is taken at all, so re-run the §1 table after on
 
 ### 2.10 What this template cannot do in Resolve
 
-A negative list, because a positive one hides the misses. No Resolve is installed
-on any machine here, so nothing below is a render: the host facts are **(B)**,
-and what they imply for this build is **(I)**.
+A negative list, because a positive one hides the misses. One Resolve Studio 21.2
+did run this bundle on 2026-11-25 (`tests/resolve/poc.py`, log in `evidence/`),
+and its frame is pixel-identical to its source because the plug-in is identity at
+its default gain - so the host facts below stay **(B)** and what they imply for
+this build stays **(I)**.
 
 - **The Resolve-like host shape is now a profile, not a gap.**
   `contract_test --host-profile resolve` presents `supportsTiles=0` and
@@ -200,9 +202,10 @@ and what they imply for this build is **(I)**.
 - **One input, no temporal access, no transition, no generator.** Four descriptor
   features the template does not declare, so a Resolve user looking for them in
   the effect's UI finds nothing ([`ofx-api-constants.md`](ofx-api-constants.md) §1.1).
-- **No render, no crash data.** Nothing has been rendered in Resolve, so the
-  blacklist behaviour in §2.5 and the GPU-mode switch in §2.2 are host facts to
-  design against, not observations of this plug-in.
+- **No render of the pixel path, no crash data.** The 2026-11-25 frame is a
+  pass-through, so `render()` never had to run; the blacklist behaviour in §2.5
+  and the GPU-mode switch in §2.2 stay host facts to design against, not
+  observations of this plug-in, and the CUDA path has never been offered to it.
 
 ---
 

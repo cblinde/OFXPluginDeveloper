@@ -1,20 +1,22 @@
-"""One frame through Resolve, end to end: the milestone, as a runnable scaffold.
+"""One frame through Resolve, end to end: the milestone, as a runnable script.
 
 The workflow is the one in `references/resolve-automation.md` section 9: validate
-the bundle, install it, launch `-nogui`, connect through the scripting API, load a
+the bundle, install it, launch `-nogui`, connect through the scripting API, open a
 prepared project, render one frame, decode it, check the pixels, quit, write a
 report.
 
-Two modes, and the difference matters:
+Three modes, and the difference matters:
 
 * `--plan` runs **everything that needs no host**: it validates the paths,
   inspects the bundle layout, asks which decoder is available and prints the step
   table with `ready` / `not-run`. It writes the same JSON report as a real run, so
   a machine without Resolve still produces a record of what it could and could
   not check.
-* without `--plan` it performs the real sequence and stops at the first step that
-  fails. Every step that needs Resolve stays `NOT RUN` in the report until it has
-  actually run somewhere.
+* `--build-project` performs the real sequence with a project the **host** makes:
+  one still image imported, a timeline, the OFX effect applied through
+  `AddEffect`, then one PNG frame. This is the mode that needs no `.drp`.
+* `--project some.drp` loads a prepared project instead, and needs the plug-in to
+  be applied in it already - which needs a hand-made `.drp` nobody has produced.
 
 A started Resolve is not a pass, and a `Complete` render job is not a pass: the
 pass condition is a decoded file whose size and pixels survive `checks.py`.
@@ -35,7 +37,7 @@ import resolve_api
 HERE = Path(__file__).resolve().parent
 REPORTS = HERE / "reports"
 
-STEPS = ("validate", "install", "launch", "connect", "load", "render", "check", "quit")
+STEPS = ("validate", "install", "launch", "connect", "load", "build", "render", "check", "quit")
 
 
 def stamp():
@@ -43,9 +45,9 @@ def stamp():
 
 
 def default_ofx_dir():
-    # NOT RUN: which directory Resolve scans for third-party OFX on Windows is a
-    # guess here. `--ofx-dir` is the argument that matters; this default exists
-    # so `--plan` has something to print.
+    # RUN: this is the directory Resolve 21.2 scans for third-party OFX, confirmed
+    # against the bundle paths in its own OFXPluginCacheV2.xml. `--ofx-dir` still
+    # wins, because the host may be configured differently.
     return Path("C:/Program Files/Common Files/OFX/Plugins")
 
 
@@ -70,15 +72,21 @@ def validate(args):
         if not found:
             problems.append(f"{bundle} has no Contents/<arch>/*.ofx")
 
-    if args.project:
+    if args.build_project:
+        source = Path(args.source)
+        facts["source"] = str(source)
+        facts["effect"] = args.effect
+        if not source.is_file():
+            problems.append(f"no still to build the timeline from at {source}")
+        if not args.effect:
+            problems.append("--effect is required with --build-project")
+    elif args.project:
         project = Path(args.project)
         facts["project"] = str(project)
         if not project.is_file():
             problems.append(f"no project at {project}")
         elif project.suffix.lower() != ".drp":
             problems.append(f"{project} is not a .drp")
-    elif not args.plan:
-        problems.append("--project is required for a real run")
 
     facts["decoders"] = decode.available_decoders()
     if not facts["decoders"]:
@@ -125,7 +133,9 @@ def step(report, name, status, detail="", seconds=None):
     if seconds is not None:
         entry["seconds"] = round(seconds, 2)
     report["steps"].append(entry)
-    print(f"  {name:<9} {status:<8} {detail}".rstrip())
+    # Flushed, because a redirected run that is interrupted must not lose the
+    # steps it already paid for: block buffering did exactly that once.
+    print(f"  {name:<9} {status:<8} {detail}".rstrip(), flush=True)
     return entry
 
 
@@ -141,7 +151,7 @@ def run(args, report):
          f"{len(facts['ofx'])} .ofx, decoders {facts['decoders']}", time.monotonic() - started)
 
     if args.plan:
-        for name in ("install", "launch", "connect", "load", "render", "quit"):
+        for name in ("install", "launch", "connect", "load", "build", "render", "quit"):
             step(report, name, "not-run", "needs a Resolve host; --plan stops here")
         step(report, "check", "ready", "decoder present; would run after the render")
         report["result"] = "not-run"
@@ -150,6 +160,10 @@ def run(args, report):
     process = None
     resolve = None
     installed = None
+    manager = None
+    project = None
+    project_name = None
+    render_size = None
     try:
         started = time.monotonic()
         installed = install(args.bundle, facts["ofx_dir"])
@@ -160,15 +174,35 @@ def run(args, report):
         step(report, "launch", "pass", f"pid {process.pid}", time.monotonic() - started)
 
         started = time.monotonic()
-        resolve = resolve_api.connect(timeout=args.timeout)
-        step(report, "connect", "pass", "scriptapp answered with a project open",
+        resolve = resolve_api.connect(timeout=args.timeout, executable=facts["resolve"])
+        step(report, "connect", "pass",
+             f"{resolve.GetProductName()} {resolve.GetVersionString()}",
              time.monotonic() - started)
 
-        started = time.monotonic()
-        project = resolve_api.load_project(resolve, args.project)
-        step(report, "load", "pass", Path(args.project).name, time.monotonic() - started)
+        if args.build_project:
+            started = time.monotonic()
+            project_name = args.timeline_name
+            manager, project = resolve_api.new_project(resolve, project_name)
+            still = decode.read_image(args.source)        # for its size, not its pixels
+            render_size = (still.width, still.height)
+            resolve_api.set_timeline_size(project, still.width, still.height)
+            effect_id = resolve_api.find_effect(resolve, args.effect)
+            timeline, item, effect = resolve_api.build_timeline(
+                project, Path(args.source), effect_id, args.timeline_name)
+            placed = effect.GetInfo() or {}
+            report["effect"] = {"id": effect_id, "applied": placed.get("name"),
+                                "on_item": len(item.GetEffects("ofx")),
+                                "timeline": timeline.GetName()}
+            step(report, "build", "pass",
+                 f"{project.GetName()}: {placed.get('name')} on {item.GetName()}",
+                 time.monotonic() - started)
+        elif args.project:
+            started = time.monotonic()
+            project = resolve_api.load_project(resolve, args.project)
+            step(report, "load", "pass", Path(args.project).name, time.monotonic() - started)
 
         started = time.monotonic()
+        resolve_api.set_png_output(project, args.out, "poc", mark=1, size=render_size)
         rendered = resolve_api.render_one_frame(project, args.out, "poc", args.timeout)
         step(report, "render", "pass", Path(rendered["file"]).name,
              time.monotonic() - started)
@@ -196,6 +230,8 @@ def run(args, report):
         return 1
     finally:
         started = time.monotonic()
+        if project is not None and manager is not None and project_name:
+            resolve_api.close_project(manager, project, project_name)
         resolve_api.quit_resolve(resolve, process)
         if installed is not None and not args.keep:
             shutil.rmtree(installed, ignore_errors=True)
@@ -217,7 +253,13 @@ def write_report(report, args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="one frame through Resolve")
     parser.add_argument("--bundle", required=True, help="the .ofx.bundle to install")
-    parser.add_argument("--project", help="the prepared .drp to load")
+    parser.add_argument("--project", help="a prepared .drp to load instead of building one")
+    parser.add_argument("--build-project", action="store_true",
+                        help="build the project, timeline and effect through the API")
+    parser.add_argument("--source", help="the still image --build-project imports")
+    parser.add_argument("--effect", help="the OFX menu name --build-project applies")
+    parser.add_argument("--timeline-name", default="poc",
+                        help="the project and timeline name --build-project creates")
     parser.add_argument("--ofx-dir", help="where the host scans for plug-ins")
     parser.add_argument("--resolve", help="path to Resolve.exe (default: $RESOLVE_EXE)")
     parser.add_argument("--out", default=str(REPORTS / "frames"), help="render target directory")
@@ -231,7 +273,7 @@ def main(argv=None):
         args.resolve = os.environ.get("RESOLVE_EXE")
 
     report = {"started": stamp(), "mode": "plan" if args.plan else "run", "steps": []}
-    print(f"resolve proof of concept ({report['mode']})")
+    print(f"resolve proof of concept ({report['mode']})", flush=True)
     result = run(args, report)
     report["result"] = report.get("result", "fail")
     write_report(report, args)

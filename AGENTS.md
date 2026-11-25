@@ -40,9 +40,9 @@ marks the template NOT VERIFIED) and `CPU_ONLY=1` without a CUDA toolkit.
 ## Hard rules
 
 1. **Never claim a host render is verified beyond what ran.** `NatronRenderer` has
-   rendered this template headless (`testkit/verify-bundle.bat`, 2026-11-24) — that
-   is the one host fact marked **[V]**. No Resolve, Nuke or SCRATCH exists here, and
-   their claims stay unverified.
+   rendered this template headless (`testkit/verify-bundle.bat`) and Resolve Studio
+   21.2 ran `tests/resolve/poc.py` (2026-11-25, both **[V]**); Resolve's frame is
+   identity at the default gain, so it proves the host path, not the kernel.
 2. **Claim nothing a compiler, `nm` or a test did not prove.** `[V]` means the
    command ran in this repository; `[I]` means inferred; `[B]` means external
    evidence. Labels are defined in `references/cmake-and-linking.md`.

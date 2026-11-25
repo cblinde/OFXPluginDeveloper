@@ -1,9 +1,9 @@
 """The part of the proof of concept that needs a running Resolve.
 
-**NOT RUN.** Nothing in this module has been executed: there is no Resolve, no
-Studio licence and no GPU on either machine this repository has been exercised
-on. Every call into `DaVinciResolveScript` is marked `# NOT RUN` because it was
-read out of the scripting documentation and never answered.
+Every call marked `# RUN` answered DaVinci Resolve Studio 21.2.0.5 on Windows on
+2026-11-25; every call marked `# NOT RUN` has still never been executed, and the
+one that matters is `load_project`, because a prepared `.drp` has never existed
+here. The run behind those markers is `evidence/2026-11-25-windows/resolve-poc.log`.
 
 The split is deliberate: `decode.py` and `checks.py` run anywhere, `poc.py`
 orchestrates both, and this file is the only place that can be wrong in a way no
@@ -25,34 +25,68 @@ class NotRun(RuntimeError):
 
 
 def scripting_api_dir():
-    # NOT RUN: the documented location is a %PROGRAMDATA% path, but the variable
-    # is what the README tells you to set, so trust the variable first.
-    return os.environ.get("RESOLVE_SCRIPT_API")
+    """Where `Modules/DaVinciResolveScript.py` lives.
+
+    RESOLVE_SCRIPT_API wins; the %PROGRAMDATA% path beside it is the fallback,
+    because that is where the installer puts the module (RUN: present on the
+    machine this ran on).
+    """
+    configured = os.environ.get("RESOLVE_SCRIPT_API")
+    if configured:
+        return configured
+    documented = Path(os.environ.get("PROGRAMDATA", r"C:\\ProgramData")) / \
+        "Blackmagic Design/DaVinci Resolve/Support/Developer/Scripting"
+    return str(documented) if documented.is_dir() else None
 
 
-def connect(timeout=120, poll=2.0):
+def library_path(executable=None):
+    """The `fusionscript.dll`/`.so` beside the host, when RESOLVE_SCRIPT_LIB is unset.
+
+    The module looks for the library under `C:\\Program Files\\...` on Windows, so
+    a Resolve installed on another drive fails with "DLL load failed ... module not
+    found" even though the module itself imported (RUN: that is what happened
+    here). Deriving the path from the executable removes a variable the caller
+    would otherwise have to get right.
+    """
+    configured = os.environ.get("RESOLVE_SCRIPT_LIB")
+    if configured:
+        return configured
+    for candidate in (executable, os.environ.get("RESOLVE_EXE")):
+        if not candidate:
+            continue
+        beside = Path(candidate).parent / ("fusionscript.dll" if os.name == "nt"
+                                          else "fusionscript.so")
+        if beside.is_file():
+            return str(beside)
+    return None
+
+
+def connect(timeout=120, poll=2.0, executable=None):
     """Return a Resolve object with a project open, or raise."""
     api_dir = scripting_api_dir()
     if not api_dir:
         raise NotRun("RESOLVE_SCRIPT_API is not set; see references/resolve-automation.md section 2")
+    library = library_path(executable)
+    if library:
+        os.environ["RESOLVE_SCRIPT_LIB"] = library
 
     modules = os.path.join(api_dir, "Modules")
     if modules not in sys.path:
         sys.path.insert(0, modules)
 
-    import DaVinciResolveScript as dvr  # NOT RUN: documented module name
+    import DaVinciResolveScript as dvr  # RUN: loads fusionscript.dll from RESOLVE_SCRIPT_LIB
 
     deadline = time.monotonic() + timeout
     last_error = None
     while time.monotonic() < deadline:
         try:
-            resolve = dvr.scriptapp("Resolve")   # NOT RUN: None until Resolve is up
+            resolve = dvr.scriptapp("Resolve")   # RUN: None until Resolve is up
         except Exception as error:
             last_error = error
             resolve = None
         if resolve:
-            manager = resolve.GetProjectManager()          # NOT RUN
-            if manager and manager.GetCurrentProject():    # NOT RUN
+            manager = resolve.GetProjectManager()          # RUN
+            if manager and manager.GetCurrentProject():    # RUN
                 return resolve
         time.sleep(poll)
     raise TimeoutError(f"no Resolve after {timeout}s (last error: {last_error})")
@@ -65,21 +99,124 @@ def launch(executable, nogui=True):
         raise NotRun(f"no Resolve executable at {executable}")
     arguments = [str(executable)]
     if nogui:
-        arguments.append("-nogui")   # NOT RUN: documented, unmeasured on Windows
+        arguments.append("-nogui")   # RUN: 18.2 s to a live scriptapp on Windows
     process = subprocess.Popen(arguments, cwd=str(executable.parent))
     return process
 
 
 def load_project(resolve, project_path):
-    manager = resolve.GetProjectManager()                 # NOT RUN
-    project = manager.LoadProject(str(project_path))      # NOT RUN
+    manager = resolve.GetProjectManager()                 # RUN
+    project = manager.LoadProject(str(project_path))      # NOT RUN: no .drp exists here
     if not project:
         raise RuntimeError(f"could not load project: {project_path}")
     return project
 
 
+def find_effect(resolve, name):
+    """The effects-list id for the OFX plug-in whose menu name is `name`.
+
+    `AddEffect` takes the id the host lists, which is not the OFX identifier:
+    for this bundle 21.2 lists `Open FX/OFX Plugin Developer/Reference Gain`,
+    while the plug-in calls itself `com.ofxplugindeveloper.referencegain`. Taking
+    the id from the host is also the proof that the bundle was scanned at all.
+    """
+    effects = resolve.GetEffectsList() or []              # RUN: 225 entries on 21.2
+    matches = [entry for entry in effects
+               if entry.get("category") == "ofx" and entry.get("name") == name]
+    if not matches:
+        raise RuntimeError(f"no OFX effect named {name!r} among {len(effects)} effects; "
+                           "is the bundle installed, and did the host scan it at startup?")
+    return matches[0]["id"]
+
+
+def new_project(resolve, name):
+    """Create an empty project; returns (manager, project)."""
+    manager = resolve.GetProjectManager()                 # RUN
+    project = manager.CreateProject(name)                 # RUN
+    if not project:
+        raise RuntimeError(f"CreateProject refused {name!r}; a project of that name exists")
+    return manager, project
+
+
+def build_timeline(project, source, effect_id, timeline_name="poc"):
+    """A one-clip timeline with the OFX effect on it, built through the API.
+
+    This is what removes the prepared `.drp` from the milestone: the host makes
+    the project, imports one still, appends it to a timeline and applies the
+    effect, all before a frame is rendered. `ImportMedia` takes a list of paths
+    and answers 0 items for a list of dicts (RUN: both forms tried on 21.2).
+    """
+    # Absolute, for the same reason as TargetDir: a relative path imports fine
+    # and then fails at render time with "Full resolution media not found".
+    source = Path(source).resolve()
+    pool = project.GetMediaPool()                         # RUN
+    imported = pool.ImportMedia([str(source)])            # RUN
+    if not imported:
+        raise RuntimeError(f"ImportMedia accepted no clip from {source}")
+    timeline = pool.CreateTimelineFromClips(              # RUN
+        timeline_name, [{"mediaPoolItem": imported[0]}])
+    if not timeline:
+        raise RuntimeError("CreateTimelineFromClips returned nothing")
+    items = timeline.GetItemListInTrack("video", 1)       # RUN
+    if not items:
+        raise RuntimeError("the new timeline has no video item")
+    effect = items[0].AddEffect("ofx", effect_id)         # RUN
+    if not effect:
+        raise RuntimeError(f"AddEffect refused {effect_id}")
+    return timeline, items[0], effect
+
+
+def set_timeline_size(project, width, height):
+    """Match the timeline to the source, so nothing is scaled on the way out.
+
+    A new project carries the host's own default resolution (3840x2160 on the
+    machine this ran on), and a 1920x1080 still in it is rendered scaled up
+    unless the timeline says otherwise (RUN: the first PNG came out 3840x2160).
+    """
+    return project.SetSettings({"timelineResolutionWidth": str(width),
+                                "timelineResolutionHeight": str(height)})   # RUN
+
+
+def set_png_output(project, output_directory, custom_name, mark=None, size=None):
+    """A single PNG frame, 8 bits per channel, named `custom_name`.
+
+    The codec argument is the internal name `RGB8`, not the menu label
+    "RGB 8 bits" (RUN: the label is refused, `("png", "RGB8")` is accepted).
+    The file name carries the timeline's own frame number rather than 1: the runs
+    here wrote `poc00108000.png` for the only frame rendered.
+    """
+    # Absolute, because the host resolves TargetDir against its own working
+    # directory, not the caller's: a relative path that exists here made
+    # SetRenderSettings answer True and AddRenderJob hand back an empty id.
+    out = Path(output_directory).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    if not project.SetCurrentRenderFormatAndCodec("png", "RGB8"):   # RUN
+        raise RuntimeError("the host refused the PNG / RGB8 render format")
+    settings = {"TargetDir": str(out), "CustomName": custom_name}
+    if size:
+        settings.update({"FormatWidth": size[0], "FormatHeight": size[1]})
+    if mark is None:
+        settings["SelectAllFrames"] = True
+    else:
+        settings.update({"SelectAllFrames": False, "MarkIn": mark, "MarkOut": mark})
+    if not project.SetRenderSettings(settings):            # RUN
+        raise RuntimeError("SetRenderSettings refused the map")
+    return out
+
+
+def close_project(manager, project, name):
+    """Close and delete a project this run created; False if either step failed."""
+    closed = manager.CloseProject(project)                # RUN
+    deleted = manager.DeleteProject(name)                 # RUN
+    return closed and deleted
+
+
 def render_one_frame(project, output_directory, custom_name, timeout):
-    """Queue one render, wait, and return the file it says it wrote."""
+    """Queue one render, wait, and return the file it says it wrote.
+
+    The render settings are `set_png_output`'s job; this function assumes the
+    directory is already configured.
+    """
     out = Path(output_directory)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -88,27 +225,23 @@ def render_one_frame(project, output_directory, custom_name, timeout):
     # writes nothing fails instead of grading the previous run's output.
     before = output_files.snapshot(out, custom_name)
 
-    settings = {"TargetDir": str(out), "CustomName": custom_name, "SelectAllFrames": True}
-    if not project.SetRenderSettings(settings):           # NOT RUN
-        raise RuntimeError("SetRenderSettings refused the map")
-
-    job_id = project.AddRenderJob()                       # NOT RUN: "" on failure
+    job_id = project.AddRenderJob()                       # RUN: "" on failure
     if not job_id:
         raise RuntimeError("AddRenderJob returned no job id")
 
-    if not project.StartRendering([job_id], isInteractiveMode=False):   # NOT RUN
+    if not project.StartRendering([job_id], isInteractiveMode=False):   # RUN
         raise RuntimeError("StartRendering refused the job")
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not project.IsRenderingInProgress():            # NOT RUN
+        if not project.IsRenderingInProgress():            # RUN
             break
         time.sleep(2)
     else:
-        project.StopRendering()                           # NOT RUN
+        project.StopRendering()                           # NOT RUN: no render timed out here
         raise TimeoutError(f"render {job_id} exceeded {timeout}s")
 
-    status = project.GetRenderJobStatus(job_id)           # NOT RUN: dict OR error string
+    status = project.GetRenderJobStatus(job_id)           # RUN: dict OR error string
     if not isinstance(status, dict):
         raise RuntimeError(f"GetRenderJobStatus returned a string: {status}")
     if status.get("JobStatus") != "Complete":
@@ -123,7 +256,7 @@ def quit_resolve(resolve, process, grace=30):
     """Quit through the API, then through the PID this run started."""
     if resolve is not None:
         try:
-            resolve.Quit()                                # NOT RUN
+            resolve.Quit()                                # RUN
         except Exception:
             pass
     if process is None or process.poll() is not None:

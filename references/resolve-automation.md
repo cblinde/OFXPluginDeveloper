@@ -1,11 +1,13 @@
 # Driving Resolve as a test host: what the API can do, and the first milestone
 
-**Status: research only (2026-11-25).** Nothing in this document has been run
-here, no code was added, no dependency was introduced and no build changed. There
-is no Resolve on either machine this repository has been exercised on, so every
-API statement below is graded **[B]** (external documentation) or **[I]** (read
-out of a document and inferred), and none of it is **[V]**. The point of §9 is to
-turn the first row of that list into a measurement.
+**Status: research, with a measured first run (2026-11-25).** The §9 milestone now
+has a working script: `tests/resolve/poc.py --build-project` ran install → launch
+`-nogui` → connect → build the project → apply the effect → render one PNG →
+decode → check → quit on DaVinci Resolve Studio 21.2.0.5, exit 0
+(`evidence/2026-11-25-windows/resolve-poc.log`). Each statement below keeps the
+grade it earned: **[V]** where that run answered it, **[B]** from external
+documentation, **[I]** where it was inferred and still is. Two questions in §12
+closed; the run did **not** prove the plug-in's pixel path, and §13 says why.
 
 The question this answers: can the plug-in be tested *inside the host* that
 matters, automatically, without a human clicking? Short answer: the render half
@@ -20,8 +22,8 @@ architecture.
 | Connect from Python | `DaVinciResolveScript.scriptapp("Resolve")` after three environment variables | **[B]** | returns `None` until Resolve runs with a project open |
 | Open a prepared project | `ProjectManager.LoadProject(path)` | **[B]** | returns a project object or `None` |
 | Create media, timelines | `MediaPool.ImportMedia`, `MediaPool.CreateEmptyTimeline`, `AppendToTimeline` | **[B]** | documented calls, one per step |
-| Insert an OFX effect | *nothing documented* | **[I]** | the API surface in the shipped README has no effect-insert call |
-| Set an OFX parameter | *nothing documented* | **[I]** | same: parameters of a plug-in are not exposed |
+| Insert an OFX effect | `TimelineItem.AddEffect("ofx", id)`, id from `Resolve.GetEffectsList()` | **[V]** | works on 21.2: the host listed `Open FX/OFX Plugin Developer/Reference Gain` and the item reported it attached. The shipped README has no such call, so the `.pyi` is the authority |
+| Set an OFX parameter | *nothing documented* | **[V]** | `Effect` exposes `GetInfo`, `GetIsEnabled`, `SetIsEnabled`, `GetFusionComp`, `GetIndex` and `SetIndex` - no parameter access, so a non-default value needs a hand-made project |
 | Render settings | `SetRenderSettings({...})`, `SetCurrentRenderFormatAndCodec(fmt, codec)` | **[B]** | key names matter; see §6 |
 | Queue and start | `AddRenderJob()`, `StartRendering([ids], isInteractiveMode=False)` | **[B]** | job id, then polling |
 | Job status | `GetRenderJobStatus(jobId)` → dict, or an error string | **[B]** | `JobStatus`, `CompletionPercentage`, `EstimatedTimeRemainingInMs`, `TimeTakenToRenderInMs`, `Error` |
@@ -200,11 +202,12 @@ once, and the harness must not touch the licence.
 ## 11. Implementation references
 
 The task's prototypes A-H are kept whole in §13, as an appendix, because they are
-the reference an implementation starts from. None of them has been executed
-anywhere: there is no Resolve, no Studio licence and no GPU on either machine
-this repository has been exercised on. Every call into `DaVinciResolveScript` is
-marked `# unverified` in the code, and each prototype ends with the questions
-that have to be answered before its first run counts.
+the reference an implementation starts from. None of them has been executed: the
+2026-11-25 run went through `tests/resolve/poc.py` instead, so these prototypes
+are still reference code rather than evidence. Every call into
+`DaVinciResolveScript` is marked `# unverified` in the appendix, and each
+prototype ends with the questions that have to be answered before its first run
+counts.
 
 What each one has to settle, in the order the milestone needs them:
 
@@ -221,8 +224,8 @@ What each one has to settle, in the order the milestone needs them:
 
 ## 12. What this document does not know
 
-1. Whether Resolve's API can list installed OFX plug-ins at all. If it can, step 2
-   of the milestone becomes an assertion instead of an inference.
+1. ~~Whether Resolve's API can list installed OFX plug-ins at all.~~ Answered on
+   2026-11-25: it can list them, and it can apply them - see §1.
 2. Whether an OFX plug-in applied inside a Fusion comp renders identically to one
    applied on the colour page.
 3. Whether `-nogui` on Windows needs a logged-in desktop session, a GPU with a

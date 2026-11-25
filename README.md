@@ -33,9 +33,11 @@ debug a GPU-accelerated OFX plugin, on Linux or Windows, primarily targeting
 DaVinci Resolve Studio.
 
 **What it is not:** not a plugin *collection*, not a wrapper library, and not a
-substitute for testing in a real host. One path has been rendered by one host —
-`NatronRenderer`, headless — and nothing has been rendered by Resolve, Nuke or
-SCRATCH. See [What has actually been verified](#what-has-actually-been-verified).
+substitute for testing in a real host. Two hosts have run it: `NatronRenderer`,
+headless, and DaVinci Resolve Studio 21.2 through `tests/resolve/` — whose frame
+is pixel-identical to its source because the plug-in is identity at its default
+gain. Nuke and SCRATCH have run nothing. See
+[What has actually been verified](#what-has-actually-been-verified).
 
 ## Where everything lives
 

@@ -1,0 +1,11 @@
+resolve proof of concept (run)
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\ReferenceGain.ofx.bundle
+  launch    pass     pid 9920
+  connect   pass     DaVinci Resolve Studio 21.2.0.5
+  build     pass     poc: Reference Gain on source.png
+  render    pass     poc00108000.png
+  check     pass     1920x1080 via ffmpeg
+  quit      pass     API quit, then the recorded PID
+report: Z:\Tools-DEV\OFXPluginDeveloper_Local\tests\resolve\reports\poc-2026-11-25T20-19-44+00-00.json
+EXIT=0
