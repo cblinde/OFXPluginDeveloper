@@ -957,6 +957,78 @@ cheap.
 
 ---
 
+## 7. Runtime versions: what a new one has to satisfy
+
+A plug-in that links ONNX Runtime is a bet on an API surface that grows with
+every release. Two questions decide whether the template's code can follow a new
+version, and both are answerable from the files alone - no compiler, no GPU:
+
+| Question | Where the answer lives | Why it is not obvious |
+|---|---|---|
+| Which API version does this header target, and are the calls we make declared? | `#define ORT_API_VERSION` and the declarations in `include/onnxruntime_c_api.h` | a symbol can be present in your *source* and absent from the header you built against; `\since Version N` says when it arrived |
+| Can the provider in this package be **registered**, or only appended through the built-in table? | the export table of `onnxruntime_providers_cuda.dll` / `.so` | `RegisterExecutionProviderLibrary` needs `CreateEpFactories`; a provider without it is not unregistrable by policy, it is unregistrable by construction |
+
+`tools/check-runtime.py` answers both. It parses the header and the binary's
+export and import tables in the standard library - PE and ELF - so it runs on a
+Windows zip, a Linux tarball and a pip wheel alike, and it says "unreadable" for
+anything it cannot parse instead of skipping it.
+
+```bash
+python3 tools/check-runtime.py .validation/ort-gpu-1.32.0
+python3 tools/check-runtime.py <root> --require-api 22 --require-plugin-provider
+```
+
+Measured on the two runtimes this repository builds (**[V]**,
+[`../evidence/2026-11-25-windows/check-runtime.log`](../evidence/2026-11-25-windows/check-runtime.log)):
+
+| Root | `ORT_API_VERSION` | entry points this template uses | CUDA provider exports | what the provider imports |
+|---|---|---|---|---|
+| 1.20.1 | **20** | 5 of 10 - the five plugin-API calls are absent | **1** (`OrtGetApiBase`): built-in provider | cuDNN 9, cuBLAS/cuBLASLt 12, cuFFT 11, cudart 12 |
+| 1.32.0 | **32** | all 10 | **3** (`CreateEpFactories`, `ReleaseEpFactory`, `OrtGetApiBase`): plugin EP | cuBLAS/cuBLASLt 13 only - cuDNN, cuFFT and cudart are resolved at run time, not imported |
+
+**What that means before anyone writes a migration.** The registration API is a
+1.22 addition, and its *provider* side is a packaging fact rather than a header
+fact: the 1.20.1 provider exports one symbol, so a bundle built on it can never
+be registered no matter how new the headers are. Code that uses
+`RegisterExecutionProviderLibrary`, `GetEpDevices` and
+`SessionOptionsAppendExecutionProvider_V2` therefore needs two things at once -
+`#if ORT_API_VERSION >= 22` **and** a provider that exports `CreateEpFactories`.
+The attempt of 2026-11-25 had the first and not the second on the runtime it was
+tested against, and the process aborted with `0xC0000409` where the built-in
+append still reports `all nodes on CUDA`; it is in
+[`improvement-backlog.md`](improvement-backlog.md) row 13 with the numbers.
+
+**What the import table already settles.** The 1.32 plugin provider imports
+neither cuDNN, cuFFT nor cudart, and it does not import the core library at all -
+it receives the api pointer in `CreateEpFactories`. §4's preload story - load the
+four CUDA groups by absolute path so the built-in provider's imports resolve -
+is therefore a property of the *built-in* provider. A plugin EP brings its own
+loading order, which is one more reason the two paths must not be mixed in one
+label.
+
+**The deprecation watchlist**, so a version bump is a decision and not a
+surprise:
+
+| Change | Since | Replaces | Source |
+|---|---|---|---|
+| `use_tf32` can be switched off at all | 1.18 | nothing - TF32 was always on before, with no flag | CUDA EP option table (**[B]**) |
+| CUDA EP registration as a plugin library | 1.22 | `SessionOptionsAppendExecutionProvider_CUDA_V2` for bundles that ship their own provider | `onnxruntime_c_api.h` (**[V]**) |
+| Legacy TensorRT EP | marked compatibility-only in 1.32 | "the NVIDIA TensorRT RTX plugin EP via `OrtApi::RegisterExecutionProviderLibrary`" | a comment above `OrtCUDAProviderOptions` in the 1.32 header, quoted (**[V]**) |
+| cuDNN as one DLL | 9 | ten DLLs under one dispatcher (`cudnn_engines_*`, `cudnn_ops`, ...) | the bundle listing in §4 (**[V]**) |
+| `ep.cuda.*` option namespace | with the plugin EP | the bare key names the built-in append takes | documented as canonical for the plugin EP (**[B]**) - **not verified here**: no run of this repository reached registration, so no `ep.cuda.*` key has ever been accepted or rejected by a runtime |
+
+**Adding a version, in order.** (1) extract it under `.validation/`, beside the
+version it replaces, never on top of it; (2) run `tools/check-runtime.py` with the
+gates the code needs - if `--require-plugin-provider` fails, the code path that
+needs it is not available, whatever the header says; (3) build the CPU
+configuration first, then the CUDA one, because a header change shows up as a
+compile error long before it shows up as a wrong number; (4) run
+`test/test.bat` or `test/run-tests.sh` against the GPU root and read the `provider`
+label - `bundled CUDA` and `all nodes on CUDA` are the two facts that make a GPU
+run a GPU run; (5) add the row to the matrix above and the log to `evidence/`,
+and keep the older rows: they are what tells the next reader which code paths
+still have a runtime to serve.
+
 ## Provenance labels
 
 Tags in this document mean exactly what they meant in the document it came from:

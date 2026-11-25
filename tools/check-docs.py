@@ -30,7 +30,14 @@ What it checks, and why each one exists:
    long. A bare header name or a path whose first segment is not in this
    repository points into an external checkout and is skipped.
 7. AGENTS.md shape: present, and a router rather than an essay.
-8. Heading skeleton. tools/heading-manifest.tsv records every heading the 14
+8. Section references in code. A comment that says `references/foo.md` section 7
+   is a pointer an agent follows without a renderer to warn it. Fifteen such
+   comments pointed at a section that had never existed, in the template, in the
+   tools and in one test script; creating section 7 for a different subject made
+   them actively wrong instead of merely dangling. Every `<doc>.md` followed by
+   `section N` or `§N` in a source file is now resolved against that document's
+   numbered headings.
+9. Heading skeleton. tools/heading-manifest.tsv records every heading the 14
    pre-restructure documents carried and the file that holds it now. A heading
    that stops existing is a failed check, so the one failure mode a
    reorganisation cannot hide - a whole section quietly lost - becomes visible
@@ -705,6 +712,55 @@ def check_heading_manifest(root, files, texts, report):
                          f"text in the fourth column, otherwise the section was lost")
 
 
+CODE_SUFFIXES = (".cpp", ".h", ".c", ".hpp", ".bat", ".sh", ".py", ".cmake")
+CODE_SKIP_DIRS = {".git", ".validation", ".ofx-ref", "build", "build-sanitize",
+                  "__pycache__", "cmake-build-debug"}
+# `references/onnx-and-tensorrt.md` section 4 / `foo.md` §4 / bar.md §4.5
+SECTION_REF = re.compile(r"([A-Za-z0-9_][A-Za-z0-9_.-]*\.md)`?\s*(?:section|§)\s*(\d+)")
+
+
+def code_files(root):
+    found = []
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in CODE_SKIP_DIRS]
+        for name in files:
+            if name.endswith(CODE_SUFFIXES) or name == "CMakeLists.txt":
+                found.append(os.path.relpath(os.path.join(base, name), root).replace(os.sep, "/"))
+    return sorted(found)
+
+
+def check_code_section_refs(root, files, texts, report):
+    """`references/foo.md` section 7 inside a comment must exist in foo.md.
+
+    The document-level equivalent (rule 2) only reads the documents. A comment is
+    where an agent looks while editing, and it is the copy nobody re-reads when a
+    section number moves - fifteen of them pointed at section 7 of
+    onnx-and-tensorrt.md, which had sections 1 to 6.
+    """
+    sections = {}
+    for path in files:
+        numbers = set()
+        for match in re.finditer(r"^#{2,3}\s+(\d+)", texts[path], re.MULTILINE):
+            numbers.add(int(match.group(1)))
+        sections[path] = numbers
+    for path in code_files(root):
+        try:
+            text = read(os.path.join(root, path))
+        except OSError:
+            continue
+        for line_number, line in enumerate(text.splitlines(), 1):
+            for match in SECTION_REF.finditer(line):
+                name, number = match.group(1), int(match.group(2))
+                candidates = [f"references/{name}", name]
+                target = next((c for c in candidates if c in sections), None)
+                if target is None:
+                    continue  # a document this tree does not hold: not our claim
+                if number not in sections[target]:
+                    report.error(path, line_number,
+                                 f"says {name} section {number}, but that document has "
+                                 f"sections {sorted(sections[target]) or 'none'}")
+
+
 def check_agents(root, report):
     path = os.path.join(root, "AGENTS.md")
     if not os.path.exists(path):
@@ -744,6 +800,7 @@ def main():
     check_link_shape(root, files, texts, report)
     check_bare_sections(root, files, texts, report)
     check_heading_manifest(root, files, texts, report)
+    check_code_section_refs(root, files, texts, report)
     check_agents(root, report)
 
     status = report.show()

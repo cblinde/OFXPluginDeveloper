@@ -1,0 +1,417 @@
+#!/usr/bin/env python3
+"""Inspect an ONNX Runtime root: which API version its header declares, whether
+the entry points this repository uses are in that header, and what its provider
+libraries export and import.
+
+    python3 tools/check-runtime.py .validation/ort-gpu-1.32.0
+    python3 tools/check-runtime.py <root> --json
+    python3 tools/check-runtime.py <root> --require-api 22 --require-plugin-provider
+
+Why a tool and not a paragraph: the two facts that decide whether a code path can
+exist are in different places and both are cheap to read but expensive to
+remember. The header says which API version the build targets, and a provider
+DLL says - only in its export table - whether it can be registered as a plugin
+EP. ONNX Runtime 1.20.1 is `ORT_API_VERSION 20` with one provider export
+(`OrtGetApiBase`); 1.32.0 is 32 with three, including `CreateEpFactories` and
+`ReleaseEpFactory`. A migration written from documentation alone got that wrong
+in this repository once already (see references/improvement-backlog.md row 13).
+
+No ONNX Runtime install, no numpy, no compiler: it reads the files. PE and ELF
+are parsed in the standard library so the same command works on a Windows zip, a
+Linux tarball and a wheel. Anything it cannot read is named as unread rather than
+skipped, because a silent skip is how a missing export becomes a surprise in a
+host.
+
+Exit status: 0 everything present, 1 something asked for is missing, 2 bad usage.
+"""
+
+import argparse
+import json
+import os
+import re
+import struct
+import sys
+
+# The entry points this repository's template calls, with the API version that
+# introduced each. `since` is used to say "present, but not in this runtime"
+# rather than a bare missing, which is the difference between "your root is old"
+# and "your root's header is truncated".
+API_SYMBOLS = [
+    ("CreateCUDAProviderOptions", 11),
+    ("UpdateCUDAProviderOptions", 11),
+    ("GetCUDAProviderOptionsAsString", 11),
+    ("ReleaseCUDAProviderOptions", 11),
+    ("SessionOptionsAppendExecutionProvider_CUDA_V2", 11),
+    ("RegisterExecutionProviderLibrary", 22),
+    ("UnregisterExecutionProviderLibrary", 22),
+    ("GetEpDevices", 22),
+    ("SessionOptionsAppendExecutionProvider_V2", 22),
+    ("EpDevice_EpName", 22),
+]
+
+# Exports that mark a provider as a plugin EP: the loader looks for exactly these.
+PLUGIN_EXPORTS = ("CreateEpFactories", "ReleaseEpFactory")
+
+# What a DLL or .so name implies about the CUDA stack it wants.
+REDISTRIBUTABLES = {
+    "cudnn": ("cuDNN", 9),
+    "cublasLt": ("cuBLASLt", None),
+    "cublas": ("cuBLAS", None),
+    "cufft": ("cuFFT", None),
+    "cudart": ("CUDA runtime", None),
+}
+
+
+def read(path):
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+# ---------------------------------------------------------------------------
+# PE
+# ---------------------------------------------------------------------------
+
+
+def _pe_sections(data):
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe:pe + 4] != b"PE\0\0":
+        raise ValueError("no PE signature")
+    count = struct.unpack_from("<H", data, pe + 6)[0]
+    option_size = struct.unpack_from("<H", data, pe + 20)[0]
+    option = pe + 24
+    magic = struct.unpack_from("<H", data, option)[0]
+    if magic not in (0x10B, 0x20B):
+        raise ValueError("unknown optional-header magic %#x" % magic)
+    directories = option + (112 if magic == 0x20B else 96)
+    sections = []
+    start = option + option_size
+    for i in range(count):
+        name, vsize, va, rsize, raw = struct.unpack_from("<8sIIII", data, start + i * 40)
+        sections.append((va, max(vsize, rsize), raw))
+    return directories, sections
+
+
+def _offset(sections, rva):
+    for va, size, raw in sections:
+        if va <= rva < va + size:
+            return raw + (rva - va)
+    raise ValueError("rva %#x is in no section" % rva)
+
+
+def pe_exports(path):
+    data = read(path)
+    directories, sections = _pe_sections(data)
+    rva = struct.unpack_from("<I", data, directories)[0]
+    if rva == 0:
+        return []
+    table = _offset(sections, rva)
+    names_rva = struct.unpack_from("<I", data, table + 32)[0]
+    count = struct.unpack_from("<I", data, table + 24)[0]
+    names = []
+    for i in range(count):
+        entry = struct.unpack_from("<I", data, _offset(sections, names_rva) + i * 4)[0]
+        start = _offset(sections, entry)
+        names.append(data[start:data.index(b"\0", start)].decode("ascii", "replace"))
+    return names
+
+
+def pe_imports(path):
+    data = read(path)
+    directories, sections = _pe_sections(data)
+    rva = struct.unpack_from("<I", data, directories + 8)[0]
+    if rva == 0:
+        return []
+    names = []
+    cursor = _offset(sections, rva)
+    while True:
+        entry = data[cursor:cursor + 20]
+        if len(entry) < 20 or entry == b"\0" * 20:
+            break
+        name_rva = struct.unpack_from("<I", entry, 12)[0]
+        start = _offset(sections, name_rva)
+        names.append(data[start:data.index(b"\0", start)].decode("ascii", "replace"))
+        cursor += 20
+    return names
+
+
+# ---------------------------------------------------------------------------
+# ELF
+# ---------------------------------------------------------------------------
+
+
+def _elf_tables(data):
+    if data[:4] != b"\x7fELF":
+        raise ValueError("no ELF signature")
+    is64 = data[4] == 2
+    endian = "<" if data[5] == 1 else ">"
+    if is64:
+        shoff = struct.unpack_from(endian + "Q", data, 0x28)[0]
+        shentsize, shnum = struct.unpack_from(endian + "HH", data, 0x3A)
+        fmt, link_fmt = endian + "IIQQQQIIQQ", endian + "IIQQQQ"
+    else:
+        shoff = struct.unpack_from(endian + "I", data, 0x20)[0]
+        shentsize, shnum = struct.unpack_from(endian + "HH", data, 0x2E)
+        fmt, link_fmt = endian + "IIIIIIIIII", endian + "IIIIII"
+    sections = []
+    for i in range(shnum):
+        raw = struct.unpack_from(fmt, data, shoff + i * shentsize)
+        # name, type, flags, addr, offset, size, link, info, align, entsize
+        sections.append(
+            {"name": raw[0], "type": raw[1], "offset": raw[4], "size": raw[5],
+             "link": raw[6], "entsize": raw[9]}
+        )
+    return endian, sections
+
+
+def _elf_strings(data, sections, index, start, limit=None):
+    section = sections[index]
+    offset = section["offset"] + start
+    end = data.index(b"\0", offset) if limit is None else offset + limit
+    return data[offset:end].decode("ascii", "replace")
+
+
+def elf_exports(path):
+    data = read(path)
+    endian, sections = _elf_tables(data)
+    dynsym = next((s for s in sections if s["type"] == 11), None)  # SHT_DYNSYM
+    if dynsym is None:
+        return []
+    strtab = dynsym["link"]
+    names = []
+    for i in range(dynsym["size"] // dynsym["entsize"]):
+        base = dynsym["offset"] + i * dynsym["entsize"]
+        name, info, _other, shndx = struct.unpack_from(endian + "IBBH", data, base)
+        if name == 0 or shndx == 0:  # unnamed or undefined: not an export
+            continue
+        kind = info & 0xF  # STT_FUNC
+        if kind not in (1, 2, 10):
+            continue
+        names.append(_elf_strings(data, sections, strtab, name))
+    return names
+
+
+def elf_needed(path):
+    data = read(path)
+    endian, sections = _elf_tables(data)
+    dynamic = next((s for s in sections if s["type"] == 6), None)  # SHT_DYNAMIC
+    if dynamic is None:
+        return []
+    strtab = dynamic["link"]
+    names = []
+    for i in range(dynamic["size"] // dynamic["entsize"]):
+        base = dynamic["offset"] + i * dynamic["entsize"]
+        tag, value = struct.unpack_from(endian + "qQ" if data[4] == 2 else endian + "iI",
+                                        data, base)
+        if tag == 0:
+            break
+        if tag == 1:  # DT_NEEDED
+            names.append(_elf_strings(data, sections, strtab, value))
+    return names
+
+
+# ---------------------------------------------------------------------------
+# The root
+# ---------------------------------------------------------------------------
+
+
+def binary_facts(path):
+    """Exports and imports of one library, or a reason it could not be read."""
+    try:
+        with open(path, "rb") as handle:
+            magic = handle.read(4)
+        if magic[:2] == b"MZ":
+            exports, imports = pe_exports(path), pe_imports(path)
+        elif magic == b"\x7fELF":
+            exports, imports = elf_exports(path), elf_needed(path)
+        else:
+            return {"error": "unrecognised format (neither PE nor ELF)"}
+    except (ValueError, struct.error, OSError) as exc:
+        return {"error": str(exc)}
+    return {"exports": exports, "imports": imports}
+
+
+def redistributables(names):
+    """cudnn64_9.dll -> ('cuDNN', 9), deduplicated and ordered."""
+    found = []
+    for name in names:
+        stem = re.split(r"[._]", name, 1)[0].lower()
+        for prefix, (label, _version) in REDISTRIBUTABLES.items():
+            if stem.startswith(prefix.lower()):
+                match = re.search(r"_(\d+)", name)
+                major = int(match.group(1)) if match else None
+                item = (label, major)
+                if item not in found:
+                    found.append(item)
+                break
+    return found
+
+
+def library_files(root):
+    """Core and provider libraries anywhere in the root, by kind."""
+    core, providers, others = [], [], []
+    for base, _dirs, files in os.walk(root):
+        for name in sorted(files):
+            lower = name.lower()
+            if not (lower.endswith(".dll") or ".so" in lower or lower.endswith(".dylib")):
+                continue
+            path = os.path.join(base, name)
+            stem = lower.split(".so")[0]
+            if stem.startswith("onnxruntime_providers"):
+                if "cuda" in stem or "tensorrt" in stem:
+                    providers.append(path)
+                else:
+                    others.append(path)
+            elif stem.startswith("onnxruntime") and "providers" not in stem:
+                core.append(path)
+            elif stem.startswith("libonnxruntime") and "providers" not in stem:
+                core.append(path)
+    return core, providers, others
+
+
+def header_facts(root):
+    include = os.path.join(root, "include")
+    candidates = [os.path.join(include, "onnxruntime_c_api.h"),
+                  os.path.join(root, "onnxruntime", "capi", "onnxruntime_c_api.h")]
+    for path in candidates:
+        if os.path.exists(path):
+            text = read(path).decode("utf-8", "replace")
+            match = re.search(r"#define\s+ORT_API_VERSION\s+(\d+)", text)
+            version = int(match.group(1)) if match else None
+            present = {name: (name in text) for name, _since in API_SYMBOLS}
+            return {"path": path, "api_version": version, "symbols": present}
+    return {"path": None, "api_version": None, "symbols": {}}
+
+
+def inspect(root):
+    report = {"root": os.path.abspath(root), "header": header_facts(root)}
+    core, providers, others = library_files(root)
+    report["core"] = []
+    for path in core:
+        facts = binary_facts(path)
+        facts["name"] = os.path.basename(path)
+        facts["path"] = path
+        report["core"].append(facts)
+    report["providers"] = []
+    for path in providers:
+        facts = binary_facts(path)
+        facts["name"] = os.path.basename(path)
+        facts["path"] = path
+        facts["plugin"] = bool(facts.get("exports") and
+                               all(e in facts["exports"] for e in PLUGIN_EXPORTS))
+        facts["imports_core"] = any(
+            i.lower().startswith(("onnxruntime.dll", "libonnxruntime.so"))
+            for i in (facts.get("imports") or [])
+        )
+        facts["redistributables"] = redistributables(facts.get("imports") or [])
+        report["providers"].append(facts)
+    report["other_providers"] = others
+    return report
+
+
+def blocked(report, require_api, require_plugin):
+    """The gates that did not pass, as sentences."""
+    problems = []
+    header = report["header"]
+    if header["api_version"] is None:
+        problems.append("no include/onnxruntime_c_api.h with ORT_API_VERSION")
+    elif require_api is not None and header["api_version"] < require_api:
+        problems.append("API version %d, but %d was required"
+                        % (header["api_version"], require_api))
+    if require_plugin:
+        # The gate is about the CUDA provider, not about every provider in the
+        # package: TensorRT ships as a built-in provider and 1.32 says the legacy
+        # TensorRT EP is compatibility-only, so gating on it would fail a root
+        # that is perfectly able to run CUDA as a plugin.
+        cuda = [e for e in report["providers"] if "cuda" in e["name"].lower()]
+        if not cuda:
+            problems.append("no CUDA provider library in this root")
+        for entry in cuda:
+            if entry.get("error"):
+                problems.append("%s: %s" % (entry["name"], entry["error"]))
+            elif not entry["plugin"]:
+                problems.append("%s does not export %s"
+                                % (entry["name"], " and ".join(PLUGIN_EXPORTS)))
+    return problems
+
+
+def describe(report):
+    lines = ["root: %s" % report["root"]]
+    header = report["header"]
+    if header["api_version"] is None:
+        lines.append("header: none (no include/onnxruntime_c_api.h)")
+    else:
+        lines.append("header: ORT_API_VERSION %d  (%s)"
+                     % (header["api_version"], header["path"]))
+        missing = [name for name, present in header["symbols"].items() if not present]
+        if not missing:
+            lines.append("        every entry point this repository uses is declared")
+        else:
+            since = dict(API_SYMBOLS)
+            for name in missing:
+                lines.append("        missing: %s (since %d)" % (name, since[name]))
+    cores = report["core"]
+    lines.append("core: %s" % (", ".join(e["name"] for e in cores) or "none found"))
+    for entry in report["providers"]:
+        if entry.get("error"):
+            lines.append("provider %s: unreadable (%s)" % (entry["name"], entry["error"]))
+            continue
+        exports = entry["exports"]
+        mark = "plugin EP" if entry["plugin"] else "built-in provider"
+        lines.append("provider %s: %d exports, %s" % (entry["name"], len(exports), mark))
+        notable = [e for e in exports if e in PLUGIN_EXPORTS or e == "OrtGetApiBase"]
+        if notable:
+            lines.append("        exports: %s" % ", ".join(notable))
+        needs = entry["redistributables"]
+        if needs:
+            rendered = [(label + " " + str(major)).strip() for label, major in needs]
+            lines.append("        imports: %s" % ", ".join(rendered))
+        lines.append("        imports the core by name: %s"
+                     % ("yes" if entry["imports_core"] else "no"))
+    if report["other_providers"]:
+        lines.append("other providers: %s"
+                     % ", ".join(os.path.basename(p) for p in report["other_providers"]))
+    if not report["providers"]:
+        lines.append("provider: none in this root (a CPU package has no CUDA provider)")
+    return lines
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Inspect an ONNX Runtime root: API version, used entry points, "
+                    "provider exports and CUDA imports.")
+    parser.add_argument("root", help="extracted ONNX Runtime package or bundle root")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--require-api", type=int, metavar="N",
+                        help="fail unless ORT_API_VERSION is at least N")
+    parser.add_argument("--require-plugin-provider", action="store_true",
+                        help="fail unless the CUDA provider exports "
+                             "CreateEpFactories and ReleaseEpFactory")
+    args = parser.parse_args(argv)
+
+    if not os.path.isdir(args.root):
+        sys.stderr.write("error: %s is not a directory\n" % args.root)
+        return 2
+    report = inspect(args.root)
+    problems = blocked(report, args.require_api, args.require_plugin_provider)
+    report["problems"] = problems
+
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        for line in describe(report):
+            print(line)
+        for problem in problems:
+            print("FAIL: %s" % problem)
+        if not problems:
+            if args.require_api is None and not args.require_plugin_provider:
+                # A read-only run has nothing to pass: saying "everything is
+                # present" over a header that is missing five entry points would
+                # be the one line a reader remembers.
+                print("verdict: inspection only, no gate asked for")
+            else:
+                print("verdict: every gate asked for passed")
+    return 0 if not problems else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -101,6 +101,7 @@ relative to this file.
 | "I need to do X" as a task list, with the proving file in this repo | `references/pattern-index.md` | reading plan |
 | Testing to ship: layers L0-L10, goldens, sanitizers, CI, what runs here | `references/testing-layers.md` | host behaviour |
 | What was verified, by which command, and what was not | `references/verification-status.md` | design guidance |
+| A new ONNX Runtime version: what its header and provider must have, what changed when | `references/onnx-and-tensorrt.md` §7, `tools/check-runtime.py` | model choice |
 | Improvements that are known, worth doing and not done, with their owner | `references/improvement-backlog.md` | reading order |
 | The archived Windows GPU runs behind every external claim | `references/field-evidence.md` | current guidance |
 | What other shipped plug-ins did, and the seven-step reading plan | `references/reference-projects.md` | this repo's own code |

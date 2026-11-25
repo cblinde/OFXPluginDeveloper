@@ -227,3 +227,36 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 7. Tested at 1919×1081, 1×1, identity, and against the CPU path.
 8. Read back with `compute-sanitizer` on a small frame.
 9. `.ofx` installed with the host closed; plugin cache cleared after a crash.
+
+## 8. Checklist for a new ONNX Runtime version
+
+A runtime bump touches code you cannot see from the changelog: an entry point
+that is declared but not in the header you downloaded, a provider that is built
+as a plugin in one package and as a built-in in the next, a cuDNN that splits
+into ten files. In that order, and every step is cheap:
+
+1. **Extract beside the old version**, never on top of it
+   (`.validation/ort-gpu-1.32.0`, not `ort-gpu`). The old root is the control
+   group, and a sibling name is what the stale-cache check in the template's
+   `CMakeLists.txt` is written for - `ort` and `ort-gpu` are the pair that once
+   kept a previous runtime's header path and reported success.
+2. **`python3 tools/check-runtime.py <root>`** - read the API version, the entry
+   points this repository uses that the header is missing, and whether the CUDA
+   provider exports `CreateEpFactories`. `--require-api N
+   --require-plugin-provider` turns those into a gate with an exit code.
+3. **Build the CPU configuration first** (`build.sh` / `build.bat` without
+   `CPU_ONLY`), then the CUDA one. A header change fails at compile time, which
+   is a message; it fails at run time as a wrong number, which is an
+   investigation.
+4. **Run the suite against the GPU root** and read the `provider` label: it must
+   say `CUDA (device 0, …, bundled CUDA, tf32 off, …)`. Any `CPU (…)` on a root
+   that ships a provider is a failed run for both suites since 2026-11-25.
+5. **Compare arithmetic, not just exit codes**: the TF32 pair in
+   `onnx-and-tensorrt.md` §5 is `4.5e-4` with the default and `5.4e-7`
+   with `use_tf32=0`. A new version that moves the second figure by orders is a
+   precision change, not noise.
+6. **Record it**: a row in §7's matrix, a log under `evidence/<date>-<platform>/`,
+   and keep the previous row. The rows are what tell the next reader which code
+   path still has a runtime to serve.
+7. **Do not delete the old root's documentation.** A path retired yesterday is
+   the explanation for code that still guards it.

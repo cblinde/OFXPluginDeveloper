@@ -1,0 +1,73 @@
+# tools/check-runtime.py against both runtimes this repository builds, 2026-11-25.
+#
+# Command: python3 tools/check-runtime.py <root>
+#          python3 tools/check-runtime.py <root> --require-api 22 --require-plugin-provider
+# Roots: .validation/ort-gpu-1.20.1 and .validation/ort-gpu-1.32.0 (gitignored).
+# What this establishes: the API version each header targets, which entry points
+#   this repository uses are absent, and - from the export tables alone - which
+#   provider can be registered as a plugin EP.
+
+== 1.20.1 ==
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\ort-gpu-1.20.1
+header: ORT_API_VERSION 20  (.validation/ort-gpu-1.20.1\include\onnxruntime_c_api.h)
+        missing: RegisterExecutionProviderLibrary (since 22)
+        missing: UnregisterExecutionProviderLibrary (since 22)
+        missing: GetEpDevices (since 22)
+        missing: SessionOptionsAppendExecutionProvider_V2 (since 22)
+        missing: EpDevice_EpName (since 22)
+core: onnxruntime.dll
+provider onnxruntime_providers_cuda.dll: 1 exports, built-in provider
+        imports: cuBLASLt 12, cuBLAS 12, cuFFT 11, CUDA runtime 12, cuDNN 9
+        imports the core by name: no
+other providers: onnxruntime_providers_shared.dll
+verdict: inspection only, no gate asked for
+exit=0
+
+== 1.20.1, gates: --require-api 22 --require-plugin-provider ==
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\ort-gpu-1.20.1
+header: ORT_API_VERSION 20  (.validation/ort-gpu-1.20.1\include\onnxruntime_c_api.h)
+        missing: RegisterExecutionProviderLibrary (since 22)
+        missing: UnregisterExecutionProviderLibrary (since 22)
+        missing: GetEpDevices (since 22)
+        missing: SessionOptionsAppendExecutionProvider_V2 (since 22)
+        missing: EpDevice_EpName (since 22)
+core: onnxruntime.dll
+provider onnxruntime_providers_cuda.dll: 1 exports, built-in provider
+        imports: cuBLASLt 12, cuBLAS 12, cuFFT 11, CUDA runtime 12, cuDNN 9
+        imports the core by name: no
+other providers: onnxruntime_providers_shared.dll
+FAIL: API version 20, but 22 was required
+FAIL: onnxruntime_providers_cuda.dll does not export CreateEpFactories and ReleaseEpFactory
+exit=1
+
+== 1.32.0 ==
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\ort-gpu-1.32.0
+header: ORT_API_VERSION 32  (.validation/ort-gpu-1.32.0\include\onnxruntime_c_api.h)
+        every entry point this repository uses is declared
+core: onnxruntime.dll
+provider onnxruntime_providers_cuda.dll: 3 exports, plugin EP
+        exports: CreateEpFactories, ReleaseEpFactory
+        imports: cuBLASLt 13, cuBLAS 13
+        imports the core by name: no
+provider onnxruntime_providers_tensorrt.dll: 1 exports, built-in provider
+        imports: cuBLAS 13, cuDNN 9
+        imports the core by name: no
+other providers: onnxruntime_providers_shared.dll
+verdict: inspection only, no gate asked for
+exit=0
+
+== 1.32.0, same gates ==
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\ort-gpu-1.32.0
+header: ORT_API_VERSION 32  (.validation/ort-gpu-1.32.0\include\onnxruntime_c_api.h)
+        every entry point this repository uses is declared
+core: onnxruntime.dll
+provider onnxruntime_providers_cuda.dll: 3 exports, plugin EP
+        exports: CreateEpFactories, ReleaseEpFactory
+        imports: cuBLASLt 13, cuBLAS 13
+        imports the core by name: no
+provider onnxruntime_providers_tensorrt.dll: 1 exports, built-in provider
+        imports: cuBLAS 13, cuDNN 9
+        imports the core by name: no
+other providers: onnxruntime_providers_shared.dll
+verdict: every gate asked for passed
+exit=0

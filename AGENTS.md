@@ -15,13 +15,13 @@ tools/measure-halo.sh model.onnx            # tile overlap per model, writes <mo
 python3 tools/make-testmodels.py --out build/testmodels   # synthetic 1/3/4-channel and 2x models
 python3 tools/model_probe.py model.onnx     # shapes, dynamic dims, size factor, alignment
 python3 tools/bench_ep.py model.onnx        # median/p90 per execution provider
+python3 tools/check-runtime.py <ort-root>   # API version, used entry points, provider exports
 tools/sweep-vram.sh model.onnx              # largest tile before ORT OOM (needs a GPU)
 ```
 
-`./run-tests.sh` needs `ONNXRUNTIME_ROOT` for the inference template (a CI run
-without it fails, a local one marks it NOT VERIFIED) and `CPU_ONLY=1` when no
-CUDA toolkit is installed. `tools/make-testmodels.py` needs `onnx` to write the
-files and `onnxruntime` + `numpy` for its self-test; neither is a dependency.
+`./run-tests.sh` needs `ONNXRUNTIME_ROOT` (a CI run without it fails, a local one
+marks the template NOT VERIFIED) and `CPU_ONLY=1` without a CUDA toolkit.
+`tools/make-testmodels.py` needs `onnx`, plus `onnxruntime`+`numpy` to self-test.
 
 ---
 
