@@ -162,7 +162,7 @@ type "%LOG%"
 rem The label must name an execution provider. Select-String rather than findstr:
 rem the pattern contains a double quote, which cmd cannot pass through /C:"..."
 rem without splitting it. CUDA is requested first, CPU is the fallback, both pass.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .(CUDA|CPU)' -Quiet)) { exit 1 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .(CUDA \(device 0, 1 thread, .*tf32 off|CPU)' -Quiet)) { exit 1 }"
 if errorlevel 1 (
   echo   FAIL: the provider label does not name an execution provider
   goto :contractfailure
@@ -185,7 +185,7 @@ if errorlevel 1 (
   )
 )
 echo   host shape resolve: supportsTiles=0, supportsMultiResolution=0
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .(CUDA|CPU)' -Quiet)) { exit 1 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .(CUDA \(device 0, 1 thread, .*tf32 off|CPU)' -Quiet)) { exit 1 }"
 if errorlevel 1 (
   echo   FAIL: the provider label does not name an execution provider under the resolve profile
   goto :contractfailure

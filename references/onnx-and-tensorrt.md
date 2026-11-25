@@ -418,14 +418,16 @@ model time (**A**: arithmetic from the formula).
 is fixed — request the CUDA provider first, keep a CPU session as the fallback,
 make the choice visible — and the consequence is packaging, not a second build:
 
-- **One bundle, request the provider, fall back silently.** Create the session
-  with `AppendExecutionProvider_CUDA` inside a `try`; every failure — no device,
-  no driver, missing cuDNN DLL, not enough VRAM — ends on a CPU session instead
-  of an exception the host turns into a red frame. This template already does
-  exactly that: `ModelRunner::AppendCudaProvider()` sets
-  `cudnn_conv_algo_search = HEURISTIC`, catches the failure and rebuilds the
-  options for the CPU session, and `Plugin.cpp` writes provider plus reason into
-  the `provider` label parameter. Two lazily built sessions are simpler than a
+- **One bundle, request the provider, fall back silently.** Append the provider
+  inside a `try`; every failure — no device, no driver, missing cuDNN DLL, not
+  enough VRAM — ends on a CPU session instead of an exception the host turns into
+  a red frame. This template does exactly that, through the key/value API rather
+  than the struct, because two of the five options it needs do not exist as
+  struct fields (§5): `ModelRunner::AppendCudaProvider()` states `device_id`,
+  `use_tf32=0`, `cudnn_conv_algo_search=HEURISTIC`,
+  `cudnn_conv_use_max_workspace=0` and `do_copy_in_default_stream=1`, catches the
+  failure and rebuilds the options for the CPU session, and `Plugin.cpp` writes
+  provider plus reason into the `provider` label parameter. Two lazily built sessions are simpler than a
   retry ladder.
 - **Make it visible and assert it.** Nothing else tells anyone the provider
   stopped loading: the picture stays correct and only the time changes —
@@ -523,9 +525,10 @@ make the choice visible — and the consequence is packaging, not a second build
   imports `cublas64_13`, `cublasLt64_13`, `dxgi` and
   `onnxruntime_providers_shared`, and loads cuDNN, cuFFT and cudart at run time
   instead of at load time, so 16 files (1.54 GB) carry it. That provider is also
-  built as an EP plugin - it exports `CreateEpFactories` - yet the template's
-  `AppendExecutionProvider_CUDA` still reaches it through the provider bridge,
-  which is why the C++ source needed no change for the upgrade. That is a property of one binary, not a documented contract, so the
+  built as an EP plugin - it exports `CreateEpFactories` - yet a provider request
+  still reaches it through the provider bridge: the legacy struct call did, and
+  so does the V2 key/value call the template uses now that it states its options
+  explicitly (§5). Both were run here. That is a property of one binary, not a documented contract, so the
   check belongs in the build notes of a Windows GPU bundle: run `dumpbin
   /dependents` on the provider you ship and look for `onnxruntime.dll`. If a later
   version imports it, the copy is a bundle that fails at load and the working
@@ -581,8 +584,8 @@ benchmarks well makes a timeline stutter. Five rules keep it one budget:
   several threads.
 - **Print the count in the status label, in both modes** — `CPU (8 threads)`,
   `CUDA (device 0: …, 6 threads)`; the template writes `CPU (1 thread)` and
-  `CUDA (device 0, 1 thread, host CUDA stack, all nodes on CUDA)`. That line is
-  what makes a value
+  `CUDA (device 0, 1 thread, host CUDA stack, tf32 off, all nodes on CUDA)`. That
+  line is what makes a value
   like `--set intraThreads=3` checkable from the contract harness
   (`--label-param`): without it the parameter can be wired to nothing and no test
   notices.
@@ -596,16 +599,17 @@ benchmarks well makes a timeline stutter. Five rules keep it one budget:
 Honest limit: those numbers are single-instance. The multi-instance argument is
 why a cap exists at all, and it is not something the reporter measured (**B**).
 
-The request itself is compiled and its failure path is verified here: this
-machine links the CPU package of ONNX Runtime, `AppendExecutionProvider_CUDA`
-throws `Failed to load library libonnxruntime_providers_shared.so`, and the
-`provider` label carries that reason (**V**). The success branch has run since
+The request itself is compiled and its failure path is verified here: against the
+CPU package of ONNX Runtime the provider request throws `Failed to load library
+libonnxruntime_providers_shared.so`, and the `provider` label carries that reason
+(**V**). The success branch has run since
 2026-11-25: the GPU build created the session with the provider and printed
 `CUDA (device 0, 1 thread, bundled CUDA)` (**[V]**,
 [`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
 That log predates the fallback probe, so it proves the provider was created and
-nothing more; the same line now ends `, all nodes on CUDA` (§6), which is the
-stronger claim. The figures above stay external evidence from one RTX 3060
+nothing more; the same line now reads `CUDA (device 0, 1 thread, bundled CUDA,
+tf32 off, all nodes on CUDA)` - arithmetic and node coverage stated (§5, §6),
+which are stronger claims than that log could make. The figures above stay external evidence from one RTX 3060
 (**[B]**); the success path is now both documented from the ORT API and observed
 once.
 
@@ -726,23 +730,56 @@ Four settings decide whether a frame is reproducible on the device:
 
 | Setting | Default | What it costs | Where it lives |
 |---|---|---|---|
-| `use_tf32` | `1` | rounding at the third decimal place of every accelerated convolution | key/value option only |
-| `cudnn_conv_algo_search` | `EXHAUSTIVE` | minutes at 1080p before the first tile, plus a workspace sized for the winning plan | struct field - the template sets `HEURISTIC` |
+| `use_tf32` | `1` | `4.5e-4` from the CPU session instead of `5.4e-7` on a 1080p conv - measured, §5 below | key/value option only |
+| `cudnn_conv_algo_search` | `EXHAUSTIVE` | benchmarks every algorithm against the real tensors before the first tile; the result is cached on disk, so the cost is paid once per machine and plan | struct field or key/value - the template sets `HEURISTIC` |
 | `gpu_mem_limit`, `arena_extend_strategy` | `SIZE_MAX`, `kNextPowerOfTwo` | the arena never returns memory and doubles as it grows, so an instance left open holds the peak of every shape it has seen | struct field or `OrtArenaCfg` |
-| `cudnn_conv_use_max_workspace` | `1` | a second copy of the activation budget, allocated once | key/value option only |
+| `cudnn_conv_use_max_workspace` | `1` | permission for the plan to reserve up to a second copy of the activation budget; what it actually reserves depends on the plan cuDNN picks | key/value option only |
 
-What is measured here, on one RTX 3060, with the template's settings (heuristic
-search, everything else at default): the exact golden comparison fails, and the
-deviation lands between `1e-8` and `1e-7` - bisected by retrying at `1e-8`
-(fails) and `1e-7` (passes) (**[V]**,
-[`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
-That magnitude is summation order, not TF32: a 10-bit mantissa would show up two
-to three decimal places earlier. TF32 therefore did not fire for this model's
-kernels - but nothing in the code prevents it, and that is the difference
-between "it happened to work" and a guarantee. For finishing work the rule is to
-set `use_tf32=0` explicitly (which means the key/value API, not the struct), pin
-the search to `HEURISTIC`, and state the arena limit, so that a tolerance in the
-suite measures the provider rather than the day.
+The template therefore appends the provider through the key/value API and states
+five keys explicitly - `device_id`, `use_tf32=0`, `cudnn_conv_algo_search=HEURISTIC`,
+`cudnn_conv_use_max_workspace=0`, `do_copy_in_default_stream=1` - instead of
+filling in a struct and inheriting the rest (see §4). What that buys is not a
+belief; each part was measured on one RTX 3060, on a 64-channel 3×3 convolution
+at 1920×1080, against the same graph on the CPU session (**[V]**,
+[`../evidence/2026-11-25-windows/onnx-cuda-ep-options.log`](../evidence/2026-11-25-windows/onnx-cuda-ep-options.log)):
+
+| Provider options | max abs difference from the CPU session |
+|---|---|
+| `use_tf32=1` (the EP default) | **4.472e-04** |
+| `use_tf32=0` | **5.364e-07** |
+
+The two numbers are the whole argument. Three orders of magnitude, and the TF32
+one sits forty times above the `1e-5` tolerance the suite retries a GPU run at -
+so a session left on the default would fail this template's golden comparison
+for a reason that has nothing to do with the plug-in, and would do it on some
+kernels and not others: the suite's own 64×48 model never triggered TF32 - its
+deviation from the CPU golden stayed at `1e-7` with the default on
+([`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)) -
+which is how a label that says CUDA and numbers that are correct can coexist. The same graph at 640×480 gives `3.95e-4` and `4.2e-7`.
+
+The provider's own option dump - `GetCUDAProviderOptionsAsString()`, printed per
+row in the evidence log - is what makes this checkable rather than assumed: it
+reads `use_tf32=0;cudnn_conv_use_max_workspace=0;cudnn_conv_algo_search=HEURISTIC`
+for the template's settings, so the keys demonstrably reached the provider and
+were not dropped on the way.
+
+**`cudnn_conv_use_max_workspace=0` bought nothing measurable, and that is the
+honest result.** On both graphs the device memory after a run was the same with
+and without it - 3122 MB versus 3124 MB at 1080p, 536 MB at 640×480 - because
+the flag is a *permission*, not an allocation: it says the plan may not assume a
+large scratch buffer, and the plan cuDNN picks under `HEURISTIC` for these shapes
+fits the small one either way. What the setting buys is a bound on the worst
+case, not a saving on this model; a model whose chosen plan wants the large
+workspace is where the difference would appear, and no such model was measured
+here.
+
+**`HEURISTIC` versus `EXHAUSTIVE` could not be separated on this machine either:**
+both created the session in 2.8-3.2 ms, because cuDNN keeps its chosen plans in
+an on-disk cache (`ComputeCache`), so the benchmark that `EXHAUSTIVE` runs is paid
+on the first session ever, not on every one. The "minutes at 1080p" figure stays
+external evidence (**[B]**, §7). In a host the first session is the one a user
+waits for, which is argument enough to keep it off - but it is an argument from
+the cached-plan behaviour, not from a stopwatch reading here.
 
 The arena is also the host-facing half of this. A plug-in that keeps a session
 per instance, never sets `gpu_mem_limit` and lets the arena grow on the
@@ -779,7 +816,7 @@ that is the line a log reader actually sees:
 
 | Label | What it establishes |
 |---|---|
-| `CUDA (device 0, 1 thread, bundled CUDA, all nodes on CUDA)` | the probe loaded the graph with the key, so every node is on the device |
+| `CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)` | the probe loaded the graph with the key, so every node is on the device, and the arithmetic is the one §5 measured |
 | `CUDA (…, nodes left on CPU)` | the probe failed; the runtime's reason follows in the same label after `- fallback:` |
 | `CPU (1 thread) - fallback: …` | no provider at all, as before |
 

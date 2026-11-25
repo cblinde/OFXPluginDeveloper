@@ -428,27 +428,52 @@ Ort::SessionOptions MakeSessionOptions(int intraThreads)
     return options;
 }
 
-/// Requests the CUDA execution provider. Every failure - no GPU, no driver,
-/// missing cuDNN, a CPU-only runtime, a runtime whose provider library is not
-/// beside it - arrives as an ORT exception, so the caller falls back to a CPU
-/// session instead of failing the frame. The reason is kept for the label.
+/// Requests the CUDA execution provider with every option that decides what the
+/// device computes, or how much of it the device reserves, stated explicitly.
 ///
-/// Verified on this machine (CPU package, ORT 1.20.1): the call throws "Failed
-/// to load library libonnxruntime_providers_shared.so" and does not crash.
-/// Verified nowhere: the success branch. There is no GPU here.
-bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason)
+/// The struct cannot say all of it: `use_tf32` and
+/// `cudnn_conv_use_max_workspace` exist only as provider options, so the V2
+/// key/value API is the only way to switch them off at all
+/// (references/onnx-and-tensorrt.md section 5). What the struct defaults would
+/// leave: EXHAUSTIVE search (benchmarks every algorithm at session creation),
+/// TF32 on since 1.18 (10-bit mantissa in every accelerated convolution) and
+/// cuDNN free to take the largest workspace it can find.
+///
+/// Every failure - no GPU, no driver, missing cuDNN, a CPU-only runtime, a
+/// runtime whose provider library is not beside it - arrives as an ORT
+/// exception, so the caller falls back to a CPU session instead of failing the
+/// frame. The reason is kept for the label.
+///
+/// `applied` receives the provider's own serialisation of the options, which is
+/// what makes "the option reached the provider" checkable instead of assumed.
+bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
+                        std::string* applied = nullptr)
 {
     try {
-        OrtCUDAProviderOptions cuda{};
-        cuda.device_id = 0;
-        // ORT benchmarks convolution algorithms at session creation by default,
-        // which costs minutes at 1080p before the first tile (external
-        // measurement, references/onnx-and-tensorrt.md section 7).
-        cuda.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchHeuristic;
-        // Copies stay on the provider's stream, which is the default here and
-        // the only safe choice when the host hands over host memory.
-        cuda.do_copy_in_default_stream = 1;
-        options.AppendExecutionProvider_CUDA(cuda);
+        Ort::CUDAProviderOptions cuda;
+        cuda.Update({
+            { "device_id", "0" },
+            // 0 = full float32 in the tensor-core path. 1 is the EP default since
+            // 1.18, and it rounds the mantissa to 10 bits - visible in the third
+            // decimal place, which is three orders above the tolerance this
+            // template's suite uses.
+            { "use_tf32", "0" },
+            // HEURISTIC asks cuDNN once. EXHAUSTIVE benchmarks every algorithm
+            // against the real tensors at session creation, which costs minutes
+            // at 1080p before the first tile.
+            { "cudnn_conv_algo_search", "HEURISTIC" },
+            // 0 = cuDNN may not take the largest workspace it finds; the plan it
+            // picks has to fit the small one. 1 is the default and reserves a
+            // second copy of the activation budget.
+            { "cudnn_conv_use_max_workspace", "0" },
+            // Copies stay on the provider's stream: the only safe choice when the
+            // host hands over host memory.
+            { "do_copy_in_default_stream", "1" },
+        });
+        options.AppendExecutionProvider_CUDA_V2(*cuda);
+        if (applied) {
+            *applied = cuda.GetCUDAProviderOptionsAsString();
+        }
         return true;
     } catch (const std::exception& e) {
         *reason = ShortMessage(e.what());
@@ -555,6 +580,9 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
         _impl->provider += CudaPreloadNotes().hostFolder.empty() ? ", bundled CUDA"
                                                                  : ", host CUDA stack";
 #endif
+        // The one option that changes the numbers rather than the memory: it
+        // belongs in the label, so a run says which arithmetic it measured.
+        _impl->provider += ", tf32 off";
         // "CUDA" alone is the strong claim, not the true one: an unsupported node
         // sits on the CPU EP and the session still builds. The probe settles it,
         // and its answer goes where a reader looks - the label.

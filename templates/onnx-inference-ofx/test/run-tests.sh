@@ -103,7 +103,9 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
   # requested first and the CPU session is the fallback, so the value has to
   # name one of them and, when it is the fallback, carry the reason. Both are
   # accepted here: the harness cannot know which runtime a GPU machine links.
-  if ! grep -q "label parameter 'provider' = \"\(CUDA\|CPU\)" "${TMP}/exact.log"; then
+  # A CUDA session must say which arithmetic it runs: without "tf32 off" the
+  # label describes a device session whose numbers nobody has pinned down.
+  if ! grep -qE "label parameter 'provider' = \"(CUDA \(device 0, 1 thread, .*tf32 off|CPU)" "${TMP}/exact.log"; then
     echo "  FAIL: the provider label does not name an execution provider" >&2
     exit 1
   fi
@@ -119,7 +121,7 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     echo "  exact comparison failed on the resolve-shaped host; retrying with --golden-tolerance 1e-5"
     "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" --host-profile resolve --golden-tolerance 1e-5 | tee "${TMP}/resolve.log"
   fi
-  if ! grep -q "label parameter 'provider' = \"\(CUDA\|CPU\)" "${TMP}/resolve.log"; then
+  if ! grep -qE "label parameter 'provider' = \"(CUDA \(device 0, 1 thread, .*tf32 off|CPU)" "${TMP}/resolve.log"; then
     echo "  FAIL: the provider label does not name an execution provider under the resolve profile" >&2
     exit 1
   fi

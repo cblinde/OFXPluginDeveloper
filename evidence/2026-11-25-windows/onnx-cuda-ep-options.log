@@ -1,0 +1,58 @@
+# ONNX inference template: what the CUDA EP options actually do, Windows.
+#
+# Command: .validation/ort-gpu-1.32.0/bin/cuda-ep-options.exe <model.onnx> <W> <H>
+#   - a scratch program: builds the graph on the CPU (reference), then on the
+#   CUDA EP once per option set, and prints the provider's own serialisation of
+#   its options (GetCUDAProviderOptionsAsString), the device memory held before
+#   the session, after creating it and after a run (cuMemGetInfo_v2 through
+#   nvcuda.dll), the session-creation time and the largest absolute difference
+#   from the CPU session.
+# Model: .validation/big_conv.onnx - Conv 3->64 k3, Relu, Conv 64->64 k3,
+#   Relu, dynamic H/W, checked with onnx.checker (onnx 1.14.0, seed 1234).
+# Runtime: Microsoft.ML.OnnxRuntime 1.32.0 with the GPU package's provider
+#   (CUDA 13), as in onnx-inference-cuda-1.32.log.
+#
+# Caveat on the memory columns: the first CUDA session in a process also creates
+#   the context and initialises cuDNN, which is why the first row reads 1044 MB
+#   instead of 10 MB. The rows that matter for the comparison are 2-5.
+#
+# 1. 1920x1080, all five option sets in one process
+reference: CPU session, 132710400 values, 1920x1080
+
+options                     create ms   session MB after run MB max |d| vs CPU
+tf32=1 ws=1 HEURISTIC           190.0       1044.4       4158.4      4.472e-04
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=1;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=1;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+tf32=0 ws=1 HEURISTIC             3.2         10.0       3122.0      5.364e-07
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=1;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=0;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+tf32=1 ws=0 HEURISTIC             2.8         10.0       3122.0      4.472e-04
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=0;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=1;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+tf32=0 ws=0 HEURISTIC             3.1         10.0       3122.0      5.364e-07
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=0;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=0;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+tf32=0 ws=0 EXHAUSTIVE            2.8         10.0       3122.0      5.364e-07
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=0;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=EXHAUSTIVE;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=0;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+
+# 2. 640x480, the same five option sets
+reference: CPU session, 19660800 values, 640x480
+
+options                     create ms   session MB after run MB max |d| vs CPU
+tf32=1 ws=1 HEURISTIC             2.8         10.0        536.0      3.950e-04
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=1;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=1;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+tf32=0 ws=1 HEURISTIC             2.5         10.0        534.0      4.172e-07
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=1;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=0;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+tf32=1 ws=0 HEURISTIC             2.4         10.0        534.0      3.950e-04
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=0;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=1;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+tf32=0 ws=0 HEURISTIC             2.5         10.0        534.0      4.172e-07
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=0;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=0;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+tf32=0 ws=0 EXHAUSTIVE            3.1         10.0        534.0      4.172e-07
+   provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=0;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=EXHAUSTIVE;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kNextPowerOfTwo;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=0;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+
+# 3. The label the template prints with those options, through the contract
+#    harness (templates/onnx-inference-ofx/test/test.bat, 160 + 160 + 82 checks,
+#    0 failed), both host profiles
+- host profile: Testkit Fake Host (tiles, multi-resolution)
+ok 35 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)"
+ok 115 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)"
+- host profile: Testkit Fake Host (no tiles, no multi-resolution)
+ok 35 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)"
+ok 115 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)"
+- host profile: Testkit Fake Host (tiles, multi-resolution)

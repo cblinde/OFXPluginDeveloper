@@ -66,10 +66,10 @@ public:
     const std::string& OutputName() const;
 
     /// The provider the session was created with, the thread count, and - when
-    /// CUDA was granted - what the fallback probe found:
-    /// "CUDA (device 0, 1 thread, host CUDA stack, all nodes on CUDA)" (the
-    /// preload part is Windows only), "... , nodes left on CPU)" when a node
-    /// could not be placed, "CPU (1 thread)" otherwise.
+    /// CUDA was granted - which arithmetic it runs and what the fallback probe
+    /// found: "CUDA (device 0, 1 thread, host CUDA stack, tf32 off, all nodes on
+    /// CUDA)" (the preload part is Windows only), "... , nodes left on CPU)" when
+    /// a node could not be placed, "CPU (1 thread)" otherwise.
     const std::string& Provider() const;
 
     /// Why the session is not entirely on the device: the runtime's own first
