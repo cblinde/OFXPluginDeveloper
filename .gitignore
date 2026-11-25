@@ -31,3 +31,6 @@ __pycache__/
 
 # Scratch: downloaded hosts, renderers and logs for manual validation runs
 .validation/
+
+# Resolve proof-of-concept output: reports and rendered frames
+tests/resolve/reports/
