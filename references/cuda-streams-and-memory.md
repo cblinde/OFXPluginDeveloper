@@ -142,7 +142,7 @@ nvtxRangePop();
   `kOfxImageEffectPropCudaStreamSupported = "true"` **[S]**. The template
   advertises it and does not depend on it.
 - With a host stream: enqueue and return. The host orders its own work against
-  that stream, and the spec says not to wait — *"the plug-in SHOULD NOT wait for
+  that stream, and the spec forbids waiting — *"the plug-in SHOULD NOT wait for
   final asynchronous operations to complete… SHOULD NOT call
   cudaDeviceSynchronize() at any time"* **[S]**.
 - Without a stream: your work must be complete before `render` returns **[S]**.
