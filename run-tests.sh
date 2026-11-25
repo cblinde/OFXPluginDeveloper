@@ -83,6 +83,21 @@ if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
   echo "       lib/libonnxruntime.so (see templates/onnx-inference-ofx/build.sh --help)."
 fi
 
+# The CUDA template runs in one of two modes, and the summary has to say which.
+# CPU_ONLY=1 asks for the fallback path on purpose, and a machine without nvcc
+# ends up there anyway; in neither case does a kernel run, so no summary line may
+# claim one did. Same rule as the ONNX skip above: a hole is named, not rounded up
+# to "passed".
+gpu_mode="CUDA"
+if [[ "${CPU_ONLY:-0}" == "1" ]]; then
+  gpu_mode="CPU_ONLY"
+elif ! command -v nvcc >/dev/null 2>&1; then
+  gpu_mode="CPU_ONLY (no nvcc)"
+  # build.sh exits 2 when asked for CUDA and there is no nvcc, by design; the
+  # single command must still work on a machine without a toolkit.
+  export CPU_ONLY=1
+fi
+
 # A run that claims to cover everything is only allowed to stay green without
 # the template when a human says so. CI defines CI=true, GitHub Actions
 # GITHUB_ACTIONS, Azure Pipelines TF_BUILD and Buildkite BUILDKITE; any of them
@@ -103,6 +118,20 @@ report_skipped_onnx() {
   echo "  tested: not its build, not its host contract, not its ai_pipeline test."
   echo "  The counts above do not cover it."
   echo "  Close it with: ONNXRUNTIME_ROOT=/path/to/onnxruntime ./run-tests.sh"
+  echo "------------------------------------------------------------------"
+}
+
+# The GPU half of the CUDA template, when it was not exercised. It runs on the
+# CPU fallback path, which is a real result - just not a kernel result.
+report_skipped_gpu() {
+  [[ "${gpu_mode}" != "CUDA" ]] || return 0
+  echo
+  echo "------------------------------------------------------------------"
+  echo "NOT VERIFIED: GPU kernels (templates/minimal-cuda-ofx)"
+  echo "  ${gpu_mode}: the template built and tested its CPU fallback only, so no"
+  echo "  cubin was loaded and nothing ran on a device. The counts above do not"
+  echo "  cover it."
+  echo "  Close it with: ./run-tests.sh   (without CPU_ONLY, nvcc on PATH)"
   echo "------------------------------------------------------------------"
 }
 
@@ -176,7 +205,11 @@ if [[ "${windows}" == "1" ]]; then
   echo "  docs drift check                (tools/check-docs.py)"
   echo "  reference build + artifact      (minimal-ofx, dumpbin)"
   echo "  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)"
-  echo "  GPU kernels                     (as test/run-tests.bat reported above)"
+  if [[ "${gpu_mode}" == "CUDA" ]]; then
+    echo "  GPU kernels                     (as test/run-tests.bat reported above)"
+  else
+    echo "  NOT RUN: GPU kernels            (${gpu_mode})"
+  fi
   echo "  negative controls               (testkit/run-negative-controls.bat)"
   if [[ "${onnx}" == "0" ]]; then
     echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
@@ -184,6 +217,7 @@ if [[ "${windows}" == "1" ]]; then
   echo "RUN_VALGRIND and SANITIZE are POSIX-only; this route has no valgrind"
   echo "=================================================================="
   report_skipped_onnx
+  report_skipped_gpu
   require_onnx_in_ci
   exit 0
 fi
@@ -191,15 +225,8 @@ fi
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
-cuda_mode="CUDA"
-if [[ "${CPU_ONLY:-0}" == "1" ]] || ! command -v nvcc >/dev/null 2>&1; then
-  cuda_mode="CPU_ONLY"
-  # build.sh exits 2 when asked for CUDA and there is no nvcc, by design; the
-  # single command must still work on a machine without a toolkit.
-  export CPU_ONLY=1
-fi
 echo
-echo "== build: minimal-cuda-ofx (${cuda_mode}) =="
+echo "== build: minimal-cuda-ofx (${gpu_mode}) =="
 ( cd "${ROOT}/templates/minimal-cuda-ofx" && ./build.sh )
 
 echo
@@ -256,6 +283,11 @@ echo "  docs drift check                (tools/check-docs.py)"
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
+if [[ "${gpu_mode}" == "CUDA" ]]; then
+  echo "  GPU kernels                     (minimal-cuda-ofx, on the device)"
+else
+  echo "  NOT RUN: GPU kernels            (${gpu_mode})"
+fi
 if [[ "${onnx}" == "0" ]]; then
   echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
 fi
@@ -266,4 +298,5 @@ else
 fi
 echo "=================================================================="
 report_skipped_onnx
+report_skipped_gpu
 require_onnx_in_ci

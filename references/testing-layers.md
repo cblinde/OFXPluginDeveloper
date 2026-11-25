@@ -780,7 +780,10 @@ cmd //c testkit/run-negative-controls.bat      # the same controls, Windows
 `./run-tests.sh` exits 0 with `RUN_VALGRIND=0` in about two minutes on the
 authoring machine; with memcheck enabled (the default when valgrind is on
 `PATH`) it takes close to five. `CPU_ONLY=1` forces the CUDA template's CPU path
-when no toolkit is installed.
+when no toolkit is installed. In that mode - and on a machine without `nvcc`,
+which lands in the same mode - the summary prints `NOT RUN: GPU kernels` next to
+a `NOT VERIFIED` block instead of a line claiming kernels ran, so a CPU-only run
+cannot be read as one that exercised the device.
 
 Measured on the machines this repository has been exercised on: a Linux x86-64
 box with no GPU and no host, and a Windows 11 box with an RTX 3060. The 2026-11-22
