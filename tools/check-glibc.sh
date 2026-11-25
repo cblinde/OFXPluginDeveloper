@@ -27,6 +27,10 @@
 # exercised on, for one. It proves the comparison fails when the bound is one
 # step too low; it does not prove that a real readelf reads a real .ofx the way
 # the canned one does.
+#
+# Both `./run-tests.sh` and the `docs` CI workflow run `--selftest`: a comparison
+# that silently stops failing costs a bundle at load time on the target platform,
+# so the regression has to break a build without anyone remembering to look.
 set -uo pipefail
 
 SELF="${BASH_SOURCE[0]}"

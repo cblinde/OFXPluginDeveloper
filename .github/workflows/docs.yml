@@ -18,9 +18,25 @@ jobs:
       - name: Documentation drift
         run: python3 tools/check-docs.py
 
+      - name: glibc bound self-test
+        # The bound is a version comparison, and it can regress while every
+        # template stays unchanged - the damage then appears on a platform that
+        # cannot load the bundle. The self-test feeds a canned readelf, so it
+        # needs no binutils and costs a second: a pull request fails here in
+        # seconds instead of after three template builds. run-tests.sh runs it as
+        # well, for the runs that never reach CI.
+        run: bash tools/check-glibc.sh --max 2.17 --selftest
+
+      - name: halo value check
+        # The committed model carries the tile overlap that was measured for it.
+        # Replacing the model without re-measuring leaves a number describing the
+        # old file, and nothing else in the tree would notice. Hashes the model
+        # and reads the JSON: no compiler, no ONNX Runtime.
+        run: tools/measure-halo.sh templates/onnx-inference-ofx/models/test_conv.onnx --check
+
       - name: Script syntax
         run: |
-          python3 -m py_compile tools/*.py
+          python3 -m py_compile tools/*.py tests/resolve/*.py
           bash -n run-tests.sh
           bash -n templates/minimal-ofx/build.sh
           bash -n templates/minimal-ofx/test/run-tests.sh
@@ -72,6 +88,16 @@ jobs:
         # longer targets. 18 is the floor the source needs (the TF32 switch), not
         # the version this job uses (1.32.0).
         run: python3 tools/check-runtime.py "$HOME/ort" --require-api 18
+
+      - name: Test fixture self-test
+        # Generating the fixtures and loading them back through ONNX Runtime is a
+        # test of the tool: a fixture that stopped matching what the tiling code
+        # expects fails here rather than in a host. run-tests.sh runs the same
+        # stage and names it skipped when these packages are absent, so this step
+        # is what keeps it from being skipped in CI.
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check onnx onnxruntime numpy
+          python3 tools/make-testmodels.py --out build/test-fixtures
 
       - name: Template suites
         env:

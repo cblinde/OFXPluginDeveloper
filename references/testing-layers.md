@@ -836,6 +836,24 @@ testkit/run-negative-controls.sh
 cmd //c testkit/run-negative-controls.bat      # the same controls, Windows
 ```
 
+Every comparison the harness trusts is shown failing before it is credited with
+passing. Two of them have their own test: `testkit/selftest-compare.sh` corrupts a
+reference, and `tools/check-glibc.sh --selftest` lowers the bound until the check
+must refuse. The glibc one runs in `./run-tests.sh` on **both routes** - the
+POSIX one and the Windows one, because it feeds a **canned** `readelf` and so
+needs neither binutils nor an ELF binary - and as a step in the `docs` workflow,
+where it fails a pull request before the template builds start. What it proves is
+the comparison and the argument handling, in nine cases: a bundle within the
+bound passes, while a bound one step too low, a requirement above the bound, an
+object `readelf` cannot read, an empty tree, an unparsable bound and a missing
+path each produce the exit code and the line they should - and a bound above the
+highest or a file mentioning only `GLIBCXX_3.4.29` passes instead of failing on a
+version that is not glibc.
+
+What it does not prove is that a real `readelf` reports a real `.ofx` the way the
+canned one does - that still needs a Linux build and
+`tools/check-glibc.sh --max 2.17 <bundle>`.
+
 `./run-tests.sh` exits 0 with `RUN_VALGRIND=0` in about two minutes on the
 authoring machine; with memcheck enabled (the default when valgrind is on
 `PATH`) it takes close to five. `CPU_ONLY=1` forces the CUDA template's CPU path

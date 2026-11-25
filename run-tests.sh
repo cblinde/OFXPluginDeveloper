@@ -209,6 +209,59 @@ if [[ "${windows}" == "1" ]]; then
   echo "== negative controls: broken plug-ins must fail, the pattern must pass =="
   cmd //c "$(cygpath -w "${ROOT}/testkit/run-negative-controls.bat")"
 
+  # The committed model carries the overlap that was measured for it; a model
+  # replaced without re-measuring is exactly the drift this check is for. It
+  # hashes the model and reads the JSON, so it needs no compiler, no ONNX
+  # Runtime and no GPU - only sha256sum, which Git Bash has.
+  echo
+  echo "== halo value: the stored overlap must still belong to this model =="
+  "${ROOT}/tools/measure-halo.sh" \
+    "${ROOT}/templates/onnx-inference-ofx/models/test_conv.onnx" --check
+
+  # The glibc bound is a version comparison, and a comparison can regress while
+  # every template stays unchanged. Its self-test feeds a canned readelf, so it
+  # needs neither binutils nor an ELF binary - which is why it runs on this route
+  # too, unlike the suites above.
+  echo
+  echo "== glibc bound self-test: the comparison must fail on a bound that is too low =="
+  "${ROOT}/tools/check-glibc.sh" --max 2.17 --selftest
+
+  # The Resolve suite cannot run without a host, but its two host-free halves can:
+  # the pixel checks and the stale-render rule. Without these they would only run
+  # when someone remembered, and both are the kind of logic that rots silently.
+  echo
+  echo "== resolve pixel checks: a uniform, black or wrong-sized frame must fail =="
+  "${documentation_python}" "${ROOT}/tests/resolve/checks.py"
+  echo
+  echo "== resolve stale-file test: a second run in one directory must not pass =="
+  "${documentation_python}" "${ROOT}/tests/resolve/test_stale_file.py"
+
+  # Generating the fixtures and loading them back is a test of the tool, not of a
+  # plug-in: it catches a fixture that stopped matching what the tiling code
+  # expects. It needs onnxruntime and numpy, and an onnxruntime built against
+  # NumPy 1.x crashes inside a NumPy 2 Python - so the verdict is what decides,
+  # and a run that reaches no verdict at all is a failure, not a skip.
+  echo
+  echo "== test fixtures: synthetic models must load and match their shapes =="
+  fixtures_log="$(mktemp)"
+  set +e
+  "${documentation_python}" "${ROOT}/tools/make-testmodels.py" --out "${ROOT}/build/test-fixtures" 2>&1 \
+    | tee "${fixtures_log}"
+  fixtures_status=${PIPESTATUS[0]}
+  set -e
+  if grep -q "self-test: .* 0 failure(s)" "${fixtures_log}"; then
+    fixtures="ran"
+  elif grep -q "_ARRAY_API not found\|cannot be run in" "${fixtures_log}"; then
+    echo "   (skipped: this Python's onnxruntime was built against NumPy 1.x;" >&2
+    echo "    the docs workflow runs the same stage on clean wheels)" >&2
+    fixtures="skipped"
+  else
+    echo "error: the fixture self-test reached no verdict (exit ${fixtures_status})" >&2
+    rm -f "${fixtures_log}"
+    exit 1
+  fi
+  rm -f "${fixtures_log}"
+
   echo
   echo "== comparator self-test: the golden comparison must fail on a corrupt reference =="
   cmd //c "$(cygpath -w "${ROOT}/testkit/selftest-compare.bat")"
@@ -225,6 +278,15 @@ if [[ "${windows}" == "1" ]]; then
     echo "  NOT RUN: GPU kernels            (${gpu_mode})"
   fi
   echo "  negative controls               (testkit/run-negative-controls.bat)"
+  echo "  halo value check                (models/test_conv.onnx)"
+  echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
+  echo "  resolve pixel checks            (tests/resolve/checks.py)"
+  echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
+  if [[ "${fixtures}" == "ran" ]]; then
+    echo "  test fixtures                   (tools/make-testmodels.py)"
+  else
+    echo "  NOT RUN: test fixtures          (onnxruntime/numpy unusable)"
+  fi
   echo "  comparator self-test            (testkit/selftest-compare.bat)"
   if [[ "${onnx}" == "0" ]]; then
     echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
@@ -287,6 +349,56 @@ else
   negative_controls="skipped"
 fi
 
+# The overlap stored beside the committed model is a measurement, and a model
+# replaced without re-measuring leaves a number that describes the old file. The
+# check hashes the model and reads the JSON: no compiler, no ONNX Runtime.
+echo
+echo "== halo value: the stored overlap must still belong to this model =="
+"${ROOT}/tools/measure-halo.sh" \
+  "${ROOT}/templates/onnx-inference-ofx/models/test_conv.onnx" --check
+
+# The glibc bound is a comparison too, and it can regress without any template
+# changing. It is a tool the release depends on, so it gets the same treatment as
+# the comparator: shown failing before it is credited with passing.
+echo
+echo "== glibc bound self-test: the comparison must fail on a bound that is too low =="
+"${ROOT}/tools/check-glibc.sh" --max 2.17 --selftest
+
+# Same for the Resolve suite: the host half cannot run here, the two host-free
+# halves must. They are plain Python on bytes and on the filesystem.
+echo
+echo "== resolve pixel checks: a uniform, black or wrong-sized frame must fail =="
+"${documentation_python}" "${ROOT}/tests/resolve/checks.py"
+echo
+echo "== resolve stale-file test: a second run in one directory must not pass =="
+"${documentation_python}" "${ROOT}/tests/resolve/test_stale_file.py"
+
+# The fixtures are a test of the tool: generated models loaded back through ONNX
+# Runtime, at two sizes, so a fixture that stopped matching what the tiling code
+# expects fails here instead of in a host. An onnxruntime built against NumPy 1.x
+# crashes inside a NumPy 2 Python, so the verdict decides between pass and a
+# named skip - and a run that reaches no verdict is a failure.
+echo
+echo "== test fixtures: synthetic models must load and match their shapes =="
+fixtures_log="$(mktemp)"
+set +e
+"${documentation_python}" "${ROOT}/tools/make-testmodels.py" --out "${ROOT}/build/test-fixtures" 2>&1 \
+  | tee "${fixtures_log}"
+fixtures_status=${PIPESTATUS[0]}
+set -e
+if grep -q "self-test: .* 0 failure(s)" "${fixtures_log}"; then
+  fixtures="ran"
+elif grep -q "_ARRAY_API not found\|cannot be run in" "${fixtures_log}"; then
+  echo "   (skipped: this Python's onnxruntime was built against NumPy 1.x;" >&2
+  echo "    the docs workflow runs the same stage on clean wheels)" >&2
+  fixtures="skipped"
+else
+  echo "error: the fixture self-test reached no verdict (exit ${fixtures_status})" >&2
+  rm -f "${fixtures_log}"
+  exit 1
+fi
+rm -f "${fixtures_log}"
+
 # The comparator's own test: the suites trust it, so it has to be shown failing
 # on a corrupt reference before it is credited with passing a good one.
 echo
@@ -298,6 +410,15 @@ echo "=================================================================="
 summary_headline
 echo "  docs drift check                (tools/check-docs.py)"
 echo "  comparator self-test            (testkit/selftest-compare.sh)"
+echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
+echo "  resolve pixel checks            (tests/resolve/checks.py)"
+echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
+echo "  halo value check                (models/test_conv.onnx)"
+if [[ "${fixtures}" == "ran" ]]; then
+  echo "  test fixtures                   (tools/make-testmodels.py)"
+else
+  echo "  NOT RUN: test fixtures          (onnxruntime/numpy unusable)"
+fi
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
