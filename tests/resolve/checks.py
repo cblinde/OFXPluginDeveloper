@@ -120,13 +120,11 @@ def selftest():
 
     gradient = _Stub(4, 2, 4, _synthetic(4, 2, 4, lambda x, y, c: (x * 16 + y * 8 + c) & 0xFF))
     uniform = _Stub(4, 2, 4, bytes([17]) * (4 * 2 * 4))
-    black = _Stub(4, 2, 4, bytes(4 * 2 * 4))
 
     case("a gradient passes", lambda: check_image(gradient, {"width": 4, "height": 2}), [])
     case("a uniform frame is caught",
          lambda: check_image(uniform), ["uniform frame: every byte is the same value"])
-    case("a black frame is caught", lambda: check_image(black), None)
-    # The realistic one: opaque black, alpha 255, RGB zero.
+    # The frame most likely to mean the plug-in never ran: opaque black, RGB zero.
     opaque_black = _Stub(4, 2, 4, bytes([0, 0, 0, 255] * (4 * 2)))
     case("an opaque black frame is caught",
          lambda: check_image(opaque_black), ["completely black frame (alpha ignored)"])

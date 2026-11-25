@@ -20,15 +20,10 @@ def snapshot(directory, prefix):
     return {path.name for path in Path(directory).glob(f"{prefix}*") if path.is_file()}
 
 
-def new_files(directory, prefix, before):
-    """The files that appeared since `before`, matching `prefix*`."""
-    return [path for path in Path(directory).glob(f"{prefix}*")
-            if path.is_file() and path.name not in before]
-
-
 def newest_new_file(directory, prefix, before):
     """The newest file this run produced, or RuntimeError when there is none."""
-    fresh = new_files(directory, prefix, before)
+    fresh = [path for path in Path(directory).glob(f"{prefix}*")
+             if path.is_file() and path.name not in before]
     if not fresh:
         raise RuntimeError(f"job Complete but it wrote nothing new in {directory}")
     newest = max(fresh, key=lambda path: path.stat().st_mtime)
