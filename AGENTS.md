@@ -34,6 +34,7 @@ files and `onnxruntime` + `numpy` for its self-test; neither is a dependency.
 | AI-model decision | `references/ai-architectures-and-runtimes.md` -> `references/onnx-and-tensorrt.md` -> `templates/onnx-inference-ofx/` | CUDA kernel detail |
 | Check a `[B]` claim | `references/verification-status.md` -> its `evidence/` link | the design docs, until the evidence contradicts them |
 | Host behaviour differs | `references/host-resolve.md` -> `references/host-nuke-scratch-natron.md`, grades A/B/C | anything claiming a host was tested |
+| Plan an improvement | `references/improvement-backlog.md` -> the document that owns the subject | nothing: a row is a candidate, not a claim |
 
 ---
 ## Hard rules
@@ -56,5 +57,4 @@ files and `onnxruntime` + `numpy` for its self-test; neither is a dependency.
 
 **Labels:** **[V]** verified here, **[I]** inferred, **[B]** external evidence; definitions in `references/cmake-and-linking.md`.
 
-What actually runs, with counts: `references/testing-layers.md` §13. What a build proves,
-and what it cannot: `references/debugging-and-symptoms.md` §5.
+What actually runs, with counts: `references/testing-layers.md` §13. What a build proves, and what it cannot: `references/debugging-and-symptoms.md` §5.
