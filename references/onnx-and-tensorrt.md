@@ -735,6 +735,18 @@ Four settings decide whether a frame is reproducible on the device:
 | `gpu_mem_limit`, `arena_extend_strategy` | `SIZE_MAX`, `kNextPowerOfTwo` | the arena never returns memory and doubles as it grows, so an instance left open holds the peak of every shape it has seen | struct field or `OrtArenaCfg` |
 | `cudnn_conv_use_max_workspace` | `1` | permission for the plan to reserve up to a second copy of the activation budget; what it actually reserves depends on the plan cuDNN picks | key/value option only |
 
+**Before that was written down, the defaults were in force, and the GPU evidence
+in this repository still shows it.** Both CUDA logs were produced by a
+`ModelRunner` that filled three fields of the struct and inherited the rest. The
+label line in them reads `CUDA (device 0, 1 thread, bundled CUDA)` - no
+`tf32 off`, because nothing had set it
+([`../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log)).
+Those runs are still valid for what they claim - the provider loaded, the bundle
+resolves, the numbers were close - but they cannot testify about arithmetic they
+never pinned down, and a tolerance bisected on such a run measures the session's
+defaults as much as the plug-in. That is why the clause is in the label: a log
+without it says which run it was.
+
 The template therefore appends the provider through the key/value API and states
 five keys explicitly - `device_id`, `use_tf32=0`, `cudnn_conv_algo_search=HEURISTIC`,
 `cudnn_conv_use_max_workspace=0`, `do_copy_in_default_stream=1` - instead of
@@ -819,6 +831,21 @@ that is the line a log reader actually sees:
 | `CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)` | the probe loaded the graph with the key, so every node is on the device, and the arithmetic is the one §5 measured |
 | `CUDA (…, nodes left on CPU)` | the probe failed; the runtime's reason follows in the same label after `- fallback:` |
 | `CPU (1 thread) - fallback: …` | no provider at all, as before |
+
+**Reading a failed GPU run.** The expensive mistake is to treat a mismatch as a
+numbers problem when it is a configuration one: with TF32 on, a convolution
+rounds at `4.5e-4` (§5), so a golden comparison at `1e-5` fails for a reason that
+has nothing to do with the plug-in; and a run can also fail for a reason that has
+nothing to do with arithmetic at all, when a node or the provider is missing. The
+label decides which of the four cases a log is in, before anyone edits a
+tolerance:
+
+| The label says | The run is | What to do |
+|---|---|---|
+| `CUDA (… bundled CUDA)` - no `tf32 off` | the EP defaults are in force: TF32 on, `EXHAUSTIVE`, max workspace | nothing about this frame is known; set the options, re-run, then read the numbers |
+| `CUDA (…, nodes left on CPU)` | part of the graph ran on the CPU EP | not a device number: timing and coverage claims are void until the node is placed |
+| `CUDA (…, node coverage unknown)` | the probe could not ask - no session was built | coverage is unknown, not "all" and not "none" |
+| `CUDA (… tf32 off, all nodes on CUDA)` | every node on the device, full float32 | now it is arithmetic: the remaining difference is summation order (`5.4e-7` measured), the `1e-5` retry covers it, and a larger error is a plug-in bug |
 
 Measured on this machine with the bundled 1.32.0 and CUDA 13 (**[V]**,
 [`../evidence/2026-11-25-windows/onnx-fallback-probe.log`](../evidence/2026-11-25-windows/onnx-fallback-probe.log)):
