@@ -37,3 +37,20 @@ echo "[3/3] running the host protocol against ${OFX_FILE}"
   --src-bounds-inset 2 --dst-bounds-inset 2 \
   --negative-pitch \
   --concurrency-param gain
+
+# The same contract against the other host shape: supportsTiles=0 and
+# supportsMultiResolution=0, the profile Resolve's OFX host reports in the dumps
+# published in openfx-misc's README-hosts.txt. One process holds one host, so
+# this is a second run rather than a flag inside the first.
+echo "  the same protocol against a host with supportsTiles=0 and supportsMultiResolution=0"
+"${HARNESS}" "${OFX_FILE}" \
+  --host-profile resolve \
+  --id com.ofxplugindeveloper.referencegain \
+  --version 1.0 \
+  --param gain:double \
+  --clip Source \
+  --clip Output \
+  --byte-dst-rejected \
+  --src-bounds-inset 2 --dst-bounds-inset 2 \
+  --negative-pitch \
+  --concurrency-param gain

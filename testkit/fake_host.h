@@ -18,8 +18,11 @@
 // safety is a claim about exactly that.
 //
 // What it is not: a conformant host. See references/testing-layers.md L3 for what it
-// cannot prove (the multi-resolution/tile protocol, clip preferences, and how a
-// real host presents errors). It is a contract test, not a certification.
+// cannot prove (clip preferences, proxy arithmetic, and how a real host presents
+// errors). The host shape is an input, not a constant - setHostProfile presents
+// the tiles + multi-resolution host or the one that reports neither - but a
+// profile is still this harness talking, not the host application. It is a
+// contract test, not a certification.
 
 #pragma once
 
@@ -41,12 +44,42 @@ struct Impl; // defined in fake_host.cpp
 // independently to build that layout at all.
 enum class ImageOrigin { Bottom, Top };
 
+// The host shape a run presents. Real hosts disagree about this, and the
+// disagreement is in the dumps: `openfx-misc`'s `README-hosts.txt` records
+// Resolve Lite 16 as API 1.4 with `supportsTiles=0` (and no multi-resolution),
+// Nuke 10 as API 1.2 with `supportsTiles=1` and `temporalClipAccess=1`. A
+// plug-in that only ever meets one shape is only tested against one host, so
+// the profile is an axis of the run rather than a constant in the harness.
+//
+// One process can hold one host (OFX's OfxSetHost ignores every call after the
+// first), so a run covers one profile; a suite that wants both runs the
+// harness twice, once per profile.
+enum class HostProfile { TilesAndMultiRes, NoTilesNoMultiRes };
+
+const char* hostProfileName(HostProfile profile);
+
 class FakeHost {
 public:
   FakeHost();
   ~FakeHost();
   FakeHost(const FakeHost&) = delete;
   FakeHost& operator=(const FakeHost&) = delete;
+
+  // The host shape this process presents. Must happen before attach(): the
+  // properties are read during describe.
+  //
+  // The profile is what the plug-in *sees*, not what the harness is allowed to
+  // do: a host that reports supportsTiles=0 still renders windows that are not
+  // the whole frame when its own region of definition is smaller (a crop, a
+  // proxy), so the harness keeps every window check and the profile only
+  // changes the host's declared capabilities.
+  void setHostProfile(HostProfile profile);
+  HostProfile hostProfile() const;
+  bool hostSupportsTiles() const;
+  bool hostSupportsMultiResolution() const;
+  // A host property as the plug-in reads it through the property suite. Used to
+  // prove the profile reached the property set instead of being assumed.
+  int hostInteger(const char* property) const;
 
   // Calls the plug-in's setHost(). Must happen before load().
   void attach(OfxPlugin* plugin);

@@ -25,6 +25,16 @@
 #include "ofxProperty.h"
 
 namespace testkit {
+
+// The label a host presents, and the name a log line prints. The two profiles
+// differ in exactly the two properties hosts are dumped for, so spelling them
+// out means a captured log says which host shape produced it.
+const char* hostProfileName(HostProfile profile) {
+  return profile == HostProfile::TilesAndMultiRes
+             ? "Testkit Fake Host (tiles, multi-resolution)"
+             : "Testkit Fake Host (no tiles, no multi-resolution)";
+}
+
 namespace {
 
 enum ValueKind { kString = 1, kInt = 2, kDouble = 3, kPointer = 4 };
@@ -119,6 +129,9 @@ struct Impl {
   std::vector<ClipObj*> clips;
   std::vector<ParamObj*> params;
   std::map<std::string, ClipObj*> clipByName;
+
+  // The host shape this process presents; see FakeHost::setHostProfile.
+  HostProfile profile = HostProfile::TilesAndMultiRes;
 
   // images
   int imgW = 64;
@@ -1044,9 +1057,10 @@ const void* fetchSuite(OfxPropertySetHandle, const char* suiteName, int suiteVer
 
 void setHostInteger(PropSet* s, const char* name, int value) { setInt(s, name, 0, value); }
 
-void initHostProps(PropSet* s) {
+void initHostProps(PropSet* s, HostProfile profile) {
+  const bool tiles = profile == HostProfile::TilesAndMultiRes;
   setString(s, kOfxPropName, 0, "testkit-fake-host");
-  setString(s, kOfxPropLabel, 0, "Testkit Fake Host");
+  setString(s, kOfxPropLabel, 0, hostProfileName(profile));
   setInt(s, kOfxPropAPIVersion, 0, 1);
   setInt(s, kOfxPropAPIVersion, 1, 5);
   setInt(s, kOfxPropVersion, 0, 1);
@@ -1055,8 +1069,8 @@ void initHostProps(PropSet* s) {
   setString(s, kOfxPropVersionLabel, 0, "1.0.0");
   setHostInteger(s, kOfxImageEffectHostPropIsBackground, 0);
   setHostInteger(s, kOfxImageEffectPropSupportsOverlays, 0);
-  setHostInteger(s, kOfxImageEffectPropSupportsMultiResolution, 1);
-  setHostInteger(s, kOfxImageEffectPropSupportsTiles, 1);
+  setHostInteger(s, kOfxImageEffectPropSupportsMultiResolution, tiles ? 1 : 0);
+  setHostInteger(s, kOfxImageEffectPropSupportsTiles, tiles ? 1 : 0);
   setHostInteger(s, kOfxImageEffectPropTemporalClipAccess, 1);
   setHostInteger(s, kOfxImageEffectPropSupportsMultipleClipDepths, 1);
   setHostInteger(s, kOfxImageEffectPropSupportsMultipleClipPARs, 1);
@@ -1155,7 +1169,7 @@ Impl::Impl() {
   messageSuiteV2.setPersistentMessage = persistentMessageFn;
   messageSuiteV2.clearPersistentMessage = clearPersistentMessageFn;
 
-  initHostProps(&hostProps);
+  initHostProps(&hostProps, profile);
   pluginDesc.props.owner = &pluginDesc;
   pluginDesc.props.ownerKind = kEffect;
   pluginDesc.paramSet.owner = &pluginDesc;
@@ -1408,6 +1422,33 @@ std::string FakeHost::descriptorString(const char* property, int index) const {
 int FakeHost::descriptorInt(const char* property, int index) const {
   int value = 0;
   getInt(const_cast<PropSet*>(&impl_->pluginDesc.props), property, index, &value);
+  return value;
+}
+
+void FakeHost::setHostProfile(HostProfile profile) {
+  impl_->profile = profile;
+  const int value = profile == HostProfile::TilesAndMultiRes ? 1 : 0;
+  // The constructor already wrote the defaults, and the property set is the
+  // plug-in's whole view of the host: rewrite the two entries rather than
+  // leaving a second source of truth.
+  setHostInteger(&impl_->hostProps, kOfxImageEffectPropSupportsTiles, value);
+  setHostInteger(&impl_->hostProps, kOfxImageEffectPropSupportsMultiResolution, value);
+  setString(&impl_->hostProps, kOfxPropLabel, 0, hostProfileName(profile));
+}
+
+HostProfile FakeHost::hostProfile() const { return impl_->profile; }
+
+bool FakeHost::hostSupportsTiles() const {
+  return impl_->profile == HostProfile::TilesAndMultiRes;
+}
+
+bool FakeHost::hostSupportsMultiResolution() const {
+  return impl_->profile == HostProfile::TilesAndMultiRes;
+}
+
+int FakeHost::hostInteger(const char* property) const {
+  int value = 0;
+  getInt(const_cast<PropSet*>(&impl_->hostProps), property, 0, &value);
   return value;
 }
 

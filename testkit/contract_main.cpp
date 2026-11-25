@@ -167,6 +167,10 @@ struct Spec {
   std::string id;
   std::string api = kOfxImageEffectPluginApi;
   std::string context = kOfxImageEffectContextFilter;
+  // --host-profile nuke|resolve: the shape the fake host presents, after the
+  // dumps in openfx-misc's README-hosts.txt. A process holds one host, so a
+  // suite that wants both shapes runs the harness twice.
+  testkit::HostProfile profile = testkit::HostProfile::TilesAndMultiRes;
   int apiVersion = 1;
   int versionMajor = 1;
   int versionMinor = 0;
@@ -581,6 +585,7 @@ std::string rectText(const OfxRectD& r) {
 
 bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   testkit::FakeHost host;
+  host.setHostProfile(spec.profile);
   Module module;
   std::string error;
   if (!check("dlopen(" + spec.path + ")", module.open(spec.path, &error), error)) return failCycle(host);
@@ -662,6 +667,19 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   }
 
   host.attach(p);
+  // The profile is an input to the whole cycle: a host that reports a shape the
+  // run did not ask for would turn every later failure into a plug-in
+  // accusation, so it stops the run here instead of being counted.
+  const int hostTiles = host.hostInteger(kOfxImageEffectPropSupportsTiles);
+  const int hostMultiRes = host.hostInteger(kOfxImageEffectPropSupportsMultiResolution);
+  const int wantShape = spec.profile == testkit::HostProfile::TilesAndMultiRes ? 1 : 0;
+  if (hostTiles != wantShape || hostMultiRes != wantShape) {
+    std::fprintf(stderr,
+                 "error: the fake host reports supportsTiles=%d supportsMultiResolution=%d, "
+                 "the run asked for %d: the profile did not reach the property set\n",
+                 hostTiles, hostMultiRes, wantShape);
+    return failCycle(host);
+  }
   const OfxStatus loadStatus = host.load();
   if (!check("kOfxActionLoad", loadStatus == kOfxStatOK, statusName(loadStatus))) return failCycle(host);
   const OfxStatus describeStatus = host.describe();
@@ -1187,6 +1205,7 @@ int main(int argc, char** argv) {
                  "          after the first render and rendered again, so a plug-in\n"
                  "          that caches on the clip handle has to re-read)\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
+                 "       [--host-profile nuke|resolve] (tiles + multi-resolution, or neither)\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
                  "--set without --set-status-only assumes the parameter scales RGB by\n"
@@ -1217,6 +1236,17 @@ int main(int argc, char** argv) {
       spec.versionMinor = dot == std::string::npos ? 0 : std::atoi(v.substr(dot + 1).c_str());
     } else if (a == "--context") {
       spec.context = next("--context");
+    } else if (a == "--host-profile") {
+      const std::string v = next("--host-profile");
+      if (v == "nuke" || v == "tiles") {
+        spec.profile = testkit::HostProfile::TilesAndMultiRes;
+      } else if (v == "resolve" || v == "no-tiles") {
+        spec.profile = testkit::HostProfile::NoTilesNoMultiRes;
+      } else {
+        std::fprintf(stderr, "error: --host-profile wants nuke (tiles + multi-resolution) "
+                             "or resolve (neither)\n");
+        return 2;
+      }
     } else if (a == "--param") {
       const std::string v = next("--param");
       const size_t colon = v.find(':');
@@ -1336,6 +1366,7 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  std::printf("- host profile: %s\n", testkit::hostProfileName(spec.profile));
   if (!runCycle(spec, std::string())) {
     std::printf("contract_test: %d checks, %d failed\n", g_checks, g_failed);
     return 1;

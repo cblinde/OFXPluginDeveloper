@@ -108,6 +108,22 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     exit 1
   fi
 
+  # The same contract against the other host shape: supportsTiles=0 and
+  # supportsMultiResolution=0, the profile Resolve's OFX host reports in the
+  # dumps published in openfx-misc's README-hosts.txt. Only the two host
+  # properties change - every window, RoI and pixel check stays, because a host
+  # with supportsTiles=0 still renders a window smaller than the frame when its
+  # own region of definition is smaller.
+  echo "  the same contract against a host with supportsTiles=0 and supportsMultiResolution=0"
+  if ! "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" --host-profile resolve | tee "${TMP}/resolve.log"; then
+    echo "  exact comparison failed on the resolve-shaped host; retrying with --golden-tolerance 1e-5"
+    "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" --host-profile resolve --golden-tolerance 1e-5 | tee "${TMP}/resolve.log"
+  fi
+  if ! grep -q "label parameter 'provider' = \"\(CUDA\|CPU\)" "${TMP}/resolve.log"; then
+    echo "  FAIL: the provider label does not name an execution provider under the resolve profile" >&2
+    exit 1
+  fi
+
   # The same pixel comparison with the plug-in's own tiling engaged: tileSize=16
   # makes the 64x48 window go through RunTiled, so the frame is assembled from
   # overlapping, feathered tiles. There the comparison is a bound rather than

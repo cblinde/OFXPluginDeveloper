@@ -151,6 +151,21 @@ call "%ROOT%\..\..\testkit\build-contract-test.bat" "%CONTRACT%" "%OFX_INC%" || 
   --src-bounds-inset 2 --dst-bounds-inset 2 ^
   --concurrency-param gain || goto :error
 
+rem The same contract against the other host shape: supportsTiles=0 and
+rem supportsMultiResolution=0, the profile Resolve's OFX host reports in the
+rem dumps published in openfx-misc's README-hosts.txt. One process holds one
+rem host, so this is a second run rather than a flag inside the first.
+"%CONTRACT%" "%OFX_FILE%" ^
+  --host-profile resolve ^
+  --id com.ofxplugindeveloper.minimalcudagain ^
+  --param gain:double --param gainAlpha:double ^
+  --clip Source --clip Output ^
+  --identity --negative-pitch ^
+  --set gain=2.0 --not-identity-after-set ^
+  --byte-dst-rejected ^
+  --src-bounds-inset 2 --dst-bounds-inset 2 ^
+  --concurrency-param gain || goto :error
+
 echo.
 echo all Windows checks passed
 exit /b 0

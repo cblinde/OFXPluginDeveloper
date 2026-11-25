@@ -141,6 +141,19 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
     --src-bounds-inset 2 --dst-bounds-inset 2 \
     --concurrency-param gain
+
+  # The same contract against the other host shape: supportsTiles=0 and
+  # supportsMultiResolution=0, the profile Resolve's OFX host reports in the
+  # dumps published in openfx-misc's README-hosts.txt. One process holds one
+  # host, so this is a second run rather than a flag inside the first.
+  echo "  the same protocol against a host with supportsTiles=0 and supportsMultiResolution=0"
+  "${TMP}/contract_test" "${BUNDLE_OFX}" \
+    --host-profile resolve \
+    --id com.ofxplugindeveloper.minimalcudagain \
+    --param gain:double --param gainAlpha:double --clip Source --clip Output \
+    --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
+    --src-bounds-inset 2 --dst-bounds-inset 2 \
+    --concurrency-param gain
 else
   echo "  skipped: no build/ tree yet (run ./build.sh first)"
 fi

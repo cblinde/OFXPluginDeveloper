@@ -169,6 +169,29 @@ if errorlevel 1 (
 )
 echo   provider label names CUDA or CPU
 
+rem The same contract against the other host shape: supportsTiles=0 and
+rem supportsMultiResolution=0, which is what Resolve's OFX host reports in the
+rem dumps published in openfx-misc's README-hosts.txt. Only the two host
+rem properties change - every window, RoI and pixel check stays, because a host
+rem with supportsTiles=0 still renders a window smaller than the frame when its
+rem own region of definition is smaller.
+"%HARNESS%" "%PLUGIN%" %ARGS% --host-profile resolve > "%LOG%" 2>&1
+if errorlevel 1 (
+  echo   exact comparison failed on the resolve-shaped host; retrying with --golden-tolerance 1e-5
+  "%HARNESS%" "%PLUGIN%" %ARGS% --host-profile resolve --golden-tolerance 1e-5 > "%LOG%" 2>&1
+  if errorlevel 1 (
+    type "%LOG%"
+    goto :contractfailure
+  )
+)
+echo   host shape resolve: supportsTiles=0, supportsMultiResolution=0
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .(CUDA|CPU)' -Quiet)) { exit 1 }"
+if errorlevel 1 (
+  echo   FAIL: the provider label does not name an execution provider under the resolve profile
+  goto :contractfailure
+)
+type "%LOG%"
+
 echo.
 echo == [4/5] host contract with the plug-in's own tiling (tileSize=16) ==
 echo   tolerance 0.02: feathered overlap is exact only at halo ^>= radius

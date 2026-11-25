@@ -179,12 +179,14 @@ A negative list, because a positive one hides the misses. No Resolve is installe
 on any machine here, so nothing below is a render: the host facts are **(B)**,
 and what they imply for this build is **(I)**.
 
-- **The Resolve-like host shape is never exercised.** `testkit/fake_host.cpp:1058`
-  reports `SupportsTiles=1` and `SupportsMultiResolution=1` - the opposite of the
-  profile dumped from Resolve Lite 16 in `openfx-misc`'s `README-hosts.txt`
-  (API 1.4, no tiles) **(B)**. The template declares `setSupportsTiles(false)`
-  and `setSupportsMultiResolution(false)`, so Resolve would take the un-tiled
-  path, and no suite here presents a host that declines both.
+- **The Resolve-like host shape is now a profile, not a gap.**
+  `contract_test --host-profile resolve` presents `supportsTiles=0` and
+  `supportsMultiResolution=0`, the shape dumped from Resolve Lite 16 in
+  `openfx-misc`'s `README-hosts.txt` (API 1.4, no tiles) **(B)**, and every suite
+  runs it once per profile. What that still does not prove: that Resolve's own
+  loader, tile decisions and proxy handling match the harness. The template
+  declares `setSupportsTiles(false)` and `setSupportsMultiResolution(false)`, so
+  the un-tiled path is the one Resolve would take - and now the one a run takes.
 - **The device path depends on the host not capturing the runtime.** Resolve 21
   carries `onnxruntime.dll` 1.13 beside `Resolve.exe`; the bundle's renamed core
   `onnxruntime-ofx.dll` is what survives that, and the CUDA provider next to it

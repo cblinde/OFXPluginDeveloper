@@ -187,8 +187,10 @@ testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
 Measured (CPU-only build of the CUDA template, this machine): **110 checks, 0
 failed** for `ReferenceGain`, **136 checks, 0 failed** for `MinimalCudaGain`,
 **160 checks, 0 failed** for `OnnxInference`, followed by **82 checks, 0 failed**
-in the tiled-context run (`tileSize=16`, `--roi-context-tolerance 0.02`).
-The 136 belong to a `CPU_ONLY=1`
+in the tiled-context run (`tileSize=16`, `--roi-context-tolerance 0.02`). Each of
+those runs happens twice, once per host profile (§5), and the counts are
+identical: the profile changes what the plug-in is told about the host, not what
+the harness asks it to do. The 136 belong to a `CPU_ONLY=1`
 build, whose launcher symbol and cubin are absent by construction (the build
 prints `CUDA launcher: ABSENT (CPU-only build)`, the suite prints `PTX check
 skipped: nvcc not on PATH`): not one of those checks was computed by a CUDA
@@ -281,6 +283,21 @@ What a minimal fake host must do:
 What a fake host cannot prove, and must not be credited with: real host image
 lifetimes and caching, real thread scheduling, host-specific RoD/proxy behaviour,
 colour management, and anything GPU (a fake host has no device pointers).
+
+**One host shape is not "the host".** For a long time the harness presented one
+shape - `supportsTiles=1`, `supportsMultiResolution=1`, `temporalClipAccess=1` -
+and every plug-in was therefore only ever seen by a host that could tile. Real
+hosts disagree, and the disagreement is dumped: `openfx-misc`'s
+`README-hosts.txt` records Resolve Lite 16 as API 1.4 with `supportsTiles=0`, and
+Nuke 10 as API 1.2 with tiles and temporal access. `--host-profile nuke` (the
+default) and `--host-profile resolve` present those two shapes. Every suite runs
+the contract once per profile, because OFX allows one host per process -
+`OfxSetHost` ignores every call after the first, so the second shape is a second
+process, not a second flag. Only the capabilities the plug-in reads change; every
+window, RoI and pixel check is the same in both runs, because a host with
+`supportsTiles=0` still renders a window smaller than the frame when its own
+region of definition is smaller. A run prints which shape it presented, so a log
+says what it proves.
 
 **Layout is a bound, not a pixel value.** "The frame changed" is satisfied by an
 overlay that is mirrored, clipped or drawn outside the area you meant, which is
@@ -813,6 +830,7 @@ ONNX Runtime 1.20.1 and then 1.32.0
 | Inference suite, Windows (ORT 1.20.1) | first Windows build of the template: host contract **160 + 82 checks, 0 failed**, golden difference `0`, tile 5/13/17/256 and the odd sizes `0`, 2 exports, `onnxruntime-ofx.dll` beside the `.ofx` ([`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log)) |
 | Inference suite, Windows, CUDA provider (ORT 1.20.1) | provider and its CUDA imports bundled beside the `.ofx` (16 files, 2686 MB), label `CUDA (device 0, 1 thread, bundled CUDA)`, same contract **0 failed**; the exact golden is off by between `1e-8` and `1e-7` - rounding order of the device - so the run only passes through the `1e-5` retry ([`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)) |
 | Inference suite, Windows, CUDA provider (ORT 1.32.0, CUDA 13) | the same suite on the current runtime: provider shipped as an EP plugin, 16 files and 1540 MB beside the `.ofx`, same label, same `0 failed`, same `1e-5` retry, and no change to the template's source ([`onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log)) |
+| Host profiles, all three templates | the contract runs once per host shape (`--host-profile nuke` and `resolve`, §5): **110 + 110** for `ReferenceGain`, **136 + 136** for `MinimalCudaGain`, **160 + 160 + 82** for `OnnxInference` (the 82 is the tiled pass), 0 failed in every pass, identical counts in both shapes |
 | Inference suite, Windows, CPU (ORT 1.32.0) | the arithmetic did not move with the runtime: the golden rendered by 1.20.1 matches **exactly**, no retry, and the CUDA attempt fails by design with the reason in the label - which is what isolates a provider change from a runtime change ([`onnx-inference-cpu-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cpu-1.32.log)) |
 | Windows artifact | 2 exports (`dumpbin /exports`), 7 cubins `sm_75`…`sm_120` (`cuobjdump -lelf`), no CUDA runtime import **[B]** |
 | Windows contract | whole host protocol, 0 failures, through `LoadLibraryExW` **[B]** |
