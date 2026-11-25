@@ -804,6 +804,65 @@ external evidence (**[B]**, §7). In a host the first session is the one a user
 waits for, which is argument enough to keep it off - but it is an argument from
 the cached-plan behaviour, not from a stopwatch reading here.
 
+### Determinism: what the `1e-7` measures, and what it does not
+
+Three defaults decide whether two runs of the same graph produce the same
+numbers, and none of them is in the graph:
+
+1. **`use_tf32` is on.** NVIDIA's option table says TF32 *"is enabled by
+   default"* and that *"starting from ONNX Runtime 1.18, you can use this flag
+   to disable it"* (**[B]**) - so the flag is the 1.18 addition, not the
+   behaviour: 1.17 and earlier ran every accelerated convolution and matmul with
+   a 10-bit mantissa and no way to say otherwise.
+2. **`cudnn_conv_algo_search` defaults to `EXHAUSTIVE`**, which benchmarks
+   `cudnnFindConvolutionForwardAlgorithmEx` against the real tensors and picks
+   the fastest (**[B]**, same table). Fastest is a measurement of this machine
+   with this driver; another machine, another cuDNN build or a colder on-disk
+   `ComputeCache` can select another algorithm, and an algorithm is an
+   accumulation order.
+3. **`cudnn_conv_use_max_workspace` is `1`**, so the plan may assume a large
+   scratch buffer - which changes which algorithms are candidates at all.
+
+**The `5.364e-07` in the table above is what this model does with all three
+pinned, and `4.472e-04` is what it does with one of them left alone.** So "the
+inference template's model stays at 1e-7" is true in two measured situations and
+false in a third: true with `use_tf32=0` (5.364e-07 at 1080p, 4.2e-7 at 640x480),
+true for the suite's 64x48 model even with TF32 on - at that shape the provider
+never reached a tensor-core path, which is how a `CUDA` label and a `1e-7`
+comparison coexisted in the first GPU log - and false for the 1080p
+64-channel 3x3 convolution under the default, where it is `4.472e-04`.
+
+That is the point of a determinism section: **the 1e-7 is a property of the
+shape, not of the provider.** A larger model does not inherit it. Three reasons,
+in increasing strength: TF32 truncation applies wherever a tensor-core path is
+chosen, so the error floor moves to `1e-4` (**[V]**, measured); a longer
+reduction chain over more elements accumulates more rounding (**[I]**, arithmetic,
+not a measurement here); and an `EXHAUSTIVE` search that is free to pick a
+different plan on a different machine turns "same result" into "same result on
+this machine" (**[I]**, from the documented behaviour of the search, with no
+second-GPU run to confirm it).
+
+What was **not** measured, and belongs next to any claim built on this: the same
+session run twice and diffed - so run-to-run repeatability is asserted nowhere
+in this repository; a second GPU or a second driver version; and any model larger
+than 64 channels at 1920x1080. A golden comparison for a bigger model should
+budget `1e-4`-scale deviation, or pin `use_tf32=0` and accept the slower
+convolutions - those are the two honest options, not a tighter tolerance.
+
+**Should the template set these explicitly? It does, and it should** - five keys
+through the V2 API (§4), because a struct cannot express `use_tf32` at all.
+One correction to the question as usually put: `cudnn_conv_algo_search` is set
+to **`HEURISTIC`**, not to its `EXHAUSTIVE` default. The reason is the first
+session, not the steady state: `EXHAUSTIVE` benchmarks every candidate against
+the real tensors, and in a host the first session is what a user waits for.
+Here both settings created the session in 2.8-3.2 ms because cuDNN had already
+cached its plans, so the argument rests on the uncached first run (**[B]**) and
+not on a stopwatch reading in this repository. `HEURISTIC` is also the more
+repeatable of the two - a function of shape and filter rather than a timing race
+(**[I]**). What explicit options buy is a session whose arithmetic is stated;
+what they do not buy is bit-identical frames across machines, which neither
+cuDNN nor this repository has ever demonstrated.
+
 The arena is also the host-facing half of this. A plug-in that keeps a session
 per instance, never sets `gpu_mem_limit` and lets the arena grow on the
 power-of-two curve holds roughly twice the peak it needs, once per instance
