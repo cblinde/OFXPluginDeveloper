@@ -1,0 +1,43 @@
+# ./run-tests.sh with ONNXRUNTIME_ROOT=1.20.1 and CPU_ONLY=1, Windows.
+#
+# Command: CPU_ONLY=1 ONNXRUNTIME_ROOT=<repo>/.validation/ort-gpu-1.20.1
+#          ./run-tests.sh
+# Runtime: Microsoft.ML.OnnxRuntime 1.20.1 (GPU package, provider DLLs beside
+#   the module), the older of the two runtimes this repository builds against.
+# Note: the requested path C:\Tools\onnxruntime-win-x64-1.20.1 does not exist on
+#   this machine; the 1.20.1 tree used is the one inside .validation.
+#
+# Why this run: CPU_ONLY=1 with ONNXRUNTIME_ROOT set is the one summary-headline
+#   branch no earlier run had - one hole (the GPU step), not two, not none.
+#
+# 1. Headline and the lines under it
+==================================================================
+all suites that ran passed, but the GPU step did not run:
+  docs drift check                (tools/check-docs.py)
+  reference build + artifact      (minimal-ofx, dumpbin)
+  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)
+  NOT RUN: GPU kernels            (CPU_ONLY)
+  negative controls               (testkit/run-negative-controls.bat)
+RUN_VALGRIND and SANITIZE are POSIX-only; this route has no valgrind
+==================================================================
+#
+# 2. The NOT VERIFIED block the run closes with
+NOT VERIFIED: GPU kernels (templates/minimal-cuda-ofx)
+  CPU_ONLY: the template built and tested its CPU fallback only, so no
+  cubin was loaded and nothing ran on a device. The counts above do not
+  cover it.
+  Close it with: ./run-tests.sh   (without CPU_ONLY, nvcc on PATH)
+------------------------------------------------------------------
+#
+# 3. The CUDA template's own mode lines
+[build] CPU_ONLY=1: building without the CUDA path
+== [2/3] GPU harness skipped (CPU_ONLY=1) ==
+#
+# 4. The inference template: same keys, accepted by 1.20.1
+ok 115 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)"
+contract_test: 160 checks, 0 failed
+ok 35 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)"
+ok 115 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)"
+contract_test: 160 checks, 0 failed
+contract_test: 82 checks, 0 failed
+all checks passed

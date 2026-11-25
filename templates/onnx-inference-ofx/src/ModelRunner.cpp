@@ -428,6 +428,40 @@ Ort::SessionOptions MakeSessionOptions(int intraThreads)
     return options;
 }
 
+/// Owns an `OrtCUDAProviderOptionsV2` until the session has copied it, and speaks
+/// the C API that produces and fills it.
+class CudaOptions
+{
+public:
+    CudaOptions() { Ort::ThrowOnError(Ort::GetApi().CreateCUDAProviderOptions(&options_)); }
+    ~CudaOptions() { Ort::GetApi().ReleaseCUDAProviderOptions(options_); }
+    CudaOptions(const CudaOptions&) = delete;
+    CudaOptions& operator=(const CudaOptions&) = delete;
+
+    OrtCUDAProviderOptionsV2* get() const { return options_; }
+
+    void Set(const char* const* keys, const char* const* values, size_t count)
+    {
+        Ort::ThrowOnError(Ort::GetApi().UpdateCUDAProviderOptions(options_, keys, values, count));
+    }
+
+    /// The provider's own "key=value;key=value" view - the only way to show that an
+    /// option arrived rather than being dropped on the way in.
+    std::string AsString() const
+    {
+        OrtAllocator* allocator = nullptr;
+        Ort::ThrowOnError(Ort::GetApi().GetAllocatorWithDefaultOptions(&allocator));
+        char* text = nullptr;
+        Ort::ThrowOnError(Ort::GetApi().GetCUDAProviderOptionsAsString(options_, allocator, &text));
+        std::string copy = text != nullptr ? text : "";
+        allocator->Free(allocator, text);
+        return copy;
+    }
+
+private:
+    OrtCUDAProviderOptionsV2* options_ = nullptr;
+};
+
 /// Requests the CUDA execution provider with every option that decides what the
 /// device computes, or how much of it the device reserves, stated explicitly.
 ///
@@ -446,34 +480,47 @@ Ort::SessionOptions MakeSessionOptions(int intraThreads)
 ///
 /// `applied` receives the provider's own serialisation of the options, which is
 /// what makes "the option reached the provider" checkable instead of assumed.
+///
+/// The options are built through the **C** API, not through
+/// `Ort::CUDAProviderOptions`: that C++ wrapper does not exist in ONNX Runtime
+/// 1.20.1 - it arrived in a later release - while `CreateCUDAProviderOptions`
+/// and `UpdateCUDAProviderOptions` have been stable since 1.11. This repository
+/// builds against 1.20.1 and 1.32.0 (section 5 of the document), so the wrapper
+/// would have made the template unbuildable against one of its own runtimes.
 bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
                         std::string* applied = nullptr)
 {
     try {
-        Ort::CUDAProviderOptions cuda;
-        cuda.Update({
-            { "device_id", "0" },
+        CudaOptions cuda;
+        // One value per key, same order. The comments are why each value is what
+        // it is; the key order below and the value order below have to stay in
+        // step, which is the price of the C API's array shape.
+        const char* keys[] = {
+            "device_id",
             // 0 = full float32 in the tensor-core path. 1 is the EP default since
             // 1.18, and it rounds the mantissa to 10 bits - visible in the third
             // decimal place, which is three orders above the tolerance this
             // template's suite uses.
-            { "use_tf32", "0" },
+            "use_tf32",
             // HEURISTIC asks cuDNN once. EXHAUSTIVE benchmarks every algorithm
             // against the real tensors before the first tile - minutes at 1080p
             // the first time on a machine, milliseconds afterwards, because
             // cuDNN caches the chosen plans on disk.
-            { "cudnn_conv_algo_search", "HEURISTIC" },
+            "cudnn_conv_algo_search",
             // 0 = cuDNN may not take the largest workspace it finds; the plan it
             // picks has to fit the small one. 1 is the default and reserves a
             // second copy of the activation budget.
-            { "cudnn_conv_use_max_workspace", "0" },
+            "cudnn_conv_use_max_workspace",
             // Copies stay on the provider's stream: the only safe choice when the
             // host hands over host memory.
-            { "do_copy_in_default_stream", "1" },
-        });
-        options.AppendExecutionProvider_CUDA_V2(*cuda);
+            "do_copy_in_default_stream",
+        };
+        const char* values[] = { "0", "0", "HEURISTIC", "0", "1" };
+        cuda.Set(keys, values, sizeof(keys) / sizeof(keys[0]));
+        Ort::ThrowOnError(Ort::GetApi().SessionOptionsAppendExecutionProvider_CUDA_V2(
+            options, cuda.get()));
         if (applied) {
-            *applied = cuda.GetCUDAProviderOptionsAsString();
+            *applied = cuda.AsString();
         }
         return true;
     } catch (const std::exception& e) {

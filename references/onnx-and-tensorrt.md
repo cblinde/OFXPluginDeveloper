@@ -750,7 +750,18 @@ without it says which run it was.
 The template therefore appends the provider through the key/value API and states
 five keys explicitly - `device_id`, `use_tf32=0`, `cudnn_conv_algo_search=HEURISTIC`,
 `cudnn_conv_use_max_workspace=0`, `do_copy_in_default_stream=1` - instead of
-filling in a struct and inheriting the rest (see §4). What that buys is not a
+filling in a struct and inheriting the rest (see §4).
+
+**Why the C API and not the C++ wrapper.** `Ort::CUDAProviderOptions` - the
+wrapper that takes a `std::unordered_map` and returns a serialised string - does
+not exist in ONNX Runtime 1.20.1; it arrived in a later release. The first
+version of this change used it and compiled cleanly against 1.32.0, then stopped
+on 1.20.1 with `error C2065: "cuda": undeclared identifier` in the same function
+- which is what a CPU-only run against the older runtime is for. The template now
+uses `CreateCUDAProviderOptions`, `UpdateCUDAProviderOptions` and
+`SessionOptionsAppendExecutionProvider_CUDA_V2`, stable since 1.11. The price is
+the C API's shape: two arrays that must stay in the same order, so the key list
+carries the comment that explains the value beside it. What that buys is not a
 belief; each part was measured on one RTX 3060, on a 64-channel 3×3 convolution
 at 1920×1080, against the same graph on the CPU session (**[V]**,
 [`../evidence/2026-11-25-windows/onnx-cuda-ep-options.log`](../evidence/2026-11-25-windows/onnx-cuda-ep-options.log)):
