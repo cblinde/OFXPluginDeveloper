@@ -18,6 +18,10 @@ Usage:
     python tools/coverage-check.py baseline    # record the pre-move corpus
     python tools/coverage-check.py check       # compare the tree now
     python tools/coverage-check.py check --show 40
+
+Exit status: 0 pass, 1 a word stem of the pre-move corpus is gone, 2 no usable
+baseline - a clone without the reference commit yields an empty one, and an empty
+baseline would make every tree pass, so it is refused instead of written.
 """
 
 import glob
@@ -105,6 +109,20 @@ def baseline():
         lines += len(blob.replace("\r\n", "\n").split("\n"))
         facts |= facts_from(blob)
         words |= vocabulary_from(blob)
+    # A clone without the reference commit yields an empty baseline, and an empty
+    # baseline makes every comparison pass: the gate would report PASS on a tree
+    # that lost everything. Refuse instead, and drop a stale file so that the
+    # `baseline` before `check` in CI cannot pass on an earlier run's copy.
+    if not docs or not words:
+        if os.path.exists(BASELINE_PATH):
+            os.remove(BASELINE_PATH)
+        sys.stderr.write(
+            "error: baseline is empty (%d file(s), %d word stem(s)); commit %s is "
+            "not in this clone, so nothing could be compared. Use a full checkout "
+            "(actions/checkout with fetch-depth: 0).\n"
+            % (len(docs), len(words), BASELINE_REV))
+        return 2
+
     os.makedirs(".validation", exist_ok=True)
     with io.open(BASELINE_PATH, "w", encoding="utf-8", newline="\n") as handle:
         json.dump({"rev": BASELINE_REV, "files": docs, "lines": lines,
@@ -135,6 +153,11 @@ def check(show=0):
         return 2
     with io.open(BASELINE_PATH, encoding="utf-8") as handle:
         data = json.load(handle)
+    if not data.get("files") or not data.get("words"):
+        print("error: the stored baseline is empty (%d file(s), %d word stem(s)); "
+              "regenerate it with a full checkout"
+              % (len(data.get("files") or []), len(data.get("words") or [])))
+        return 2
 
     facts, words = set(), set()
     for path in markdown_paths():
