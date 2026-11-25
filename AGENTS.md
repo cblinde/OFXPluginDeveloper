@@ -35,7 +35,7 @@ A `.venv/` in the root wins over `PATH`; recipe: `references/testing-layers.md` 
 | AI-model decision | `references/ai-architectures-and-runtimes.md` -> `references/onnx-and-tensorrt.md` -> `templates/onnx-inference-ofx/` | CUDA kernel detail |
 | Check a `[B]` claim | `references/verification-status.md` -> its `evidence/` link | the design docs, until the evidence contradicts them |
 | Host behaviour differs | `references/host-resolve.md` -> `references/host-nuke-scratch-natron.md`, grades A/B/C | anything claiming a host was tested |
-| Test in Resolve | `references/resolve-automation.md` §14 -> `tests/resolve/README.md` | the host quirks until a run fails |
+| Test in Resolve | `references/resolve-automation.md` §14, §15 -> `tests/resolve/README.md` | the host quirks until a run fails |
 | Plan an improvement | `references/improvement-backlog.md` -> the document that owns the subject | nothing: a row is a candidate, not a claim |
 
 ---

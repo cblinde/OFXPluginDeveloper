@@ -94,7 +94,7 @@ relative to this file.
 | A property string, a depth/support name, "which constant does X" | `references/ofx-api-constants.md` | host quirks, performance |
 | Plugin/instance/render lifecycle, what may block, thread safety | `references/ofx-lifecycle-and-threads.md` | colour, packaging |
 | The stream contract, `cudaDeviceSynchronize`, zero-copy, who owns a GPU object | `references/cuda-streams-and-memory.md` | pitch arithmetic |
-| Whether Resolve can be driven headlessly, and what its scripting API does not expose | `references/resolve-automation.md` | the prototypes, until a machine has Studio |
+| Whether Resolve can be driven headlessly, and what its scripting API does not expose | `references/resolve-automation.md` | §14 was measured on a Studio seat (2026-11-25); §15 maps the API, its version gates and its gaps |
 | `rowBytes`, stride, padded rows, depth matrix, drawing into the frame | `references/pixel-formats-and-pitch.md` | RoD/RoI |
 | RoD, RoI, tiles, `kOfxImageEffectPropNoSpatialAwareness`, render hints | `references/roi-tiling-and-render-hints.md` | colour |
 | Colour management, premultiplication, where alpha lands | `references/colour-and-alpha.md` | constants |

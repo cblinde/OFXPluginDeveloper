@@ -968,7 +968,122 @@ Either one turns `mae 0.0` into a measurement; until then the harness in
 `tests/resolve/poc.py --build-project` is the whole sequence as one command, and
 `tests/resolve/resolve_api.py` is the same sequence as functions with the
 measured caveats in their docstrings. Copy the second, not the first: the script
-owns argument parsing and the report, the module owns the calls.
+owns argument parsing and the report, the module owns the calls. §15 is the map
+behind the run: which calls exist, since which version, and what the API cannot
+do at all.
+
+## 15. The API surface a plug-in developer needs
+
+§14 is the run; this is the map behind it - which calls exist, since when, what
+they were measured doing here, and what the API cannot do at all. It is written
+down because two of these questions cost a failed attempt each, and a third
+(the parameter) is the reason a green run still proves nothing about pixels.
+
+### 15.1 The `.pyi` is the authority, and the `README.md` is not
+
+`Support/Developer/Scripting/` ships three things worth opening: `README.md` (699
+lines of prose), `DaVinciResolveScript.pyi` (3645 lines of signatures with
+docstrings) and `CHANGELOG.md` (dated, per release). They do not agree. Counted
+on 21.2.0.5:
+
+| Name | in `README.md` | in `DaVinciResolveScript.pyi` |
+|---|---|---|
+| `AddEffect` | 0 | 2 |
+| `GetEffectsList` | 0 | 3 |
+| `DeleteEffects` | 0 | 2 |
+| `ExportFrame` | 0 | 7 |
+| `IsStudio` | 0 | 1 |
+
+Everything §14 does with effects is absent from the README. Search the `.pyi`
+(`grep -n "def AddEffect" DaVinciResolveScript.pyi`) and the `CHANGELOG.md` for
+the version, and do not conclude from the README that a call does not exist.
+
+### 15.2 Since which version
+
+From the SDK `CHANGELOG.md`, not from memory:
+
+| Call | First release | Impossible without it |
+|---|---|---|
+| `Resolve.GetEffectsList`, `TimelineItem.AddEffect`, `GetEffects`, `DeleteEffects`, `Effect.GetInfo`, `Get/SetIsEnabled`, `Get/SetIndex`, `GetFusionComp` | **21.1.2** - the release notes call them "Clip Effect Actions" and "Effect Properties" | listing or applying an OFX effect by name; a script can then only work from a prepared `.drp` (§5) |
+| `ExportFrame` with `roi*`, `maxDimension` and `quality`; `ExportThumbnails`; `Graph.GetNodeEnabled`; `GetCDL` | **21.2** | single-frame export exists, but without region, scaling and JPEG quality |
+| `Resolve.IsStudio` | absent from `CHANGELOG.md` altogether; present in 21.2's `.pyi` | the release it appeared in is unknown - §15.3 has the test that needs no such call |
+
+So §14 needs **≥ 21.1.2** and was measured on 21.2.0.5. On 21.1.1 and older the
+whole "list, apply, render" route is unavailable - which is the argument for
+keeping the `.drp` fallback documented as a route rather than as a leftover.
+
+### 15.3 Studio or free, without `IsStudio`
+
+`GetProductName()` answered `DaVinci Resolve Studio` on the measured host
+(`../evidence/2026-11-25-windows/resolve-poc.log`, step `connect`): the product
+name carries the edition, and that test works on versions whose `.pyi` has no
+`IsStudio`. It is what `tools/probe-env.py --connect` falls back to. `IsStudio()`
+itself has never been answered by a host in this repository - it is `[I]`.
+
+### 15.4 The objects a plug-in developer touches
+
+`[V]` means a run in `tests/resolve/` called it and the log is in `evidence/`;
+`[I]` means the signature is in the `.pyi` and this repository has not called it.
+
+| Object | Call | Measured | Note |
+|---|---|---|---|
+| - | `scriptapp("Resolve")` | `[V]` | 18.2 s cold under `-nogui`; answers `None`, not an exception, when there is no host (§14.4) |
+| `Resolve` | `GetProductName`, `GetVersionString` | `[V]` | the product name carries the edition (§15.3) |
+| `Resolve` | `GetEffectsList(mediaType=None)` | `[V]` | 225 entries as `{category, id, name}`; `mediaType` is `"video"`, `"photo"` or `"audio"` |
+| `Resolve` | `GetProjectManager` | `[V]` | |
+| `ProjectManager` | `CreateProject`, `LoadProject`, `DeleteProject` | `[V]` | `CloseProject` first, or `DeleteProject` is refused (§14.9) |
+| `Project` | `GetMediaPool`, `SetSettings` | `[V]` | a new project carries the host's 3840×2160 here (§14.6) |
+| `Project` | `SetCurrentRenderFormatAndCodec("png", "RGB8")`, `AddRenderJob`, `StartRendering`, `IsRendering`, `GetRenderJobStatus` | `[V]` | §14.7 |
+| `MediaPool` | `ImportMedia([str(path)])` | `[V]` | a list of absolute strings; a list of dicts imports 0 items |
+| `MediaPool` | `CreateTimelineFromClips(name, [{"mediaPoolItem": item}])` | `[V]` | |
+| `Timeline` | `GetItemListInTrack("video", 1)` | `[V]` | |
+| `TimelineItem` | `AddEffect("ofx", id)` | `[V]` | answers an `Effect` or `None`; the id is the host's, not the bundle identifier |
+| `TimelineItem` | `GetEffects("ofx")`, `DeleteEffects([effect])` | `[I]` | the removal path, unexercised here |
+| `TimelineItem` | `ExportFrame(offset, options)` | `[I]` | §15.6 |
+| `Effect` | `GetInfo()`, `GetIsEnabled`, `SetIsEnabled`, `GetIndex`, `SetIndex` | `[I]` | `GetInfo()` is `{category, id, name}` - no parameter list |
+
+### 15.5 What the API cannot do
+
+| Want | Answer |
+|---|---|
+| set or read an OFX parameter | nothing. `Effect` has six methods (§14.10), there is no `SetParameter` in 21.2's `.pyi`, and `FusionComp` is declared as `class FusionComp: ...` - a bare stub without methods, so the Fusion route does not exist either |
+| read a frame's pixels | no. Pixels leave only as a file or an encoded string, through a render job or `ExportFrame` |
+| learn which backend the plug-in took | no. Not in the API; the plug-in's own log or the timing is the evidence (§8) |
+| learn the OFX identifier from the host | no. `GetEffectsList` answers the host's id; the bundle's own id is in its `OFX` support XML |
+| set a parameter with a click instead | no. The scripting API has no UI automation |
+
+### 15.6 The cheaper frame: `ExportFrame`, documented but not measured here
+
+`TimelineItem.ExportFrame(frameOffset, exportFrameOptions)` renders one frame
+without a render job, a `TargetDir` or a job id - which is exactly where §14.7's
+two traps live. From 21.2's `.pyi`:
+
+```python
+result = item.ExportFrame(0, {"outputType": "file", "filePath": str(png)})
+# result: {"success": bool, "error": str, "width": int, "height": int}
+
+# or with no file at all: outputType "encodedString" + encodedImageFormat "png"
+# answers "data" as base64 image bytes, so the validation loop needs no temp file.
+```
+
+Options: `outputType` (`"file"` or `"encodedString"`), `encodedImageFormat`
+(`"jpg"` or `"png"`), `filePath` (the format comes from the extension),
+`maxDimension`, `quality` (JPEG, 1-100), `roiX`, `roiY`, `roiWidth`, `roiHeight`
+(fractions of the frame, 21.2).
+
+**None of this has been run in this repository.** `tests/resolve/poc.py` renders
+through a job and the evidence log is that route, so treat §15.6 as `[I]` and
+measure it before a skill relies on it - if it holds, the base64 form removes the
+temp-file step from every future validation loop.
+
+### 15.7 Where to look next
+
+- `tests/resolve/resolve_api.py` - the calls as functions, each docstring carrying
+  what the measurement taught.
+- §14 above - the run itself, with the numbers and the traps.
+- `tests/resolve/README.md` - how to repeat it, and what it does not prove.
+- `references/host-resolve.md` - what the **plug-in** may assume about the host,
+  as opposed to what a **script** can make the host do.
 
 ## Provenance labels
 
