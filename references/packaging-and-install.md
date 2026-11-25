@@ -101,7 +101,7 @@ reading):
 
 | Document | What it says about this bundle |
 |---|---|
-| [CUDA Toolkit EULA](https://docs.nvidia.com/cuda/eula/index.html) | grants the right to *"distribute those portions of the SDK that are identified in this Agreement as distributable, as incorporated in object code format into a software application"*, and lists the redistributable files in its Attachment A - `cudart`, `cublas`, `cublasLt`, `cufft` are in it |
+| [CUDA Toolkit EULA](https://docs.nvidia.com/cuda/eula/index.html) | grants the right to *"distribute those portions of the SDK that are identified in this Agreement as distributable, as incorporated in object code format into a software application"*, and Attachment A names this bundle's files: `cudart`, `cublas`, `cublasLt`, `cufft` - *"including certain variations of these files that have version number or architecture specific information embedded in the file name"*, which is what makes `cudart64_13.dll` a redistributable rather than an unnamed derivative. `cufftw.dll` is on the list too; the provider never imports it, so the bundle does not carry it |
 | Distribution requirements, same document | the application *"must have material additional functionality, beyond the included portions of the SDK"*; the distributable portions *"shall only be accessed by your application"*; and the terms you distribute under must be consistent with the EULA and protect NVIDIA's IP |
 | [cuDNN SLA](https://docs.nvidia.com/deeplearning/cudnn/latest/reference/eula.html) | same shape, naming the libraries explicitly: *"the following portions of the SDK are distributable under the Agreement: the runtime files .so and .dll"* |
 
