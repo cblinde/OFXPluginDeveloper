@@ -42,7 +42,7 @@ SCRATCH. See [What has actually been verified](#what-has-actually-been-verified)
 | Path | What it is |
 | --- | --- |
 | `SKILL.md` | The entry point: ground rules, the build workflow, and the routing table |
-| `references/` | 21 single-subject documents - constants, lifecycle, streams, pixels, RoI, colour, host quirks, CMake, packaging, debugging, performance, ONNX, AI architectures, pattern index, testing, verification status, field evidence, reference projects, checklists |
+| `references/` | 23 single-subject documents - constants, lifecycle, streams, pixels, RoI, colour, host quirks, CMake, packaging, debugging, performance, ONNX, AI architectures, pattern index, testing, verification status, field evidence, reference projects, checklists, Resolve automation |
 | `templates/` | Three complete plug-ins: `minimal-ofx` (CPU), `minimal-cuda-ofx` (CUDA + fallback), `onnx-inference-ofx` (model per frame) |
 | `testkit/` | The host harness: `dlopen` + contract checks, the official OFX host, and the headless Natron render |
 | `tools/` | `check-docs.py` (documentation drift, including the heading skeleton in `heading-manifest.tsv`), `check-glibc.sh` (the glibc bound over a built bundle), `coverage-check.py` (restructure proof), `make-testmodels.py`, `model_probe.py`, `bench_ep.py`, `measure-halo.sh`, `sweep-vram.sh`, `host_cuda_probe.cpp` |
