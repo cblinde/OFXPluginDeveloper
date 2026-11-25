@@ -149,6 +149,32 @@ report_skipped_gpu() {
   echo "------------------------------------------------------------------"
 }
 
+# The fixture self-test is the one stage that needs Python packages. Its
+# dependencies are the tool's own - `onnx` to write the models, plus onnxruntime
+# and numpy to load them back - so the stage is a direct call and its exit code
+# decides. The single gate is a missing `onnx`, which would otherwise end the run
+# on an import traceback; a machine that can write the models but not load them
+# has the tool's `--no-self-test` for that.
+run_test_fixtures() {
+  echo
+  if ! "${documentation_python}" -c 'import onnx' >/dev/null 2>&1; then
+    echo "== test fixtures (skipped: the onnx package is not installed)"
+    fixtures="skipped"
+    return 0
+  fi
+  echo "== test fixtures: synthetic models must load and match their shapes =="
+  "${documentation_python}" "${ROOT}/tools/make-testmodels.py" --out "${ROOT}/build/test-fixtures"
+  fixtures="ran"
+}
+
+summary_fixtures() {
+  if [[ "${fixtures}" == "ran" ]]; then
+    echo "  test fixtures                   (tools/make-testmodels.py)"
+  else
+    echo "  NOT RUN: test fixtures          (the onnx package is not installed)"
+  fi
+}
+
 # Called after the summary, so a CI failure still carries the full result.
 require_onnx_in_ci() {
   [[ "${onnx}" == "0" ]] || return 0
@@ -236,31 +262,7 @@ if [[ "${windows}" == "1" ]]; then
   echo "== resolve stale-file test: a second run in one directory must not pass =="
   "${documentation_python}" "${ROOT}/tests/resolve/test_stale_file.py"
 
-  # Generating the fixtures and loading them back is a test of the tool, not of a
-  # plug-in: it catches a fixture that stopped matching what the tiling code
-  # expects. It needs onnxruntime and numpy, and an onnxruntime built against
-  # NumPy 1.x crashes inside a NumPy 2 Python - so the verdict is what decides,
-  # and a run that reaches no verdict at all is a failure, not a skip.
-  echo
-  echo "== test fixtures: synthetic models must load and match their shapes =="
-  fixtures_log="$(mktemp)"
-  set +e
-  "${documentation_python}" "${ROOT}/tools/make-testmodels.py" --out "${ROOT}/build/test-fixtures" 2>&1 \
-    | tee "${fixtures_log}"
-  fixtures_status=${PIPESTATUS[0]}
-  set -e
-  if grep -q "self-test: .* 0 failure(s)" "${fixtures_log}"; then
-    fixtures="ran"
-  elif grep -q "_ARRAY_API not found\|cannot be run in" "${fixtures_log}"; then
-    echo "   (skipped: this Python's onnxruntime was built against NumPy 1.x;" >&2
-    echo "    the docs workflow runs the same stage on clean wheels)" >&2
-    fixtures="skipped"
-  else
-    echo "error: the fixture self-test reached no verdict (exit ${fixtures_status})" >&2
-    rm -f "${fixtures_log}"
-    exit 1
-  fi
-  rm -f "${fixtures_log}"
+  run_test_fixtures
 
   echo
   echo "== comparator self-test: the golden comparison must fail on a corrupt reference =="
@@ -282,11 +284,7 @@ if [[ "${windows}" == "1" ]]; then
   echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
   echo "  resolve pixel checks            (tests/resolve/checks.py)"
   echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
-  if [[ "${fixtures}" == "ran" ]]; then
-    echo "  test fixtures                   (tools/make-testmodels.py)"
-  else
-    echo "  NOT RUN: test fixtures          (onnxruntime/numpy unusable)"
-  fi
+  summary_fixtures
   echo "  comparator self-test            (testkit/selftest-compare.bat)"
   if [[ "${onnx}" == "0" ]]; then
     echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
@@ -373,31 +371,7 @@ echo
 echo "== resolve stale-file test: a second run in one directory must not pass =="
 "${documentation_python}" "${ROOT}/tests/resolve/test_stale_file.py"
 
-# The fixtures are a test of the tool: generated models loaded back through ONNX
-# Runtime, at two sizes, so a fixture that stopped matching what the tiling code
-# expects fails here instead of in a host. An onnxruntime built against NumPy 1.x
-# crashes inside a NumPy 2 Python, so the verdict decides between pass and a
-# named skip - and a run that reaches no verdict is a failure.
-echo
-echo "== test fixtures: synthetic models must load and match their shapes =="
-fixtures_log="$(mktemp)"
-set +e
-"${documentation_python}" "${ROOT}/tools/make-testmodels.py" --out "${ROOT}/build/test-fixtures" 2>&1 \
-  | tee "${fixtures_log}"
-fixtures_status=${PIPESTATUS[0]}
-set -e
-if grep -q "self-test: .* 0 failure(s)" "${fixtures_log}"; then
-  fixtures="ran"
-elif grep -q "_ARRAY_API not found\|cannot be run in" "${fixtures_log}"; then
-  echo "   (skipped: this Python's onnxruntime was built against NumPy 1.x;" >&2
-  echo "    the docs workflow runs the same stage on clean wheels)" >&2
-  fixtures="skipped"
-else
-  echo "error: the fixture self-test reached no verdict (exit ${fixtures_status})" >&2
-  rm -f "${fixtures_log}"
-  exit 1
-fi
-rm -f "${fixtures_log}"
+run_test_fixtures
 
 # The comparator's own test: the suites trust it, so it has to be shown failing
 # on a corrupt reference before it is credited with passing a good one.
@@ -414,11 +388,7 @@ echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
 echo "  resolve pixel checks            (tests/resolve/checks.py)"
 echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
 echo "  halo value check                (models/test_conv.onnx)"
-if [[ "${fixtures}" == "ran" ]]; then
-  echo "  test fixtures                   (tools/make-testmodels.py)"
-else
-  echo "  NOT RUN: test fixtures          (onnxruntime/numpy unusable)"
-fi
+summary_fixtures
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
