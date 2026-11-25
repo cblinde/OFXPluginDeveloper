@@ -182,6 +182,17 @@ Copy this into the pull request. "N/A" needs the reason next to it.
 - [ ] Linux: `nm -D --defined-only | grep ' T '` shows only the two entry points;
       weak `W` helpers are gone too if the version script is used
       (`templates/minimal-ofx/exports.map`).
+- [ ] Linux: `readelf --version-info <Name>.ofx` - and the same for every `.so`
+      the bundle ships - names no `GLIBC_` version above the target's. The floor
+      is 2.17 (CentOS 7, the vfx-2021/2022 baseline the SDK is built against); a
+      newer container links `memcpy@GLIBC_2.14` without noticing and then fails
+      at load time on an older host with `GLIBC_2.28 not found`, before any OFX
+      code runs ([`cmake-and-linking.md`](cmake-and-linking.md) §5). One line,
+      compared by eye against the target:
+      `readelf --version-info build/bundle/*/Contents/*/*.ofx | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1`.
+      Nothing in this repository measures this: every Linux run here happens in
+      one container, so it proves the build runs where it was built and nothing
+      about an older host.
 - [ ] Windows: `dumpbin /exports <Name>.ofx` shows the same two names and nothing
       else; `cuobjdump -lelf` lists the cubins when CUDA is on. Both are checked
       by `testkit/check-ofx-artifact.bat` with `--strict`, which finds
@@ -210,6 +221,16 @@ Copy this into the pull request. "N/A" needs the reason next to it.
       from `./test/run-tests.sh`, and neither replaces a host render.
 - [ ] Clean under `SANITIZE=address,undefined`, `SANITIZE=thread` and
       `RUN_VALGRIND=1`; `./test/run-analysis.sh` reports nothing.
+- [ ] Signed, or the absence written down. macOS: `codesign` the bundle with the
+      hardened runtime, notarise it and `xcrun stapler staple` the ticket - an
+      unsigned, quarantined `.ofx.bundle` is refused on first load, and
+      `openfx-misc` tells users to run `xattr -dr com.apple.quarantine`. Windows:
+      `signtool sign /fd sha256 /tr <timestamp-url> /td sha256`, and every DLL
+      the bundle ships, because a host that enforces signed plug-ins checks what
+      it loads **(I)**. The OFX spec says nothing about either; the operating
+      system does ([`packaging-and-install.md`](packaging-and-install.md) §2).
+      Nothing in this repository is signed or notarised - no certificate exists
+      here - so this box stays open until it is done on the release machine.
 - [ ] Every `kOfx*` property is read with its declared type, and every pre-ship
       question in this file has an answer.
 - [ ] Verification status written down honestly ([`verification-status.md`](verification-status.md)).

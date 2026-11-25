@@ -412,9 +412,10 @@ noticing and then fails to load where the host process runs on the older glibc,
 with a `GLIBC_2.28 not found` error at load time, before any OFX code runs.
 Nothing here measures that - every Linux run in this repository happens in one
 container, so it proves the build runs where it was built and nothing about an
-older host. The check is cheap and belongs in a release checklist:
-`readelf --version-info` on the `.ofx` and on every bundled `.so`, and compare
-the highest `GLIBC_` version against the target platform's.
+older host. The check is cheap and belongs in a release checklist, so it is one:
+[`checklists.md`](checklists.md) §6, "before calling it done", asks for
+`readelf --version-info` on the `.ofx` and on every bundled `.so`, with the
+highest `GLIBC_` version compared against the target platform's.
 
 ## 6. Toolchain notes that cause real failures
 
