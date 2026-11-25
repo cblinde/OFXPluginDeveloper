@@ -314,8 +314,9 @@ their own even though the rules are written down, and the tool suite the second
 handover asks to ship is built here: `make-testmodels.py`, `model_probe`,
 `bench_ep`, `sweep-vram.sh` and `test.bat` all exist. The first three run without a
 GPU; the sweep's own GPU ceiling is the one part no machine here can prove, and
-`test.bat` has never been executed because there is no Windows machine — both are
-named as unverified rather than as working.
+`test.bat` runs on the Windows 11 machine in this checkout since 2026-11-24 —
+its logs are under `evidence/2026-11-24-windows/` and
+`evidence/2026-11-25-windows/`, so it is evidence now rather than a promise.
 
 What that run confirms, and this checkout could not have produced:
 

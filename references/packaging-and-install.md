@@ -98,6 +98,32 @@ it changed nothing under CUDA **[B]** (`onnx-and-tensorrt.md` §4).
 | Resolve / Nuke / SCRATCH / Natron | `%COMMONPROGRAMFILES%\OFX\Plugins` | `/usr/OFX/Plugins` |
 | User-local | `OFX_PLUGIN_PATH` (semicolon-separated) | `OFX_PLUGIN_PATH` (colon-separated) |
 
+**Code signing is not in the spec, and it is not in this repository either.**
+Neither macOS notarisation nor Windows Authenticode appears in the OFX
+specification or in the packaging rules: the loader is the operating system, and
+it has its own opinion about a plug-in the user just downloaded. What a user
+meets, and what belongs next to a release:
+
+- **macOS.** An unsigned, quarantined `.ofx.bundle` is refused on first load;
+  `openfx-misc` tells users to run `xattr -dr com.apple.quarantine` on the bundle,
+  which is a workaround, not a distribution strategy. The path is a Developer ID
+  signature with the hardened runtime plus a notarisation ticket, and the bundle
+  lives inside the host's process, so the host's own signature does not cover it
+  (**[B]**, Apple's notarisation guide and the reference project's install
+  notes).
+- **Windows.** Authenticode (`signtool sign /fd sha256 /tr ... /td sha256`) is what
+  keeps SmartScreen from calling a fresh download "unrecognised". An unsigned
+  `.ofx` still loads, so the cost is user trust rather than a refused load
+  (**[B]**, Microsoft's SignTool reference); a host that enforces signed plug-ins
+  turns that into a load failure, and no such host has been tested here.
+- **More than one binary inside the bundle.** A universal macOS bundle needs each
+  slice signed, and a bundle that ships DLLs or `.so` files next to the `.ofx`
+  needs those signed as well if the platform's loader checks them (**[I]**).
+- **Not verified here:** nothing in this repository is signed or notarised, it
+  holds no certificate, and no run has passed through a release channel. The two
+  platform paragraphs are the operating systems' rules, not observations of a
+  bundle.
+
 **Firewall your symbols.** Set `CXX_VISIBILITY_PRESET hidden`,
 `CUDA_VISIBILITY_PRESET hidden` and `VISIBILITY_INLINES_HIDDEN ON`. The CUDA one is
 separate and easy to miss: `CXX_VISIBILITY_PRESET` does **not** apply to the `.cu`

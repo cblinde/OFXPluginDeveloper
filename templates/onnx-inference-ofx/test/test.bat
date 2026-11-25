@@ -31,11 +31,12 @@ rem
 rem What test.bat cannot do that run-tests.sh can: step 5's nm/readelf counts are
 rem dumpbin's job here (the checker does them), and there is no valgrind.
 rem
-rem NOT VERIFIED: this file has never run. There is no Windows machine in this
-rem repository, so nothing below is executed on a regular basis, and a failure
-rem here is as likely to be a bug in this script as in the plug-in. Treat a green
-rem run as the first evidence, not as confirmation. references/field-evidence.md
-rem section 7 and section 9 record what the Windows sessions actually ran instead.
+rem Verified: this script runs green in this repository on Windows 11, against
+rem ONNX Runtime 1.20.1 and 1.32.0, on the CPU runtime and on the CUDA provider;
+rem the logs are under evidence/ in the repository root. A failure here is still
+rem as likely to be a bug in this script as in the plug-in, so read a green run
+rem as evidence and the log as the record. references/field-evidence.md section 7
+rem and section 9 list what the Windows sessions actually ran.
 rem ---------------------------------------------------------------------------
 setlocal EnableExtensions EnableDelayedExpansion
 

@@ -173,6 +173,35 @@ A GPU-mode regression fixed in a point release is also the reason the matrix
 separates "the host offers CUDA" from "your kernel ran": a Resolve update can
 change whether the device path is taken at all, so re-run the §1 table after one.
 
+### 2.10 What this template cannot do in Resolve
+
+A negative list, because a positive one hides the misses. No Resolve is installed
+on any machine here, so nothing below is a render: the host facts are **(B)**,
+and what they imply for this build is **(I)**.
+
+- **The Resolve-like host shape is never exercised.** `testkit/fake_host.cpp:1058`
+  reports `SupportsTiles=1` and `SupportsMultiResolution=1` - the opposite of the
+  profile dumped from Resolve Lite 16 in `openfx-misc`'s `README-hosts.txt`
+  (API 1.4, no tiles) **(B)**. The template declares `setSupportsTiles(false)`
+  and `setSupportsMultiResolution(false)`, so Resolve would take the un-tiled
+  path, and no suite here presents a host that declines both.
+- **The device path depends on the host not capturing the runtime.** Resolve 21
+  carries `onnxruntime.dll` 1.13 beside `Resolve.exe`; the bundle's renamed core
+  `onnxruntime-ofx.dll` is what survives that, and the CUDA provider next to it
+  is loaded from the bundle rather than from `PATH`
+  ([`packaging-and-install.md`](packaging-and-install.md) §1). None of it has
+  been observed inside Resolve.
+- **No colour management.** The template declares no
+  `kOfxImageEffectPropColourManagementStyle` and reads no clip colourspace, so a
+  project in ACES or in a log working space gets whatever the host hands over,
+  converted by nobody.
+- **One input, no temporal access, no transition, no generator.** Four descriptor
+  features the template does not declare, so a Resolve user looking for them in
+  the effect's UI finds nothing ([`ofx-api-constants.md`](ofx-api-constants.md) §1.1).
+- **No render, no crash data.** Nothing has been rendered in Resolve, so the
+  blacklist behaviour in §2.5 and the GPU-mode switch in §2.2 are host facts to
+  design against, not observations of this plug-in.
+
 ---
 
 ## 3. Known real-world failure, as a case study

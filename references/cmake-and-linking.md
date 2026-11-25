@@ -388,9 +388,11 @@ Release` is the Windows counterpart of `test/run-tests.sh`: it validates
 `build\_ort`), puts the runtime's `bin\` on `PATH`, builds unless the second
 argument is `nobuild`, runs `ai_pipeline_test models`, then the contract harness
 twice — exact golden, then the plug-in's own tiling at tolerance 0.02 — and ends
-with the fixture list and `check-ofx-artifact.bat --strict`. It has never run, so
-it is **[I]** until someone executes it on Windows; the steps mirror the Linux
-script, and a failure there is as likely to be this script as the plug-in.
+with the fixture list and `check-ofx-artifact.bat --strict`. It has run in this
+checkout on Windows 11 since 2026-11-24 - green on the CPU runtime and on the
+CUDA provider, both logs under `evidence/2026-11-25-windows/` - so it is **[V]**
+now; the steps mirror the Linux script, and a failure there is as likely to be
+this script as the plug-in.
 
 **What stays Linux-only.** The CPU-emulated kernel suite
 (`test/kernel_equivalence.cpp`) calls `posix_memalign`, which MSVC does not have,
@@ -398,6 +400,21 @@ and the shell suites need `g++`, `nm`, `readelf` and `valgrind`. On Windows the
 real checks are the contract harness (`testkit/build-contract-test.bat`) and the
 hardware harness (`test/gpu-kernel-test.cu`); the emulated suite is not ported,
 so its evidence remains Linux-only.
+
+**The Linux baseline is older than the machine you build on.** OFX 1.5.1 ships
+binaries built against CentOS 7 for the vfx-2021 and vfx-2022 platform years, and
+its own release notes say so in one line - "Restore older CentOS 7 builds for
+vfx-2021 & 2022 compatibility", `.ofx-ref/release-notes.md` - which makes
+CentOS 7's glibc 2.17 the floor the SDK itself targets (**[V]** for the note,
+**[B]** for the platform-year mapping). A plug-in built in a current container
+inherits that container's symbol versions: it links `memcpy@GLIBC_2.14` without
+noticing and then fails to load where the host process runs on the older glibc,
+with a `GLIBC_2.28 not found` error at load time, before any OFX code runs.
+Nothing here measures that - every Linux run in this repository happens in one
+container, so it proves the build runs where it was built and nothing about an
+older host. The check is cheap and belongs in a release checklist:
+`readelf --version-info` on the `.ofx` and on every bundled `.so`, and compare
+the highest `GLIBC_` version against the target platform's.
 
 ## 6. Toolchain notes that cause real failures
 
@@ -465,6 +482,32 @@ interface that has been stable for years.
 - `libcudart.so.*` must be findable: either installed by the toolkit, or shipped
   next to the `.ofx` and found via `RPATH=$ORIGIN`. Shipping it is often the
   difference between "works on my machine" and "works on the colourist's".
+
+### Vendor extension defines (`OFX_EXTENSIONS_*`)
+
+The ASWF checkout this repository builds against contains no `OFX_EXTENSIONS_*`
+macro at all (**[V]**: a recursive grep over `.ofx-ref` finds none). They arrive
+with a vendor extension header - Natron's `ofxNatron.h` and Nuke's equivalent are
+the common pair - and from that point the define is a build contract between two
+things that compile separately: every translation unit that includes the
+extension header, and the Support library the plug-in statically links.
+`openfx-io` sets those defines in one place (`Makefile.master`) and warns that the
+extension symbols exist only where they are set (**[B]**); the failure this side
+of it is a plug-in whose `describe` is empty, or whose extension properties never
+appear, with no error anywhere (**[I]**).
+
+Two rules follow, and both are checkable in a build:
+
+- Define the macro once, on the target (`target_compile_definitions`), never as a
+  `#define` above an `#include` in one file, so every translation unit and the
+  Support build see the same value.
+- Assert the property you depend on - in `describe` or in a contract check -
+  instead of assuming the header was compiled in: a missing define is silence,
+  not a link error.
+
+The Windows half of the same story is in `packaging-and-install.md` §2: visibility
+is an ELF mechanism, so under MSVC the export set comes from `OfxExport` and
+`-fvisibility=hidden` is a no-op.
 
 ---
 

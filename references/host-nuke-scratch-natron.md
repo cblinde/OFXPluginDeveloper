@@ -55,6 +55,21 @@ That is a benefit: throw specific codes and set a message via
 `setPersistentMessage`/`sendMessage` so the user sees "GPU out of memory" instead
 of "unknown error".
 
+### What this template cannot do in Nuke
+
+- **The device path is unreachable by design.** Nuke offers no CUDA/OpenCL render
+  properties to third-party plug-ins **(C)**, so the inference template's CUDA
+  attempt fails there and the label records why; the CPU session is the product.
+- **No tiles.** `setSupportsTiles(false)` is honoured - correct, and it gives up
+  Nuke's tile parallelism.
+- **Same-instance concurrency is not claimed.** The descriptor says
+  `eRenderInstanceSafe`, so Nuke may run several instances in parallel; two
+  `render()` calls on one instance are outside what this template promises, and
+  no suite here drives that pattern.
+- **Nothing rendered in Nuke.** There is no Nuke on any machine in this
+  repository, so the three points above are host facts plus their consequences,
+  not a session with this build.
+
 ---
 
 ## 2. Assimilate SCRATCH
@@ -76,6 +91,17 @@ Strategy: use SCRATCH as a second data point when a Resolve bug might be your
 fault. If it renders correctly in Nuke and SCRATCH but not Resolve, look for a
 Resolve-specific assumption (page, working space, render size, alpha) rather than
 a kernel bug.
+
+### What this template cannot do in SCRATCH
+
+- **GPU availability is a property of the host build and the machine's stack**
+  **(C)**, not something the plug-in can assume; the template falls back per
+  frame and says so in the label.
+- **No tiles, no multi-resolution.** The same two declarations as everywhere
+  else, so SCRATCH renders it un-tiled.
+- **Nothing verified in SCRATCH at all.** No install here, and what §2 says about
+  the host comes from the Gyroflow project's install notes **(B)**, not from a
+  session with this template.
 
 ---
 
@@ -99,5 +125,16 @@ Use Natron for:
 - Reproducing a spec violation in isolation, without a $300 licence in the loop.
 
 Do not use Natron to validate GPU behaviour: it will not exercise it.
+
+### What this template cannot do in Natron
+
+- **No GPU path for OFX images** **(C)**: Natron gets the CPU session, and the
+  failed CUDA attempt shows up in the label rather than in the frame.
+- **Untiled rendering.** `setSupportsTiles(false)` is safe here and leaves the
+  host's tile parallelism unused.
+- **One headless render is not a Natron test.** `NatronRenderer` rendered a frame
+  of one template on 2026-11-24 (`evidence/2026-11-24-windows/`), which proves a
+  host can load a bundle headless; it says nothing about this plug-in's CUDA path
+  or about a Natron timeline.
 
 ---

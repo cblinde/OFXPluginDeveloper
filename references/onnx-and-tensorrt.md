@@ -489,7 +489,9 @@ make the choice visible — and the consequence is packaging, not a second build
   bundle's by absolute path, then prints which file the process resolves for each
   base name. `FAILED (error 127)` on a component means the bundle cannot be
   preloaded next to that host and the guard is mandatory. The preload in the
-  template is **[I]** here — no Windows machine compiles it.
+  template is **[V]** since 2026-11-25: on a Windows 11 machine it found no host
+  copies and the label reads `bundled CUDA`
+  ([`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
 - **Budget the size.** The provider imports `cufft64_*` even for a model with no
   FFT in it; with cuDNN 9 + cuBLAS 12 + cuFFT a bundle was 2.4–2.7 GB, of which
   the provider alone was 643 MB (**B**). That is a product decision — one
@@ -596,10 +598,12 @@ why a cap exists at all, and it is not something the reporter measured (**B**).
 The request itself is compiled and its failure path is verified here: this
 machine links the CPU package of ONNX Runtime, `AppendExecutionProvider_CUDA`
 throws `Failed to load library libonnxruntime_providers_shared.so`, and the
-`provider` label carries that reason (**V**). The success branch has never run —
-no GPU, no provider binary — so every number above is external evidence from one
-RTX 3060 (**B**), and the success path is documented from the ORT API rather
-than measured.
+`provider` label carries that reason (**V**). The success branch has run since
+2026-11-25: the GPU build created the session with the provider and printed
+`CUDA (device 0, 1 thread, bundled CUDA)` (**[V]**,
+[`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
+The figures above stay external evidence from one RTX 3060 (**[B]**); the
+success path is now both documented from the ORT API and observed once.
 
 #### Detection heads: the four facts that cost a day
 
@@ -695,6 +699,82 @@ placement bug, and they are different), and
 teach the addressing rules and the tile protocol this section extends. The full rules — clipping to window and
 bounds, premultiplied compositing, and `stb_easy_font` for glyphs without a GUI —
 are [`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §4.
+
+---
+
+## 5. What the device computes: TF32, cuDNN's search, the arena
+
+The CUDA execution provider is not precision-neutral by default, and the header
+is the place to see what the template can and cannot switch off. The legacy
+`OrtCUDAProviderOptions` struct carries `device_id`, `cudnn_conv_algo_search`
+(default `EXHAUSTIVE`), `gpu_mem_limit` (default `SIZE_MAX`),
+`arena_extend_strategy` (default `0`, `kNextPowerOfTwo`),
+`do_copy_in_default_stream` (default `1`), the user-compute-stream pair, an
+`OrtArenaCfg*` and the tunable-op fields - and **no TF32 field at all**, in the
+1.20.1 headers and in the 1.32.0 headers alike (**[V]**: `onnxruntime_c_api.h`,
+`OrtCUDAProviderOptions`). TF32 travels only as a key/value provider option
+(`use_tf32`), so a plug-in that appends the provider through the struct cannot
+turn it off: it runs with the documented default, which is **1** since 1.18 -
+tensor cores truncate the mantissa to 10 bits for the convolutions and matmuls
+they accelerate (**[B]**, the CUDA EP option table).
+
+Four settings decide whether a frame is reproducible on the device:
+
+| Setting | Default | What it costs | Where it lives |
+|---|---|---|---|
+| `use_tf32` | `1` | rounding at the third decimal place of every accelerated convolution | key/value option only |
+| `cudnn_conv_algo_search` | `EXHAUSTIVE` | minutes at 1080p before the first tile, plus a workspace sized for the winning plan | struct field - the template sets `HEURISTIC` |
+| `gpu_mem_limit`, `arena_extend_strategy` | `SIZE_MAX`, `kNextPowerOfTwo` | the arena never returns memory and doubles as it grows, so an instance left open holds the peak of every shape it has seen | struct field or `OrtArenaCfg` |
+| `cudnn_conv_use_max_workspace` | `1` | a second copy of the activation budget, allocated once | key/value option only |
+
+What is measured here, on one RTX 3060, with the template's settings (heuristic
+search, everything else at default): the exact golden comparison fails, and the
+deviation lands between `1e-8` and `1e-7` - bisected by retrying at `1e-8`
+(fails) and `1e-7` (passes) (**[V]**,
+[`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
+That magnitude is summation order, not TF32: a 10-bit mantissa would show up two
+to three decimal places earlier. TF32 therefore did not fire for this model's
+kernels - but nothing in the code prevents it, and that is the difference
+between "it happened to work" and a guarantee. For finishing work the rule is to
+set `use_tf32=0` explicitly (which means the key/value API, not the struct), pin
+the search to `HEURISTIC`, and state the arena limit, so that a tolerance in the
+suite measures the provider rather than the day.
+
+The arena is also the host-facing half of this. A plug-in that keeps a session
+per instance, never sets `gpu_mem_limit` and lets the arena grow on the
+power-of-two curve holds roughly twice the peak it needs, once per instance
+(**[I]** - the curve is documented, the multiplier is arithmetic).
+`arena_extend_strategy=1` (`kSameAsRequested`) and a stated `gpu_mem_limit` are
+the two knobs; §3's device-pointer path changes where the bytes come from, not
+how much the arena keeps.
+
+## 6. "CUDA" in the label does not mean the GPU ran every node
+
+The label this template prints - `CUDA (device 0, 1 thread, bundled CUDA)` - is
+evidence that the provider was created and the session accepted it. It is not
+evidence that every node ran on the device. A node the provider does not
+implement is assigned to the CPU EP without a message, the session builds, the
+label stays, and the frame is still correct - slower, with the GPU idle for that
+node (**[I]**: the fallback is the documented default; what it costs is a
+per-model measurement nobody has made here).
+
+The question has an exact answer, and the runtime ships the switch for it:
+`session.disable_cpu_ep_fallback=1` makes **session creation fail** when the
+non-CPU providers cannot cover every node, naming what was left over, and it is
+invalid to combine it with an explicitly added CPU EP (**[V]**:
+`onnxruntime_session_options_config_keys.h`, `kOrtSessionOptionsDisableCPUEPFallback`).
+The shape that fits a plug-in is a throwaway probe: create the session once with
+the flag, print either "all nodes on the provider" or the node it declined, then
+create the real session without the flag - a model with one unsupported node is
+still better off on the device for the rest.
+
+Two costs to state before wiring that in. The probe is a second session
+creation, and with `EXHAUSTIVE` search that is the expensive part, so run it once
+per model and keep the answer beside the model. And a failed probe says *that* a
+node was declined, not why: the node name starts the search, it does not end it.
+Both follow from the key's documented behaviour; no probe has been run in this
+repository (**[I]**), and [`testing-layers.md`](testing-layers.md) §13 is the
+list of what has.
 
 ---
 
