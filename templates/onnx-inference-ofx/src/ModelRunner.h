@@ -65,13 +65,16 @@ public:
     const std::string& InputName() const;
     const std::string& OutputName() const;
 
-    /// The provider the session was created with, with the thread count:
-    /// "CUDA (device 0, 1 thread, host CUDA stack)" when the request succeeded
-    /// (the last part is Windows only), "CPU (1 thread)" otherwise.
+    /// The provider the session was created with, the thread count, and - when
+    /// CUDA was granted - what the fallback probe found:
+    /// "CUDA (device 0, 1 thread, host CUDA stack, all nodes on CUDA)" (the
+    /// preload part is Windows only), "... , nodes left on CPU)" when a node
+    /// could not be placed, "CPU (1 thread)" otherwise.
     const std::string& Provider() const;
 
-    /// Why the CUDA request failed - the runtime's own first line, clipped.
-    /// Empty when the provider was appended.
+    /// Why the session is not entirely on the device: the runtime's own first
+    /// line, clipped - the failed provider request, or the node the probe could
+    /// not place. Empty when every node ran on CUDA.
     const std::string& ProviderReason() const;
 
 private:

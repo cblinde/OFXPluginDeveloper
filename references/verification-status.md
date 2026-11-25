@@ -177,6 +177,11 @@ cuDNN 9/cuBLAS/cuFFT/cudart taken from wheels, label
 and again on ONNX Runtime 1.32.0, whose GPU package is built against CUDA 13 and
 ships the provider as an EP plugin
 ([`onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log));
+the label now ends `, all nodes on CUDA`, because a throwaway session built with
+`session.disable_cpu_ep_fallback=1` loaded the graph without leaving a node on
+the CPU EP - and a control without any provider shows that key failing rather
+than being ignored
+([`onnx-fallback-probe.log`](../evidence/2026-11-25-windows/onnx-fallback-probe.log));
 no host has been given device memory by any of these runs; Linux has not been run; and no kernel runs in
 `./run-tests.sh`, which has no GPU step by design. See the opening section of this document.
 

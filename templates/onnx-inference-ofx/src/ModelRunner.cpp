@@ -4,6 +4,8 @@
 
 #include <cstring>
 #include <cwchar>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -454,6 +456,65 @@ bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason)
     }
 }
 
+/// What the fallback probe found in one model.
+struct NodeCoverage
+{
+    bool allOnDevice = false;
+    /// The runtime's own words for the part it could not place - normally the
+    /// node name, which is the one piece of information the label was missing.
+    std::string reason;
+};
+
+/// Answers "did every node run on the provider", by building the session once
+/// with `session.disable_cpu_ep_fallback=1` and throwing it away.
+///
+/// Accepted CUDA request is not the same claim. A node the CUDA EP does not
+/// implement is assigned to the CPU EP without a message: the session builds,
+/// every check passes, the label says CUDA, and on a 3060 the clock is the only
+/// thing that noticed (F32). The key turns that silence into a failed session
+/// creation whose message names what was left over. It is invalid to combine it
+/// with an explicitly added CPU EP, so the probe appends CUDA and nothing else.
+///
+/// Cached per model path: the answer belongs to the model, and this is a second
+/// session creation, the expensive half of loading. The probe is destroyed before
+/// the real session exists, so it does not double the resident weights.
+NodeCoverage ProbeNodeCoverage(const std::string& modelPath, int intraThreads)
+{
+    static std::mutex mutex;
+    static std::map<std::string, NodeCoverage> cache;
+
+    const std::lock_guard<std::mutex> lock(mutex);
+    const auto known = cache.find(modelPath);
+    if (known != cache.end()) {
+        return known->second;
+    }
+
+    NodeCoverage coverage;
+    Ort::SessionOptions options = MakeSessionOptions(intraThreads);
+    options.AddConfigEntry("session.disable_cpu_ep_fallback", "1");
+    std::string providerReason;
+    if (!AppendCudaProvider(options, &providerReason)) {
+        // The provider is gone between the two attempts; say so rather than
+        // blame a node.
+        coverage.reason = "provider request failed: " + providerReason;
+    } else {
+        try {
+#ifdef _WIN32
+            const std::wstring wide = WidePath(modelPath);
+            Ort::Session probe(SharedEnv(), wide.c_str(), options);
+#else
+            Ort::Session probe(SharedEnv(), modelPath.c_str(), options);
+#endif
+            (void)probe;
+            coverage.allOnDevice = true;
+        } catch (const std::exception& e) {
+            coverage.reason = ShortMessage(e.what());
+        }
+    }
+    cache.emplace(modelPath, coverage);
+    return coverage;
+}
+
 } // namespace
 
 struct ModelRunner::Impl {
@@ -491,11 +552,23 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
 #if defined(_WIN32) && defined(ORT_API_MANUAL_INIT)
         // Which cuDNN/cuBLAS/cuFFT/cudart the provider's imports resolve to: the
         // bundle's copies, or the ones the host already had loaded (F32).
-        _impl->provider += CudaPreloadNotes().hostFolder.empty() ? ", bundled CUDA)"
-                                                                 : ", host CUDA stack)";
-#else
-        _impl->provider += ")";
+        _impl->provider += CudaPreloadNotes().hostFolder.empty() ? ", bundled CUDA"
+                                                                 : ", host CUDA stack";
 #endif
+        // "CUDA" alone is the strong claim, not the true one: an unsupported node
+        // sits on the CPU EP and the session still builds. The probe settles it,
+        // and its answer goes where a reader looks - the label.
+        const NodeCoverage coverage = ProbeNodeCoverage(modelPath, intraThreads);
+        if (coverage.allOnDevice) {
+            _impl->provider += ", all nodes on CUDA)";
+        } else {
+            // Not fatal on purpose: a model with one unsupported node is still
+            // better off on the device for the rest, so the real session is built
+            // without the flag. What must not happen is the label claiming more
+            // than the session did.
+            _impl->provider += ", nodes left on CPU)";
+            _impl->providerReason = coverage.reason;
+        }
     } else {
         _impl->provider = "CPU (" + ThreadLabel(threads) + ")";
         _impl->providerReason = providerReason;

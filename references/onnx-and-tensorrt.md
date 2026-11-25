@@ -581,7 +581,8 @@ benchmarks well makes a timeline stutter. Five rules keep it one budget:
   several threads.
 - **Print the count in the status label, in both modes** — `CPU (8 threads)`,
   `CUDA (device 0: …, 6 threads)`; the template writes `CPU (1 thread)` and
-  `CUDA (device 0, 1 thread, host CUDA stack)`. That line is what makes a value
+  `CUDA (device 0, 1 thread, host CUDA stack, all nodes on CUDA)`. That line is
+  what makes a value
   like `--set intraThreads=3` checkable from the contract harness
   (`--label-param`): without it the parameter can be wired to nothing and no test
   notices.
@@ -602,8 +603,11 @@ throws `Failed to load library libonnxruntime_providers_shared.so`, and the
 2026-11-25: the GPU build created the session with the provider and printed
 `CUDA (device 0, 1 thread, bundled CUDA)` (**[V]**,
 [`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
-The figures above stay external evidence from one RTX 3060 (**[B]**); the
-success path is now both documented from the ORT API and observed once.
+That log predates the fallback probe, so it proves the provider was created and
+nothing more; the same line now ends `, all nodes on CUDA` (§6), which is the
+stronger claim. The figures above stay external evidence from one RTX 3060
+(**[B]**); the success path is now both documented from the ORT API and observed
+once.
 
 #### Detection heads: the four facts that cost a day
 
@@ -750,9 +754,9 @@ how much the arena keeps.
 
 ## 6. "CUDA" in the label does not mean the GPU ran every node
 
-The label this template prints - `CUDA (device 0, 1 thread, bundled CUDA)` - is
-evidence that the provider was created and the session accepted it. It is not
-evidence that every node ran on the device. A node the provider does not
+A label that says only `CUDA (device 0, 1 thread, bundled CUDA)` is evidence that
+the provider was created and the session accepted it. It is not evidence that
+every node ran on the device. A node the provider does not
 implement is assigned to the CPU EP without a message, the session builds, the
 label stays, and the frame is still correct - slower, with the GPU idle for that
 node (**[I]**: the fallback is the documented default; what it costs is a
@@ -760,21 +764,50 @@ per-model measurement nobody has made here).
 
 The question has an exact answer, and the runtime ships the switch for it:
 `session.disable_cpu_ep_fallback=1` makes **session creation fail** when the
-non-CPU providers cannot cover every node, naming what was left over, and it is
-invalid to combine it with an explicitly added CPU EP (**[V]**:
-`onnxruntime_session_options_config_keys.h`, `kOrtSessionOptionsDisableCPUEPFallback`).
-The shape that fits a plug-in is a throwaway probe: create the session once with
-the flag, print either "all nodes on the provider" or the node it declined, then
-create the real session without the flag - a model with one unsupported node is
-still better off on the device for the rest.
+non-CPU providers cannot cover every node, and it is invalid to combine it with an
+explicitly added CPU EP (**[V]**: `onnxruntime_session_options_config_keys.h`,
+`kOrtSessionOptionsDisableCPUEPFallback`). The shape that fits a plug-in is a
+throwaway probe: create the session once with the flag, then create the real
+session without it - a model with one unsupported node is still better off on the
+device for the rest.
 
-Two costs to state before wiring that in. The probe is a second session
-creation, and with `EXHAUSTIVE` search that is the expensive part, so run it once
-per model and keep the answer beside the model. And a failed probe says *that* a
-node was declined, not why: the node name starts the search, it does not end it.
-Both follow from the key's documented behaviour; no probe has been run in this
-repository (**[I]**), and [`testing-layers.md`](testing-layers.md) §13 is the
-list of what has.
+**Built here, and the answer is in the label.** `ModelRunner` builds that
+throwaway session before the real one - same options, plus the key, plus the CUDA
+EP and nothing else - and destroys it before the real session exists, so the
+resident weights never double. The answer goes into the `provider` label, because
+that is the line a log reader actually sees:
+
+| Label | What it establishes |
+|---|---|
+| `CUDA (device 0, 1 thread, bundled CUDA, all nodes on CUDA)` | the probe loaded the graph with the key, so every node is on the device |
+| `CUDA (…, nodes left on CPU)` | the probe failed; the runtime's reason follows in the same label after `- fallback:` |
+| `CPU (1 thread) - fallback: …` | no provider at all, as before |
+
+Measured on this machine with the bundled 1.32.0 and CUDA 13 (**[V]**,
+[`../evidence/2026-11-25-windows/onnx-fallback-probe.log`](../evidence/2026-11-25-windows/onnx-fallback-probe.log)):
+the template's `test_conv.onnx` prints the first line in both host profiles, so
+its single convolution is on the device - which the old label could not say.
+
+**What the probe does not say.** The 1.32.0 message is `This session contains
+graph nodes that are assigned to the default CPU EP, but fallback to CPU EP has
+been explicitly disabled by the user.` - it states the fact and names no node, so
+the label says *that* something was left on the CPU, not *what*. Naming the node
+needs the verbose log (`ORT_LOGGING_LEVEL_VERBOSE`, which prints the EP assignment
+per node) or `optimized_model_filepath` and reading the assignment in the
+optimised graph. A failed probe starts that search; it does not end it.
+
+The probe is only worth its cost if the key does something, so that was checked
+directly rather than assumed: same model, same runtime, **no provider appended**,
+once with the key and once without (**[V]**, same log). Without the key the
+session builds on the CPU EP; with it, creation fails with the message above. A
+key that was silently ignored would make every probe pass, and the label would go
+on claiming CUDA for a session that never used it - the control is what makes
+"all nodes on CUDA" a claim instead of a decoration.
+
+Two costs stay. The probe is a second session creation, the expensive half of
+loading, so the answer is cached per model path: it belongs to the model, not to
+the instance. And `HEURISTIC` search (§5) is what keeps that second creation
+cheap.
 
 ---
 

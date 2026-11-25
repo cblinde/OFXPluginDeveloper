@@ -1,0 +1,34 @@
+# ONNX inference template: session.disable_cpu_ep_fallback probe, Windows.
+#
+# Command (control, section 1): .validation/ort-1.32.0/bin/probe-control.exe
+#   templates/onnx-inference-ofx/models/test_conv.onnx
+#   - a 70-line scratch program: same model, same runtime, no execution provider
+#   appended either time, once without the key and once with it. Exit 0 = the
+#   key turns an all-CPU session into a failed session creation.
+# Command (template, section 2): ONNXRUNTIME_ROOT=<repo>/.validation/ort-gpu-1.32.0
+#   templates/onnx-inference-ofx/test/test.bat Release, grep for the provider label.
+# Runtime: Microsoft.ML.OnnxRuntime 1.32.0, provider from
+#   Microsoft.ML.OnnxRuntime.Gpu.Windows 1.32.0 (CUDA 13), as in
+#   onnx-inference-cuda-1.32.log.
+#
+# 1. The key does something (no provider appended, so the CPU EP must do the work)
+#
+[1;31m2026-11-25 17:39:17.2430874 [E:onnxruntime:, inference_session.cc:3309 onnxruntime::InferenceSession::Initialize::<lambda_2>::operator ()] This session contains graph nodes that are assigned to the default CPU EP, but fallback to CPU EP has been explicitly disabled by the user.[m
+without the key: session created (CPU EP did the work)
+with the key: session creation failed as it must
+  reason: This session contains graph nodes that are assigned to the default CPU EP, but fallback to CPU EP has been explicitly disabled by the user.
+control passed: the key turns an all-CPU session into a failure
+# exit code: 0
+#
+# 2. The template's label, both host profiles (160 + 160 + 82 checks, 0 failed)
+97:- host profile: Testkit Fake Host (tiles, multi-resolution)
+132:ok 35 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, all nodes on CUDA)"
+219:ok 115 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, all nodes on CUDA)"
+265:contract_test: 160 checks, 0 failed
+276:- host profile: Testkit Fake Host (no tiles, no multi-resolution)
+311:ok 35 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, all nodes on CUDA)"
+398:ok 115 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, all nodes on CUDA)"
+444:contract_test: 160 checks, 0 failed
+454:- host profile: Testkit Fake Host (tiles, multi-resolution)
+537:contract_test: 82 checks, 0 failed
+557:all checks passed
