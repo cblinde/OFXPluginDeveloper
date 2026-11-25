@@ -197,64 +197,27 @@ on a foundation that either works or does not.
 Licensing is part of the design: one Studio seat on the test machine, activated
 once, and the harness must not touch the licence.
 
-## 11. Implementation references (none of these has been run)
+## 11. Implementation references
 
-The sketches below are the task's prototypes, trimmed to the calls that matter
-and annotated with what has to be settled before each one is trusted. They are
-references, not code in the tree: nothing imports them, nothing runs them, and
-`tools/check-docs.py` does not see them.
+The task's prototypes A-H are kept whole in §13, as an appendix, because they are
+the reference an implementation starts from. None of them has been executed
+anywhere: there is no Resolve, no Studio licence and no GPU on either machine
+this repository has been exercised on. Every call into `DaVinciResolveScript` is
+marked `# unverified` in the code, and each prototype ends with the questions
+that have to be answered before its first run counts.
 
-**A. Process management.** Start the executable with `-nogui`, then poll for the
-API rather than for the process:
+What each one has to settle, in the order the milestone needs them:
 
-```python
-proc = subprocess.Popen([exe, "-nogui"], cwd=str(Path(exe).parent))
-# a started process is not a started application: wait for scriptapp("Resolve")
-```
-
-Open questions: does `-nogui` survive a missing display on Windows; does Resolve
-exit on its own after `Quit()`; how do you avoid killing a Resolve the user
-already had open (answer: record the PID you started, never `taskkill /IM`).
-
-**B. Connection.** The module path comes from the environment, never from a
-literal:
-
-```python
-sys.path.insert(0, os.path.join(os.environ["RESOLVE_SCRIPT_API"], "Modules"))
-import DaVinciResolveScript as dvr
-resolve = dvr.scriptapp("Resolve")   # None until a project is open
-```
-
-**C. Render.** Job id in, status dict out, and the status may be a string:
-
-```python
-job = project.AddRenderJob()                 # "" on failure
-project.StartRendering([job], isInteractiveMode=False)
-status = project.GetRenderJobStatus(job)     # dict or error string
-```
-
-Open questions: whether `isInteractiveMode` changes anything headless; whether
-`JobStatus` can sit at `Complete` before the file is flushed.
-
-**D. Prepared projects.** One `.drp` per test case, committed, with the plug-in
-applied and the range set. Generated once by hand on a known Resolve version,
-never edited by the harness.
-
-**E. Integrity.** Decode, then: dimensions, channels, finiteness, constant-frame
-policy, frame count, file size.
-
-**F. Comparison.** MAE and max error first (the repository's contract already
-uses exactly that pair), RMSE/PSNR/SSIM only if a case needs them, tolerances per
-reference as in `testkit/contract_main.cpp` (`name.<fuzz>.fuzz`), never a global
-one.
-
-**G. CPU vs GPU.** Two runs, two declared backends, one comparison — and the
-backend declaration comes from the plug-in (§8).
-
-**H. One entry point.** A PowerShell script that validates paths, sets the env
-vars, runs the orchestrator and returns its exit code. It must also clean up:
-a `finally` that quits Resolve and, if the quit fails, terminates the PID it
-started.
+| Prototype | The question that decides whether it is right |
+|---|---|
+| A, process | whether `-nogui` returns before or after the API is up, and whether Resolve exits on its own after `Quit()` |
+| B, connection | which module path the installed build actually uses, and whether `scriptapp` can return non-`None` with no project open |
+| C, render | whether `JobStatus` reaches `Complete` before the file is closed, and what `isInteractiveMode` changes headless |
+| D, projects | whether one `.drp` per case is affordable, or a generator is needed - and whether an OFX plug-in inside a Fusion comp renders like one on the colour page |
+| E, integrity | which decoder is acceptable as a dependency (ffmpeg on `PATH`, OpenImageIO, or a small EXR/DPX reader) |
+| F, comparison | whether the contract's MAE + max pair is enough for a host render, or a per-channel tolerance is needed |
+| G, CPU/GPU | how the plug-in declares its backend in a way the harness can read back |
+| H, entry point | how the script learns where Resolve is installed on a machine it has never seen |
 
 ## 12. What this document does not know
 
@@ -276,6 +239,433 @@ started.
 
 Each of these is settled by one run on the machine that has Resolve. That is the
 milestone.
+
+## 13. Appendix: the full prototypes (none of them has been run)
+
+Kept as implementation references, in the shape the task specified. The `# unverified`
+comments mark calls that were read out of the scripting documentation and never
+executed; a comment without that marker is ordinary Python. Nothing in this
+appendix is code in the tree: no file imports it, no test runs it, and
+`tools/check-docs.py` does not parse it.
+
+### 13.1 A - process management (`runner/resolve_process.py`)
+
+```python
+# NOT RUN. Every DaVinciResolveScript-adjacent call here is unverified.
+import subprocess
+import time
+from pathlib import Path
+
+
+class ResolveProcess:
+
+    def __init__(self, executable, startup_timeout=180, use_nogui=True):
+        self.executable = Path(executable)
+        self.startup_timeout = startup_timeout
+        self.use_nogui = use_nogui
+        self.process = None
+        self.pid = None
+
+    def start(self):
+        if not self.executable.exists():
+            raise FileNotFoundError(self.executable)
+
+        arguments = [str(self.executable)]
+        if self.use_nogui:
+            arguments.append("-nogui")   # unverified: documented as "API keeps working"
+
+        self.process = subprocess.Popen(arguments, cwd=str(self.executable.parent))
+        # The PID we started is the only process this class may ever stop. Never
+        # taskkill /IM: that kills a Resolve the user already had open.
+        self.pid = self.process.pid
+        return self.pid
+
+    def is_running(self):
+        return self.process is not None and self.process.poll() is None
+
+    def died_early(self):
+        # A process that exits during startup has already told you everything.
+        return self.process is not None and self.process.poll() is not None
+
+    def stop(self, grace=30):
+        if not self.is_running():
+            return
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait(timeout=10)
+```
+
+Startup is **not** proven by `start()`: readiness is `connect_to_resolve()` in
+13.2 returning a project-backed object. A started process that never initialises
+is the failure this split exists to make visible.
+
+### 13.2 B - connection (`runner/resolve_api.py`)
+
+```python
+# NOT RUN.
+import os
+import sys
+import time
+
+
+def scripting_api_dir():
+    # Windows: %PROGRAMDATA%\Blackmagic Design\DaVinci Resolve\Support\Developer\Scripting
+    # Discovery, not a literal: the application directory is not fixed either.
+    return os.environ.get("RESOLVE_SCRIPT_API")
+
+
+def connect_to_resolve(timeout=120, poll=2.0):
+    api_dir = scripting_api_dir()
+    if not api_dir:
+        raise RuntimeError("RESOLVE_SCRIPT_API is not set")
+
+    modules = os.path.join(api_dir, "Modules")
+    if modules not in sys.path:
+        sys.path.insert(0, modules)
+
+    import DaVinciResolveScript as dvr  # unverified: the module name is the documented one
+
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            resolve = dvr.scriptapp("Resolve")   # unverified: None until Resolve runs
+        except Exception as error:               # the bridge raises while starting up
+            last_error = error
+            resolve = None
+
+        if resolve:
+            manager = resolve.GetProjectManager()          # unverified
+            if manager and manager.GetCurrentProject():    # unverified: project open?
+                return resolve
+
+        time.sleep(poll)
+
+    raise TimeoutError(f"no Resolve after {timeout}s (last error: {last_error})")
+```
+
+`scriptapp("Resolve")` returning an object is not enough: the documented
+behaviour is that it answers `None` until Resolve runs with a project open, so
+the readiness condition includes `GetCurrentProject()`.
+
+### 13.3 C - project and render management (`runner/render_manager.py`)
+
+```python
+# NOT RUN.
+import time
+from pathlib import Path
+
+
+def load_project(resolve, project_path):
+    manager = resolve.GetProjectManager()        # unverified
+    project = manager.LoadProject(str(project_path))   # unverified
+    if not project:
+        raise RuntimeError(f"could not load project: {project_path}")
+    return project
+
+
+def render_project(project, output_directory, custom_name="test", timeout=600):
+    out = Path(output_directory)
+    out.mkdir(parents=True, exist_ok=True)
+
+    settings = {
+        "TargetDir": str(out),          # unverified: key names per the shipped API doc
+        "CustomName": custom_name,
+        "SelectAllFrames": True,
+        "MarkIn": 0,                    # unverified: frame numbers, not timecode
+        "MarkOut": 0,
+    }
+    if not project.SetRenderSettings(settings):        # unverified
+        raise RuntimeError("SetRenderSettings refused the map")
+
+    job_id = project.AddRenderJob()                    # unverified: "" on failure
+    if not job_id:
+        raise RuntimeError("AddRenderJob returned no job id")
+
+    if not project.StartRendering([job_id], isInteractiveMode=False):   # unverified
+        raise RuntimeError("StartRendering refused the job")
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not project.IsRenderingInProgress():        # unverified
+            break
+        time.sleep(2)
+    else:
+        project.StopRendering()                        # unverified
+        raise TimeoutError(f"render {job_id} exceeded {timeout}s")
+
+    status = project.GetRenderJobStatus(job_id)        # unverified: dict OR error string
+    if not isinstance(status, dict):
+        raise RuntimeError(f"GetRenderJobStatus returned a string: {status}")
+
+    job_status = status.get("JobStatus")
+    if job_status != "Complete":
+        raise RuntimeError(f"render failed: {job_status} ({status.get('Error')})")
+
+    # "Complete" is a claim about the job, not about the file: a file that is
+    # still being flushed looks exactly like one that finished.
+    produced = sorted(out.glob(f"{custom_name}*"))
+    if not produced:
+        raise RuntimeError(f"job Complete but nothing in {out}")
+    if produced[-1].stat().st_size == 0:
+        raise RuntimeError(f"job Complete but {produced[-1].name} is empty")
+
+    return {"job": job_id, "status": status, "file": str(produced[-1])}
+```
+
+### 13.4 D - prepared projects (`projects/`)
+
+No code. One `.drp` per case, saved by hand on a known Resolve version, with the
+plug-in applied, the parameters set and the render range defined. The harness
+loads them and never edits them: the `.drp` container is undocumented and its
+schema moves between versions.
+
+| Project | Test | Purpose |
+|---|---|---|
+| `basic_ofx_test.drp` | basic render | the plug-in runs at all |
+| `rgba_test.drp` | alpha | RGBA and alpha survive the host |
+| `gpu_test.drp` | CUDA | the declared GPU path renders |
+| `parameter_low.drp` / `parameter_high.drp` | parameter bounds | the edges of the parameter range |
+| `resolution_test.drp` | 4K | a tile the size of a real frame |
+
+### 13.5 E - image integrity (`validation/image_integrity.py`)
+
+```python
+# NOT RUN. Needs OpenImageIO + numpy, which this repository does not have yet.
+import numpy as np
+import OpenImageIO as oiio
+
+
+def validate_image(path, expect=None, allow_black=False):
+    expect = expect or {}
+
+    image = oiio.ImageInput.open(str(path))
+    if image is None:
+        raise RuntimeError(f"could not open image: {path}")
+
+    spec = image.spec()
+    pixels = image.read_image(format=oiio.FLOAT)
+    image.close()
+
+    if pixels is None:
+        raise RuntimeError("empty image")
+    pixels = np.asarray(pixels)
+    if pixels.size == 0:
+        raise RuntimeError("empty image")
+
+    problems = []
+    if "width" in expect and spec.width != expect["width"]:
+        problems.append(f"width {spec.width} != {expect['width']}")
+    if "height" in expect and spec.height != expect["height"]:
+        problems.append(f"height {spec.height} != {expect['height']}")
+    if "channels" in expect and spec.nchannels != expect["channels"]:
+        problems.append(f"channels {spec.nchannels} != {expect['channels']}")
+
+    if not np.isfinite(pixels).all():
+        problems.append("NaN or Inf")
+
+    # A constant frame is a policy, not a verdict: an identity test is meant to
+    # be constant, and a black frame can be the correct answer.
+    if not allow_black and float(np.max(np.abs(pixels))) == 0.0:
+        problems.append("completely black")
+
+    if problems:
+        raise RuntimeError("; ".join(problems))
+
+    return {
+        "width": spec.width,
+        "height": spec.height,
+        "channels": spec.nchannels,
+        "format": str(spec.format),
+        "pixel_count": int(pixels.size),
+        "status": "PASS",
+    }
+```
+
+Alpha is checked by the channel count and by comparing the alpha plane in 13.6,
+not by a separate rule here.
+
+### 13.6 F - image comparison (`validation/image_comparison.py`)
+
+```python
+# NOT RUN. Same dependency as 13.5.
+import numpy as np
+
+
+def compare_images(reference, rendered, tolerance):
+    reference = np.asarray(reference, dtype=np.float64)
+    rendered = np.asarray(rendered, dtype=np.float64)
+
+    if reference.shape != rendered.shape:
+        return {"status": "FAIL", "reason":
+                f"shape {rendered.shape} != reference {reference.shape}"}
+
+    difference = np.abs(reference - rendered)
+    mae = float(np.mean(difference))
+    worst = float(np.max(difference))
+    rmse = float(np.sqrt(np.mean(difference ** 2)))
+    peak = 1.0
+    psnr = float("inf") if rmse == 0 else 20.0 * np.log10(peak / rmse)
+
+    # Per-channel, because alpha is not graded like colour and a single global
+    # number hides a broken plane.
+    per_channel = [float(np.max(difference[..., c])) for c in range(difference.shape[-1])]
+    limits = tolerance.get("per_channel_max") or [tolerance["max_pixel_error"]] * len(per_channel)
+
+    failures = []
+    if mae > tolerance["max_mae"]:
+        failures.append(f"mae {mae:.3e} > {tolerance['max_mae']:.3e}")
+    if worst > tolerance["max_pixel_error"]:
+        failures.append(f"max {worst:.3e} > {tolerance['max_pixel_error']:.3e}")
+    for channel, (value, limit) in enumerate(zip(per_channel, limits)):
+        if value > limit:
+            failures.append(f"channel {channel} max {value:.3e} > {limit:.3e}")
+
+    return {
+        "status": "FAIL" if failures else "PASS",
+        "mae": mae,
+        "max_pixel_error": worst,
+        "rmse": rmse,
+        "psnr": psnr,
+        "per_channel_max": per_channel,
+        "failures": failures,
+    }
+```
+
+Tolerances come from the reference, as they do in `testkit/contract_main.cpp`
+(`name.<fuzz>.fuzz`), never from one global number: a CPU reference keeps its
+exact demand and only the reference a device cannot reproduce bit for bit gets a
+bound. Compare only after both images are in the same representation - same
+depth, same transfer characteristic, same channel order.
+
+### 13.7 G - CPU/GPU comparison (`validation/cpu_gpu_comparison.py`)
+
+```python
+# NOT RUN.
+from pathlib import Path
+
+from validation.image_comparison import compare_images
+
+
+def run_cpu_gpu_comparison(render, load, cpu_project, gpu_project, output_dir,
+                           cpu_backend, gpu_backend, tolerance):
+    # The backend is declared by the plug-in, not inferred from which project
+    # rendered: Resolve's GPU mode is a user preference, so two projects do not
+    # prove two backends. `render` returns that declaration with its file.
+    cpu = render(cpu_project, Path(output_dir) / "cpu")
+    gpu = render(gpu_project, Path(output_dir) / "gpu")
+
+    if cpu["backend"] != cpu_backend:
+        raise RuntimeError(f"CPU run declared {cpu['backend']!r}, wanted {cpu_backend!r}")
+    if gpu["backend"] != gpu_backend:
+        raise RuntimeError(f"GPU run declared {gpu['backend']!r}, wanted {gpu_backend!r}")
+
+    result = compare_images(load(cpu["file"]), load(gpu["file"]), tolerance)
+    result["cpu"] = cpu
+    result["gpu"] = gpu
+    return result
+```
+
+### 13.8 H - PowerShell entry point (`tests/resolve/run_resolve_tests.ps1`)
+
+```powershell
+# NOT RUN.
+param(
+    [Parameter(Mandatory = $true)][string]$PluginPath,
+    [string]$Configuration = "Release",
+    [switch]$EnableCUDA,
+    [int]$TimeoutSeconds = 600
+)
+
+$ErrorActionPreference = "Stop"
+
+$RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+if (-not (Test-Path $PluginPath)) { throw "plugin not found: $PluginPath" }
+$Plugin = (Resolve-Path $PluginPath).Path
+if (-not (Test-Path (Join-Path $RepoRoot "tests\resolve"))) {
+    throw "tests\resolve is missing; run from a full checkout"
+}
+
+$env:PYTHONPATH = "$env:PYTHONPATH;$env:RESOLVE_SCRIPT_API\Modules"
+
+$arguments = @(
+    "-m", "tests.resolve.runner.test_orchestrator",
+    "--plugin", $Plugin,
+    "--configuration", $Configuration,
+    "--timeout", $TimeoutSeconds,
+    "--repo-root", $RepoRoot
+)
+if ($EnableCUDA) { $arguments += "--cuda" }
+
+& python @arguments
+$exit = $LASTEXITCODE
+
+# Reports survive a failure; the process does not survive the run.
+if ($exit -ne 0) {
+    Write-Host "Resolve test suite failed with exit $exit; reports kept in tests/resolve/reports"
+    exit $exit
+}
+Write-Host "Resolve test suite completed"
+exit 0
+```
+
+The orchestrator it calls owns the cleanup, because the PowerShell wrapper cannot
+know whether Resolve was started. A `finally` there quits through the API and
+falls back to terminating the recorded PID.
+
+### 13.9 I - orchestrator (`runner/test_orchestrator.py`)
+
+```python
+# NOT RUN. Pseudocode from the task, made concrete; every call into Resolve is
+# unverified. Imports omitted: time, ResolveProcess, connect_to_resolve,
+# load_project, render_project, validate_image, compare_images, write_reports.
+def run_test_suite(config):
+    results = []
+    resolve = None
+    process = None
+
+    try:
+        validate_plugin(config.plugin_path)
+        install_plugin(config.plugin_path, config.host_dir)
+        process = ResolveProcess(config.executable, use_nogui=True)
+        process.start()
+        resolve = connect_to_resolve(timeout=config.startup_timeout)
+
+        for case in load_test_cases(config.cases_dir):
+            started = time.monotonic()
+            try:
+                project = load_project(resolve, case.project)
+                rendered = render_project(project, case.output_dir,
+                                          custom_name=case.name,
+                                          timeout=config.timeout)
+                integrity = validate_image(rendered["file"], case.expect)
+                if case.reference:
+                    verdict = compare_images(load(rendered["file"]),
+                                             load(case.reference), case.tolerance)
+                    if verdict["status"] != "PASS":
+                        raise RuntimeError(f"reference mismatch: {verdict['failures']}")
+                results.append({"name": case.name, "status": "PASS",
+                                "seconds": time.monotonic() - started,
+                                "artifacts": [rendered["file"]]})
+            except Exception as error:
+                results.append({"name": case.name, "status": "FAIL",
+                                "seconds": time.monotonic() - started,
+                                "error": str(error)})
+    finally:
+        if resolve is not None:
+            try:
+                resolve.Quit()          # unverified: the documented clean exit
+            except Exception:
+                pass
+        if process is not None:
+            process.stop()              # only the PID this run started
+        write_reports(results, config.report_dir)   # JSON, HTML, JUnit XML
+
+    return results
+```
 
 ## Provenance labels
 
