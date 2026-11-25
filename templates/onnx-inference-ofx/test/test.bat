@@ -87,6 +87,13 @@ if not exist "%ONNXRUNTIME_ROOT%\bin\onnxruntime.dll" (
 rem ai_pipeline_test.exe and the contract harness load onnxruntime.dll by name.
 set "PATH=%ONNXRUNTIME_ROOT%\bin;%PATH%"
 
+rem Does this root ship the CUDA provider? If it does, a session that ends on the
+rem CPU is a broken bundle, not a passing run - see :checkgpulabel. A CPU package
+rem has no onnxruntime_providers_cuda.dll, so the question answers itself there.
+set "GPU_PROVIDER="
+if exist "%ONNXRUNTIME_ROOT%\bin\onnxruntime_providers_cuda.dll" set "GPU_PROVIDER=%ONNXRUNTIME_ROOT%\bin\onnxruntime_providers_cuda.dll"
+if not defined GPU_PROVIDER if exist "%ONNXRUNTIME_ROOT%\lib\onnxruntime_providers_cuda.dll" set "GPU_PROVIDER=%ONNXRUNTIME_ROOT%\lib\onnxruntime_providers_cuda.dll"
+
 echo == [1/5] build (%CONFIG%) ==
 if "%NOBUILD%"=="1" (
   if not exist "%BUILD%\CMakeCache.txt" (
@@ -168,6 +175,8 @@ if errorlevel 1 (
   goto :contractfailure
 )
 echo   provider label names CUDA or CPU
+call :checkgpulabel "main"
+if errorlevel 1 goto :contractfailure
 
 rem The same contract against the other host shape: supportsTiles=0 and
 rem supportsMultiResolution=0, which is what Resolve's OFX host reports in the
@@ -190,6 +199,8 @@ if errorlevel 1 (
   echo   FAIL: the provider label does not name an execution provider under the resolve profile
   goto :contractfailure
 )
+call :checkgpulabel "resolve profile"
+if errorlevel 1 goto :contractfailure
 type "%LOG%"
 
 echo.
@@ -220,6 +231,31 @@ echo.
 echo all checks passed
 endlocal
 exit /b 0
+
+:checkgpulabel
+rem %1 names the contract run, for the message. Called from the two places that
+rem accept "CPU (1 thread)" as a valid label: with a CPU package that is the
+rem expected answer, but with a GPU root it means the provider did not load - and
+rem a wiped build directory produces exactly that (no provider in the bundle,
+rem session falls back, every pixel check still passes). The suite has to fail
+rem there instead of going green on the CPU path.
+if not defined GPU_PROVIDER exit /b 0
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .CPU' -Quiet) { exit 1 }"
+if not errorlevel 1 exit /b 0
+echo.
+echo   FAIL: ONNXRUNTIME_ROOT ships onnxruntime_providers_cuda.dll, so the session
+powershell -NoProfile -Command "Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .' | ForEach-Object { '   ' + $_.Line.Trim() }"
+echo   had to run on the device - and it fell back to the CPU (contract run: %1).
+echo   The label above ends in "- fallback: <reason>": that is the load error.
+echo   Either the bundle has no onnxruntime_providers_cuda.dll beside the .ofx, or
+echo   the CUDA imports (cuDNN 9, cuBLAS/cuBLASLt, cuFFT, cudart) are missing.
+rem build.bat forwards both switches from the environment, so:
+echo   set OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON
+rem and, when those DLLs are not under ONNXRUNTIME_ROOT\bin:
+echo   set OFXPLUGIN_CUDA_RUNTIME_DIRS=^<dir with cuDNN, cuBLAS, cuFFT, cudart^>
+rem exit /b, not goto: inside a called subroutine a goto would jump and the
+rem script would carry on after the call with the failure already printed.
+exit /b 1
 
 :contractfailure
 del "%LOG%" >nul 2>&1

@@ -35,6 +35,43 @@ if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
   exit 2
 fi
 
+# Does this root ship the CUDA provider? A CPU package has no
+# libonnxruntime_providers_cuda.so, so the question answers itself there. When it
+# does, a session that ends on the CPU is a broken bundle rather than a passing
+# run - see require_gpu_label below.
+PROVIDER_IN_ROOT=""
+for candidate in "${ONNXRUNTIME_ROOT}/lib/libonnxruntime_providers_cuda.so" \
+                 "${ONNXRUNTIME_ROOT}/onnxruntime/capi/libonnxruntime_providers_cuda.so" \
+                 "${ONNXRUNTIME_ROOT}/bin/onnxruntime_providers_cuda.dll" \
+                 "${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_cuda.dll"; do
+  if [[ -f "${candidate}" ]]; then
+    PROVIDER_IN_ROOT="${candidate}"
+    break
+  fi
+done
+
+# Called after each label check that accepts "CPU (...)". With a CPU package
+# that is the expected answer; with a GPU root it means the provider did not
+# load, which is exactly what a wiped build directory produces: no provider in
+# the bundle, session falls back, every pixel check still passes. The suite has
+# to fail there instead of going green on the CPU path.
+require_gpu_label() {
+  local log="$1" what="$2"
+  [[ -z "${PROVIDER_IN_ROOT}" ]] && return 0
+  if grep -q "label parameter 'provider' = \"CPU" "${log}"; then
+    echo "  FAIL: ${PROVIDER_IN_ROOT} exists, so this root's session had to run on the" >&2
+    echo "        device - and it fell back to the CPU (contract run: ${what})." >&2
+    grep "label parameter 'provider'" "${log}" | sed 's/^ *//; s/^/        /' >&2
+    echo "        The label's \"- fallback: <reason>\" is the load error: either the bundle" >&2
+    echo "        has no provider beside the .ofx, or its CUDA imports are missing. Build" >&2
+    echo "        with OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON, and point" >&2
+    echo "        OFXPLUGIN_CUDA_RUNTIME_DIRS at cuDNN 9, cuBLAS, cuFFT and cudart when they" >&2
+    echo "        are not under the runtime root." >&2
+    exit 1
+  fi
+  echo "  provider label names CUDA (the runtime root ships a CUDA provider)"
+}
+
 if [[ -n "${SAN}" ]]; then
   case ",${SAN}," in
     *,address,*) export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:strict_string_checks=1}" ;;
@@ -109,6 +146,7 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     echo "  FAIL: the provider label does not name an execution provider" >&2
     exit 1
   fi
+  require_gpu_label "${TMP}/exact.log" "main"
 
   # The same contract against the other host shape: supportsTiles=0 and
   # supportsMultiResolution=0, the profile Resolve's OFX host reports in the
@@ -125,6 +163,7 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     echo "  FAIL: the provider label does not name an execution provider under the resolve profile" >&2
     exit 1
   fi
+  require_gpu_label "${TMP}/resolve.log" "resolve profile"
 
   # The same pixel comparison with the plug-in's own tiling engaged: tileSize=16
   # makes the 64x48 window go through RunTiled, so the frame is assembled from

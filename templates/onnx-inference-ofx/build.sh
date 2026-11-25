@@ -66,6 +66,15 @@ fi
 if [[ -n "${OFX_INSTALL_DIR:-}" ]]; then
   CMAKE_ARGS+=("-DOFX_INSTALL_DIR=${OFX_INSTALL_DIR}")
 fi
+# The CUDA bundle switches, forwarded the same way build.bat does: an exported
+# OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON that never reached CMake produced a bundle
+# with no provider, and the suite accepted the CPU fallback.
+if [[ -n "${OFXPLUGIN_BUNDLE_CUDA_PROVIDER:-}" ]]; then
+  CMAKE_ARGS+=("-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=${OFXPLUGIN_BUNDLE_CUDA_PROVIDER}")
+fi
+if [[ -n "${OFXPLUGIN_CUDA_RUNTIME_DIRS:-}" ]]; then
+  CMAKE_ARGS+=("-DOFXPLUGIN_CUDA_RUNTIME_DIRS=${OFXPLUGIN_CUDA_RUNTIME_DIRS}")
+fi
 
 echo "[build] configuring (${BUILD_TYPE})"
 cmake "${CMAKE_ARGS[@]}"

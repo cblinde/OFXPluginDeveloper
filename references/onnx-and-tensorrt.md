@@ -902,6 +902,18 @@ that is the line a log reader actually sees:
 | `CUDA (…, nodes left on CPU)` | the probe failed; the runtime's reason follows in the same label after `- fallback:` |
 | `CPU (1 thread) - fallback: …` | no provider at all, as before |
 
+**The third row stopped being a passing result.** A run whose `ONNXRUNTIME_ROOT`
+ships `onnxruntime_providers_cuda.dll` but whose label says `CPU (1 thread)` is a
+bundle that lost its provider - which is exactly what a wiped build directory
+produces when the copy switch never reaches CMake, and every pixel check still
+passes on the CPU path. Both suites now ask the question before they check the
+label: if the runtime root carries a CUDA provider, `CPU (…)` is a failure that
+names the load error, and `build.bat` forwards `OFXPLUGIN_BUNDLE_CUDA_PROVIDER`
+from the environment so the switch cannot be dropped on the way to CMake
+(**[V]**: 2026-11-25, a stub root with a provider that cannot load fails the
+suite with `error 126`, the same root without one passes, and the real 1.20.1
+tree bundles the provider and reports `all nodes on CUDA`).
+
 **Reading a failed GPU run.** The expensive mistake is to treat a mismatch as a
 numbers problem when it is a configuration one: with TF32 on, a convolution
 rounds at `4.5e-4` (§5), so a golden comparison at `1e-5` fails for a reason that

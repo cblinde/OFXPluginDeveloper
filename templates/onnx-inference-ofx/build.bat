@@ -21,6 +21,15 @@ rem                     zip at hand? The NuGet package carries the same files:
 rem                       https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/<version>
 rem                     (a .nupkg is a zip) with build\native\include,
 rem                     runtimes\win-x64\native\*.lib and ...\*.dll.
+rem   OFXPLUGIN_BUNDLE_CUDA_PROVIDER
+rem                     ON copies onnxruntime_providers_cuda and the DLLs it
+rem                     imports beside the .ofx. Needs the -gpu package under
+rem                     ONNXRUNTIME_ROOT (the CPU package has no provider);
+rem                     off when unset, as in CMakeLists.txt.
+rem   OFXPLUGIN_CUDA_RUNTIME_DIRS
+rem                     where cuDNN 9, cuBLAS/cuBLASLt, cuFFT and cudart are
+rem                     found when they are not already under
+rem                     ONNXRUNTIME_ROOT\bin (NVIDIA's redistributables).
 rem   OFX_SOURCE_DIR    point at an existing openfx checkout (offline builds);
 rem                     when unset, CMake fetches OFX_Release_1.5.1
 rem   CMAKE_GENERATOR   force a generator (default: the newest Visual Studio that
@@ -104,6 +113,12 @@ rem Every -D value is quoted: an ONNXRUNTIME_ROOT under "Program Files" is split
 rem at the first space otherwise, and CMake reports the tail as a stray argument.
 set "EXTRA="-DONNXRUNTIME_ROOT=%ONNXRUNTIME_ROOT%""
 if defined OFX_SOURCE_DIR set "EXTRA=%EXTRA% "-DOFX_SOURCE_DIR=%OFX_SOURCE_DIR%""
+rem Both CUDA bundle switches are forwarded from the environment: without this
+rem line `set OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` before build.bat built a bundle
+rem with no provider at all, and the suite still passed on the CPU fallback - a
+rem green run that proved nothing about the GPU path.
+if defined OFXPLUGIN_BUNDLE_CUDA_PROVIDER set "EXTRA=%EXTRA% "-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=%OFXPLUGIN_BUNDLE_CUDA_PROVIDER%""
+if defined OFXPLUGIN_CUDA_RUNTIME_DIRS set "EXTRA=%EXTRA% "-DOFXPLUGIN_CUDA_RUNTIME_DIRS=%OFXPLUGIN_CUDA_RUNTIME_DIRS%""
 
 set "GENARG="
 if /I "!GEN!"=="Ninja" (
