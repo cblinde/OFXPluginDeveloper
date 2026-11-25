@@ -109,17 +109,28 @@ def evaluate(capabilities, suites=SUITES):
 
     `unknown` is deliberately distinct from `blocked`: a machine that cannot tell
     whether Resolve is Studio has not shown that it is not.
+
+    A capability name that does not exist is an error, not an `unknown`: a typo in
+    `SUITES` would otherwise block nothing and read as "could not probe", which is
+    the one failure this table exists to prevent.
     """
+    unknown_needs = sorted({need for _, needs in suites for need in needs
+                            if need not in capabilities})
+    if unknown_needs:
+        raise KeyError("SUITES names capabilities that do not exist: "
+                       + ", ".join(unknown_needs))
     report = {}
     for name, needs in suites:
-        missing = [need for need in needs if capabilities.get(need) is False]
-        unprobed = [need for need in needs if capabilities.get(need) is None]
+        missing = [need for need in needs if capabilities[need] is False]
+        unprobed = [need for need in needs if capabilities[need] is None]
+        entry = {"needs": list(needs)}
         if missing:
-            report[name] = {"status": "blocked", "missing": missing}
+            entry.update({"status": "blocked", "missing": missing})
         elif unprobed:
-            report[name] = {"status": "unknown", "unprobed": unprobed}
+            entry.update({"status": "unknown", "unprobed": unprobed})
         else:
-            report[name] = {"status": "ready", "needs": list(needs)}
+            entry["status"] = "ready"
+        report[name] = entry
     return report
 
 
@@ -167,7 +178,12 @@ def probe_tools(sources):
             continue
         ok, output, command = run([path] + arguments)
         sources[f"tools.{name}"] = command
-        tools[name] = {"path": path, "version": first_line(output) if ok else None}
+        version = first_line(output) if ok else None
+        if version and name.startswith("ff"):
+            # ffmpeg's first line carries a build id, a URL and a copyright; the
+            # first three tokens are the part a report can use.
+            version = " ".join(version.split()[:3])
+        tools[name] = {"path": path, "version": version}
 
     if os.name == "nt":
         vswhere = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) \
@@ -592,7 +608,19 @@ def selftest():
     no_onnx = dict(all_yes, **{"build.onnx": False})
     case("no ONNX Runtime blocks the inference suite",
          evaluate(no_onnx)["templates/onnx-inference-ofx/test/run-tests"],
-         {"status": "blocked", "missing": ["build.onnx"]})
+         {"needs": ["compile.cpu", "build.onnx"], "status": "blocked",
+          "missing": ["build.onnx"]})
+
+    def raised(function):
+        try:
+            function()
+        except Exception as error:
+            return type(error).__name__
+        return None
+
+    case("a suite naming an unknown capability is refused, not silently unknown",
+         raised(lambda: evaluate(all_yes, (("x", ("no.such.capability",)),))),
+         "KeyError")
 
     failed = 0
     for index, (name, got, want) in enumerate(cases, 1):
@@ -625,8 +653,15 @@ def main(argv=None):
 
     if args.need:
         wanted = [name.strip() for name in args.need.split(",") if name.strip()]
+        unknown_names = [name for name in wanted
+                         if name not in report["capabilities"]]
+        if unknown_names:
+            print(f"not a capability: {', '.join(unknown_names)}", file=sys.stderr)
+            print("known: " + ", ".join(sorted(report["capabilities"])),
+                  file=sys.stderr)
+            return 2
         missing = [name for name in wanted
-                   if report["capabilities"].get(name) is not True]
+                   if report["capabilities"][name] is not True]
         if missing:
             print(f"\nmissing: {', '.join(missing)}", file=sys.stderr)
             return 1

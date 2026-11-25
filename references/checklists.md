@@ -52,7 +52,7 @@ What it reports, with the command that produced each fact in `sources`:
 | compilers | `cmake --version`, `ninja --version`, `gcc`/`clang --version`, and MSVC through `vswhere -requires …VC.Tools.x86.x64` |
 | CUDA toolkits | every `CUDA_HOME`/`CUDA_PATH` and every default toolkit directory that actually contains `bin/nvcc`, each version parsed from `nvcc --version` |
 | device | `nvidia-smi --query-gpu=name,driver_version,memory.total,compute_cap`; the `compute_cap` field is dropped and retried when the driver is too old for it |
-| Resolve | `RESOLVE_EXE`, `PATH`, then the default install location on **each** drive - the registry has no Blackmagic key, so nothing else names it |
+| Resolve | `RESOLVE_EXE`, `PATH`, then the default install location on **each** drive: on the machine this was measured on the registry had no Blackmagic key and `PATH` had no entry |
 | Resolve SDK | `RESOLVE_SCRIPT_API`, else the documented `%PROGRAMDATA%` (or `/opt/resolve/Developer/Scripting`) location |
 | Studio / scripting | only with `--connect`: `scriptapp`, then `GetProductName`, `GetVersionString`, `IsStudio` |
 | OFX | the platform's scan directories, with a bundle count per directory |

@@ -854,9 +854,11 @@ the 2026-11-25 reason for pinning was that numpy 2.x against onnxruntime 1.14
 exited 139 instead of failing a test.
 
 Every comparison the harness trusts is shown failing before it is credited with
-passing. Two of them have their own test: `testkit/selftest-compare.sh` corrupts a
-reference, and `tools/check-glibc.sh --selftest` lowers the bound until the check
-must refuse. The glibc one runs in `./run-tests.sh` on **both routes** - the
+passing. Three of them have their own test: `testkit/selftest-compare.sh` corrupts
+a reference, `tools/check-glibc.sh --selftest` lowers the bound until the check
+must refuse, and `tools/probe-env.py --self-test` removes a capability until the
+suite that needs it stops reading ready - that one runs on both routes too,
+because it needs no toolchain. The glibc one runs in `./run-tests.sh` on **both routes** - the
 POSIX one and the Windows one, because it feeds a **canned** `readelf` and so
 needs neither binutils nor an ELF binary - and as a step in the `docs` workflow,
 where it fails a pull request before the template builds start. What it proves is
