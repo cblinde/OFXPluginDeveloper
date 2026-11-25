@@ -789,7 +789,9 @@ Measured on the machines this repository has been exercised on: a Linux x86-64
 box with no GPU and no host, and a Windows 11 box with an RTX 3060. The 2026-11-22
 Windows rows are **[B]** (that run was on another machine); the 2026-11-24 rows
 were run in this checkout, including the inference template's first Windows build
-at all ([`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log)).
+at all ([`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log)),
+and the 2026-11-25 row is the same suite on the CUDA execution provider
+([`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
 
 | Suite | Result |
 |---|---|
@@ -807,6 +809,7 @@ at all ([`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inferen
 | Inference control | `halo = 0` deviates by `0.263276` (expected) |
 | Inference bundle | 2 `T` exports (+6 weak `W`), `NEEDED libonnxruntime` = 1, `RUNPATH $ORIGIN` = 1 |
 | Inference suite, Windows (ORT 1.20.1) | first Windows build of the template: host contract **160 + 82 checks, 0 failed**, golden difference `0`, tile 5/13/17/256 and the odd sizes `0`, 2 exports, `onnxruntime-ofx.dll` beside the `.ofx` ([`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log)) |
+| Inference suite, Windows, CUDA provider | provider and its CUDA imports bundled beside the `.ofx` (16 files, 2686 MB), label `CUDA (device 0, 1 thread, bundled CUDA)`, same contract **0 failed**; the exact golden is off by between `1e-8` and `1e-7` - rounding order of the device - so the run only passes through the `1e-5` retry ([`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)) |
 | Windows artifact | 2 exports (`dumpbin /exports`), 7 cubins `sm_75`…`sm_120` (`cuobjdump -lelf`), no CUDA runtime import **[B]** |
 | Windows contract | whole host protocol, 0 failures, through `LoadLibraryExW` **[B]** |
 | GPU kernels, hardware | 28/28 launcher cases bit-exact on RTX 3060 sm_86; 200 queued launches, 8 host threads, zero-copy **[B]** |

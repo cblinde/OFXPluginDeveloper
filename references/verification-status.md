@@ -168,10 +168,13 @@ maths, is what the zero-copy contract exists to avoid. Mean of 100/30/10
 iterations; one GPU, one driver, one OS build.
 
 **Not verified here:** no Resolve, Nuke or SCRATCH is installed, so nothing has
-rendered in them; no CUDA execution provider has ever been created (the inference
-template builds a CPU session, which now has a Windows run behind it —
-[`evidence/2026-11-24-windows/onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log));
-Linux has not been run; and no kernel runs in
+rendered in them; the inference template's CPU session has a Windows run behind it
+([`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log))
+and so does its CUDA session, with the provider bundled from the GPU package and
+cuDNN 9/cuBLAS/cuFFT/cudart taken from wheels, label
+`CUDA (device 0, 1 thread, bundled CUDA)`
+([`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log));
+no host has been given device memory by any of these runs; Linux has not been run; and no kernel runs in
 `./run-tests.sh`, which has no GPU step by design. See the opening section of this document.
 
 ## 2. What this pass changed, and what it verified
