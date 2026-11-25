@@ -150,58 +150,51 @@ set "ARGS=%ARGS% --set "modelPath=%ROOT%\models\test_conv.onnx" --set halo=2"
 set "ARGS=%ARGS% --roi-expand 2 --roi-context --label-param provider"
 set "ARGS=%ARGS% --not-identity-after-set --negative-pitch --byte-dst-rejected"
 set "ARGS=%ARGS% --src-bounds-inset 2 --dst-bounds-inset 2"
-"%HARNESS%" "%PLUGIN%" %ARGS% > "%LOG%" 2>&1
-if errorlevel 1 (
-  rem The CPU build renders the golden bit-exactly; the CUDA provider sums in
-  rem another order, so its output differs in the last bits and an exact
-  rem comparison fails for a correct pipeline. The first attempt is still exact
-  rem - that is what proves the packing on the CPU - and only then does the
-  rem run accept the provider's rounding, as test/run-tests.sh does on POSIX.
-  echo   exact comparison failed; retrying with --golden-tolerance 1e-5 for a golden rendered by another provider
-  "%HARNESS%" "%PLUGIN%" %ARGS% --golden-tolerance 1e-5 > "%LOG%" 2>&1
+rem The tolerance belongs to the reference, not to this script: --fuzz NAME reads
+rem models	est_golden.<NAME>.fuzz, so the CPU reference keeps its exact demand
+rem and only a reference a CUDA session cannot reproduce bit for bit says 1e-05.
+rem The file itself resolves to test_golden-windows.bin first, then the generic
+rem test_golden.bin, and the harness prints which one it read.
+set "FUZZ=cpu"
+if defined GPU_PROVIDER set "FUZZ=cuda"
+
+rem One process holds one host (OfxSetHost ignores every call after the first),
+rem so each shape is a run of its own: the dumps in openfx-misc's README-hosts.txt
+rem (nuke: tiles + multi-resolution + temporal access; resolve: none of them) and
+rem the background renderer NatronRenderer presents (natron: tiles, isBackground=1).
+rem SUITE_THREADS=random picks a different concurrent-render count per run, the
+rem way FATE's threads=randomN does - a race has to show up in some run.
+set "THREADS=%SUITE_THREADS%"
+if not defined THREADS set "THREADS=4"
+if /i "%THREADS%"=="random" set /a THREADS=%RANDOM% %% 4 + 1
+echo   host profiles: nuke, resolve, natron (reference fuzz: %FUZZ%, %THREADS% render threads)
+for %%P in (nuke resolve natron) do (
+  echo   host profile: %%P
+  "%HARNESS%" "%PLUGIN%" %ARGS% --host-profile %%P --fuzz %FUZZ% --concurrency-threads %THREADS% > "%LOG%" 2>&1
   if errorlevel 1 (
     type "%LOG%"
     goto :contractfailure
   )
-)
-type "%LOG%"
-
-rem The label must name an execution provider. Select-String rather than findstr:
-rem the pattern contains a double quote, which cmd cannot pass through /C:"..."
-rem without splitting it. CUDA is requested first, CPU is the fallback, both pass.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .(CUDA \(device 0, 1 thread, .*tf32 off|CPU)' -Quiet)) { exit 1 }"
-if errorlevel 1 (
-  echo   FAIL: the provider label does not name an execution provider
-  goto :contractfailure
-)
-echo   provider label names CUDA or CPU
-call :checkgpulabel "main"
-if errorlevel 1 goto :contractfailure
-
-rem The same contract against the other host shape: supportsTiles=0 and
-rem supportsMultiResolution=0, which is what Resolve's OFX host reports in the
-rem dumps published in openfx-misc's README-hosts.txt. Only the two host
-rem properties change - every window, RoI and pixel check stays, because a host
-rem with supportsTiles=0 still renders a window smaller than the frame when its
-rem own region of definition is smaller.
-"%HARNESS%" "%PLUGIN%" %ARGS% --host-profile resolve > "%LOG%" 2>&1
-if errorlevel 1 (
-  echo   exact comparison failed on the resolve-shaped host; retrying with --golden-tolerance 1e-5
-  "%HARNESS%" "%PLUGIN%" %ARGS% --host-profile resolve --golden-tolerance 1e-5 > "%LOG%" 2>&1
+  type "%LOG%"
+  rem findstr rather than a PowerShell one-liner: the pattern a provider label
+  rem needs is a word and a phrase, and a /C: search cannot be broken by the
+  rem quotes and parentheses that a regex written in -Command gets mangled on.
+  findstr /C:"label parameter 'provider' = " "%LOG%" >nul
   if errorlevel 1 (
-    type "%LOG%"
+    echo   FAIL: the provider label does not name an execution provider [%%P profile]
     goto :contractfailure
   )
+  rem With a CUDA root the label has to say which arithmetic ran: a device
+  rem session without "tf32 off" has numbers nobody has pinned down.
+  if defined GPU_PROVIDER findstr /C:"tf32 off" "%LOG%" >nul
+  if errorlevel 1 (
+    echo   FAIL: a CUDA label without tf32 off - the arithmetic is not pinned down
+    goto :contractfailure
+  )
+  call :checkgpulabel "%%P profile"
+  if errorlevel 1 goto :contractfailure
 )
-echo   host shape resolve: supportsTiles=0, supportsMultiResolution=0
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Select-String -Path '%LOG%' -Pattern 'label parameter .provider. = .(CUDA \(device 0, 1 thread, .*tf32 off|CPU)' -Quiet)) { exit 1 }"
-if errorlevel 1 (
-  echo   FAIL: the provider label does not name an execution provider under the resolve profile
-  goto :contractfailure
-)
-call :checkgpulabel "resolve profile"
-if errorlevel 1 goto :contractfailure
-type "%LOG%"
+
 
 echo.
 echo == [4/5] host contract with the plug-in's own tiling (tileSize=16) ==

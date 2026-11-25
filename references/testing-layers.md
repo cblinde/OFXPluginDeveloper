@@ -54,7 +54,7 @@ column perfectly and never ran the right one.
 | Layer | What it tests | Cost to build | What it catches | Here |
 |---|---|---|---|---|
 | **L0** core | maths, packing, tiling, formats | minutes | wrong pixels, wrong tensor layout | the templates |
-| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 110 + 136 + 160 checks (the 136 from a `CPU_ONLY=1` build, so host protocol + CPU path; the 158 are followed by 82 in the tiled-context variant) |
+| **L1** artifact | exports, dlopen, plugin struct | minutes | "plug-in does not appear", symbol leakage | the templates: `testkit/`, 3 × (110 + 136 + 160) checks, one pass per host profile (the 136 from a `CPU_ONLY=1` build, so host protocol + CPU path; the 160 are followed by 82 in the tiled-context variant) |
 | **L2** static | property types, forbidden calls, bundle layout | minutes | type confusion, spec violations | `test/run-analysis.sh`, [`checklists.md`](checklists.md) §2 |
 | **L3** fake host | actions, lifecycle, error codes, params | a day | wrong status codes, crashes on describe/create/render | the templates: `testkit/fake_host.*` |
 | **L4** images | goldens, references, geometry matrix | a day | seams, shear, alpha loss, off-by-one | the templates |
@@ -188,9 +188,10 @@ Measured (CPU-only build of the CUDA template, this machine): **110 checks, 0
 failed** for `ReferenceGain`, **136 checks, 0 failed** for `MinimalCudaGain`,
 **160 checks, 0 failed** for `OnnxInference`, followed by **82 checks, 0 failed**
 in the tiled-context run (`tileSize=16`, `--roi-context-tolerance 0.02`). Each of
-those runs happens twice, once per host profile (§5), and the counts are
-identical: the profile changes what the plug-in is told about the host, not what
-the harness asks it to do. The 136 belong to a `CPU_ONLY=1`
+those runs happens once per host profile (§5), and the counts are identical:
+the profile changes what the plug-in is told about the host, not what the harness
+asks it to do. Three profiles, so the totals are **330** (110 × 3), **408**
+(136 × 3) and **480 + 82** (160 × 3). The 136 belong to a `CPU_ONLY=1`
 build, whose launcher symbol and cubin are absent by construction (the build
 prints `CUDA launcher: ABSENT (CPU-only build)`, the suite prints `PTX check
 skipped: nvcc not on PATH`): not one of those checks was computed by a CUDA
@@ -289,15 +290,56 @@ shape - `supportsTiles=1`, `supportsMultiResolution=1`, `temporalClipAccess=1` -
 and every plug-in was therefore only ever seen by a host that could tile. Real
 hosts disagree, and the disagreement is dumped: `openfx-misc`'s
 `README-hosts.txt` records Resolve Lite 16 as API 1.4 with `supportsTiles=0`, and
-Nuke 10 as API 1.2 with tiles and temporal access. `--host-profile nuke` (the
-default) and `--host-profile resolve` present those two shapes. Every suite runs
-the contract once per profile, because OFX allows one host per process -
-`OfxSetHost` ignores every call after the first, so the second shape is a second
-process, not a second flag. Only the capabilities the plug-in reads change; every
-window, RoI and pixel check is the same in both runs, because a host with
-`supportsTiles=0` still renders a window smaller than the frame when its own
-region of definition is smaller. A run prints which shape it presented, so a log
-says what it proves.
+Nuke 10 as API 1.2 with tiles and temporal access. Three profiles now present
+three shapes:
+
+| `--host-profile` | tiles | multi-resolution | temporal access | background | from |
+|---|---|---|---|---|---|
+| `nuke` (default) | 1 | 1 | 1 | 0 | the dumped Nuke shape: a full host with a UI |
+| `resolve` | 0 | 0 | 0 | 0 | the dumped Resolve Lite 16 shape: no tiles, and the free version has no temporal access either |
+| `natron` | 1 | 1 | 1 | 1 | `NatronRenderer`: a background renderer, `kOfxImageEffectHostPropIsBackground=1`, no UI to talk to |
+
+Every suite runs the contract once per profile, because OFX allows one host per
+process - `OfxSetHost` ignores every call after the first, so the second shape is
+a second process, not a second flag. Only the capabilities the plug-in reads
+change; every window, RoI and pixel check is the same in every run, because a
+host with `supportsTiles=0` still renders a window smaller than the frame when
+its own region of definition is smaller. A run prints which shape it presented,
+and the harness asserts that all four properties reached the property set before
+it judges anything else: a profile that half-applied would turn every later
+failure into a plug-in accusation. The API version the fake host reports stays
+1.5 in all three, so a plug-in that branches on the host's API number is not
+covered - the dumps say 1.2 and 1.4.
+
+**A reference per platform, a tolerance per reference.** A single
+`--golden-tolerance` on the command line is one global decision, so every
+platform and provider gets the same loosened rule. The harness resolves the
+reference instead: `name-<platform>.ext` when that file exists (`windows`,
+`macos`, `linux`, known at compile time), else `name.ext`. The bound belongs to
+the reference too - `name.<fuzz>.fuzz` holds one number, read with `--fuzz cpu`
+or `--fuzz cuda`, with `#` comments allowed - so the CPU reference keeps its
+**exact** demand and only the reference a device cannot reproduce bit for bit
+says `1e-05`. The run prints both decisions (`reference: …`, `tolerance: …
+(from …)`), and the CLI flag still overrides for a one-off. A sidecar that
+cannot be parsed is an error, not a quiet fallback to exact.
+
+**The comparator has its own test.** A check is not trusted until it has been
+seen failing on a defect it exists to catch, so `testkit/selftest-compare.sh
+[.bat]` runs the truth table against the same function the render check uses:
+identical passes; a sub-LSB pixel fails exact and passes `1e-5`; a large
+deviation fails even a loose bound; every pixel just under the bound passes and
+just over fails; a reference of the wrong size is a categorical failure; NaN or
+infinity fails at any bound; a reference corrupt at one pixel must fail; the
+platform variant wins over the generic file; the sidecar supplies the bound; the
+CLI overrides it. Neutering the comparator (returning "identical" always) makes
+seven of the thirteen cases fail - that run is the negative control, logged in
+`../evidence/2026-11-25-windows/selftest-compare.log` and repeated by
+`./run-tests.sh`.
+
+**`SUITE_THREADS=random`.** Every suite passes `--concurrency-threads` to the
+harness (4 by default). With `SUITE_THREADS=random` it draws 1-4 per run, the
+way FATE's `threads=randomN` does: not for determinism, but so that a race has
+to show up in some run rather than in the one configuration someone hard-coded.
 
 **Layout is a bound, not a pixel value.** "The frame changed" is satisfied by an
 overlay that is mirrored, clipped or drawn outside the area you meant, which is
@@ -832,16 +874,16 @@ ONNX Runtime 1.20.1 and then 1.32.0
 | Inference suite, Windows, CUDA provider (ORT 1.32.0, CUDA 13) | the same suite on the current runtime: provider shipped as an EP plugin, 16 files and 1540 MB beside the `.ofx`, same label, same `0 failed`, same `1e-5` retry, and no change to the template's source ([`onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log)) |
 | One-hole headline, Windows (ORT 1.20.1, `CPU_ONLY=1`) | `ONNXRUNTIME_ROOT` set but no CUDA path: the summary reads `all suites that ran passed, but the GPU step did not run:` with `NOT RUN: GPU kernels (CPU_ONLY)` under it - one hole, named, not rounded up. The inference template still ran on the GPU package's provider: label `… tf32 off, all nodes on CUDA`, **160 + 160 + 82 checks, 0 failed**, and the build against the older headers is what caught the C++-only option wrapper that 1.20.1 does not have ([`onnx-1.20.1-cpu-only.log`](../evidence/2026-11-25-windows/onnx-1.20.1-cpu-only.log)) |
 | Inference fallback probe, Windows (ORT 1.32.0, CUDA 13) | a throwaway session with `session.disable_cpu_ep_fallback=1` loads the graph, so the label reads `CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)` in both host profiles; the control - same model, same runtime, no provider appended - fails with the key and builds without it, so the key is doing the work ([`onnx-fallback-probe.log`](../evidence/2026-11-25-windows/onnx-fallback-probe.log)) |
-| Host profiles, all three templates | the contract runs once per host shape (`--host-profile nuke` and `resolve`, §5): **110 + 110** for `ReferenceGain`, **136 + 136** for `MinimalCudaGain`, **160 + 160 + 82** for `OnnxInference` (the 82 is the tiled pass), 0 failed in every pass, identical counts in both shapes |
+| Host profiles, all three templates | the contract runs once per host shape (`--host-profile nuke`, `resolve` and `natron`, §5): **110 × 3** for `ReferenceGain`, **136 × 3** for `MinimalCudaGain`, **160 × 3 + 82** for `OnnxInference` (the 82 is the tiled pass), 0 failed in every pass, identical counts in all three shapes |
 | Inference suite, Windows, CPU (ORT 1.32.0) | the arithmetic did not move with the runtime: the golden rendered by 1.20.1 matches **exactly**, no retry, and the CUDA attempt fails by design with the reason in the label - which is what isolates a provider change from a runtime change ([`onnx-inference-cpu-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cpu-1.32.log)) |
 | Windows artifact | 2 exports (`dumpbin /exports`), 7 cubins `sm_75`…`sm_120` (`cuobjdump -lelf`), no CUDA runtime import **[B]** |
 | Windows contract | whole host protocol, 0 failures, through `LoadLibraryExW` **[B]** |
 | GPU kernels, hardware | 28/28 launcher cases bit-exact on RTX 3060 sm_86; 200 queued launches, 8 host threads, zero-copy **[B]** |
 | GPU memory, 2026-11-24 | `compute-sanitizer --tool memcheck` over `gpu-kernel-test.exe`: **0 errors**, 28/28 still bit-exact under the tool — device memory checked, not just the results **[V]** |
 | GPU throughput, 2026-11-24 | 1080p/4K/8K, vec4 **0.209 / 0.850 / 3.479 ms** (317/312/305 GB/s), scalar within 5% — both forms bandwidth-bound, so the vec4 form's 4× instruction reduction buys no throughput. CPU loop 3.456/13.480/55.287 ms; pageable H2D+D2H copy 6.705/27.332/107.396 ms, i.e. **32× the 1080p kernel** **[V]** (table and method in `../README.md` §"What has actually been verified") |
-| Artifact + fake host (reference) | 110 checks, 0 failed, two load/unload cycles, two live instances with separate values |
-| Artifact + fake host (CUDA) | 136 checks, 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path, which the Windows rows above cover |
-| Artifact + fake host (inference) | 160 checks, 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 82 checks for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
+| Artifact + fake host (reference) | 110 checks per host profile (3 × 110 in a suite run), 0 failed, two load/unload cycles, two live instances with separate values |
+| Artifact + fake host (CUDA) | 136 checks per host profile (3 × 136), 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path, which the Windows rows above cover |
+| Artifact + fake host (inference) | 160 checks per host profile (3 × 160), 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 82 checks for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
 | Negative controls | `kOfxStatReplyDefault` describe and a wrong parameter type both rejected, with the assertion named |
 | Analysis | shellcheck 0.10.0, `-x --severity=style`, over all **eleven** shell scripts of this repository: no findings (run here). cppcheck was **not installed** in this environment, so `run-analysis.sh` reports it skipped — its cppcheck half is unverified here, not clean |
 

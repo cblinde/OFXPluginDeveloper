@@ -1,0 +1,14 @@
+ok 1 - self-test: identical frames pass, and are reported identical
+ok 2 - self-test: one sub-LSB pixel fails an exact comparison
+ok 3 - self-test: the same pixel passes a 1e-5 bound
+ok 4 - self-test: a large deviation fails even a loose bound
+ok 5 - self-test: every pixel just under the bound passes
+ok 6 - self-test: every pixel just over the bound fails
+ok 7 - self-test: a reference of the wrong size is a categorical failure, not a small deviation
+ok 8 - self-test: NaN in the reference fails at any bound
+ok 9 - self-test: a non-finite render fails at any bound
+ok 10 - self-test: a reference corrupted at one pixel must fail
+ok 11 - self-test: the platform variant wins over the generic reference on this platform
+ok 12 - self-test: the sidecar supplies the bound, and the log can name it
+ok 13 - self-test: the command line still overrides the sidecar
+self-test: 0 case(s) failed

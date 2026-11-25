@@ -31,6 +31,18 @@ here links the plug-in: the binary under test is whatever `build.sh` produced.
 | `check-ofx-artifact.bat` | Windows counterpart of the `nm`/`readelf` checks: `dumpbin /exports` must show exactly the two entry points, `cuobjdump -lelf` the cubins. It finds both tools itself (PATH, `VCToolsInstallDir`, vswhere, `CUDA_PATH`); every `build.bat` calls it with `--strict`, so a tool it cannot find fails the build instead of skipping. It counts lines with `set /a` and matches export rows on the eight-digit RVA column, never with the legacy `find` or a loose `[0-9A-Fa-f]*`, which Git-for-Windows' GNU `find` and dumpbin's `00000000 characteristics` header respectively turn into a hung build and a miscount ([`../references/cmake-and-linking.md`](../references/cmake-and-linking.md) §5) |
 | `negative-controls/` | two deliberately broken plug-ins plus one ROI stub built ten ways (plain or internally tiled with the context read or ignored, two for the label check — one that never writes the label, one that does — one that draws a mark at a fixed position, and two that echo the source clip's `mediaID` label, one re-reading it per render and one caching the first answer, and one that declares no context region at all), so the harness is shown to fail when it should and to pass a plug-in that follows the pattern |
 | `run-negative-controls.sh` | builds those fifteen controls, asserts each fault is rejected with the right message, and that the context-reading, label-writing and clip-re-reading builds pass while the mark build passes only in both bottom-up layouts and the clip-caching build fails on the second media id |
+| `selftest-compare.sh` / `.bat` | the comparator's own test: `contract_test --selftest-compare` runs the truth table of the golden comparison (identical, sub-LSB, over the bound, size mismatch, NaN, infinity, a reference corrupt at one pixel) plus the reference lookup (platform variant, `.fuzz` sidecar, CLI override). A comparison that cannot fail is not a test, so this one is shown failing on each defect it exists to catch |
+
+### Host profiles, references and thread counts
+
+`--host-profile nuke|resolve|natron` decides what shape the fake host presents
+(tiles, multi-resolution, temporal access, `isBackground`); a suite runs the
+contract once per profile because a process holds one host. `--golden
+<file>` resolves to `<name>-<platform><ext>` first and `<name><ext>` second, and
+`--fuzz cpu|cuda` reads the bound from `<name>.<fuzz>.fuzz` - so a reference
+carries its own tolerance instead of a global flag. `--concurrency-threads N`
+is what `SUITE_THREADS=random` varies per run, 1-4, to give a race a chance to
+show up in some run rather than the one a developer fixed.
 
 ## 2. Two-tier host verification
 

@@ -6,7 +6,7 @@ reasoning lives in the documents it points at. Keep it a router.
 ## Commands
 
 ```bash
-./run-tests.sh                              # docs check + every build + every suite
+./run-tests.sh                              # docs check + every build + every suite + comparator self-test
 templates/minimal-ofx/build.sh              # one plug-in, from a clean checkout
 templates/minimal-ofx/test/run-tests.sh     # artifact inspection + fake-host contract
 templates/minimal-*/test/run-tests.bat      # the same checks on Windows

@@ -931,7 +931,7 @@ tolerance:
 
 Measured on this machine with the bundled 1.32.0 and CUDA 13 (**[V]**,
 [`../evidence/2026-11-25-windows/onnx-fallback-probe.log`](../evidence/2026-11-25-windows/onnx-fallback-probe.log)):
-the template's `test_conv.onnx` prints the first line in both host profiles, so
+the template's `test_conv.onnx` prints the first line in every host profile, so
 its single convolution is on the device - which the old label could not say.
 
 **What the probe does not say.** The 1.32.0 message is `This session contains

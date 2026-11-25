@@ -7,8 +7,9 @@
 #      tiled inference against whole-frame, and the halo=0 negative control
 #   2. sanitizers, when SANITIZE is set (address,undefined or thread)
 #   3. host contract: dlopen the built .ofx and drive it through a fake host
-#      (testkit/), twice, in one process - the render is compared against the
-#      same golden, but through the OFX API instead of AiCore directly
+#      (testkit/), once per host shape (nuke, resolve, natron) - the render is
+#      compared against the same golden, but through the OFX API instead of
+#      AiCore directly
 #   4. bundle hygiene, when a build/ tree exists
 #   5. valgrind memcheck of the contract harness, when valgrind is installed
 #
@@ -17,6 +18,7 @@
 #   CXX               C++17 compiler (default g++)
 #   SANITIZE          value for -fsanitize, e.g. address,undefined
 #   RUN_VALGRIND      auto (default) | 1 (require) | 0 (skip)
+#   SUITE_THREADS     4 (default) | random - concurrent host render threads
 #
 # The fixtures in models/ are committed, so this needs no Python. Regenerate
 # them with: python3 tools/make-test-model.py   (needs onnx + onnxruntime)
@@ -124,46 +126,51 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     --roi-expand 2 --roi-context --label-param provider
     --not-identity-after-set --negative-pitch --byte-dst-rejected
     --src-bounds-inset 2 --dst-bounds-inset 2)
-  # The golden file is the CPU runtime's output, bit for bit. A CUDA session runs
-  # the same convolution with different rounding, so on a GPU machine the last
-  # bits differ and an exact comparison fails for a correct pipeline. The first
-  # attempt is therefore still exact - that is what proves the packing on the CPU -
-  # and only a mismatch is retried with a bound four orders of magnitude below the
-  # smallest error the pipeline can produce (a missing context region shows 0.1875,
-  # see the tiled check below). A real fault fails both attempts.
-  if ! "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" | tee "${TMP}/exact.log"; then
-    echo "  exact comparison failed; retrying with --golden-tolerance 1e-5 for a golden rendered by another provider"
-    "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" --golden-tolerance 1e-5 | tee "${TMP}/exact.log"
+  # Which reference, and with which bound, is a property of the reference rather
+  # than one tolerance for everything: `--fuzz NAME` reads
+  # models/test_golden.<NAME>.fuzz, so the CPU reference keeps its exact demand
+  # (cpu.fuzz = 0) and only a reference a CUDA session cannot reproduce bit for
+  # bit says 1e-05. The file itself resolves to models/test_golden-<platform>.bin
+  # first, then models/test_golden.bin, so a reference rendered on another
+  # platform sits beside the generic one instead of replacing it. Both decisions
+  # are printed by the harness, so the log says which claim a run made.
+  FUZZ=cpu
+  [[ -n "${PROVIDER_IN_ROOT}" ]] && FUZZ=cuda
+
+  # One process holds one host (OfxSetHost ignores every call after the first),
+  # so each shape is a run of its own: the dumps in openfx-misc's README-hosts.txt
+  # (nuke: tiles + multi-resolution + temporal access; resolve: none of them) and
+  # the background renderer NatronRenderer presents (natron: tiles, isBackground=1,
+  # no UI). Every window, RoI and pixel check is the same in all three.
+  HOST_PROFILES=(nuke resolve natron)
+
+  # SUITE_THREADS=random picks a different concurrent-render count per run, the
+  # way FATE's threads=randomN does - a race has to show up in some run rather
+  # than in the one configuration someone hard-coded.
+  THREADS="${SUITE_THREADS:-4}"
+  if [[ "${THREADS}" == "random" ]]; then
+    THREADS=$(( (RANDOM % 4) + 1 ))
+    echo "  SUITE_THREADS=random: ${THREADS} concurrent render thread(s) this run"
   fi
 
-  # The plug-in writes its execution provider into a label parameter. CUDA is
-  # requested first and the CPU session is the fallback, so the value has to
-  # name one of them and, when it is the fallback, carry the reason. Both are
-  # accepted here: the harness cannot know which runtime a GPU machine links.
-  # A CUDA session must say which arithmetic it runs: without "tf32 off" the
-  # label describes a device session whose numbers nobody has pinned down.
-  if ! grep -qE "label parameter 'provider' = \"(CUDA \(device 0, 1 thread, .*tf32 off|CPU)" "${TMP}/exact.log"; then
-    echo "  FAIL: the provider label does not name an execution provider" >&2
-    exit 1
-  fi
-  require_gpu_label "${TMP}/exact.log" "main"
+  for profile in "${HOST_PROFILES[@]}"; do
+    echo "  host profile: ${profile} (reference fuzz: ${FUZZ})"
+    "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" \
+      --host-profile "${profile}" --fuzz "${FUZZ}" \
+      --concurrency-threads "${THREADS}" | tee "${TMP}/${profile}.log"
 
-  # The same contract against the other host shape: supportsTiles=0 and
-  # supportsMultiResolution=0, the profile Resolve's OFX host reports in the
-  # dumps published in openfx-misc's README-hosts.txt. Only the two host
-  # properties change - every window, RoI and pixel check stays, because a host
-  # with supportsTiles=0 still renders a window smaller than the frame when its
-  # own region of definition is smaller.
-  echo "  the same contract against a host with supportsTiles=0 and supportsMultiResolution=0"
-  if ! "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" --host-profile resolve | tee "${TMP}/resolve.log"; then
-    echo "  exact comparison failed on the resolve-shaped host; retrying with --golden-tolerance 1e-5"
-    "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" --host-profile resolve --golden-tolerance 1e-5 | tee "${TMP}/resolve.log"
-  fi
-  if ! grep -qE "label parameter 'provider' = \"(CUDA \(device 0, 1 thread, .*tf32 off|CPU)" "${TMP}/resolve.log"; then
-    echo "  FAIL: the provider label does not name an execution provider under the resolve profile" >&2
-    exit 1
-  fi
-  require_gpu_label "${TMP}/resolve.log" "resolve profile"
+    # The plug-in writes its execution provider into a label parameter. CUDA is
+    # requested first and the CPU session is the fallback, so the value has to
+    # name one of them and, when it is the fallback, carry the reason. Both are
+    # accepted here: the harness cannot know which runtime a GPU machine links.
+    # A CUDA session must say which arithmetic it runs: without "tf32 off" the
+    # label describes a device session whose numbers nobody has pinned down.
+    if ! grep -qE "label parameter 'provider' = \"(CUDA \(device 0, 1 thread, .*tf32 off|CPU)" "${TMP}/${profile}.log"; then
+      echo "  FAIL: the provider label does not name an execution provider (${profile} profile)" >&2
+      exit 1
+    fi
+    require_gpu_label "${TMP}/${profile}.log" "${profile} profile"
+  done
 
   # The same pixel comparison with the plug-in's own tiling engaged: tileSize=16
   # makes the 64x48 window go through RunTiled, so the frame is assembled from

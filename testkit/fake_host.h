@@ -54,8 +54,26 @@ enum class ImageOrigin { Bottom, Top };
 // One process can hold one host (OFX's OfxSetHost ignores every call after the
 // first), so a run covers one profile; a suite that wants both runs the
 // harness twice, once per profile.
-enum class HostProfile { TilesAndMultiRes, NoTilesNoMultiRes };
+// The host shapes this harness can present. Not invented: the two that differ
+// in tiling come from openfx-misc's README-hosts.txt dumps (Resolve Lite 16:
+// no tiles, no multi-resolution), and the third is the background-renderer shape
+// NatronRenderer presents - the one host that has actually rendered a bundle
+// here (evidence/2026-11-24-windows/), where isBackground is 1 because there is
+// no UI to talk to.
+enum class HostProfile { Nuke, Resolve, Natron };
 
+// A profile as data, so the property set and the assertion in the contract read
+// the same table instead of a chain of ternaries drifting apart.
+struct HostShape {
+  const char* key;      // the --host-profile value
+  const char* label;    // kOfxPropLabel
+  bool tiles;           // kOfxImageEffectPropSupportsTiles
+  bool multiResolution; // kOfxImageEffectPropSupportsMultiResolution
+  bool temporalAccess;  // kOfxImageEffectPropTemporalClipAccess
+  bool background;      // kOfxImageEffectHostPropIsBackground
+};
+
+const HostShape& hostShape(HostProfile profile);
 const char* hostProfileName(HostProfile profile);
 
 class FakeHost {

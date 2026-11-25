@@ -1,0 +1,1 @@
+0          # the CPU reference is bit-exact: no bound, and a real fault is not smoothed over

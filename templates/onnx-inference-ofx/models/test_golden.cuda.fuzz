@@ -1,0 +1,1 @@
+1e-05      # a CUDA session sums in another order, so the last bits differ; measured 5.4e-07

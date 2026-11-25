@@ -26,14 +26,42 @@
 
 namespace testkit {
 
-// The label a host presents, and the name a log line prints. The two profiles
-// differ in exactly the two properties hosts are dumped for, so spelling them
-// out means a captured log says which host shape produced it.
-const char* hostProfileName(HostProfile profile) {
-  return profile == HostProfile::TilesAndMultiRes
-             ? "Testkit Fake Host (tiles, multi-resolution)"
-             : "Testkit Fake Host (no tiles, no multi-resolution)";
+// One row per shape, and every profile-dependent property is written from it.
+// Spelling the rows out means a captured log names the host shape that produced
+// it, and a new shape is a row rather than a fourth ternary in three places.
+//
+// What the differences rest on:
+//   nuke     the full shape: tiles and multi-resolution, temporal access, a UI.
+//   resolve  README-hosts.txt's Resolve Lite 16 dump - API 1.4, no tiles; the
+//            free version also has no temporal access, so both are off.
+//   natron   tiles and multi-resolution like nuke, but a background renderer:
+//            kOfxImageEffectHostPropIsBackground=1, no UI. This is the mode
+//            NatronRenderer runs in, and the only host mode that has actually
+//            rendered a bundle here.
+//
+// The API version the host reports is 1.5 in all three. The dumps disagree (1.2
+// for Nuke 10, 1.4 for Resolve), so a plug-in that branches on the host's API
+// number is not covered by any profile - references/testing-layers.md L3 says
+// so, and `references/improvement-backlog.md` keeps it as an open row.
+namespace {
+const HostShape kShapes[] = {
+    {"nuke", "Testkit Fake Host (nuke: tiles, multi-resolution)", true, true, true, false},
+    {"resolve", "Testkit Fake Host (resolve: no tiles, no multi-resolution)", false, false,
+     false, false},
+    {"natron", "Testkit Fake Host (natron: tiles, background renderer)", true, true, true, true},
+};
+} // namespace
+
+const HostShape& hostShape(HostProfile profile) {
+  switch (profile) {
+    case HostProfile::Nuke: return kShapes[0];
+    case HostProfile::Resolve: return kShapes[1];
+    case HostProfile::Natron: return kShapes[2];
+  }
+  return kShapes[0];
 }
+
+const char* hostProfileName(HostProfile profile) { return hostShape(profile).label; }
 
 namespace {
 
@@ -131,7 +159,7 @@ struct Impl {
   std::map<std::string, ClipObj*> clipByName;
 
   // The host shape this process presents; see FakeHost::setHostProfile.
-  HostProfile profile = HostProfile::TilesAndMultiRes;
+  HostProfile profile = HostProfile::Nuke;
 
   // images
   int imgW = 64;
@@ -1058,20 +1086,20 @@ const void* fetchSuite(OfxPropertySetHandle, const char* suiteName, int suiteVer
 void setHostInteger(PropSet* s, const char* name, int value) { setInt(s, name, 0, value); }
 
 void initHostProps(PropSet* s, HostProfile profile) {
-  const bool tiles = profile == HostProfile::TilesAndMultiRes;
+  const HostShape& shape = hostShape(profile);
   setString(s, kOfxPropName, 0, "testkit-fake-host");
-  setString(s, kOfxPropLabel, 0, hostProfileName(profile));
+  setString(s, kOfxPropLabel, 0, shape.label);
   setInt(s, kOfxPropAPIVersion, 0, 1);
   setInt(s, kOfxPropAPIVersion, 1, 5);
   setInt(s, kOfxPropVersion, 0, 1);
   setInt(s, kOfxPropVersion, 1, 0);
   setInt(s, kOfxPropVersion, 2, 0);
   setString(s, kOfxPropVersionLabel, 0, "1.0.0");
-  setHostInteger(s, kOfxImageEffectHostPropIsBackground, 0);
+  setHostInteger(s, kOfxImageEffectHostPropIsBackground, shape.background ? 1 : 0);
   setHostInteger(s, kOfxImageEffectPropSupportsOverlays, 0);
-  setHostInteger(s, kOfxImageEffectPropSupportsMultiResolution, tiles ? 1 : 0);
-  setHostInteger(s, kOfxImageEffectPropSupportsTiles, tiles ? 1 : 0);
-  setHostInteger(s, kOfxImageEffectPropTemporalClipAccess, 1);
+  setHostInteger(s, kOfxImageEffectPropSupportsMultiResolution, shape.multiResolution ? 1 : 0);
+  setHostInteger(s, kOfxImageEffectPropSupportsTiles, shape.tiles ? 1 : 0);
+  setHostInteger(s, kOfxImageEffectPropTemporalClipAccess, shape.temporalAccess ? 1 : 0);
   setHostInteger(s, kOfxImageEffectPropSupportsMultipleClipDepths, 1);
   setHostInteger(s, kOfxImageEffectPropSupportsMultipleClipPARs, 1);
   setHostInteger(s, kOfxImageEffectPropSetableFrameRate, 0);
@@ -1427,23 +1455,26 @@ int FakeHost::descriptorInt(const char* property, int index) const {
 
 void FakeHost::setHostProfile(HostProfile profile) {
   impl_->profile = profile;
-  const int value = profile == HostProfile::TilesAndMultiRes ? 1 : 0;
+  const HostShape& shape = hostShape(profile);
   // The constructor already wrote the defaults, and the property set is the
-  // plug-in's whole view of the host: rewrite the two entries rather than
+  // plug-in's whole view of the host: rewrite the shape's entries rather than
   // leaving a second source of truth.
-  setHostInteger(&impl_->hostProps, kOfxImageEffectPropSupportsTiles, value);
-  setHostInteger(&impl_->hostProps, kOfxImageEffectPropSupportsMultiResolution, value);
-  setString(&impl_->hostProps, kOfxPropLabel, 0, hostProfileName(profile));
+  setHostInteger(&impl_->hostProps, kOfxImageEffectPropSupportsTiles, shape.tiles ? 1 : 0);
+  setHostInteger(&impl_->hostProps, kOfxImageEffectPropSupportsMultiResolution,
+                 shape.multiResolution ? 1 : 0);
+  setHostInteger(&impl_->hostProps, kOfxImageEffectPropTemporalClipAccess,
+                 shape.temporalAccess ? 1 : 0);
+  setHostInteger(&impl_->hostProps, kOfxImageEffectHostPropIsBackground,
+                 shape.background ? 1 : 0);
+  setString(&impl_->hostProps, kOfxPropLabel, 0, shape.label);
 }
 
 HostProfile FakeHost::hostProfile() const { return impl_->profile; }
 
-bool FakeHost::hostSupportsTiles() const {
-  return impl_->profile == HostProfile::TilesAndMultiRes;
-}
+bool FakeHost::hostSupportsTiles() const { return hostShape(impl_->profile).tiles; }
 
 bool FakeHost::hostSupportsMultiResolution() const {
-  return impl_->profile == HostProfile::TilesAndMultiRes;
+  return hostShape(impl_->profile).multiResolution;
 }
 
 int FakeHost::hostInteger(const char* property) const {

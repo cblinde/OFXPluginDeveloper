@@ -135,25 +135,33 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
   OFX_CHECKOUT="$(sed -n 's/^OFX_SOURCE_DIR:PATH=//p' "${ROOT}/build/CMakeCache.txt" 2>/dev/null | head -1 || true)"
   "${ROOT}/../../testkit/build-contract-test.sh" "${TMP}/contract_test" ${OFX_CHECKOUT:+"${OFX_CHECKOUT}"}
   echo "  ${BUNDLE_OFX#"${ROOT}"/}"
-  "${TMP}/contract_test" "${BUNDLE_OFX}" \
-    --id com.ofxplugindeveloper.minimalcudagain \
-    --param gain:double --param gainAlpha:double --clip Source --clip Output \
-    --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
-    --src-bounds-inset 2 --dst-bounds-inset 2 \
-    --concurrency-param gain
 
-  # The same contract against the other host shape: supportsTiles=0 and
-  # supportsMultiResolution=0, the profile Resolve's OFX host reports in the
-  # dumps published in openfx-misc's README-hosts.txt. One process holds one
-  # host, so this is a second run rather than a flag inside the first.
-  echo "  the same protocol against a host with supportsTiles=0 and supportsMultiResolution=0"
-  "${TMP}/contract_test" "${BUNDLE_OFX}" \
-    --host-profile resolve \
-    --id com.ofxplugindeveloper.minimalcudagain \
-    --param gain:double --param gainAlpha:double --clip Source --clip Output \
-    --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
-    --src-bounds-inset 2 --dst-bounds-inset 2 \
-    --concurrency-param gain
+  # One process holds one host (OfxSetHost ignores every call after the first),
+  # so each shape is a run of its own: the dumps in openfx-misc's README-hosts.txt
+  # (nuke: tiles + multi-resolution + temporal access; resolve: none of them) and
+  # the background renderer NatronRenderer presents (natron: tiles, isBackground=1).
+  HOST_PROFILES=(nuke resolve natron)
+
+  # SUITE_THREADS=random picks a different concurrent-render count per run, the
+  # way FATE's threads=randomN does - the race has to show up in some run rather
+  # than in the one configuration someone hard-coded.
+  THREADS="${SUITE_THREADS:-4}"
+  if [[ "${THREADS}" == "random" ]]; then
+    THREADS=$(( (RANDOM % 4) + 1 ))
+    echo "  SUITE_THREADS=random: ${THREADS} concurrent render thread(s) this run"
+  fi
+
+  for profile in "${HOST_PROFILES[@]}"; do
+    echo "  host profile: ${profile}"
+    "${TMP}/contract_test" "${BUNDLE_OFX}" \
+      --host-profile "${profile}" \
+      --id com.ofxplugindeveloper.minimalcudagain \
+      --param gain:double --param gainAlpha:double --clip Source --clip Output \
+      --identity --negative-pitch --set gain=2.0 --not-identity-after-set --byte-dst-rejected \
+      --src-bounds-inset 2 --dst-bounds-inset 2 \
+      --concurrency-param gain \
+      --concurrency-threads "${THREADS}"
+  done
 else
   echo "  skipped: no build/ tree yet (run ./build.sh first)"
 fi

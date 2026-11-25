@@ -78,33 +78,31 @@ if not exist "%OFX_INC%\include\ofxCore.h" (
 
 set "CONTRACT=%BUILD_DIR%\contract_test.exe"
 call "%ROOT%\..\..\testkit\build-contract-test.bat" "%CONTRACT%" "%OFX_INC%" || goto :error
-"%CONTRACT%" "%OFX_FILE%" ^
-  --id com.ofxplugindeveloper.referencegain ^
-  --version 1.0 ^
-  --param gain:double ^
-  --clip Source ^
-  --clip Output ^
-  --byte-dst-rejected ^
-  --src-bounds-inset 2 --dst-bounds-inset 2 ^
-  --negative-pitch ^
-  --concurrency-param gain || goto :error
-
-rem The same contract against the other host shape: supportsTiles=0 and
-rem supportsMultiResolution=0, which is what Resolve's OFX host reports in the
-rem dumps published in openfx-misc's README-hosts.txt. One process holds one
-rem host (OFX ignores every setHost after the first), so this is a second run
-rem rather than a flag inside the first.
-"%CONTRACT%" "%OFX_FILE%" ^
-  --host-profile resolve ^
-  --id com.ofxplugindeveloper.referencegain ^
-  --version 1.0 ^
-  --param gain:double ^
-  --clip Source ^
-  --clip Output ^
-  --byte-dst-rejected ^
-  --src-bounds-inset 2 --dst-bounds-inset 2 ^
-  --negative-pitch ^
-  --concurrency-param gain || goto :error
+rem One process holds one host - OFX ignores every setHost after the first - so
+rem each shape is a run of its own: the dumps in openfx-misc's README-hosts.txt
+rem (nuke: tiles + multi-resolution + temporal access; resolve: none of them) and
+rem the background renderer NatronRenderer presents (natron: tiles,
+rem isBackground=1, no UI). Only the capabilities the plug-in reads change.
+rem SUITE_THREADS=random picks a different concurrent-render count per run, the
+rem way FATE's threads=randomN does.
+set "THREADS=%SUITE_THREADS%"
+if not defined THREADS set "THREADS=4"
+if /i "%THREADS%"=="random" set /a THREADS=%RANDOM% %% 4 + 1
+for %%P in (nuke resolve natron) do (
+  echo   host profile: %%P
+  "%CONTRACT%" "%OFX_FILE%" ^
+    --host-profile %%P ^
+    --id com.ofxplugindeveloper.referencegain ^
+    --version 1.0 ^
+    --param gain:double ^
+    --clip Source ^
+    --clip Output ^
+    --byte-dst-rejected ^
+    --src-bounds-inset 2 --dst-bounds-inset 2 ^
+    --negative-pitch ^
+    --concurrency-param gain ^
+    --concurrency-threads %THREADS% || goto :error
+)
 
 echo.
 echo all Windows checks passed

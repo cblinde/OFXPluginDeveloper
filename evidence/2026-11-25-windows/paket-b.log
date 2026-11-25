@@ -1,0 +1,79 @@
+# Paket B (research review, finds 3/4/6/7) on Windows, 2026-11-25.
+#
+# What this log establishes:
+#   * three host profiles run per suite (nuke, resolve, natron), identical counts
+#   * the reference resolves to a platform variant first, the bound comes from
+#     models/test_golden.<fuzz>.fuzz, and the harness prints both decisions
+#   * the comparator's self-test passes 13 cases and fails 7 of them when the
+#     comparator is neutered (the negative control below)
+#   * the full ./run-tests.sh passes with the one declared hole (CPU_ONLY).
+
+== comparator self-test, green ==
+ok 1 - self-test: identical frames pass, and are reported identical
+ok 2 - self-test: one sub-LSB pixel fails an exact comparison
+ok 3 - self-test: the same pixel passes a 1e-5 bound
+ok 4 - self-test: a large deviation fails even a loose bound
+ok 5 - self-test: every pixel just under the bound passes
+ok 6 - self-test: every pixel just over the bound fails
+ok 7 - self-test: a reference of the wrong size is a categorical failure, not a small deviation
+ok 8 - self-test: NaN in the reference fails at any bound
+ok 9 - self-test: a non-finite render fails at any bound
+ok 10 - self-test: a reference corrupted at one pixel must fail
+ok 11 - self-test: the platform variant wins over the generic reference on this platform
+ok 12 - self-test: the sidecar supplies the bound, and the log can name it
+ok 13 - self-test: the command line still overrides the sidecar
+self-test: 0 case(s) failed
+
+== comparator self-test, negative control ==
+# Built with 'verdict.pass = true; // NEGATIVE CONTROL' in compareGolden, then reverted.
+FAIL self-test: one sub-LSB pixel fails an exact comparison: max deviation 0.000001 at pixel 1,0 channel 1: 0.250001 vs 0.250000
+FAIL self-test: a large deviation fails even a loose bound: max deviation 0.250000 at pixel 1,0 channel 2: 0.500000 vs 0.250000
+FAIL self-test: every pixel just over the bound fails: max deviation 0.000011 at pixel 0,0 channel 0: 0.250011 vs 0.250000
+FAIL self-test: NaN in the reference fails at any bound: max deviation inf at pixel 0,1 channel 0: 0.250000 vs nan
+FAIL self-test: a non-finite render fails at any bound: max deviation inf at pixel 0,0 channel 2: inf vs 0.250000
+FAIL self-test: a reference corrupted at one pixel must fail: max deviation 0.010000 at pixel 2,2 channel 0: 0.250000 vs 0.260000
+FAIL self-test: the platform variant wins over the generic reference on this platform: read Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\selftest2/ref.bin
+FAIL self-test: the sidecar supplies the bound, and the log can name it: 0.000000 from exact
+self-test: 8 case(s) failed
+
+== ONNX suite, three profiles (ort-gpu-1.32.0, bundled CUDA provider) ==
+  host profile: nuke
+  reference: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.bin (generic: no Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden-windows.bin beside it)
+  tolerance: 1e-05 (from Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.cuda.fuzz)
+  reference: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.bin (generic: no Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden-windows.bin beside it)
+  tolerance: 1e-05 (from Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.cuda.fuzz)
+contract_test: 160 checks, 0 failed
+  host profile: resolve
+  reference: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.bin (generic: no Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden-windows.bin beside it)
+  tolerance: 1e-05 (from Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.cuda.fuzz)
+  reference: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.bin (generic: no Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden-windows.bin beside it)
+  tolerance: 1e-05 (from Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.cuda.fuzz)
+contract_test: 160 checks, 0 failed
+  host profile: natron
+  reference: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.bin (generic: no Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden-windows.bin beside it)
+  tolerance: 1e-05 (from Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.cuda.fuzz)
+  reference: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.bin (generic: no Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden-windows.bin beside it)
+  tolerance: 1e-05 (from Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_golden.cuda.fuzz)
+contract_test: 160 checks, 0 failed
+contract_test: 82 checks, 0 failed
+all checks passed
+
+== minimal suites, three profiles ==
+.validation/min-ofx.log:contract_test: 110 checks, 0 failed
+.validation/min-ofx.log:contract_test: 110 checks, 0 failed
+.validation/min-ofx.log:contract_test: 110 checks, 0 failed
+.validation/min-cuda.log:contract_test: 136 checks, 0 failed
+.validation/min-cuda.log:contract_test: 136 checks, 0 failed
+.validation/min-cuda.log:contract_test: 136 checks, 0 failed
+
+== full run-tests.sh summary ==
+==================================================================
+all suites that ran passed, but the GPU step did not run:
+  docs drift check                (tools/check-docs.py)
+  reference build + artifact      (minimal-ofx, dumpbin)
+  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)
+  NOT RUN: GPU kernels            (CPU_ONLY)
+  negative controls               (testkit/run-negative-controls.bat)
+  comparator self-test            (testkit/selftest-compare.bat)
+RUN_VALGRIND and SANITIZE are POSIX-only; this route has no valgrind
+==================================================================

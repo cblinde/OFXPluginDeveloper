@@ -167,10 +167,12 @@ struct Spec {
   std::string id;
   std::string api = kOfxImageEffectPluginApi;
   std::string context = kOfxImageEffectContextFilter;
-  // --host-profile nuke|resolve: the shape the fake host presents, after the
-  // dumps in openfx-misc's README-hosts.txt. A process holds one host, so a
-  // suite that wants both shapes runs the harness twice.
-  testkit::HostProfile profile = testkit::HostProfile::TilesAndMultiRes;
+  // --host-profile nuke|resolve|natron: the shape the fake host presents, after
+  // the dumps in openfx-misc's README-hosts.txt (nuke, resolve) and the
+  // background-renderer shape NatronRenderer presents (natron). A process holds
+  // one host, so a suite that wants all three shapes runs the harness three
+  // times.
+  testkit::HostProfile profile = testkit::HostProfile::Nuke;
   int apiVersion = 1;
   int versionMajor = 1;
   int versionMinor = 0;
@@ -179,10 +181,14 @@ struct Spec {
   std::vector<std::pair<std::string, std::string>> sets;
   std::string srcFile;
   std::string goldenFile;
-  // --golden-tolerance T: a golden rendered on the CPU cannot be bit-exact to a
-  // GPU run (a CUDA model differs in the last bits), so the comparison may be a
-  // bound. Default 0 keeps the exact check.
+  // --golden-tolerance T: a bound for a one-off run. Normally the bound belongs
+  // to the reference (a `name.<fuzz>.fuzz` file beside it, see resolveReference),
+  // so a suite does not choose one tolerance for every platform and provider.
   double goldenTolerance = 0.0;
+  bool goldenToleranceSet = false;
+  // --fuzz NAME: read the bound from the reference's `<name>.<NAME>.fuzz` file.
+  // A missing sidecar is a warning and an exact comparison, not a silent bound.
+  std::string fuzzName;
   int width = 64;
   int height = 48;
   bool expectIdentity = false;
@@ -299,6 +305,123 @@ bool readFloats(const std::string& path, std::vector<float>* out, size_t expecte
   in.read(reinterpret_cast<char*>(out->data()), bytes);
   if (!in) return false;
   return expected == 0 || out->size() == expected;
+}
+
+// ------------------------------------------------------------------ references
+//
+// One reference per platform, and a tolerance that belongs to the reference
+// instead of to the command line. The convention is OpenImageIO's, reduced to
+// what this repository needs:
+//
+//   name.ext              the generic reference, used when nothing else matches
+//   name-<platform>.ext   a reference rendered on one platform, used when the
+//                         run happens on that platform
+//   name.<fuzz>.fuzz      the bound that reference may be compared with, e.g.
+//                         name.cpu.fuzz = 0 and name.cuda.fuzz = 1e-05
+//
+// Why it matters: a single `--golden-tolerance 1e-5` on the command line is one
+// global decision, so every platform and every provider is compared with the
+// same loosened rule. Here the strict reference keeps its exact demand, and only
+// the reference that cannot be bit-exact says so - a log prints which file was
+// read and where the tolerance came from, so the weaker claim is named rather
+// than inferred.
+const char* platformTag() {
+#if defined(_WIN32)
+  return "windows";
+#elif defined(__APPLE__)
+  return "macos";
+#else
+  return "linux";
+#endif
+}
+
+std::string stripExtension(const std::string& path) {
+  const size_t slash = path.find_last_of("/\\");
+  const size_t dot = path.find_last_of('.');
+  if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) return path;
+  return path.substr(0, dot);
+}
+
+std::string extensionOf(const std::string& path) {
+  const std::string stem = stripExtension(path);
+  return stem.size() == path.size() ? std::string() : path.substr(stem.size());
+}
+
+bool fileExists(const std::string& path) {
+  std::ifstream in(path);
+  return in.good();
+}
+
+// A `.fuzz` file holds one number: the largest deviation this reference may be
+// compared with. Anything after a `#` is a comment, so the file can carry the
+// reason it exists next to the number.
+bool readFuzz(const std::string& path, double* out) {
+  std::ifstream in(path);
+  if (!in) return false;
+  std::string line;
+  while (std::getline(in, line)) {
+    const size_t hash = line.find('#');
+    if (hash != std::string::npos) line = line.substr(0, hash);
+    if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
+    char* end = nullptr;
+    const double value = std::strtod(line.c_str(), &end);
+    if (end == line.c_str()) return false;
+    *out = value;
+    return true;
+  }
+  return false;
+}
+
+struct Reference {
+  std::string path;             // the file actually read
+  std::string variant;          // the platform tag, or empty for the generic file
+  double tolerance = 0.0;       // from the sidecar, unless the command line overrode it
+  std::string toleranceSource;  // "command line", the .fuzz file, or "exact"
+};
+
+Reference resolveReference(const std::string& requested, const std::string& fuzzName,
+                           bool toleranceFromCli, double cliTolerance) {
+  Reference ref;
+  const std::string stem = stripExtension(requested);
+  const std::string suffix = extensionOf(requested);
+  const std::string variant = stem + "-" + platformTag() + suffix;
+  if (fileExists(variant)) {
+    ref.path = variant;
+    ref.variant = platformTag();
+  } else {
+    ref.path = requested;
+  }
+
+  if (toleranceFromCli) {
+    ref.tolerance = cliTolerance;
+    ref.toleranceSource = "command line";
+    return ref;
+  }
+  ref.tolerance = 0.0;
+  ref.toleranceSource = "exact";
+  if (fuzzName.empty()) return ref;
+  // The sidecar may follow the file that was read (`name-windows.cuda.fuzz`) or
+  // the generic stem (`name.cuda.fuzz`); the generic one is the useful default,
+  // because a provider's rounding does not depend on the platform.
+  const std::string candidates[] = {stripExtension(ref.path) + "." + fuzzName + ".fuzz",
+                                    stem + "." + fuzzName + ".fuzz"};
+  for (const std::string& candidate : candidates) {
+    if (!fileExists(candidate)) continue;
+    double value = 0.0;
+    if (!readFuzz(candidate, &value)) {
+      // A sidecar that cannot be parsed is a failure, not a fallback to exact:
+      // silently tightening or loosening a bound is exactly the drift this
+      // mechanism exists to stop.
+      std::fprintf(stderr, "error: %s does not hold a number\n", candidate.c_str());
+      return ref;
+    }
+    ref.tolerance = value;
+    ref.toleranceSource = candidate;
+    return ref;
+  }
+  std::fprintf(stderr, "warning: no %s.*.fuzz beside %s; comparing exactly\n", stem.c_str(),
+               requested.c_str());
+  return ref;
 }
 
 bool validThreadSafety(const std::string& s) {
@@ -573,6 +696,191 @@ Deviation maxRectDifference(const std::vector<float>& a, const std::vector<float
   return d;
 }
 
+// ------------------------------------------------------- the golden comparator
+//
+// One function, used by the render check and by the self-test below, so the
+// self-test can fail exactly the code the suite trusts. The rules are the truth
+// table a comparator has to satisfy, and three of them are the ones a naive
+// `worst <= tolerance` gets wrong:
+//
+//   identical                     -> pass
+//   deviation at / under the bound -> pass; one over it -> fail
+//   a non-finite value            -> fail at any bound (NaN != NaN would
+//                                    otherwise make the comparison say "small")
+//   a reference of the wrong size -> a categorical failure, not a deviation
+//   a reference corrupted by one pixel -> fail
+struct GoldenVerdict {
+  bool pass = false;
+  bool identical = true;
+  double worst = 0.0;
+  std::string where;
+  std::string problem; // set when no comparison could be made
+
+  std::string text() const {
+    if (!problem.empty()) return problem;
+    if (identical) return "identical";
+    return "max deviation " + std::to_string(worst) + " at " + where;
+  }
+};
+
+// dst is the rendered frame, RGBA-interleaved, width*height*4 floats.
+// golden is the reference, planar RGB, width*height*3 floats.
+GoldenVerdict compareGolden(const std::vector<float>& dst, const std::vector<float>& golden,
+                            int width, int height, double tolerance) {
+  GoldenVerdict verdict;
+  const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+  if (dst.size() != pixels * 4) {
+    verdict.problem = "the frame holds " + std::to_string(dst.size()) + " floats, expected " +
+                      std::to_string(pixels * 4);
+    return verdict;
+  }
+  if (golden.size() != pixels * 3) {
+    verdict.problem = "the reference holds " + std::to_string(golden.size()) +
+                      " floats, expected " + std::to_string(pixels * 3) +
+                      " for " + std::to_string(width) + "x" + std::to_string(height);
+    return verdict;
+  }
+  for (size_t i = 0; i < pixels; ++i) {
+    for (int c = 0; c < 3; ++c) {
+      const float got = dst[i * 4 + static_cast<size_t>(c)];
+      const float want = golden[i + static_cast<size_t>(c) * pixels];
+      std::uint32_t gotBits = 0;
+      std::uint32_t wantBits = 0;
+      std::memcpy(&gotBits, &got, sizeof gotBits);
+      std::memcpy(&wantBits, &want, sizeof wantBits);
+      if (gotBits == wantBits) continue;
+      verdict.identical = false;
+      double diff = std::abs(static_cast<double>(got) - static_cast<double>(want));
+      // A non-finite value has no magnitude to report. Report it as unbounded,
+      // so no finite bound can call it small.
+      if (!std::isfinite(static_cast<double>(got)) || !std::isfinite(static_cast<double>(want))) {
+        diff = std::numeric_limits<double>::infinity();
+      }
+      if (diff > verdict.worst || verdict.where.empty()) {
+        verdict.worst = diff;
+        verdict.where = "pixel " + std::to_string(i % static_cast<size_t>(width)) + "," +
+                        std::to_string(i / static_cast<size_t>(width)) + " channel " +
+                        std::to_string(c) + ": " + std::to_string(got) + " vs " +
+                        std::to_string(want);
+      }
+    }
+  }
+  verdict.pass = verdict.identical || verdict.worst <= tolerance;
+  return verdict;
+}
+
+// A comparator is not trusted until it has been seen failing on the defects it
+// exists to catch (plumbline's rule, and the reason FFmpeg's refcmp had to learn
+// to fail on empty input). This runs the truth table against compareGolden and
+// against the reference lookup; every case states the verdict it expects, so the
+// self-test fails when the comparator stops failing.
+int runCompareSelftest(const std::string& directory) {
+  const int width = 4;
+  const int height = 3;
+  const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+  const auto goldenOf = [&](float value) { return std::vector<float>(pixels * 3, value); };
+  const auto frameOf = [&](float value) {
+    std::vector<float> frame(pixels * 4, value);
+    for (size_t i = 0; i < pixels; ++i) frame[i * 4 + 3] = 1.0f;
+    return frame;
+  };
+  const float base = 0.25f;
+  int failures = 0;
+  const auto expect = [&](const std::string& what, bool condition, const std::string& detail) {
+    if (!check("self-test: " + what, condition, detail)) ++failures;
+  };
+
+  {
+    const GoldenVerdict v = compareGolden(frameOf(base), goldenOf(base), width, height, 0.0);
+    expect("identical frames pass, and are reported identical", v.pass && v.identical, v.text());
+  }
+  {
+    std::vector<float> frame = frameOf(base);
+    frame[5] += 1e-6f; // one channel, a fraction of an 8-bit LSB
+    const GoldenVerdict exact = compareGolden(frame, goldenOf(base), width, height, 0.0);
+    const GoldenVerdict bound = compareGolden(frame, goldenOf(base), width, height, 1e-5);
+    expect("one sub-LSB pixel fails an exact comparison", !exact.pass, exact.text());
+    expect("the same pixel passes a 1e-5 bound", bound.pass, bound.text());
+  }
+  {
+    std::vector<float> frame = frameOf(base);
+    frame[6] += 0.25f; // a real fault, in a compared channel (6 = pixel 1, channel 2)
+    const GoldenVerdict v = compareGolden(frame, goldenOf(base), width, height, 1e-3);
+    expect("a large deviation fails even a loose bound", !v.pass, v.text());
+  }
+  {
+    std::vector<float> below = frameOf(base);
+    std::vector<float> above = frameOf(base);
+    for (size_t i = 0; i < pixels * 4; ++i) below[i] += 9e-6f;
+    for (size_t i = 0; i < pixels * 4; ++i) above[i] += 1.1e-5f;
+    const GoldenVerdict under = compareGolden(below, goldenOf(base), width, height, 1e-5);
+    const GoldenVerdict over = compareGolden(above, goldenOf(base), width, height, 1e-5);
+    expect("every pixel just under the bound passes", under.pass, under.text());
+    expect("every pixel just over the bound fails", !over.pass, over.text());
+  }
+  {
+    std::vector<float> shortGolden = goldenOf(base);
+    shortGolden.pop_back();
+    const GoldenVerdict v = compareGolden(frameOf(base), shortGolden, width, height, 1e-3);
+    expect("a reference of the wrong size is a categorical failure, not a small deviation",
+           !v.pass && v.problem.find("reference holds") != std::string::npos, v.text());
+  }
+  {
+    std::vector<float> nanGolden = goldenOf(base);
+    nanGolden[4] = std::numeric_limits<float>::quiet_NaN();
+    const GoldenVerdict v = compareGolden(frameOf(base), nanGolden, width, height, 1.0);
+    expect("NaN in the reference fails at any bound", !v.pass, v.text());
+  }
+  {
+    std::vector<float> infFrame = frameOf(base);
+    infFrame[2] = std::numeric_limits<float>::infinity();
+    const GoldenVerdict v = compareGolden(infFrame, goldenOf(base), width, height, 1.0);
+    expect("a non-finite render fails at any bound", !v.pass, v.text());
+  }
+  {
+    std::vector<float> corrupted = goldenOf(base);
+    corrupted[10] += 0.01f; // the reference itself is wrong by one pixel
+    const GoldenVerdict v = compareGolden(frameOf(base), corrupted, width, height, 1e-5);
+    expect("a reference corrupted at one pixel must fail", !v.pass, v.text());
+  }
+
+  if (!directory.empty()) {
+    // The lookup order, written to disk: a platform variant beside the generic
+    // file has to win on that platform, and the sidecar has to supply the bound.
+    const std::string generic = directory + "/ref.bin";
+    const std::string variant = stripExtension(generic) + "-" + platformTag() + ".bin";
+    const std::string fuzz = stripExtension(generic) + ".cuda.fuzz";
+    const std::string plain = directory + "/plain.bin";
+    const std::string plainFuzz = stripExtension(plain) + ".cuda.fuzz";
+    for (const std::string& path : {generic, variant, plain}) {
+      std::ofstream out(path, std::ios::binary);
+      out.put('x');
+    }
+    {
+      std::ofstream out(fuzz);
+      out << "1e-05  # a CUDA render rounds differently in the last bits\n";
+    }
+    {
+      std::ofstream out(plainFuzz);
+      out << "# only comments: not a number\n";
+    }
+    const Reference chosen = resolveReference(generic, "cuda", false, 0.0);
+    expect("the platform variant wins over the generic reference on this platform",
+           chosen.path == variant && chosen.variant == platformTag(),
+           "read " + chosen.path);
+    expect("the sidecar supplies the bound, and the log can name it",
+           chosen.tolerance > 0.0 && chosen.tolerance < 1e-4 &&
+               chosen.toleranceSource.find(".cuda.fuzz") != std::string::npos,
+           std::to_string(chosen.tolerance) + " from " + chosen.toleranceSource);
+    const Reference overridden = resolveReference(generic, "cuda", true, 0.5);
+    expect("the command line still overrides the sidecar", overridden.tolerance == 0.5,
+           overridden.toleranceSource);
+  }
+
+  std::printf("self-test: %d case(s) failed\n", failures);
+  return failures == 0 ? 0 : 1;
+}
+
 bool sameRect(const OfxRectD& a, const OfxRectD& b) {
   return a.x1 == b.x1 && a.y1 == b.y1 && a.x2 == b.x2 && a.y2 == b.y2;
 }
@@ -670,17 +978,33 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   // The profile is an input to the whole cycle: a host that reports a shape the
   // run did not ask for would turn every later failure into a plug-in
   // accusation, so it stops the run here instead of being counted.
-  const int hostTiles = host.hostInteger(kOfxImageEffectPropSupportsTiles);
-  const int hostMultiRes = host.hostInteger(kOfxImageEffectPropSupportsMultiResolution);
-  const int wantShape = spec.profile == testkit::HostProfile::TilesAndMultiRes ? 1 : 0;
-  if (hostTiles != wantShape || hostMultiRes != wantShape) {
-    // A recorded failure, not just a message: the summary line has to say that
-    // something failed, or a log would read "0 failed" for a run that stopped.
-    if (!check("host profile reaches the property set", false,
-               "reports supportsTiles=" + std::to_string(hostTiles) +
-                   " supportsMultiResolution=" + std::to_string(hostMultiRes) +
-                   ", the run asked for " + std::to_string(wantShape))) {
-      return failCycle(host);
+  // Every property a profile sets is asserted, not only the two that used to
+  // differ: a shape that reaches the property set by accident (a stale build, a
+  // half-applied table) would otherwise present a host the run never asked for,
+  // and every later failure would be a plug-in accusation.
+  {
+    const testkit::HostShape& want = testkit::hostShape(spec.profile);
+    const int hostTiles = host.hostInteger(kOfxImageEffectPropSupportsTiles);
+    const int hostMultiRes = host.hostInteger(kOfxImageEffectPropSupportsMultiResolution);
+    const int hostTemporal = host.hostInteger(kOfxImageEffectPropTemporalClipAccess);
+    const int hostBackground = host.hostInteger(kOfxImageEffectHostPropIsBackground);
+    const int wantTiles = want.tiles ? 1 : 0;
+    const int wantMultiRes = want.multiResolution ? 1 : 0;
+    const int wantTemporal = want.temporalAccess ? 1 : 0;
+    const int wantBackground = want.background ? 1 : 0;
+    if (hostTiles != wantTiles || hostMultiRes != wantMultiRes ||
+        hostTemporal != wantTemporal || hostBackground != wantBackground) {
+      // A recorded failure, not just a message: the summary line has to say that
+      // something failed, or a log would read "0 failed" for a run that stopped.
+      if (!check(std::string("host profile '") + want.key + "' reaches the property set", false,
+                 "reports supportsTiles=" + std::to_string(hostTiles) +
+                     " supportsMultiResolution=" + std::to_string(hostMultiRes) +
+                     " temporalClipAccess=" + std::to_string(hostTemporal) +
+                     " isBackground=" + std::to_string(hostBackground) + ", the run asked for " +
+                     std::to_string(wantTiles) + "/" + std::to_string(wantMultiRes) + "/" +
+                     std::to_string(wantTemporal) + "/" + std::to_string(wantBackground))) {
+        return failCycle(host);
+      }
     }
   }
   const OfxStatus loadStatus = host.load();
@@ -890,9 +1214,27 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
 
   if (!spec.goldenFile.empty()) {
     stage("compare golden");
-    std::vector<float> golden;
     const size_t pixels = static_cast<size_t>(spec.width) * spec.height;
-    if (!check("read golden " + spec.goldenFile, readFloats(spec.goldenFile, &golden, pixels * 3),
+    // Which reference, and with which bound: both are decisions the run makes
+    // for the log, not a global setting it inherits.
+    const Reference reference = resolveReference(spec.goldenFile, spec.fuzzName,
+                                                 spec.goldenToleranceSet, spec.goldenTolerance);
+    if (reference.path == spec.goldenFile) {
+      std::printf("  reference: %s (generic: no %s-%s%s beside it)\n", reference.path.c_str(),
+                  stripExtension(spec.goldenFile).c_str(), platformTag(),
+                  extensionOf(spec.goldenFile).c_str());
+    } else {
+      std::printf("  reference: %s (the %s variant, preferred over %s)\n", reference.path.c_str(),
+                  reference.variant.c_str(), spec.goldenFile.c_str());
+    }
+    if (reference.tolerance == 0.0) {
+      std::printf("  tolerance: 0 (exact)\n");
+    } else {
+      std::printf("  tolerance: %g (from %s)\n", reference.tolerance,
+                  reference.toleranceSource.c_str());
+    }
+    std::vector<float> golden;
+    if (!check("read golden " + reference.path, readFloats(reference.path, &golden, 0),
                "expected " + std::to_string(pixels * 3) + " floats")) {
       return failCycle(host);
     }
@@ -901,26 +1243,13 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
                std::to_string(dst.size()) + " floats")) {
       return failCycle(host);
     }
-    double worst = 0.0;
-    std::string where;
-    for (size_t i = 0; i < pixels; ++i) {
-      for (int c = 0; c < 3; ++c) {
-        const double diff = std::abs(static_cast<double>(dst[i * 4 + c]) -
-                                     static_cast<double>(golden[i + c * pixels]));
-        if (diff > worst) {
-          worst = diff;
-          where = "pixel " + std::to_string(i) + " channel " + std::to_string(c);
-        }
-      }
-    }
-    const double tolerance = spec.goldenTolerance;
-    const bool exact = tolerance == 0.0;
-    if (!check(exact ? std::string("render matches the golden")
-                     : "render matches the golden within " + std::to_string(tolerance),
-               exact ? worst == 0.0 : worst <= tolerance,
-               "max deviation " + std::to_string(worst) + " at " + where +
-                   (exact ? std::string()
-                          : ", tolerance " + std::to_string(tolerance)))) {
+    const GoldenVerdict verdict =
+        compareGolden(dst, golden, spec.width, spec.height, reference.tolerance);
+    const std::string what =
+        reference.tolerance == 0.0
+            ? std::string("render matches the golden")
+            : "render matches the golden within " + std::to_string(reference.tolerance);
+    if (!check(what, verdict.pass, verdict.text())) {
       return failCycle(host);
     }
   }
@@ -1191,6 +1520,14 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
 
 int main(int argc, char** argv) {
   Spec spec;
+  // The comparator's self-test needs no plug-in and no host: it is a mode of its
+  // own, so a broken comparator can be shown failing without a render in the way.
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--selftest-compare") {
+      const std::string directory = (i + 1 < argc) ? argv[i + 1] : std::string();
+      return runCompareSelftest(directory);
+    }
+  }
   if (argc < 2) {
     std::fprintf(stderr,
                  "usage: contract_test <plugin.ofx> --id <identifier> [--param name:type]...\n"
@@ -1201,14 +1538,21 @@ int main(int argc, char** argv) {
                  "       [--dst-bounds-inset N] [--roi-expand N] [--roi-context]\n"
                  "       [--roi-context-tolerance T] (tiled render: bound, not bit-equality)\n"
                  "       [--golden-tolerance T] (a bound instead of bit-equality, for a\n"
-                 "        golden rendered by another provider)\n"
+                 "        golden rendered by another provider; overrides --fuzz)\n"
+                 "       [--fuzz NAME] (the bound comes from <name>.<NAME>.fuzz beside\n"
+                 "        the reference; the reference itself resolves to\n"
+                 "        <name>-<platform>.<ext> first, then <name>.<ext>)\n"
+                 "       [--selftest-compare [DIR]] (run the comparator's truth table\n"
+                 "        instead of a plug-in; DIR is where the lookup cases are\n"
+                 "        written)\n"
                  "       [--label-param NAME[=VALUE]] (a string the plug-in sets itself)\n"
                  "       [--clip-prop NAME=VALUE] [--clip-prop-change NAME=VALUE]\n"
                  "         (string properties on the source clip; the change is written\n"
                  "          after the first render and rendered again, so a plug-in\n"
                  "          that caches on the clip handle has to re-read)\n"
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
-                 "       [--host-profile nuke|resolve] (tiles + multi-resolution, or neither)\n"
+                 "       [--host-profile nuke|resolve|natron] (tiles + multi-resolution;\n"
+                 "        neither; or tiles as a background renderer)\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
                  "--set without --set-status-only assumes the parameter scales RGB by\n"
@@ -1242,12 +1586,14 @@ int main(int argc, char** argv) {
     } else if (a == "--host-profile") {
       const std::string v = next("--host-profile");
       if (v == "nuke" || v == "tiles") {
-        spec.profile = testkit::HostProfile::TilesAndMultiRes;
+        spec.profile = testkit::HostProfile::Nuke;
       } else if (v == "resolve" || v == "no-tiles") {
-        spec.profile = testkit::HostProfile::NoTilesNoMultiRes;
+        spec.profile = testkit::HostProfile::Resolve;
+      } else if (v == "natron" || v == "background") {
+        spec.profile = testkit::HostProfile::Natron;
       } else {
-        std::fprintf(stderr, "error: --host-profile wants nuke (tiles + multi-resolution) "
-                             "or resolve (neither)\n");
+        std::fprintf(stderr, "error: --host-profile wants nuke (tiles + multi-resolution), "
+                             "resolve (neither) or natron (tiles, background renderer)\n");
         return 2;
       }
     } else if (a == "--param") {
@@ -1282,6 +1628,9 @@ int main(int argc, char** argv) {
       spec.goldenFile = next("--golden");
     } else if (a == "--golden-tolerance") {
       spec.goldenTolerance = std::atof(next("--golden-tolerance").c_str());
+      spec.goldenToleranceSet = true;
+    } else if (a == "--fuzz") {
+      spec.fuzzName = next("--fuzz");
     } else if (a == "--size") {
       const std::string v = next("--size");
       const size_t x = v.find('x');
@@ -1369,7 +1718,8 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  std::printf("- host profile: %s\n", testkit::hostProfileName(spec.profile));
+  std::printf("- host profile: %s (%s)\n", testkit::hostProfileName(spec.profile),
+              testkit::hostShape(spec.profile).key);
   if (!runCycle(spec, std::string())) {
     std::printf("contract_test: %d checks, %d failed\n", g_checks, g_failed);
     return 1;

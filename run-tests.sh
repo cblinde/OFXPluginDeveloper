@@ -208,6 +208,10 @@ if [[ "${windows}" == "1" ]]; then
   echo
   echo "== negative controls: broken plug-ins must fail, the pattern must pass =="
   cmd //c "$(cygpath -w "${ROOT}/testkit/run-negative-controls.bat")"
+
+  echo
+  echo "== comparator self-test: the golden comparison must fail on a corrupt reference =="
+  cmd //c "$(cygpath -w "${ROOT}/testkit/selftest-compare.bat")"
   echo
   echo
   echo "=================================================================="
@@ -221,6 +225,7 @@ if [[ "${windows}" == "1" ]]; then
     echo "  NOT RUN: GPU kernels            (${gpu_mode})"
   fi
   echo "  negative controls               (testkit/run-negative-controls.bat)"
+  echo "  comparator self-test            (testkit/selftest-compare.bat)"
   if [[ "${onnx}" == "0" ]]; then
     echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
   fi
@@ -282,10 +287,17 @@ else
   negative_controls="skipped"
 fi
 
+# The comparator's own test: the suites trust it, so it has to be shown failing
+# on a corrupt reference before it is credited with passing a good one.
+echo
+echo "== comparator self-test: the golden comparison must fail on a corrupt reference =="
+"${ROOT}/testkit/selftest-compare.sh"
+
 echo
 echo "=================================================================="
 summary_headline
 echo "  docs drift check                (tools/check-docs.py)"
+echo "  comparator self-test            (testkit/selftest-compare.sh)"
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
