@@ -301,8 +301,10 @@ The full ledger - what is **V**erified, by which command, and what is not - is
 
 - Compiled and run here: the reference and CUDA templates, the contract harness,
   the GPU kernel harness on an RTX 3060 (bit-exact), `compute-sanitizer` clean.
-- Rendered by a real host: one headless `NatronRenderer` frame, pixels checked.
-- Not verified: Resolve, Nuke and SCRATCH; a CUDA execution provider; Linux; a
-  second GPU; multi-GPU and MIG.
+- Rendered by real hosts: one headless `NatronRenderer` frame with its pixels
+  checked, and Resolve Studio 21.2 twice - identity at the default gain, and the
+  source ×2 at a build default of 2.0, so `render()` ran there too.
+- Not verified: Nuke and SCRATCH; a CUDA execution provider; a GPU path inside
+  any host; Linux; a second GPU; multi-GPU and MIG.
 
 State which of those you exercised whenever you report a result.

@@ -99,6 +99,8 @@ def validate(args):
         facts["reference"] = str(reference)
         if not reference.is_file():
             problems.append(f"no reference at {reference}")
+    if args.expect_gain is not None and not args.reference:
+        problems.append("--expect-gain needs --reference to scale")
 
     if args.resolve:
         executable = Path(args.resolve)
@@ -212,8 +214,15 @@ def run(args, report):
         found = checks.check_image(image, parse_expect(args.expect))
         stats = {}
         if args.reference:
-            problems, stats = checks.compare_to_reference(
-                image, decode.read_image(args.reference))
+            reference = decode.read_image(args.reference)
+            if args.expect_gain is None:
+                problems, stats = checks.compare_to_reference(image, reference)
+            else:
+                # A non-default gain is the only host-side proof that this
+                # plug-in's pixel path ran: at gain 1.0 the host may skip
+                # `render()` and the frame is legitimately identical.
+                problems, stats = checks.compare_scaled(image, reference,
+                                                        args.expect_gain)
             found = found + problems
         report["image"] = {"width": image.width, "height": image.height,
                            "channels": image.channels, "decoder": image.decoder,
@@ -222,8 +231,11 @@ def run(args, report):
             step(report, "check", "fail", "; ".join(found), time.monotonic() - started)
             report["result"] = "fail"
             return 1
-        step(report, "check", "pass", f"{image.width}x{image.height} via {image.decoder}",
-             time.monotonic() - started)
+        detail = f"{image.width}x{image.height} via {image.decoder}"
+        if args.expect_gain is not None:
+            detail += (f", x{args.expect_gain:g} mae {stats.get('mae')} "
+                       f"max {stats.get('max_pixel')}")
+        step(report, "check", "pass", detail, time.monotonic() - started)
     except Exception as error:
         step(report, "error", "fail", f"{type(error).__name__}: {error}")
         report["result"] = "fail"
@@ -264,6 +276,9 @@ def main(argv=None):
     parser.add_argument("--resolve", help="path to Resolve.exe (default: $RESOLVE_EXE)")
     parser.add_argument("--out", default=str(REPORTS / "frames"), help="render target directory")
     parser.add_argument("--reference", help="an image the render must match")
+    parser.add_argument("--expect-gain", type=float,
+                        help="the reference times this gain, not the reference itself; "
+                             "for a bundle built with -DREFERENCE_GAIN_DEFAULT")
     parser.add_argument("--expect", help="WxH the render must have")
     parser.add_argument("--timeout", type=int, default=600, help="startup and render time-out, seconds")
     parser.add_argument("--plan", action="store_true", help="run only what needs no host")

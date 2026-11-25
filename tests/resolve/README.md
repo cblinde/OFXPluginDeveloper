@@ -11,8 +11,10 @@ the API, apply the OFX effect, render one 1920×1080 PNG, decode it, check it,
 quit - seven steps, exit code 0. The log is
 [`evidence/2026-11-25-windows/resolve-poc.log`](../../evidence/2026-11-25-windows/resolve-poc.log).
 The `.drp` the design assumed turned out not to be necessary: the scripting API
-can import a still, cut a timeline and attach an OFX effect itself. What is still
-not proved is one paragraph down, and it matters more than the pass.
+can import a still, cut a timeline and attach an OFX effect itself. A second run
+on the same day proved the **pixel path** as well: with the bundle built at a gain
+of 2.0 the frame is the source times two to the byte
+([`resolve-poc-gain.log`](../../evidence/2026-11-25-windows/resolve-poc-gain.log)).
 
 The reusable form of all of it - where the host and the SDK live, the three
 environment variables, launch and connect, every API call with its measured
@@ -33,9 +35,10 @@ python tests/resolve/test_stale_file.py # two runs in one directory, the second 
 decoder - prints one line per step and writes the same JSON report a real run
 writes. Its exit code is 2 when a path is wrong.
 
-`checks.py` is pure Python on bytes and has nine cases of its own; the self-test
+`checks.py` is pure Python on bytes and has twelve cases of its own; the self-test
 fails when the checks stop catching a uniform frame, a black frame, a wrong size,
-a wrong channel count or a reference that differs by one pixel.
+a wrong channel count, a reference that differs by one pixel, or a frame that
+skipped the render at a non-default gain.
 
 `test_stale_file.py` covers the rule `output_files.py` owns: a render is credited
 with the file that appeared after the directory was snapshotted, so a second run
@@ -59,6 +62,10 @@ python tests/resolve/poc.py \
     --reference build/resolve/source.png
 ```
 
+`--expect-gain 2` is for a bundle built with `REFERENCE_GAIN_DEFAULT=2.0`: it
+compares against the reference times two instead of the reference itself, which
+is what turns the pixel path into a measurement.
+
 `--build-project` is the mode that needs no `.drp`: the host makes the project,
 imports the still, appends it to a timeline, applies the effect named on the
 command line and closes up after itself. `--effect` is the effect's **menu name**,
@@ -75,29 +82,58 @@ than `C:` work at all.
 `--project some.drp` still loads a prepared project instead. It is the mode the
 design assumed and it has **never run**, because no `.drp` has been produced here.
 
-## What a pass does not mean
+## What the two runs prove
 
-The rendered frame was **pixel-identical to the source** (`mae 0.0`, `max 0`), and
-that is the expected result rather than a proof: this plug-in reports
-`isIdentity()` at its default gain of 1.0, so the host is entitled to skip
-`render()` entirely, and nothing in the scripting API can set an OFX parameter -
-`Effect` exposes `GetInfo`, `GetIsEnabled`, `SetIsEnabled`, `GetFusionComp`,
-`GetIndex` and `SetIndex`, and no parameter access at all.
+**Run 1, default gain.** The rendered frame was pixel-identical to the source
+(`mae 0.0`, `max 0`), and that is the expected result rather than a proof: this
+plug-in reports `isIdentity()` at its default gain of 1.0, so the host is entitled
+to skip `render()` entirely. What it does prove is the host side - the bundle is
+scanned (`OFX: loading com.ofxplugindeveloper.referencegain` in Resolve's own
+log), listed in `GetEffectsList()`, instantiated and attached with `AddEffect`,
+and a queued job reaches `Complete` and leaves a decodable 1920×1080 frame.
 
-So the run proves the host side: the bundle is scanned
-(`OFX: loading com.ofxplugindeveloper.referencegain` in Resolve's own log), listed
-in `GetEffectsList()`, instantiated and attached with `AddEffect`, and a queued
-job reaches `Complete` and leaves a decodable 1920×1080 frame. It does **not**
-prove that this plug-in's pixel maths ran inside Resolve; the harness in
-`testkit/` remains the instrument for that, and a host-side proof needs either a
-project with a non-default parameter (one GUI step) or an effect whose default is
-not identity (backlog row 23 carries this).
+**Run 2, gain 2.0.** The scripting API cannot set an OFX parameter - `Effect`
+exposes `GetInfo`, `GetIsEnabled`, `SetIsEnabled`, `GetFusionComp`, `GetIndex`
+and `SetIndex`, nothing else - but the *default* is a build constant. Rebuilt with
+`-DREFERENCE_GAIN_DEFAULT=2.0`, the plug-in no longer reports identity, so the
+host has to call `render()`:
+
+```bash
+REFERENCE_GAIN_DEFAULT=2.0 templates/minimal-ofx/build.sh
+python tests/resolve/poc.py \
+    --bundle templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle \
+    --build-project --effect "Reference Gain" \
+    --source build/resolve/source.png \
+    --reference build/resolve/source.png --expect-gain 2 \
+    --resolve "E:/Program Files/Blackmagic Design/DaVinci Resolve/Resolve.exe" \
+    --out build/resolve/frames-gain --expect 1920x1080
+```
+
+```
+  check     pass     1920x1080 via ffmpeg, x2 mae 0.0 max 0
+```
+
+Every one of the 8,294,400 bytes equals `round(source x 2)` clamped at 255, so
+this plug-in's `render()` ran inside Resolve, its float maths survived the host's
+8-bit conversion, and the bright part of the test image exercised the clamp. Log:
+[`evidence/2026-11-25-windows/resolve-poc-gain.log`](../../evidence/2026-11-25-windows/resolve-poc-gain.log).
+
+`--expect-gain` compares against the reference times the gain instead of the
+reference itself, so a frame that skipped the render is off by
+`|gain - 1| x value` everywhere. `checks.py` proves that failure - `an undoubled
+frame is caught by the gain check` - because a check that has never failed is a
+check nobody has tested.
+
+What neither run proves: the **GPU** path (this plug-in has none, and the CUDA
+template has never rendered in Resolve), **tiling or multi-resolution** (Resolve's
+profile asks for neither), **parameter round-trips** (no accessor in the API), and
+the **failure path** (kill mid-render, backlog row 23).
 
 ## What is not here yet
 
 - The `.drp` projects and hand-made reference images: one still is enough for the
-  built project, so they are no longer on the critical path, but a project that
-  exercises a non-default parameter needs one.
+  built project, and a non-default parameter no longer needs a project either
+  (run 2 sets it at build time). A `.drp` would only add the GUI-authored case.
 - HTML and JUnit reports, the CPU/GPU comparison and the test matrix: that is
   backlog row 24, and it waits for row 23 to prove the pixel path.
 - Anything that would select a render backend: Resolve's GPU mode is a user

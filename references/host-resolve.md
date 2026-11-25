@@ -176,10 +176,11 @@ change whether the device path is taken at all, so re-run the §1 table after on
 ### 2.10 What this template cannot do in Resolve
 
 A negative list, because a positive one hides the misses. One Resolve Studio 21.2
-did run this bundle on 2026-11-25 (`tests/resolve/poc.py`, log in `evidence/`),
-and its frame is pixel-identical to its source because the plug-in is identity at
-its default gain - so the host facts below stay **(B)** and what they imply for
-this build stays **(I)**.
+did run this bundle on 2026-11-25 (`tests/resolve/poc.py`, logs in `evidence/`):
+at the default gain the frame is pixel-identical to its source, and at a build
+default of 2.0 it is the source times two to the byte - so `render()` ran in that
+host. The host *facts* below still stay **(B)** (they come from a Resolve Lite 16
+profile dump) and what they imply for this build stays **(I)**.
 
 - **The Resolve-like host shape is now a profile, not a gap.**
   `contract_test --host-profile resolve` presents `supportsTiles=0` and

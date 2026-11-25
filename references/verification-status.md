@@ -53,11 +53,12 @@ OpenFX `OFX_Release_1.5.1`):
 - **Two hosts, one frame each, both headless.** `NatronRenderer` rendered one
   256×256 frame through the template on 2026-11-24
   (`testkit/verify-bundle.bat`), pixels checked. DaVinci Resolve Studio 21.2.0.5
-  ran `tests/resolve/poc.py --build-project` on 2026-11-25 and produced one
-  1920×1080 PNG; its pixels are identical to the source because the plug-in is
-  identity at the default gain, so it verifies the host path (scan, list, apply,
-  render, decode) and not the kernel. Nuke and SCRATCH have run nothing, and
-  every host-specific claim in `references/host-resolve.md` remains graded B/C.
+  ran `tests/resolve/poc.py --build-project` twice on 2026-11-25 and produced one
+  1920×1080 PNG each time: at the default gain the pixels are identical to the
+  source (the host is entitled to skip `render()`), and with the bundle built at
+  `-DREFERENCE_GAIN_DEFAULT=2.0` they are the source times two to the byte, so the
+  kernel did run inside that host. Nuke and SCRATCH have run nothing, and every
+  host-specific claim in `references/host-resolve.md` remains graded B/C.
 - **The 1.5.1 render hints are documented, not exercised.** No host here sets
   `kOfxImageEffectPropNoSpatialAwareness` or `kOfxImageEffectPropThumbnailRender`,
   and the templates do not yet read them; the rules in `roi-tiling-and-render-hints.md` follow from the header
@@ -170,8 +171,8 @@ pageable copy of one frame costs **32× the 1080p kernel** — the copy, not the
 maths, is what the zero-copy contract exists to avoid. Mean of 100/30/10
 iterations; one GPU, one driver, one OS build.
 
-**Not verified here:** Nuke and SCRATCH have run nothing, and Resolve has rendered
-a frame but never the pixel path (see above); the inference template's CPU session
+**Not verified here:** Nuke and SCRATCH have run nothing, and Resolve has never run
+this plug-in's **GPU** path - its CPU path did (see above); the inference template's CPU session
 has a Windows run behind it
 ([`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log))
 and so does its CUDA session, with the provider bundled from the GPU package and
@@ -229,10 +230,10 @@ The review ran a mechanical check of the repo against the official sources.
 - **Two headless hosts, one frame each.** `NatronRenderer` loaded the bundle and
   rendered a 256×256 frame through `testkit/verify-bundle.bat` on 2026-11-24, and
   Resolve Studio 21.2 did the same through `tests/resolve/poc.py` on 2026-11-25
-  (**[V]** for both). Neither is a GUI session, and Resolve's frame is a
-  pass-through, so its `render()` was never required to run; Nuke and SCRATCH have
-  run nothing, and every host-behaviour claim in this document is graded **[R]** or
-  **[S]**, never **[M]**.
+  (**[V]** for both). Neither is a GUI session; Resolve's `render()` was forced to
+  run by a build default of 2.0, and that frame is the source times two to the
+  byte. Nuke and SCRATCH have run nothing, and every host-behaviour claim in this
+  document is graded **[R]** or **[S]**, never **[M]**.
 - **Resolve's scanline padding** (256-byte alignment, the 208×117 thumbnail case
   in `Kernel.cu`'s comment) is a community observation carried in the template's
   source, not something measured against Resolve here. It is safe to depend on

@@ -42,9 +42,9 @@ A `.venv/` in the root wins over `PATH`; recipe: `references/testing-layers.md` 
 ## Hard rules
 
 1. **Never claim a host render is verified beyond what ran.** `NatronRenderer` has
-   rendered this template headless (`testkit/verify-bundle.bat`) and Resolve Studio
-   21.2 ran `tests/resolve/poc.py` (2026-11-25, both **[V]**); Resolve's frame is
-   identity at the default gain, so it proves the host path, not the kernel.
+   rendered this template headless and Resolve Studio 21.2 ran `tests/resolve/poc.py`
+   twice on 2026-11-25 (both **[V]**): identity at gain 1.0, and source ×2 to the byte
+   at gain 2.0 - so `render()` ran. No GPU, no tiled host, no third host.
 2. **Claim nothing a compiler, `nm` or a test did not prove.** `[V]` means the
    command ran in this repository; `[I]` means inferred; `[B]` means external
    evidence. Labels are defined in `references/cmake-and-linking.md`.

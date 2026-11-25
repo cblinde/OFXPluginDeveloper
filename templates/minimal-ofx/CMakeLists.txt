@@ -69,6 +69,17 @@ target_include_directories(${PLUGIN_TARGET} PRIVATE
 
 target_compile_features(${PLUGIN_TARGET} PRIVATE cxx_std_17)
 
+# The gain the plug-in starts at. 1.0 keeps the reference a passthrough, which is
+# the honest default for a plug-in people copy; 2.0 makes `isIdentity()` false so
+# a host cannot skip `render()`, which is what a host-side proof of the pixel path
+# needs. The Resolve scripting API cannot set a parameter afterwards
+# (references/resolve-automation.md §15.5), so the harness sets it here instead:
+#   cmake -S . -B build -DREFERENCE_GAIN_DEFAULT=2.0
+set(REFERENCE_GAIN_DEFAULT "1.0" CACHE STRING
+    "Default gain for the reference plug-in (1.0 = passthrough)")
+target_compile_definitions(${PLUGIN_TARGET} PRIVATE
+  REFERENCE_GAIN_DEFAULT=${REFERENCE_GAIN_DEFAULT})
+
 # PIC: the object is dlopen()ed by the host, so every relocation must be
 # position-independent.
 set_target_properties(${PLUGIN_TARGET} PROPERTIES
@@ -124,5 +135,6 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
 
+message(STATUS "Default gain: ${REFERENCE_GAIN_DEFAULT}")
 message(STATUS "OFX plugin : ${PLUGIN_TARGET}")
 message(STATUS "Bundle     : ${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}")

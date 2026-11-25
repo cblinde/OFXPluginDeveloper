@@ -98,6 +98,51 @@ def compare_to_reference(image, reference, tolerance=None):
     return problems, stats
 
 
+def compare_scaled(image, reference, factor, tolerance=1.0):
+    """Does `image` equal `reference` multiplied by `factor`?
+
+    The check for a gain whose default is not 1.0, which is the only way a host
+    render can be made to prove this plug-in's pixel path: at gain 1.0 the host
+    may skip `render()` entirely, and the scripting API cannot set a parameter.
+
+    The factor is applied in byte space with rounding and clamping, which is all
+    an 8-bit output can carry. `tolerance` is the largest per-byte deviation
+    allowed, because the host converts float to 8 bits with its own rounding.
+
+    A frame that skipped `render()` fails loudly rather than marginally: every
+    byte is off by `|factor - 1| * value`, so the largest error in the image is
+    the largest value in it.
+    """
+    if (image.width, image.height) != (reference.width, reference.height):
+        return ([f"size {image.width}x{image.height} != reference "
+                 f"{reference.width}x{reference.height}"], {})
+
+    a, b = _bytes_of(image), _bytes_of(reference)
+    if len(a) != len(b):
+        return ([f"{len(a)} bytes vs reference {len(b)}"], {})
+
+    total = 0
+    worst = 0
+    for left, right in zip(a, b):
+        expected = right * factor
+        expected = 0.0 if expected < 0.0 else (255.0 if expected > 255.0 else expected)
+        delta = left - int(expected + 0.5)
+        delta = delta if delta >= 0 else -delta
+        total += delta
+        if delta > worst:
+            worst = delta
+
+    mae = total / len(a) if a else 0.0
+    stats = {"gain": factor, "mae": round(mae, 6), "max_pixel": worst,
+             "compared_bytes": len(a)}
+    if worst > tolerance:
+        problems = [f"max pixel error {worst} > {tolerance} against reference "
+                    f"x{factor:g}"]
+    else:
+        problems = []
+    return problems, stats
+
+
 def _synthetic(width, height, channels, value_of):
     return bytes(value_of(x, y, c) for y in range(height) for x in range(width) for c in range(channels))
 
@@ -140,6 +185,25 @@ def selftest():
                                       {"max_mae": 0.0, "max_pixel": 0})[0], None)
     case("a reference of another size is caught",
          lambda: compare_to_reference(gradient, _Stub(2, 2, 4, bytes(2 * 2 * 4)))[0], None)
+
+    def doubled(source, offset=None, value=None):
+        """The frame a gain of 2.0 should produce, in byte space."""
+        scaled = bytearray(min(255, int(byte * 2.0 + 0.5)) for byte in source.pixels)
+        if offset is not None:
+            scaled[offset] = value
+        return _Stub(source.width, source.height, source.channels, bytes(scaled))
+
+    case("a doubled frame passes the gain check",
+         lambda: compare_scaled(doubled(gradient), gradient, 2.0)[0], [])
+    # The frame a host produces when it skips render(): the check exists for this.
+    case("an undoubled frame is caught by the gain check",
+         lambda: compare_scaled(gradient, gradient, 2.0)[0], None)
+    case("a doubled frame with one byte off by 4 is caught",
+         lambda: compare_scaled(doubled(gradient, 3, min(255, int(gradient.pixels[3] * 2 + 0.5) + 4)),
+                                gradient, 2.0)[0], None)
+    case("clamping at 255 is expected, not an error",
+         lambda: compare_scaled(doubled(_Stub(1, 1, 4, bytes([200, 10, 0, 255]))),
+                                _Stub(1, 1, 4, bytes([200, 10, 0, 255])), 2.0)[0], [])
 
     failed = 0
     for index, (name, run, want) in enumerate(cases, 1):

@@ -204,12 +204,14 @@ exercises every unknown in §1, and it is done when:
 Everything after that — the matrix of projects, reports, JUnit — is engineering
 on a foundation that either works or does not.
 
-**Status, 2026-11-25:** 1, 2 and 4 hold on Resolve Studio 21.2.0.5
-(`evidence/2026-11-25-windows/resolve-poc.log`, exit 0, no process left behind).
-3 holds for size, channel count and decodability, and not for a pixel
-*difference*: the effect is identity at its default gain and the API cannot set
-the parameter, so the frame matches its source exactly (§14.10). 5 has never been
-tried.
+**Status, 2026-11-25:** 1, 2, 3 and 4 hold on Resolve Studio 21.2.0.5. The first
+run (`evidence/2026-11-25-windows/resolve-poc.log`, exit 0, no process left
+behind) proved the host path: its frame was pixel-identical to the source
+because the plug-in is identity at its default gain and the API cannot set the
+parameter. The second run rebuilt the bundle with `-DREFERENCE_GAIN_DEFAULT=2.0`
+and required the frame to be the source times two; it matched to the byte
+(`mae 0.0`, `max 0`, `resolve-poc-gain.log`), so `render()` ran inside the host.
+5 has never been tried.
 
 ## 10. Where it can run
 
@@ -735,7 +737,8 @@ Everything in this section is what a second person needs to repeat the run, and
 most of it cost a failed attempt to learn. The numbers are from
 `tests/resolve/poc.py --build-project` on 2026-11-25: Windows 11, RTX 3060,
 DaVinci Resolve Studio 21.2.0.5, Python 3.10.6 (64-bit), ffmpeg on `PATH`. The
-log is `../evidence/2026-11-25-windows/resolve-poc.log`.
+log is `../evidence/2026-11-25-windows/resolve-poc.log`, and the second run - the
+one that proves the pixel path - is `resolve-poc-gain.log` beside it (§14.10).
 
 ### 14.1 Studio or free, and why free cannot carry this harness
 
@@ -952,16 +955,41 @@ API cannot set an OFX parameter at all. `Effect` exposes `GetInfo`,
 nothing else; `GetInfo()` returns `id`, `name` and `category`. There is no
 `SetParameter` on 21.2 and none in the shipped `.pyi`.
 
-So a run like this verifies the **host path** - scan, list, instantiate, apply,
-queue, `Complete`, decode - and not the pixel maths. A host-side proof of
-`render()` needs one of two things, and neither exists in this repository yet:
+So that run verifies the **host path** - scan, list, instantiate, apply, queue,
+`Complete`, decode - and not the pixel maths. The parameter is not the only
+lever, though: the *default* is a build-time constant, and a default that is not
+1.0 makes `isIdentity()` false. The second run did that and required the frame to
+be the source times two:
 
-- a project with the parameter set to a non-default value, which needs one GUI
-  step or a `.drp` authored elsewhere, or
-- an effect whose default is not identity, so the host cannot skip it.
+```bash
+REFERENCE_GAIN_DEFAULT=2.0 templates/minimal-ofx/build.sh
+python tests/resolve/poc.py --build-project --effect "Reference Gain" \
+    --source build/resolve/source.png --reference build/resolve/source.png \
+    --expect-gain 2 --out build/resolve/frames-gain ...
+```
 
-Either one turns `mae 0.0` into a measurement; until then the harness in
-`testkit/` remains the instrument for the kernel.
+```
+  check     pass     1920x1080 via ffmpeg, x2 mae 0.0 max 0
+```
+
+`mae 0.0` and `max 0` mean every one of the 8,294,400 bytes equals
+`round(source x 2)` clamped at 255: the plug-in's `render()` ran inside Resolve,
+its float maths survived the host's own 8-bit conversion, and the bright part of
+the test image exercised the clamp. Log:
+`../evidence/2026-11-25-windows/resolve-poc-gain.log`. `--expect-gain` rejects a
+frame that skipped the render, and `checks.py` shows that rejection failing (case
+`an undoubled frame is caught by the gain check`) - a check that has never failed
+is a check nobody has tested.
+
+What no host run has proved yet:
+
+- the **GPU** path: this plug-in has none, and the CUDA template has never
+  rendered in Resolve;
+- **tiling and multi-resolution**: Resolve's profile asks for neither
+  (`supportsTiles=0`), so a tiled host is the only place that code runs;
+- **parameter round-trips**: setting a parameter and reading it back still needs
+  the GUI, because the API has no accessor;
+- **the failure path**: killing Resolve mid-render (§9, item 5).
 
 ### 14.11 The shortest reusable recipe
 
@@ -1046,7 +1074,7 @@ itself has never been answered by a host in this repository - it is `[I]`.
 
 | Want | Answer |
 |---|---|
-| set or read an OFX parameter | nothing. `Effect` has six methods (§14.10), there is no `SetParameter` in 21.2's `.pyi`, and `FusionComp` is declared as `class FusionComp: ...` - a bare stub without methods, so the Fusion route does not exist either |
+| set or read an OFX parameter | nothing. `Effect` has six methods (§14.10), there is no `SetParameter` in 21.2's `.pyi`, and `FusionComp` is declared as `class FusionComp: ...` - a bare stub without methods, so the Fusion route does not exist either. The lever that does work is the **default**: rebuild with `-DREFERENCE_GAIN_DEFAULT=2.0` and the host cannot skip `render()` (§14.10) |
 | read a frame's pixels | no. Pixels leave only as a file or an encoded string, through a render job or `ExportFrame` |
 | learn which backend the plug-in took | no. Not in the API; the plug-in's own log or the timing is the evidence (§8) |
 | learn the OFX identifier from the host | no. `GetEffectsList` answers the host's id; the bundle's own id is in its `OFX` support XML |

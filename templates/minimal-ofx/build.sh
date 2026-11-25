@@ -5,6 +5,8 @@
 #   templates/minimal-ofx/build.sh              Release
 #   templates/minimal-ofx/build.sh Debug        another configuration
 #   OFX_SOURCE_DIR=/path/to/openfx ./build.sh   offline / an existing checkout
+#   REFERENCE_GAIN_DEFAULT=2.0 ./build.sh       a default that is not a passthrough,
+#                                               so a host cannot skip render()
 #
 # Step 1 fetches the OpenFX tag the repository pins (OFX_Release_1.5.1) into
 # .ofx-ref/ when it is not there. Step 4 does not read the source: it inspects
@@ -68,6 +70,7 @@ echo "[2/4] configuring (${config})"
 cmake -S "${here}" -B "${here}/build" \
   -DCMAKE_BUILD_TYPE="${config}" \
   -DOFX_SOURCE_DIR="${ofx_dir}" \
+  -DREFERENCE_GAIN_DEFAULT="${REFERENCE_GAIN_DEFAULT:-1.0}" \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON >/dev/null
 
 echo "[3/4] compiling"

@@ -29,6 +29,17 @@ const char* const kPluginIdentifier = "com.ofxplugindeveloper.referencegain";
 const char* const kPluginName = "Reference Gain";
 const char* const kParamGain = "gain";
 
+// The gain this build defaults to. 1.0 is a passthrough, and `isIdentity()` below
+// tells the host it may skip `render()` entirely - which is why a host-side proof
+// of the pixel path cannot use this default. The Resolve scripting API cannot set
+// an OFX parameter (references/resolve-automation.md §15.5), so the harness builds
+// with -DREFERENCE_GAIN_DEFAULT=2.0 instead and compares the frame against the
+// source times two (tests/resolve/README.md).
+#ifndef REFERENCE_GAIN_DEFAULT
+#define REFERENCE_GAIN_DEFAULT 1.0
+#endif
+constexpr double kDefaultGain = REFERENCE_GAIN_DEFAULT;
+
 /// RGBA32F: four floats per pixel.
 constexpr int kComponents = 4;
 
@@ -237,7 +248,7 @@ public:
         gain->setLabels("Gain", "Gain", "Gain");
         gain->setScriptName(kParamGain);
         gain->setHint("Multiplies every channel");
-        gain->setDefault(1.0);
+        gain->setDefault(kDefaultGain);
         gain->setRange(0.0, 8.0);
         gain->setDisplayRange(0.0, 4.0);
         gain->setIncrement(0.01);
