@@ -413,9 +413,14 @@ def capabilities_of(facts, connected):
     onnx = facts["onnx"]
     compiler = any(tools.get(name) for name in ("msvc", "gcc", "g++", "clang", "clang++"))
     scripting = None
+    # A connect that never reached a host has answered nothing: both Resolve
+    # capabilities stay unprobed. Reading `scripting` as False would report the
+    # suite as `blocked`, which claims the machine cannot do it, when all that is
+    # known is that nobody was listening.
     studio = None
-    if connected is not None:
-        scripting = bool(connected.get("connected"))
+    scripting = None
+    if connected is not None and connected.get("connected"):
+        scripting = True
         studio = connected.get("studio")
     return {
         "compile.cpu": bool(tools.get("cmake")) and compiler,
@@ -451,15 +456,21 @@ def collect(connect_host):
         facts["resolve"]["connect"] = connected
     capabilities = capabilities_of(facts, connected)
     unknown = []
-    if capabilities["host.resolve.studio"] is None:
-        unknown.append("host.resolve.studio: pass --connect while Resolve runs "
-                       "(a free install has no listener, so it cannot answer)")
-    if capabilities["host.resolve.scripting"] is None:
-        unknown.append("host.resolve.scripting: pass --connect while Resolve runs")
+    unprobed_resolve = [name for name in ("host.resolve.studio",
+                                          "host.resolve.scripting")
+                        if capabilities[name] is None]
+    if unprobed_resolve:
+        reason = (facts["resolve"].get("connect") or {}).get("reason")
+        if reason:
+            detail = str(reason)
+        elif connected is not None and connected.get("connected"):
+            detail = "the host answered but its API has no IsStudio()"
+        else:
+            detail = ("pass --connect while Resolve runs (a free install has no "
+                      "listener, so it cannot answer)")
+        unknown.append(", ".join(unprobed_resolve) + ": " + detail)
     if capabilities["run.cuda"] is False and facts["cuda"]["nvcc_on_path"]:
         unknown.append("run.cuda: nvcc exists but nvidia-smi reported no device")
-    if connected is not None and not connected.get("connected"):
-        unknown.append("host.resolve.scripting: " + str(connected.get("reason")))
     return {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "facts": facts, "capabilities": capabilities,
             "suites": evaluate(capabilities), "sources": sources, "unknown": unknown}
@@ -621,6 +632,29 @@ def selftest():
     case("a suite naming an unknown capability is refused, not silently unknown",
          raised(lambda: evaluate(all_yes, (("x", ("no.such.capability",)),))),
          "KeyError")
+
+    def canned(connected):
+        # ffmpeg and ffprobe are present so that `decode.image` does not block the
+        # Resolve suite for a reason the case is not about.
+        facts = {"tools": {"ffmpeg": {"version": "canned"},
+                           "ffprobe": {"version": "canned"}},
+                 "cuda": {"toolkits": [], "gpus": []},
+                 "resolve": {"installed": True, "sdk": "canned", "library": None},
+                 "onnx": {"headers": False, "libraries": []}}
+        return capabilities_of(facts, connected)
+
+    case("a connect that reached no host leaves both Resolve capabilities unprobed",
+         {name: canned({"connected": False, "reason": "nobody listening"})[name]
+          for name in ("host.resolve.studio", "host.resolve.scripting")},
+         {"host.resolve.studio": None, "host.resolve.scripting": None})
+    case("an unreached host leaves the Resolve suite unknown, not blocked",
+         evaluate(canned({"connected": False, "reason": "nobody listening"})
+                  )["tests/resolve/poc.py --build-project"]["status"],
+         "unknown")
+    case("a connected Studio answers both Resolve capabilities",
+         {name: canned({"connected": True, "studio": True})[name]
+          for name in ("host.resolve.studio", "host.resolve.scripting")},
+         {"host.resolve.studio": True, "host.resolve.scripting": True})
 
     failed = 0
     for index, (name, got, want) in enumerate(cases, 1):
