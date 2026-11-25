@@ -82,7 +82,9 @@ templates/onnx-inference-ofx/
   test/run-tests.sh                  packing, golden, tiling, negative control, bundle
   test/ai_pipeline_test.cpp          the harness
   build.sh  build.bat                configure + build + report (Windows needs
-                                     ONNXRUNTIME_ROOT; the DLL is bundled)
+                                     ONNXRUNTIME_ROOT, a tree inside this
+                                     repository such as .validation/ort-1.32.0;
+                                     the DLL is bundled)
   bundle output                      Contents/<ARCH>/<Name>.ofx (Win64 on Windows,
                                      Linux-x86-64 on Linux), Resources/ with icons,
                                      models and LUTs, and the libraries the plug-in loads

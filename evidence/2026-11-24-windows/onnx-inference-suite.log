@@ -1,6 +1,11 @@
 # ONNX inference template: Windows build and full test suite.
+# Note (annotated 2026-11-25): this run used an ONNX Runtime 1.20.1 tree that
+#   sat outside this repository. The path is replaced below by
+#   <external-ort-root> because this repository does not carry paths outside
+#   its own directory; only the path strings are annotated, the build and suite
+#   output is as captured. Current runs use <repo>/.validation/ort-*.
 #
-# Command: CI=true ONNXRUNTIME_ROOT=C:/Tools/onnxruntime-win-x64-1.20.1 ./run-tests.sh
+# Command: CI=true ONNXRUNTIME_ROOT=<external-ort-root> ./run-tests.sh
 #   CI=true is what makes this the CI scenario rather than a local run: a CI
 #   run without ONNXRUNTIME_ROOT fails instead of skipping the template, which
 #   is the gate .github/workflows/docs.yml relies on. Nothing in the section
@@ -22,7 +27,7 @@
 == build + test: onnx-inference-ofx ==
 [build] generator: Visual Studio 18 2026
 -- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
--- ONNX Runtime include: C:/Tools/onnxruntime-win-x64-1.20.1/include
+-- ONNX Runtime include: <external-ort-root>/include
 -- ONNX Runtime library: not linked (loaded from beside the .ofx)
 -- OFX plugin : OnnxInference
 -- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
@@ -61,7 +66,7 @@ Exports and load-time imports:
 == [1/5] build (Release) ==
 [build] generator: Visual Studio 18 2026
 -- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
--- ONNX Runtime include: C:/Tools/onnxruntime-win-x64-1.20.1/include
+-- ONNX Runtime include: <external-ort-root>/include
 -- ONNX Runtime library: not linked (loaded from beside the .ofx)
 -- OFX plugin : OnnxInference
 -- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle

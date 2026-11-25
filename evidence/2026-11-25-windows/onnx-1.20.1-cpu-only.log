@@ -4,8 +4,8 @@
 #          ./run-tests.sh
 # Runtime: Microsoft.ML.OnnxRuntime 1.20.1 (GPU package, provider DLLs beside
 #   the module), the older of the two runtimes this repository builds against.
-# Note: the requested path C:\Tools\onnxruntime-win-x64-1.20.1 does not exist on
-#   this machine; the 1.20.1 tree used is the one inside .validation.
+# Note: the runtime root is inside this repository, not a directory elsewhere on
+#   the machine: everything this run read or wrote lives under <repo>/.validation/.
 #
 # Why this run: CPU_ONLY=1 with ONNXRUNTIME_ROOT set is the one summary-headline
 #   branch no earlier run had - one hole (the GPU step), not two, not none.
