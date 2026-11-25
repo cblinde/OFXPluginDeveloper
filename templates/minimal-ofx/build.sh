@@ -133,11 +133,12 @@ fi
 
 # The registration hook is only real if a loader can call it. dlopen() the
 # artifact, call the entry point, and read the struct it returns.
-# "command -v python3" is not enough on Windows: Git Bash resolves it to the
-# Microsoft Store stub, which prints an install advert and exits 49. Ask each
-# candidate to import ctypes, which is what this check needs.
+# The project .venv first; then "command -v python3", which is not enough on
+# Windows: Git Bash resolves it to the Microsoft Store stub, which prints an
+# install advert and exits 49. Ask each candidate to import ctypes, which is what
+# this check needs.
 loader_python=""
-for candidate in python3 python; do
+for candidate in "${here}/../../.venv/Scripts/python.exe" "${here}/../../.venv/bin/python" python3 python; do
   if command -v "${candidate}" >/dev/null 2>&1 &&
      "${candidate}" -c 'import ctypes' >/dev/null 2>&1; then
     loader_python="${candidate}"

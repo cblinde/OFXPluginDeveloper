@@ -22,6 +22,7 @@ tools/sweep-vram.sh model.onnx              # largest tile before ORT OOM (needs
 `./run-tests.sh` needs `ONNXRUNTIME_ROOT` (a CI run without it fails, a local one
 marks the template NOT VERIFIED) and `CPU_ONLY=1` without a CUDA toolkit.
 `tools/make-testmodels.py` needs `onnx`, plus `onnxruntime`+`numpy` to self-test.
+A `.venv/` in the root wins over `PATH`; recipe: `references/testing-layers.md` §13.
 
 ---
 

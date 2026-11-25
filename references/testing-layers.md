@@ -836,6 +836,23 @@ testkit/run-negative-controls.sh
 cmd //c testkit/run-negative-controls.bat      # the same controls, Windows
 ```
 
+The Python side has one pinned home, and the entry points prefer it over whatever
+`python3` happens to be: `run-tests.sh`, `templates/minimal-ofx/build.sh` and
+`testkit/verify-bundle.bat` all look for `.venv/` in the repository root first,
+then fall back to `python3` and `python` - which is what CI does, because a
+checkout there has no `.venv`.
+
+```bash
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install numpy==2.2.6 onnx==1.23.2 onnxruntime==1.23.2
+```
+
+Those three versions are the ones the fixture gate and the Resolve self-tests
+passed with on 2026-11-25. The gate itself only asks for
+`import numpy, onnx, onnxruntime`, so a newer set works until it does not - and
+the 2026-11-25 reason for pinning was that numpy 2.x against onnxruntime 1.14
+exited 139 instead of failing a test.
+
 Every comparison the harness trusts is shown failing before it is credited with
 passing. Two of them have their own test: `testkit/selftest-compare.sh` corrupts a
 reference, and `tools/check-glibc.sh --selftest` lowers the bound until the check

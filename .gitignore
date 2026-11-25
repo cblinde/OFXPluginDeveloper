@@ -26,6 +26,9 @@ cmake-build-*/
 __pycache__/
 *.pyc
 
+# A project-local interpreter for the Python side of the suite (testing-layers.md section 13)
+.venv/
+
 # A project-local Natron install for the Tier 2 render check (testkit/verify-bundle.bat)
 .natron/
 

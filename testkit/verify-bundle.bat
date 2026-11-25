@@ -175,6 +175,7 @@ set "PY="
 if defined PYTHON if exist "%PYTHON%" (
   "%PYTHON%" -c "import sys" >nul 2>&1 && set "PY=%PYTHON%"
 )
+if not defined PY if exist "%ROOT%\.venv\Scripts\python.exe" set "PY=%ROOT%\.venv\Scripts\python.exe"
 if not defined PY (
   for /f "delims=" %%Q in ('py -3 -c "import sys;print(sys.executable)" 2^>nul') do (
     if not defined PY if exist "%%Q" set "PY=%%Q"

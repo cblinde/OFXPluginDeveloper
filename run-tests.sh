@@ -36,11 +36,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # from the tree (links, anchors, counts, duplicated measurements, provenance).
 echo
 echo "== docs: check-docs =="
-# "command -v python3" is not enough on Windows: Git Bash resolves it to the
-# Microsoft Store stub, which prints an install advert and exits non-zero. Ask
-# each candidate to run, and fall back to "python" when it answers.
+# A project .venv comes first, so the interpreter the suite is pinned to is the
+# one that runs. Then: "command -v python3" is not enough on Windows, because Git
+# Bash resolves it to the Microsoft Store stub, which prints an install advert
+# and exits non-zero. Ask each candidate to run, and fall back to "python".
 documentation_python=""
-for candidate in python3 python; do
+for candidate in "${ROOT}/.venv/Scripts/python.exe" "${ROOT}/.venv/bin/python" python3 python; do
   if command -v "${candidate}" >/dev/null 2>&1 &&
      "${candidate}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 6) else 1)' >/dev/null 2>&1; then
     documentation_python="${candidate}"
