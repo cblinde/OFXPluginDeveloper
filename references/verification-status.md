@@ -222,8 +222,12 @@ The review ran a mechanical check of the repo against the official sources.
   source on the CPU (`field-evidence.md` §4), which is not the same as running SASS on a GPU. The
   same checks are committed as `templates/minimal-cuda-ofx/test/run-tests.sh` so
   they can be re-run after any change.
-- **No host has ever loaded these plugins.** Every host-behaviour claim in this
-  document is graded **[R]** or **[S]**, never **[M]**.
+- **One headless host, one frame.** `NatronRenderer` loaded the bundle and
+  rendered a 256×256 frame through `testkit/verify-bundle.bat` on 2026-11-24
+  (**[V]**). That is a host *process*, not a GUI session: no GUI host has loaded
+  these plugins, Resolve, Nuke and SCRATCH have never run this template, and
+  every host-behaviour claim in this document is graded **[R]** or **[S]**, never
+  **[M]**.
 - **Resolve's scanline padding** (256-byte alignment, the 208×117 thumbnail case
   in `Kernel.cu`'s comment) is a community observation carried in the template's
   source, not something measured against Resolve here. It is safe to depend on

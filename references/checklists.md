@@ -51,10 +51,10 @@ Stated plainly, because a checklist that overclaims is worse than none:
 
 | Claim | Status here | Why |
 |---|---|---|
-| Any kernel executed on a GPU | **Not proven** | There is no device in the verification environment; `/dev/nvidia*` is absent. The harness runs the kernel *bodies* on the CPU. |
-| The plug-in renders correctly in a host | **Not proven** | No host is installed. Action dispatch, clip preferences and the OpenGL/Metal/OpenCL paths are untested. |
+| Any kernel executed on a GPU | **On one machine, not this one** | The Linux machine that runs these gates has no device (`/dev/nvidia*` is absent) and executes the kernel *bodies* on the CPU. `test/gpu-kernel-test.cu` ran its 28 cases on the Windows RTX 3060 on 2026-11-22 (**[B]**) and again on 2026-11-24 (**[V]**); no second GPU was involved. |
+| The plug-in renders correctly in a host | **One headless host, one frame** | No GUI host is installed here. `testkit/verify-bundle.bat` rendered a 256×256 frame through `NatronRenderer` on 2026-11-24 (**[V]**). Resolve, Nuke and SCRATCH have never run this template, and action dispatch, clip preferences and the OpenGL/Metal/OpenCL paths are untested in every host ([`verification-status.md`](verification-status.md) §3). |
 | Stream ordering against the host's stream | **Not proven** | Requires a device plus a host that supplies `kOfxImageEffectPropCudaStream`. The code is structured for it (see [A3](#a-the-render-action-and-device-work)) but the ordering is unverified. |
-| Speed | **Not measured** | No timing is quoted anywhere in this repository. The PTX counts in `run-tests.sh` are an *instruction-selection* check, not a benchmark. |
+| Speed | **Measured outside a host, on one GPU** | The gain kernel's throughput, the CPU loop it replaces and a frame copy are measured on one RTX 3060 (2026-11-24 **[V]**, 2026-11-22 **[B]**); nothing is measured inside a host, on a second GPU, or at another resolution or format. The PTX counts in `run-tests.sh` are an *instruction-selection* check, not a benchmark. |
 
 ### Sanitizer coverage, and what is genuinely inapplicable
 
@@ -65,7 +65,7 @@ Stated plainly, because a checklist that overclaims is worse than none:
 | Valgrind memcheck | The host harness, in an unsanitised build | memcheck and a `-fsanitize` runtime both replace the allocator and thread runtime; the combination is rejected, so `run-tests.sh` runs them as separate stages and prints the reason when it skips. |
 | Valgrind / ASan on the PTX step | **Never** | The PTX check reads compiler output with `awk`/`grep`. No generated code is executed, so there is nothing for a runtime checker to observe. |
 | Valgrind / ASan on the bundle check | **Never** | `nm` and `readelf` are separate processes reading an ELF file. |
-| clang-tidy | **Not run** | The verification machine has no clang toolchain (GCC 13 only). cppcheck covers the same classes of finding here; nothing is expected to need a suppression, but that is unmeasured rather than clean. |
+| clang-tidy | **Not run** | The Linux machine that runs the gates has no clang toolchain (GCC 13 only), and the Windows machine was never asked. cppcheck covers the same classes of finding here; nothing is expected to need a suppression, but that is unmeasured rather than clean. |
 
 ---
 
