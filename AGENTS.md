@@ -17,7 +17,6 @@ The rest - `check-runtime.py`, `bench_ep.py`, `model_probe.py`,
 arguments, and the `ONNXRUNTIME_ROOT`, `CPU_ONLY` and `.venv/` rules:
 `references/testing-layers.md` §13, "The tools on their own".
 
----
 
 ## Read order
 
@@ -31,7 +30,6 @@ arguments, and the `ONNXRUNTIME_ROOT`, `CPU_ONLY` and `.venv/` rules:
 | Test in Resolve | `references/resolve-automation.md` §14, §15 -> `tests/resolve/README.md` | the host quirks until a run fails |
 | Plan an improvement | `references/improvement-backlog.md` -> the document that owns the subject | nothing: a row is a candidate, not a claim |
 
----
 ## Hard rules
 
 1. **Never claim a host render is verified beyond what ran.** Resolve Studio 21.2
@@ -56,5 +54,7 @@ arguments, and the `ONNXRUNTIME_ROOT`, `CPU_ONLY` and `.venv/` rules:
    `./run-tests.sh` and in CI, and checks links, anchors, count drift, duplicated
    measurements and provenance labels.
 5. **Never commit build output** (`build/`, `*.ofx`, `*.ptx`, `.ofx-ref/`).
+6. **No arbitrary sleeps; wait on a condition.** Poll with backoff and exit when the
+   target is ready or gone (`resolve_api.poll_delay`, `connect(process=...)`); batch reads and checks.
 
 **Labels:** **[V]** verified here, **[I]** inferred, **[B]** external evidence; definitions in `references/cmake-and-linking.md`. What actually runs, with counts: `references/testing-layers.md` §13. What a build proves, and what it cannot: `references/debugging-and-symptoms.md` §5.
