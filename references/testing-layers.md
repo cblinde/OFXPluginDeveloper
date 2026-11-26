@@ -907,6 +907,37 @@ which lands in the same mode - the summary prints `NOT RUN: GPU kernels` next to
 a `NOT VERIFIED` block instead of a line claiming kernels ran, so a CPU-only run
 cannot be read as one that exercised the device.
 
+**Where the inference template's ONNX Runtime tree comes from.** `ONNXRUNTIME_ROOT`
+must contain `include/onnxruntime_cxx_api.h` and `lib/libonnxruntime.so`. The pip
+wheel is not enough - it ships the shared library without a single header, which
+is how a run ends in "build is not configured" two steps later. The NuGet package
+carries both halves; this is the recipe that produced the 1.32.0 tree behind the
+2026-11-26 rows, and `.github/actions/onnx-runtime` does the same in CI:
+
+```bash
+curl -fsSL -o /tmp/ort.nupkg \
+  https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.32.0/microsoft.ml.onnxruntime.1.32.0.nupkg
+python3 - <<'PY'
+import os, shutil, zipfile
+root = ".validation/ort-1.32.0"
+os.makedirs(f"{root}/include", exist_ok=True)
+os.makedirs(f"{root}/lib", exist_ok=True)
+with zipfile.ZipFile("/tmp/ort.nupkg") as z:
+    for n in z.namelist():
+        if n.startswith("build/native/include/") and n.endswith(".h"):
+            with z.open(n) as s, open(f"{root}/include/{os.path.basename(n)}", "wb") as d:
+                shutil.copyfileobj(s, d)
+        elif n == "runtimes/linux-x64/native/libonnxruntime.so":
+            with z.open(n) as s, open(f"{root}/lib/libonnxruntime.so", "wb") as d:
+                shutil.copyfileobj(s, d)
+PY
+export ONNXRUNTIME_ROOT="$PWD/.validation/ort-1.32.0"
+```
+
+`tools/check-runtime.py "$ONNXRUNTIME_ROOT"` reads the result back: the API
+version the header declares, whether the entry points this repository calls are
+there, and what the provider libraries export.
+
 Measured on the machines this repository has been exercised on: a Linux x86-64
 box with no GPU and no host, and a Windows 11 box with an RTX 3060. The 2026-11-22
 Windows rows are **[B]** (that run was on another machine); the 2026-11-24 rows
@@ -949,6 +980,7 @@ ONNX Runtime 1.20.1 and then 1.32.0
 | Artifact + fake host (inference) | 160 checks per host profile (3 × 160), 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 82 checks for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
 | glibc bound, real bundles (2026-11-26) | the `./run-tests.sh` stage, `tools/check-glibc.sh` per bundle at its own bound: `ReferenceGain` and `MinimalCudaGain` `GLIBC_2.14` against 2.17, `OnnxInference` `GLIBC_2.32` (bundled ONNX Runtime 2.28) against 2.32 — a bundle above its bound fails the run ([`check-glibc.log`](../evidence/2026-11-26-linux/check-glibc.log)) |
 | Linux gate, 2026-11-26 | `CPU_ONLY=1 ./run-tests.sh` from a fast-forwarded tree: exit 0, documentation 30 documents 0 problems, 110 + 136 + (160 × 3 + 82) checks 0 failed, negative controls and comparator green, and the one hole named as `NOT RUN: GPU kernels (CPU_ONLY)`. ASan+UBSan ran the CUDA host suite separately, 136 × 3 clean ([`run-tests.log`](../evidence/2026-11-26-linux/run-tests.log), [`asan-ubsan-cuda.log`](../evidence/2026-11-26-linux/asan-ubsan-cuda.log)) |
+| The `CPU_ONLY (no nvcc)` branch (2026-11-26) | `./run-tests.sh` without `CPU_ONLY` on a container with no toolkit: the build stage prints `== build: minimal-cuda-ofx (CPU_ONLY (no nvcc)) ==`, the headline reads `all suites that ran passed, but the GPU step did not run`, and the `NOT VERIFIED` block names that reason and how to close it - the branch existed since the summary was written and had never been the one taken ([`run-tests-no-nvcc.log`](../evidence/2026-11-26-linux/run-tests-no-nvcc.log)) |
 | Artifact check, all three bundles (2026-11-26) | the gate's own stage, `scripts/check-artifact.sh` over each built `.ofx`: two strong exports and the loader's dependents per bundle, with the weak C++ helpers named rather than counted (5 for the CUDA plug-in, 6 for the inference one), and the device-code flag passed only when the run compiled CUDA ([`artifact-stage.log`](../evidence/2026-11-26-linux/artifact-stage.log)) |
 | Runtime inspection, real provider library (2026-11-26) | `tools/check-runtime.py` over the libraries of the `onnxruntime-gpu` 1.32.0 wheel: `libonnxruntime_providers_cuda.so` reports 4 exports, classifies as a plugin EP, names `CreateEpFactories` and `ReleaseEpFactory`, imports cuBLASLt 13, cuBLAS 13 and CUDA runtime 13, and does not import the core library by name; the TensorRT provider is classified as a built-in provider. Mach-O is still not parsed, so a macOS bundle's provider reads as unreadable ([`check-runtime-gpu-provider.log`](../evidence/2026-11-26-linux/check-runtime-gpu-provider.log)) |
 | Sanitizers, all three templates (2026-11-26) | TSan under `setarch -R` and ASan+UBSan, each template in its own run: 110 × 3 for `ReferenceGain`, 136 × 3 for `MinimalCudaGain`, 160 × 3 + 82 for `OnnxInference`, 0 failed and no sanitizer report in any of the six runs. The harnesses are instrumented, the plug-in images are ordinary builds - which is what `run-tests.sh` does when `SANITIZE` is set, and the reason the coverage is the host contract rather than the kernel ([`sanitizers/`](../evidence/2026-11-26-linux/sanitizers)) |

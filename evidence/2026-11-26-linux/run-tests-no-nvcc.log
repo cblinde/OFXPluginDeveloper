@@ -1,0 +1,13 @@
+$ ONNXRUNTIME_ROOT=.validation/ort-1.32.0 ./run-tests.sh     # no CPU_ONLY, no nvcc on PATH
+
+6:== build: minimal-cuda-ofx (CPU_ONLY (no nvcc)) ==
+2513:all suites that ran passed, but the GPU step did not run:
+2527:  NOT RUN: GPU kernels            (CPU_ONLY (no nvcc))
+
+NOT VERIFIED: GPU kernels (templates/minimal-cuda-ofx)
+  CPU_ONLY (no nvcc): the template built and tested its CPU fallback only, so no
+  cubin was loaded and nothing ran on a device. The counts above do not
+  cover it.
+  Close it with: ./run-tests.sh   (without CPU_ONLY, nvcc on PATH)
+------------------------------------------------------------------
+[exit status of the run: 0]
