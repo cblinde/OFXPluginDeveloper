@@ -1105,6 +1105,30 @@ each stage green on its own (**[V]**, same log). So the trigger is not the api,
 not the rename and not the preload order - it is in the plug-in's own code path,
 which is what the row now asks for.
 
+**What the plug-in's own path answered.** `OFXPLUGIN_CUDA_EP_V2` makes
+`AppendCudaProvider` take the same three calls with the same six options, and
+prints each step to stderr with a flush *before* the call - a fast-fail takes
+buffered output with it, so the last line written names the call that did not
+return. Measured on 1.32.0 with the provider beside the `.ofx` (**[V]**,
+[`../evidence/2026-11-26-windows/onnx-ep-v2-bisect.log`](../evidence/2026-11-26-windows/onnx-ep-v2-bisect.log)):
+registration, `GetEpDevices` and the append return in every session the suite
+creates, the labels read `CUDA (..., options requested (arena kSameAsRequested),
+all nodes on CUDA)`, and the suite passes - 168 checks in each of the three host
+profiles plus 90. No step reaches `0xC0000409`, so the abort is not in the append
+sequence either; the remaining difference between the two processes is the host
+(§9).
+
+**Two behaviour facts the run produced**, both now part of the path. A second
+registration in the same environment is an *error*, not a no-op: registering per
+session made the second of two identical instances fall back to the CPU, and the
+contract's "identical pixels" check then compared two providers - so the device
+list is resolved once per module load. And a host that unloads and reloads the
+plug-in in the same process empties the module's own flag while the runtime keeps
+the registration, so `already registered` is read as success. One honesty detail:
+the registration API returns nothing, so a V2 session's label says *what it
+requested* rather than reusing the built-in append's provider serialisation - the
+"NOT applied" clause exists for exactly the case where the two differ.
+
 **The third question is about the model, not the API.** A runtime can keep every
 entry point and still change a fusion, an ordering or a rounding, and the only
 way to see that is to run the graph. `tools/check-model-canary.py` loads the
@@ -1136,7 +1160,7 @@ surprise:
 | CUDA EP registration as a plugin library | 1.22 | `SessionOptionsAppendExecutionProvider_CUDA_V2` for bundles that ship their own provider | `onnxruntime_c_api.h` (**[V]**) |
 | The **NvTensorRT RTX** provider bridge | removed in 1.32; its options class stays for source compatibility | "Use the NVIDIA TensorRT RTX plugin EP via `OrtApi::RegisterExecutionProviderLibrary` instead" | `\deprecated` block above `NvTensorRtRtxProviderOptions` in the 1.32 header, quoted (**[V]**) - note this is *not* the classic TensorRT EP, which 1.32 still ships as a built-in provider (`onnxruntime_providers_tensorrt.dll`, one export, imports `nvinfer_10`) |
 | cuDNN as one DLL | 9 | ten DLLs under one dispatcher (`cudnn_engines_*`, `cudnn_ops`, ...) | the bundle listing in §4 (**[V]**) |
-| `ep.cuda.*` option namespace | with the plugin EP | the bare key names the built-in append takes | documented as canonical for the plugin EP (**[B]**) - **not verified here**: no run of this repository reached registration, so no `ep.cuda.*` key has ever been accepted or rejected by a runtime |
+| `ep.cuda.*` option namespace | with the plugin EP | the bare key names the built-in append takes | measured 2026-11-26: the six bare keys passed to `SessionOptionsAppendExecutionProvider_V2` reach the runtime's config as `ep.cuda.<key>` (its log names `ep.cuda.device_id`, with an `already exists` warning per append), and the session places every node on CUDA (**[V]**, `../evidence/2026-11-26-windows/onnx-ep-v2-bisect.log`) |
 
 **Adding a version, in order.** (1) extract it under `.validation/`, beside the
 version it replaces, never on top of it; (2) run `tools/check-runtime.py` with the

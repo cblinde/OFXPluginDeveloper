@@ -1,0 +1,152 @@
+# The V2 append inside the plug-in: which step reaches the abort
+
+Backlog row 13, second half. `tools/ep_register_probe.cpp` had already cleared the
+api, the renamed core and the preload; this run puts the same three calls in
+`AppendCudaProvider` (behind `OFXPLUGIN_CUDA_EP_V2`) and lets the suite drive them.
+
+    set ONNXRUNTIME_ROOT=<ort-gpu-1.32.0>
+    set OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON
+    set OFXPLUGIN_CUDA_EP_V2=1
+    templates\onnx-inference-ofx\build.bat Release
+    templates\onnx-inference-ofx\test\test.bat Release
+
+Each step is printed to stderr and flushed *before* the call, so a 0xC0000409 -
+which takes the buffered output with it - would leave the last line naming the
+call that did not return.
+
+Result: no step aborts. Registration, GetEpDevices and the append return in every
+session of every profile, and the whole suite passes. What the log below holds is
+the step sequence and the labels the plug-in produced from it, then the verdicts.
+
+Exit status of the run: 0 ("all checks passed").
+
+## What the intermediate builds showed ([I]: console of the run, raw log replaced
+## by the final run below)
+
+Two faults in this path were found by running it, and the first attempt's numbers
+are worth keeping because they say what the failure looked like:
+
+  - the first version registered the library on every session, which is an error
+    in one environment, so the second of two identical instances fell back to the
+    CPU and the contract's "two instances with identical settings produce
+    identical pixels" check compared two providers: "12288 vs 12288 floats",
+    51 checks, 1 failed, and the label carried "- fallback: provider request
+    failed" from the coverage probe's own session;
+  - then, with the device list resolved once per module load, a host that unloads
+    and reloads the plug-in in the same process emptied that flag while the
+    runtime kept the registration, so the reloaded module fell back with
+    "- fallback: EP library is already registered under cuda-ofx" and the CUDA
+    gate in test.bat refused the run.
+
+Both are fixed in the path: the device list is resolved once per module load,
+"already registered" is read as success, and a V2 session's label says "options
+requested (arena kSameAsRequested)" instead of borrowing the built-in append's
+provider serialisation, which this API does not return.
+
+## The run
+
+== [1/5] build (Release) ==
+
+== [2/5] inference pipeline (ai_pipeline_test) ==
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+
+== [3/5] host contract (LoadLibraryExW + fake host), exact golden ==
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+onnx-inference: v2 step: GetEpDevices
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+ok 39 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, options requested (arena kSameAsRequested), all nodes on CUDA)"
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+onnx-inference: v2 step: GetEpDevices
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+ok 123 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, options requested (arena kSameAsRequested), all nodes on CUDA)"
+contract_test: 168 checks, 0 failed
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+onnx-inference: v2 step: GetEpDevices
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+ok 39 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, options requested (arena kSameAsRequested), all nodes on CUDA)"
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+onnx-inference: v2 step: GetEpDevices
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+ok 123 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, options requested (arena kSameAsRequested), all nodes on CUDA)"
+contract_test: 168 checks, 0 failed
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+onnx-inference: v2 step: GetEpDevices
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+ok 39 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, options requested (arena kSameAsRequested), all nodes on CUDA)"
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+onnx-inference: v2 step: GetEpDevices
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+ok 123 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, options requested (arena kSameAsRequested), all nodes on CUDA)"
+contract_test: 168 checks, 0 failed
+
+== [4/5] host contract with the plug-in's own tiling (tileSize=16) ==
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+onnx-inference: v2 step: GetEpDevices
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: RegisterExecutionProviderLibrary
+onnx-inference: v2 step: GetEpDevices
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+onnx-inference: v2 step: SessionOptionsAppendExecutionProvider_V2
+onnx-inference: v2 step: appended
+contract_test: 90 checks, 0 failed
+
+== [5/5] fixtures and artifact ==
+all checks passed

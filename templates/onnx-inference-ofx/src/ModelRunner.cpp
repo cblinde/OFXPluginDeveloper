@@ -3,6 +3,8 @@
 #include "ModelRunner.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <map>
@@ -490,8 +492,121 @@ private:
 /// and `UpdateCUDAProviderOptions` have been stable since 1.11. This repository
 /// builds against 1.20.1 and 1.32.0 (section 5 of the document), so the wrapper
 /// would have made the template unbuildable against one of its own runtimes.
+/// A step printer for the experiment path below: printed and flushed *before*
+/// the call, because a 0xC0000409 takes the buffered output with it and the last
+/// line written then names the call that never returned.
+void V2Stage(const char* what)
+{
+    std::fprintf(stderr, "onnx-inference: v2 step: %s\n", what);
+    std::fflush(stderr);
+}
+
+#if ORT_API_VERSION >= 22
+/// The provider library beside this module, or empty when the folder is unknown.
+std::wstring ProviderLibraryPath()
+{
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(&ProviderLibraryPath), &module)) {
+        return std::wstring();
+    }
+    const std::wstring folder = FolderOf(LoadedModulePath(module));
+    return folder.empty() ? std::wstring() : folder + L"\\onnxruntime_providers_cuda.dll";
+}
+
+/// The same six options, through the 1.22 registration API instead of the
+/// built-in table.
+///
+/// This is the path that aborted the plug-in with 0xC0000409, and the reason it
+/// lives behind `OFXPLUGIN_CUDA_EP_V2` rather than in the template: the probe
+/// (`tools/ep_register_probe.cpp`) runs the identical sequence in a console
+/// process - with the plug-in's renamed core and its CUDA preloads among the
+/// switches - and every step succeeds, so what aborts is reachable only from
+/// here. The variable exists so the suite can bisect it; the steps print, so a
+/// run that dies says which call did not return.
+///
+/// The keys are the same array the legacy append uses, deliberately: a bisect
+/// that changed two things at once would answer neither question.
+bool AppendCudaProviderV2(Ort::SessionOptions& options, const char* const* keys,
+                          const char* const* values, size_t keyCount,
+                          std::string* reason, std::string* applied)
+{
+    const OrtApi& api = Ort::GetApi();
+    OrtEnv* env = SharedEnv();
+
+    // Registration is per environment, not per session, and the second call for
+    // the same name is an error, not a no-op: measured here as a "provider
+    // request failed" on the second instance's label - which then fell back to
+    // the CPU and made two identical instances produce different pixels. So the
+    // device list is resolved once and reused.
+    static std::mutex mutex;
+    static bool registered = false;
+    static const OrtEpDevice* cudaDevice = nullptr;
+
+    const std::lock_guard<std::mutex> lock(mutex);
+    if (!registered) {
+        const std::wstring library = ProviderLibraryPath();
+        if (library.empty()) {
+            *reason = "the plug-in directory cannot be determined";
+            return false;
+        }
+
+        V2Stage("RegisterExecutionProviderLibrary");
+        // The registration name is `const char*` on every platform; only the
+        // library path is wide on Windows.
+        OrtStatus* registration =
+            api.RegisterExecutionProviderLibrary(env, "cuda-ofx", library.c_str());
+        if (registration != nullptr) {
+            // A host that unloads and reloads this plug-in in the same process
+            // empties the static flag above; the runtime's registration lives in
+            // the environment and survives. "already registered" therefore means
+            // the library is there and its devices are still queryable - measured
+            // here as the second load of the .ofx falling back to the CPU with
+            // exactly that message. Every other status is a real failure.
+            const std::string message = api.GetErrorMessage(registration);
+            api.ReleaseStatus(registration);
+            if (message.find("already registered") == std::string::npos) {
+                throw std::runtime_error(message);
+            }
+        }
+
+        V2Stage("GetEpDevices");
+        const OrtEpDevice* const* devices = nullptr;
+        size_t deviceCount = 0;
+        Ort::ThrowOnError(api.GetEpDevices(env, &devices, &deviceCount));
+        for (size_t index = 0; index < deviceCount; ++index) {
+            const char* name = api.EpDevice_EpName(devices[index]);
+            if (name != nullptr && std::strncmp(name, "CUDA", 4) == 0) {
+                cudaDevice = devices[index];
+                break;
+            }
+        }
+        if (cudaDevice == nullptr) {
+            *reason = "no CUDA device among the registered provider's devices";
+            return false;
+        }
+        registered = true;
+    }
+    const OrtEpDevice* chosen = cudaDevice;
+
+    V2Stage("SessionOptionsAppendExecutionProvider_V2");
+    Ort::ThrowOnError(api.SessionOptionsAppendExecutionProvider_V2(
+        options, env, &chosen, 1, keys, values, keyCount));
+    V2Stage("appended");
+
+    // Deliberately empty: this path has no provider serialisation to report. The
+    // legacy append hands back the provider's own text, and the label's "arena
+    // kSameAsRequested" clause is a claim about that text, not about the request
+    // - so the V2 path must not fill it in with what it *asked* for.
+    (void)applied;
+    return true;
+}
+#endif
+
 bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
-                        std::string* applied = nullptr)
+                        std::string* applied = nullptr,
+                        bool* providerSerialised = nullptr)
 {
     try {
         CudaOptions cuda;
@@ -533,7 +648,20 @@ bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
         // is the lever that lowers what an instance holds; a limit only decides
         // when it dies.
         const char* values[] = { "0", "0", "HEURISTIC", "0", "1", "kSameAsRequested" };
-        cuda.Set(keys, values, sizeof(keys) / sizeof(keys[0]));
+        const size_t keyCount = sizeof(keys) / sizeof(keys[0]);
+#if ORT_API_VERSION >= 22
+        // Backlog row 13: the registration API, only when asked for. A runtime
+        // whose provider has no `CreateEpFactories` cannot be registered at all,
+        // which is why the default stays the built-in table.
+        if (const char* switchOn = std::getenv("OFXPLUGIN_CUDA_EP_V2")) {
+            if (*switchOn != '\0') {
+                if (providerSerialised != nullptr) *providerSerialised = false;
+                return AppendCudaProviderV2(options, keys, values, keyCount, reason, applied);
+            }
+        }
+#endif
+        if (providerSerialised != nullptr) *providerSerialised = true;
+        cuda.Set(keys, values, keyCount);
         Ort::ThrowOnError(Ort::GetApi().SessionOptionsAppendExecutionProvider_CUDA_V2(
             options, cuda.get()));
         if (applied) {
@@ -643,7 +771,8 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
     Ort::SessionOptions options = MakeSessionOptions(intraThreads);
     std::string providerReason;
     std::string appliedOptions;
-    if (AppendCudaProvider(options, &providerReason, &appliedOptions)) {
+    bool providerSerialised = true;
+    if (AppendCudaProvider(options, &providerReason, &appliedOptions, &providerSerialised)) {
         // Both providers print the thread count, because that label is the only
         // evidence that the value reached the session, in either mode.
         _impl->provider = "CUDA (device 0, " + ThreadLabel(threads);
@@ -659,9 +788,16 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
         // The label repeats the provider's own serialisation of the options, not
         // the request: a runtime that dropped the arena key has to show up as
         // "NOT applied" rather than as a label that reads like a constant.
-        _impl->provider += appliedOptions.find("kSameAsRequested") != std::string::npos
-                               ? ", arena kSameAsRequested"
-                               : ", arena NOT applied";
+        // The registration API reports nothing back, so a V2 run cannot claim
+        // what the provider kept: it says what it asked for instead, and the
+        // missing serialisation is the difference a reader has to see.
+        if (!providerSerialised) {
+            _impl->provider += ", options requested (arena kSameAsRequested)";
+        } else {
+            _impl->provider += appliedOptions.find("kSameAsRequested") != std::string::npos
+                                   ? ", arena kSameAsRequested"
+                                   : ", arena NOT applied";
+        }
         // "CUDA" alone is the strong claim, not the true one: an unsupported node
         // sits on the CPU EP and the session still builds. The probe settles it,
         // and its answer goes where a reader looks - the label.
