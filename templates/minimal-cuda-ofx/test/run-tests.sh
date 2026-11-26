@@ -44,7 +44,8 @@ if ! command -v "${CXX_BIN}" >/dev/null 2>&1; then
 fi
 
 # The launcher needs a GPU, so the harness compiles src/Kernel.cu only up to the
-# start of the launcher namespace. Everything above that line - both kernels,
+# start of the launcher namespace. Everything above that line - the four
+# kernels (32F vec4, 32F scalar, 16F half, 8-bit byte),
 # ScalePixel, DeviceGuard and the alignment predicate - is the real device code,
 # unchanged.
 awk '/^namespace mcofx \{/{exit} {print}' "${SRC}/Kernel.cu" > "${TMP}/kernels.inc"

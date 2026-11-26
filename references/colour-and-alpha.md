@@ -65,6 +65,65 @@ it was built for.
 
 ---
 
+## 2. What a gain may assume at each bit depth
+
+A colour operation is only well defined once you say which number it multiplies.
+The CUDA template's kernels make the assumptions below, and the harness measures
+them; the point of writing them down is that a host author can disagree with a
+stated assumption, but not with an unstated one.
+
+| Depth | Bytes/pixel | What the value is | What the template does |
+| --- | --- | --- | --- |
+| RGBA32F | 16 | 0..1 nominal, >1 and negative legal | multiplies, no clamp, no transform |
+| RGBA16F | 8 | linear half float, same range as 32F | to float, multiply, one round-to-nearest-even back |
+| RGBA8 | 4 | **encoding undefined by OFX** | multiplies the stored code value, rounds to nearest even, clamps to 0..255 |
+
+**8-bit: multiply the stored value, never linearise.** OFX does not say whether a
+byte image is sRGB, Rec.709 or something a project invented, and a plug-in cannot
+find out from the image alone - the colour management contract (1.5, opt-in) is
+about *spaces*, not about what the bytes were encoded with. So a byte gain applies
+its factor to the number the host stored, exactly as the host's own byte multiply
+would. Converting to linear first and back would double-apply a transfer function
+the plug-in was never told about; that is the same rule as §1.1, applied at the
+quantisation step.
+
+Three consequences worth knowing before you compare a byte render against a float
+one:
+
+- **Gain 1.0 is the identity, bit for bit.** The kernel multiplies and re-quantises
+  every byte, so this is a property that has to be tested rather than assumed -
+  the harness runs the whole 0..255 ramp and gets the input back.
+- **The maximum difference from a float reference is half an LSB**, 0.5/255, plus
+  whatever the tie rule does. Ties are the trap: round-half-to-even and
+  round-half-away-from-zero disagree by one LSB whenever the product lands exactly
+  on .5, which a gain of 0.5 on odd bytes does for every pixel. The kernel and its
+  reference both use round-to-nearest-even (`__float2int_rn`); the harness's first
+  version of the negative-pitch case used `lround` and was 35 bytes wrong out of
+  340 for exactly that reason.
+- **Overflow saturates, it does not wrap.** A gain of 8 on a byte is 255; 200 * 8
+  is 1600, and 1600 & 0xff would be 64, which is the classic 8-bit wrap bug.
+
+**16F: the same arithmetic as 32F, quantised once.** Both operands are halves, so
+their product is exact in float, and the single conversion back is the same
+rounding `__hmul2` applies. The harness compares the kernel against a float
+reference with **no tolerance** and gets bit equality; against a true float result
+the error is at most one half-precision ulp.
+
+**Alpha is multiplied too, and that is a choice.** A colour-only gain should leave
+alpha alone (§1), and this template does not: all four channels are scaled, which
+keeps premultiplied data premultiplied (RGB and alpha scale together) but darkens
+coverage on an unpremultiplied clip. The reference plug-in does the same, so the
+two paths agree; a production gain should expose that as a choice rather than
+inherit it. What the depth kernels have in common is that none of them touches
+`kOfxImageEffectPropPreMultiplication` - the host's declaration stays the truth.
+
+**What is measured, and what is not.** The table's arithmetic and addressing are
+**[V]** on the CPU through the shim's emulation (162 half shapes, 164 byte cases,
+0 wrong) - a real device was never available on this machine. Quantisation against
+a *host's* byte comparison, and every throughput number, are **[U]**.
+
+---
+
 ## Provenance labels
 
 Tags in this document mean exactly what they meant in the document it came from:

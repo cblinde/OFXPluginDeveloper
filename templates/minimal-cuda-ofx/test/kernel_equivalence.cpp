@@ -14,8 +14,11 @@
 //      the frame shapes an earlier hardware run measured (1920x1080, 1919x1081
 //      with and without a 64-byte pad, 63x1, 1x1) and over the widths where the
 //      boundary check matters.
-//   4. The hoisted row-pointer CPU loop vs the original per-pixel form.
-//   5. Both 32F kernels run concurrently from several threads on disjoint buffers,
+//   4. GainKernelRGBA8 against a reference that quantises the same way: the same
+//      shapes at 4 bytes per pixel, odd pitches (a byte buffer needs no
+//      alignment), gain 1.0 as the identity, and saturation instead of wrapping.
+//   5. The hoisted row-pointer CPU loop vs the original per-pixel form.
+//   6. Both 32F kernels run concurrently from several threads on disjoint buffers,
 //      which is what "the kernel is reentrant" means: it reads only its
 //      arguments and its own (thread-local) indices. This test is also the one
 //      that gives ThreadSanitizer something real to look at.
@@ -26,6 +29,7 @@
 // multi-GPU selection, real launch configuration) or a host (action dispatch,
 // clip preferences, the OpenGL/Metal/OpenCL paths).
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -64,6 +68,14 @@ float nextFloat()
     float f;
     std::memcpy(&f, &bits, 4);
     return (f - 1.0f) * 4.0f;
+}
+
+/// A byte for the 8-bit fixtures: the whole 0..255 range, not a bright band, so a
+/// wrong scale factor cannot hide in the low values.
+unsigned char nextByte()
+{
+    g_seed = g_seed * 1664525u + 1013904223u;
+    return static_cast<unsigned char>(g_seed >> 24);
 }
 
 /// OFX hands a plug-in `void*` plus a row stride (`kOfxImagePropRowBytes`), so
@@ -138,7 +150,7 @@ struct PredicateCase {
 
 void testPredicate()
 {
-    std::printf("[1/5] IsVec4Addressable and IsHalf2Addressable decisions\n");
+    std::printf("[1/6] IsVec4Addressable and IsHalf2Addressable decisions\n");
 
     alignas(16) static unsigned char a[4096];
     alignas(16) static unsigned char b[4096];
@@ -197,7 +209,7 @@ void testPredicate()
 
 void testKernels()
 {
-    std::printf("[2/5] vec4 kernel vs scalar kernel vs reference\n");
+    std::printf("[2/6] vec4 kernel vs scalar kernel vs reference\n");
 
     const float g[4] = { 1.75f, 0.5f, 2.25f, 1.0f };
     const float4 gain4 = make_float4(g[0], g[1], g[2], g[3]);
@@ -451,7 +463,7 @@ int runHalfShape(const HalfShape& shape, const __half2 gainRG, const __half2 gai
 
 void testHalfKernel()
 {
-    std::printf("[3/5] 16F half kernel, over the frame shapes an earlier run measured\n");
+    std::printf("[3/6] 16F half kernel, over the frame shapes an earlier run measured\n");
 
     const float gainF[4] = { 1.75f, 0.5f, 2.25f, 1.0f };
     const __half g[4] = { __float2half_rn(gainF[0]), __float2half_rn(gainF[1]),
@@ -540,11 +552,217 @@ void testHalfKernel()
     }
 }
 
+// -------------------------------------- 4. 8-bit kernel
+
+/// One shape the byte kernel is driven over. `pad` is added to the pitch in
+/// bytes and is deliberately odd in some cases: a byte buffer needs no
+/// alignment, unlike the 16-byte float4 and the 4-byte `__half2` accesses.
+struct ByteShape {
+    int w;
+    int h;
+    int pad;
+    const char* label;
+    bool tabulate;
+};
+
+/// Runs one shape and returns its mismatch count.
+int runByteShape(const ByteShape& shape, const float4 gain)
+{
+    const int boundsW = shape.w + 2;
+    const int boundsH = shape.h + 2;
+    const int pitch = boundsW * 4 + shape.pad;
+    const size_t bytes = static_cast<size_t>(pitch) * static_cast<size_t>(boundsH);
+
+    unsigned char* src = static_cast<unsigned char*>(std::malloc(bytes));
+    unsigned char* dst = static_cast<unsigned char*>(std::malloc(bytes));
+    for (size_t i = 0; i < bytes; ++i) {
+        src[i] = nextByte();
+    }
+    std::memset(dst, 0x7f, bytes);
+
+    const int ox = 1;
+    const int oy = 1;
+    const unsigned char* srcOrigin = src + static_cast<long long>(oy) * pitch +
+                                     static_cast<long long>(ox) * 4;
+    unsigned char* dstOrigin = dst + static_cast<long long>(oy) * pitch +
+                               static_cast<long long>(ox) * 4;
+
+    emulate(shape.w, shape.h, [&] {
+        GainKernelRGBA8(srcOrigin, dstOrigin, shape.w, shape.h, pitch, pitch, gain);
+    });
+
+    const float g[4] = { gain.x, gain.y, gain.z, gain.w };
+    int wrong = 0;
+    for (int y = 0; y < shape.h; ++y) {
+        const unsigned char* s = srcOrigin + static_cast<long long>(y) * pitch;
+        const unsigned char* d = dstOrigin + static_cast<long long>(y) * pitch;
+        for (int x = 0; x < shape.w * 4; ++x) {
+            // The same arithmetic and the same mode: the gain on the stored code
+            // value, then round-to-nearest-even and a clamp to the byte range.
+            const float scaled = static_cast<float>(s[x]) * g[x % 4];
+            const long expected =
+                static_cast<long>(std::nearbyint(scaled)) < 0
+                    ? 0
+                    : (static_cast<long>(std::nearbyint(scaled)) > 255
+                           ? 255
+                           : static_cast<long>(std::nearbyint(scaled)));
+            if (d[x] != static_cast<unsigned char>(expected)) {
+                ++wrong;
+                if (wrong == 1) {
+                    std::printf("  FAIL %s at x=%d y=%d: %u != %ld\n", shape.label, x, y,
+                                static_cast<unsigned>(d[x]), expected);
+                }
+            }
+        }
+    }
+
+    // Nothing outside the render window may be written, including the padding a
+    // host leaves at the end of the row.
+    if (wrong == 0) {
+        for (int y = 0; y < boundsH && wrong == 0; ++y) {
+            const unsigned char* row = dst + static_cast<long long>(y) * pitch;
+            for (int x = 0; x < boundsW * 4 + shape.pad; ++x) {
+                const int px = x / 4;
+                const bool inside =
+                    (px >= ox && px < ox + shape.w && y >= oy && y < oy + shape.h);
+                if (!inside && row[x] != 0x7f) {
+                    std::printf("  FAIL %s: wrote outside the window at (%d,%d)\n", shape.label,
+                                px, y);
+                    wrong = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (shape.tabulate) {
+        std::printf("  %-24s pitch %5d  %7d pixels  %s\n", shape.label, pitch,
+                    shape.w * shape.h, wrong == 0 ? "ok" : "MISMATCH");
+    }
+
+    std::free(src);
+    std::free(dst);
+    return wrong;
+}
+
+void testByteKernel()
+{
+    std::printf("[4/6] 8-bit byte kernel, unpack, multiply, quantise\n");
+
+    const float4 gain = { 1.75f, 0.5f, 2.25f, 1.0f };
+
+    const ByteShape measured[] = {
+        { 1920, 1080, 0, "1920x1080", true },
+        { 1919, 1081, 0, "1919x1081 odd width", true },
+        { 1919, 1081, 3, "1919x1081, odd pitch", true },
+        { 63, 1, 0, "63x1", true },
+        { 1, 1, 0, "1x1", true },
+    };
+
+    long shapes = 0;
+    long wrong = 0;
+    for (const ByteShape& shape : measured) {
+        wrong += runByteShape(shape, gain);
+        ++shapes;
+    }
+
+    // Widths around the block boundary, odd heights, and pitches that are not a
+    // multiple of 4: the alignment case a byte buffer has no reason to care
+    // about, and a 4-byte load would break on.
+    const int widths[] = { 1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 33 };
+    const int heights[] = { 1, 2, 3, 5 };
+    const int pads[] = { 0, 1, 3 };
+    for (int w : widths) {
+        for (int h : heights) {
+            for (int pad : pads) {
+                wrong += runByteShape(ByteShape{ w, h, pad, "boundary", false }, gain);
+                ++shapes;
+            }
+        }
+    }
+
+    // A negative pitch: legal for a byte image, same as for 32F.
+    {
+        const int w = 17;
+        const int h = 5;
+        const int boundsW = w + 2;
+        const int boundsH = h + 2;
+        const int pitch = boundsW * 4;
+        const size_t bytes = static_cast<size_t>(pitch) * static_cast<size_t>(boundsH);
+        unsigned char* src = static_cast<unsigned char*>(std::malloc(bytes));
+        unsigned char* dst = static_cast<unsigned char*>(std::malloc(bytes));
+        for (size_t i = 0; i < bytes; ++i) src[i] = nextByte();
+        std::memset(dst, 0x7f, bytes);
+        unsigned char* srcOrigin = src + static_cast<long long>(boundsH - 2) * pitch + 4;
+        unsigned char* dstOrigin = dst + static_cast<long long>(boundsH - 2) * pitch + 4;
+        emulate(w, h, [&] {
+            GainKernelRGBA8(srcOrigin, dstOrigin, w, h, -pitch, -pitch, gain);
+        });
+        const float g[4] = { gain.x, gain.y, gain.z, gain.w };
+        int bad = 0;
+        for (int y = 0; y < h; ++y) {
+            const unsigned char* s = srcOrigin - static_cast<long long>(y) * pitch;
+            const unsigned char* d = dstOrigin - static_cast<long long>(y) * pitch;
+            for (int x = 0; x < w * 4; ++x) {
+                // nearbyint, not lround: the kernel rounds ties to even, and
+                // lround rounds them away from zero. With gain 0.5 on odd bytes
+                // every value is an exact .5 tie, so the two rules disagree by
+                // one LSB on half the pixels - which is how this case failed
+                // first, 35 bytes out of 340.
+                const long e = static_cast<long>(std::nearbyint(static_cast<float>(s[x]) * g[x % 4]));
+                const long expected = e < 0 ? 0 : (e > 255 ? 255 : e);
+                if (d[x] != static_cast<unsigned char>(expected)) ++bad;
+            }
+        }
+        std::printf("  %-24s pitch %5d  %7d pixels  %s\n", "17x5 negative pitch", -pitch,
+                    w * h, bad == 0 ? "ok" : "MISMATCH");
+        wrong += bad;
+        ++shapes;
+        std::free(src);
+        std::free(dst);
+    }
+
+    // Gain 1.0 is the identity over the whole byte range, and overflow saturates
+    // instead of wrapping. Both are properties of the quantiser, not of a shape.
+    {
+        unsigned char ramp[1024];
+        for (int i = 0; i < 1024; ++i) ramp[i] = static_cast<unsigned char>(i & 0xff);
+        unsigned char out[1024];
+        std::memset(out, 0x5a, sizeof(out));
+        const float4 one = { 1.0f, 1.0f, 1.0f, 1.0f };
+        emulate(256, 1, [&] { GainKernelRGBA8(ramp, out, 256, 1, 1024, 1024, one); });
+        int bad = 0;
+        for (int i = 0; i < 1024; ++i) {
+            if (out[i] != ramp[i]) ++bad;
+        }
+        std::printf("  %-24s gain 1.0, %d values  %s\n", "identity", 1024,
+                    bad == 0 ? "ok" : "MISMATCH");
+        wrong += bad;
+        ++shapes;
+
+        const unsigned char hot[4] = { 200, 128, 1, 255 };
+        unsigned char hotOut[4] = { 0, 0, 0, 0 };
+        const float4 eight = { 8.0f, 8.0f, 8.0f, 8.0f };
+        emulate(1, 1, [&] { GainKernelRGBA8(hot, hotOut, 1, 1, 4, 4, eight); });
+        const bool saturated = hotOut[0] == 255 && hotOut[1] == 255 && hotOut[2] == 8 &&
+                               hotOut[3] == 255;
+        std::printf("  %-24s gain 8.0 on 200/128/1/255  %s\n", "saturation",
+                    saturated ? "ok (255/255/8/255)" : "MISMATCH");
+        if (!saturated) ++wrong;
+        ++shapes;
+    }
+
+    std::printf("  %ld shapes, %ld bytes wrong\n", shapes, wrong);
+    if (wrong != 0) {
+        ++g_failures;
+    }
+}
+
 // ------------------------------------------- 3. CPU loop hoist, byte for byte
 
 void testCpuLoop()
 {
-    std::printf("[4/5] hoisted row pointers vs per-pixel addressing (CPU path)\n");
+    std::printf("[5/6] hoisted row pointers vs per-pixel addressing (CPU path)\n");
 
     const float gain[4] = { 1.5f, 0.25f, 3.0f, 1.0f };
     const int widths[] = { 1, 2, 3, 5, 17, 33 };
@@ -695,7 +913,7 @@ int runConcurrentCase(const ConcCase& c, const float4& gain4, const float g[4], 
 
 void testConcurrent()
 {
-    std::printf("[5/5] concurrent kernel runs on disjoint buffers (reentrancy)\n");
+    std::printf("[6/6] concurrent kernel runs on disjoint buffers (reentrancy)\n");
 
     const ConcCase cases[] = {
         { 17, 5, 0, 0 },  // vec4
@@ -747,6 +965,7 @@ int main()
     testPredicate();
     testKernels();
     testHalfKernel();
+    testByteKernel();
     testCpuLoop();
     testConcurrent();
 

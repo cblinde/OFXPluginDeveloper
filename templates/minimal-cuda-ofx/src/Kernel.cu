@@ -132,6 +132,57 @@ __global__ void GainKernelRGBA16FHalf4(const __half* __restrict__ src,
     d[2 * x + 1] = ScaleHalf2(s[2 * x + 1], gainBA);
 }
 
+/// The 8-bit arithmetic: unpack a stored byte, multiply, quantise back.
+///
+/// OFX does not define the encoding of a byte image - that is the host's colour
+/// management, and a plug-in that guesses it double-applies a transfer function.
+/// So the multiply happens on the stored code value, the number the host would
+/// have multiplied itself, with no linearisation and no gamma. The round trip at
+/// gain 1.0 is the identity, which is what a "colour space aware" byte path is
+/// not allowed to break.
+///
+/// Quantisation is round-to-nearest-even (`__float2int_rn`, the same mode as the
+/// 16F kernel's conversion) and then a clamp to [0, 255]. Overflow saturates
+/// instead of wrapping: a gain of 8 on a byte is 255, not 232.
+__device__ __forceinline__ unsigned char ScaleByte(const unsigned char v, const float gain)
+{
+    const float scaled = static_cast<float>(v) * gain;
+    const int rounded = __float2int_rn(scaled);
+    return static_cast<unsigned char>(rounded < 0 ? 0 : (rounded > 255 ? 255 : rounded));
+}
+
+/// 8-bit RGBA: four bytes per pixel, addressed through the host's byte pitch.
+///
+/// Unlike the float4 and `__half2` kernels there is no alignment predicate: a
+/// byte pixel is four bytes and every pointer/pitch a host can hand out is
+/// byte-addressable, so an odd pitch and an odd pixel offset are legal. That is
+/// also why an 8-bit buffer cannot be mistaken for a 32F one by address alone -
+/// the depth has to come from the image property, never from the pointer.
+__global__ void GainKernelRGBA8(const unsigned char* __restrict__ src,
+                                unsigned char* __restrict__ dst,
+                                const int width,
+                                const int height,
+                                const long long srcPitch,
+                                const long long dstPitch,
+                                const float4 gain)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= width || y >= height) {
+        return;
+    }
+
+    const long long offset = static_cast<long long>(y) * srcPitch + static_cast<long long>(x) * 4;
+    const unsigned char* s = src + offset;
+    unsigned char* d = dst + static_cast<long long>(y) * dstPitch + static_cast<long long>(x) * 4;
+
+    d[0] = ScaleByte(s[0], gain.x);
+    d[1] = ScaleByte(s[1], gain.y);
+    d[2] = ScaleByte(s[2], gain.z);
+    d[3] = ScaleByte(s[3], gain.w);
+}
+
 /// Restores the thread's previous CUDA device on scope exit. Without this, a
 /// plugin that switches devices for a multi-GPU host leaks that choice into
 /// every later action on the same thread.

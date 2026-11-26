@@ -128,6 +128,15 @@ inline __half __float2half_rn(float value)
     return h;
 }
 
+// Round to nearest, ties to even - what `__float2int_rn` does on the device, and
+// what the 8-bit kernel needs to quantise a scaled byte back. `nearbyintf` is
+// the host's same-mode conversion (the default rounding mode), so the harness's
+// reference and this shim agree bit for bit.
+inline int __float2int_rn(float value)
+{
+    return static_cast<int>(std::nearbyint(value));
+}
+
 inline float __half2float(__half h)
 {
     const unsigned int sign = (h.bits >> 15) & 1u;

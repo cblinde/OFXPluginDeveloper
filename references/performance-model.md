@@ -358,6 +358,42 @@ boundary, heights 1/2/3/5 and three pad values - **0 halves wrong**, and no byte
 written outside the render window. The fixture pitch is the allocation pitch
 (bounds plus two columns, plus the pad), not the frame's row stride.
 
+### 3.7 The 8-bit path: one byte per channel, and no alignment to argue about
+
+`GainKernelRGBA8` is the same gain at 4 bytes per pixel. There is no
+`IsByteAddressable` predicate because there is nothing to prove: every pointer
+and every pitch a host can hand out is byte-addressable, so an odd pitch and an
+odd pixel offset are legal - the opposite of the 16-byte float4 case, and the
+reason a byte buffer cannot be told apart from a 32F one by its address. The
+depth has to come from `kOfxImageEffectPropPixelDepth`, never from the pointer.
+
+The harness drives it over the same measured frames at a byte pitch, plus widths
+1-33, heights 1/2/3/5 and pitches that are deliberately not a multiple of 4
+**[V]**:
+
+| Frame | Fixture pitch | Pixels | Result |
+| --- | --- | --- | --- |
+| 1920x1080 | 7688 | 2,073,600 | ok |
+| 1919x1081, odd width | 7684 | 2,074,439 | ok |
+| 1919x1081, odd pitch | 7687 | 2,074,439 | ok |
+| 63x1 | 260 | 63 | ok |
+| 1x1 | 12 | 1 | ok |
+| 17x5, negative pitch | -76 | 85 | ok |
+
+164 cases in all - 162 shapes plus the identity ramp and the saturation case -
+**0 bytes wrong**, with nothing written into the row padding. Two properties are
+checked as properties, not as shapes: gain 1.0 returns the 0..255 ramp unchanged,
+and 200/128/1/255 at gain 8 becomes 255/255/8/255, so overflow saturates rather
+than wrapping.
+
+The one thing that did not survive first contact: the negative-pitch case's
+reference used `lround` while the kernel rounds ties to even. At gain 0.5 on odd
+bytes every product is an exact .5 tie, and the two rules differ by one LSB on
+half the pixels - 35 of 340 bytes were "wrong" with both sides correct under
+their own rule. The kernel's rule is `__float2int_rn` and the reference now uses
+`nearbyint`; the difference is recorded because a host comparing a byte render
+against a float one will meet it.
+
 **Throughput is [U].** Nothing here ran this kernel on a device. Half precision
 on a GPU is a bandwidth question - 8 bytes per pixel against 16 for RGBA32F, so
 half the traffic for the same frame **[A]** - and the only honest statement about
