@@ -1,0 +1,75 @@
+# Backlog row 13: the 1.22 EP-registration API outside the plug-in, 2026-11-26.
+#
+# Probe: tools/ep_register_probe.cpp (the source here is .validation/ep-register-probe.cpp,
+# copied to tools/ with the same steps), built with MSVC 14.50 against the 1.32.0
+# headers, linked to onnxruntime.lib, run with every DLL in
+# .validation/ort-gpu-1.32.0/bin beside it.
+#
+# Model: .validation/big_conv.onnx (Conv 3->64 k3, Relu, Conv 64->64 k3, Relu).
+# Provider: .validation/ort-gpu-1.32.0/bin/onnxruntime_providers_cuda.dll, the same
+#   plugin EP the plug-in bundles.
+#
+# 1. every step, no --stop
+OrtApi version 32 from 1.32.0
+provider library: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-gpu-1.32.0/bin/onnxruntime_providers_cuda.dll
+
+step 1: CreateEnv                                      ok
+step 2: RegisterExecutionProviderLibrary(cuda)         ok
+step 3: GetEpDevices                                   ok
+        2 device(s)
+        [0] ep=CPUExecutionProvider vendor=Microsoft hw=Intel type=0
+        [1] ep=CUDAExecutionProvider vendor=Microsoft hw=NVIDIA type=1
+step 4: printed the device list                        ok
+step 5: CreateSessionOptions                           ok
+        chosen: CUDAExecutionProvider (Microsoft)
+step 6: SessionOptionsAppendExecutionProvider_V2       ok
+step 7: CreateSession                                  ok
+step 8: CreateCpuMemoryInfo                            ok
+step 9: CreateTensorWithDataAsOrtValue                 ok
+step 10: SessionGetInputName                            ok
+step 11: SessionGetOutputName                           ok
+        input: data, output: out
+step 12: Run                                            ok
+        output: 262144 values
+step 13: read the output shape                          ok
+step 14: UnregisterExecutionProviderLibrary             ok
+
+all steps completed
+
+# 2. registration alone, then the device list, then the append - the bisect the row asked for
+
+## --stop 2
+OrtApi version 32 from 1.32.0
+provider library: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-gpu-1.32.0/bin/onnxruntime_providers_cuda.dll
+
+step 1: CreateEnv                                      ok
+step 2: RegisterExecutionProviderLibrary(cuda)         ok
+stopping after step 2 as asked
+exit: 0
+
+## --stop 3
+OrtApi version 32 from 1.32.0
+provider library: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-gpu-1.32.0/bin/onnxruntime_providers_cuda.dll
+
+step 1: CreateEnv                                      ok
+step 2: RegisterExecutionProviderLibrary(cuda)         ok
+step 3: GetEpDevices                                   ok
+stopping after step 3 as asked
+exit: 0
+
+## --stop 6
+OrtApi version 32 from 1.32.0
+provider library: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-gpu-1.32.0/bin/onnxruntime_providers_cuda.dll
+
+step 1: CreateEnv                                      ok
+step 2: RegisterExecutionProviderLibrary(cuda)         ok
+step 3: GetEpDevices                                   ok
+        2 device(s)
+        [0] ep=CPUExecutionProvider vendor=Microsoft hw=Intel type=0
+        [1] ep=CUDAExecutionProvider vendor=Microsoft hw=NVIDIA type=1
+step 4: printed the device list                        ok
+step 5: CreateSessionOptions                           ok
+        chosen: CUDAExecutionProvider (Microsoft)
+step 6: SessionOptionsAppendExecutionProvider_V2       ok
+stopping after step 6 as asked
+exit: 0

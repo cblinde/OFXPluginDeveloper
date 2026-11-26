@@ -1066,10 +1066,23 @@ be registered no matter how new the headers are. Code that uses
 `RegisterExecutionProviderLibrary`, `GetEpDevices` and
 `SessionOptionsAppendExecutionProvider_V2` therefore needs two things at once -
 `#if ORT_API_VERSION >= 22` **and** a provider that exports `CreateEpFactories`.
-The attempt of 2026-11-25 had the first and not the second on the runtime it was
-tested against, and the process aborted with `0xC0000409` where the built-in
-append still reports `all nodes on CUDA`; it is in
-[`improvement-backlog.md`](improvement-backlog.md) row 13 with the numbers.
+The attempt of 2026-11-25 had the second on the runtime it was tested against and
+still aborted with `0xC0000409` where the built-in append reports `all nodes on
+CUDA`.
+
+**The API itself is not what aborted.** `tools/ep_register_probe.cpp` runs the
+same five calls in a console process with nothing else loaded, against the same
+1.32.0 provider, and every step succeeds: registration, `GetEpDevices` returning
+two devices (`CPUExecutionProvider`/Intel and `CUDAExecutionProvider`/NVIDIA),
+`SessionOptionsAppendExecutionProvider_V2` on the CUDA device, a session, a run
+that returns 262144 values, and the unregister (**[V]**,
+[`../evidence/2026-11-26-windows/ep-register-probe.log`](../evidence/2026-11-26-windows/ep-register-probe.log)).
+The staged bisect the backlog row asked for is three invocations of the same
+probe: `--stop 2` is registration alone, `--stop 3` adds the device list,
+`--stop 6` adds the append. What is left is a difference between the two
+processes - the plug-in loads its private core as `onnxruntime-ofx.dll` and
+preloads the CUDA groups before registering, the probe does neither - and that is
+what the row now names.
 
 **What the import table already settles.** The 1.32 plugin provider imports
 neither cuDNN, cuFFT nor cudart, and it does not import the core library at all -

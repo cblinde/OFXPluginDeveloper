@@ -883,6 +883,7 @@ worth reaching for while debugging rather than through the suite:
 | `python3 tools/bench_ep.py model.onnx` | median/p90 per execution provider |
 | `tools/measure-halo.sh model.onnx` | tile overlap per model, writes `<model>.halo.json` |
 | `tools/sweep-vram.sh model.onnx` | largest tile before ORT runs out of VRAM (needs a GPU) |
+| `tools/ep_register_probe.cpp` | whether the 1.22 registration API works outside a plug-in: registration, device list, append, run, unregister, with `--stop N` to bisect |
 
 Every comparison the harness trusts is shown failing before it is credited with
 passing. Three of them have their own test: `testkit/selftest-compare.sh` corrupts
