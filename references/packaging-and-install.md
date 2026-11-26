@@ -141,7 +141,11 @@ own `onnxruntime.dll` (**[V]**,
   `OFXPLUGIN_CUDA_RUNTIME_DIRS` cache entry that once put a 1.32 provider next to
   1.20.1's core; and `python3 tools/check-runtime.py <root-or-bundle>
   --require-cuda-major 12` fails a built bundle with both majors, the version
-  pairing and the error the host raises. Read the major from the **provider**, not
+  pairing and the error the host raises. That command now runs by itself: the ONNX
+  template's `build.bat` calls it on the bundle it just produced (12 unless
+  `OFXPLUGIN_HOST_CUDA_MAJOR` names another host major, and skipped by name when
+  the bundle carries no provider), and `windows.yml` repeats it on the runner, so
+  the pairing fails a build instead of a host load. Read the major from the **provider**, not
   from the ONNX Runtime version number: the CUDA target is a property of the
   package, and a rebuilt provider can move without the version changing.
 

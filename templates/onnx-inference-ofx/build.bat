@@ -193,6 +193,18 @@ if not exist "%BUNDLE%\Contents\Win64\onnxruntime-ofx.dll" (
   exit /b 1
 )
 echo   %BUNDLE%\Contents\Win64\onnxruntime-ofx.dll
+rem A provider DLL carries its CUDA major in its import names (cublas64_12.dll,
+rem cublas64_13.dll), and a host refuses the mismatch as "Error 1114" with nothing
+rem else in its log. The host this bundle is built for is Resolve 21.2, which ships
+rem CUDA 12; OFXPLUGIN_HOST_CUDA_MAJOR widens that deliberately for a host on the
+rem newer major. A bundle without a provider has nothing to check and says so.
+set "HOST_CUDA_MAJOR=%OFXPLUGIN_HOST_CUDA_MAJOR%"
+if not defined HOST_CUDA_MAJOR set "HOST_CUDA_MAJOR=12"
+if exist "%BUNDLE%\Contents\Win64\onnxruntime_providers_cuda.dll" (
+  python "%HERE%..\..\tools\check-runtime.py" "%BUNDLE%" --require-cuda-major %HOST_CUDA_MAJOR% || goto :error
+) else (
+  echo   no CUDA provider in this bundle, so the CUDA-major gate does not apply
+)
 echo.
 echo Exports and load-time imports:
 rem --strict: the Visual Studio generator branch never runs vcvars64, so dumpbin

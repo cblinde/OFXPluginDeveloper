@@ -76,6 +76,24 @@ jobs:
         shell: cmd
         run: templates\onnx-inference-ofx\test\test.bat Release || exit /b 1
 
+      - name: The CUDA provider matches the host's CUDA major
+        # The provider DLL names its CUDA major in its imports - cublas64_12.dll for
+        # ONNX Runtime 1.20.1, cublas64_13.dll for 1.32.0 - and Resolve 21.2 ships
+        # CUDA 12, refusing the mismatch at load as Error 1114 with no other word.
+        # build.bat runs the same gate; it is repeated here so a job that gets the
+        # bundle from a cache, or a future step that bypasses the script, still
+        # fails on the pairing instead of on a host load. A bundle without a CUDA
+        # provider has nothing to pair and is skipped by name.
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle=templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+          if [ -f "$bundle/Contents/Win64/onnxruntime_providers_cuda.dll" ]; then
+            python tools/check-runtime.py "$bundle" --require-cuda-major 12
+          else
+            echo "no CUDA provider in $bundle, so the CUDA-major gate does not apply"
+          fi
+
       - name: OpenCL template, CPU path and the device suite if there is one
         # The fourth template, and the one step here that may legitimately do no
         # device work: `run-tests.bat` exits 2 when the runner has no OpenCL
