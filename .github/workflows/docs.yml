@@ -33,8 +33,13 @@ jobs:
       - name: Documentation drift and the ONNX Runtime pin
         # check-docs.py includes the pin: one field in the composite action both
         # workflows call, failed when a document that names a release path keeps
-        # naming the old version - the half of a bump nobody remembers.
-        run: python3 tools/check-docs.py
+        # naming the old version - the half of a bump nobody remembers. The
+        # self-test runs first: the inventory rules are newer than the tree they
+        # check, and a rule that rejects correct prose is worse here than a rule
+        # that misses - so both the broken and the clean synthetic tree are read.
+        run: |
+          python3 tools/check-docs.py --selftest
+          python3 tools/check-docs.py
 
       - name: Documentation coverage gate
         # Every distinctive word of the corpus as it stood at 4290e68 - the last

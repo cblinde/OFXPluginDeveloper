@@ -116,7 +116,7 @@ relative to this file.
 | What other shipped plug-ins did, and the seven-step reading plan | `references/reference-projects.md` | this repo's own code |
 | Pre-flight review, sign-off, the questions with their settling sentence | `references/checklists.md` | tutorials |
 | Run it: artifact + contract with no host, then a headless host render | `testkit/README.md` | prose |
-| Copy a working scaffold | `templates/minimal-ofx/` (CPU), `templates/minimal-cuda-ofx/` (CUDA + fallback), `templates/onnx-inference-ofx/` (model per frame) | the docs |
+| Copy a working scaffold | `templates/minimal-ofx/` (CPU), `templates/minimal-cuda-ofx/` (CUDA + fallback), `templates/minimal-opencl-ofx/` (the host's OpenCL queue + fallback), `templates/onnx-inference-ofx/` (model per frame) | the docs |
 
 Two rules for this table. If the task is "make it work at all", it is §3 below,
 not a reference file. If two rows seem to apply, the narrower one is the one to
@@ -169,6 +169,7 @@ probe is choosing between.
 | --- | --- | --- |
 | CPU-only pixel maths | `templates/minimal-ofx/` | smallest host-loadable module; no CUDA, no model |
 | CUDA path with CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
+| OpenCL path through the host's queue | `templates/minimal-opencl-ofx/` | `cl_mem`/image2d lifetime, queue ordering and the no-device fallback are written; the host hands over the queue, the plug-in never creates a context |
 | ONNX model per frame | `templates/onnx-inference-ofx/` | session, packing, tiling, goldens; CUDA EP first, CPU fallback (`references/onnx-and-tensorrt.md` §4) |
 | Model whose output is not an image | `templates/onnx-inference-ofx/` for session and packaging only | `ModelRunner` requires out shape == in shape; the head decoder is yours |
 
@@ -304,7 +305,10 @@ The full ledger - what is **V**erified, by which command, and what is not - is
 - Rendered by real hosts: one headless `NatronRenderer` frame with its pixels
   checked, and Resolve Studio 21.2 twice - identity at the default gain, and the
   source ×2 at a build default of 2.0, so `render()` ran there too.
-- Not verified: Nuke and SCRATCH; a CUDA execution provider; a GPU path inside
-  any host; Linux; a second GPU; multi-GPU and MIG.
+- Rendered in a host's GPU processing mode too: one Resolve session declared CUDA
+  for every render (`references/verification-matrix.tsv`, 2026-11-26).
+- Not verified: Nuke and SCRATCH; a CUDA execution provider's arithmetic (the
+  provider loads and passed one frame through, but no ledger row has it); OpenCL
+  through a host's queue; Linux; a second GPU; multi-GPU and MIG.
 
 State which of those you exercised whenever you report a result.

@@ -76,6 +76,24 @@ jobs:
         shell: cmd
         run: templates\onnx-inference-ofx\test\test.bat Release || exit /b 1
 
+      - name: OpenCL template, CPU path and the device suite if there is one
+        # The fourth template, and the one step here that may legitimately do no
+        # device work: `run-tests.bat` exits 2 when the runner has no OpenCL
+        # device, and a runner without one still has to compile and load the
+        # bundle. Exit 2 becomes a notice, everything else is the verdict - the
+        # same contract `run-tests.sh` applies on the Linux side.
+        # No `nobuild` here: this template's Windows script builds in its first
+        # stage (unlike the other three), so it is called the way its own header
+        # documents and the exit code is read from that one run.
+        shell: cmd
+        run: |
+          templates\minimal-opencl-ofx\test\run-tests.bat Release && exit /b 0
+          if errorlevel 2 (
+            echo ::notice title=No OpenCL device on this runner::the CPU path and the artifact check passed; the OpenCL suite needs a device and this job does not claim one.
+            exit /b 0
+          )
+          exit /b 1
+
       - name: Negative controls
         shell: cmd
         run: testkit\run-negative-controls.bat || exit /b 1

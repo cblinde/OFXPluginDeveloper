@@ -62,6 +62,11 @@ fi
 echo
 echo "== docs =="
 "${documentation_python}" "${ROOT}/tools/check-docs.py"
+# The inventory rules - template list, scaffold tables, reference paths, CI
+# coverage and negated host claims - are shown failing on a synthetic tree before
+# a clean one is credited, the same rule the other self-tests here follow.
+echo
+"${documentation_python}" "${ROOT}/tools/check-docs.py" --selftest
 
 if [[ -z "${OFX_SOURCE_DIR:-}" && -f "${ROOT}/.ofx-ref/include/ofxCore.h" ]]; then
   OFX_SOURCE_DIR="${ROOT}/.ofx-ref"

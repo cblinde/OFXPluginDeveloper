@@ -22,6 +22,12 @@ name: linux
 # No runner has a GPU, so nothing here claims a kernel ran. GPU work stays on a
 # machine with a device; what this workflow covers is everything that does not
 # need one.
+#
+# not built here: templates/minimal-opencl-ofx
+# Its suite opens a real device and no Linux runner has one, so the sanitizer and
+# analysis jobs name the other three. The gate that does cover all four is
+# `run-tests.sh`, which the suites job runs; windows.yml builds this template and
+# accepts its no-device exit code (2) as a notice rather than a pass.
 
 on:
   push:

@@ -60,6 +60,26 @@ What it checks, and why each one exists:
     check could not see. A "never ran" sentence fails for any host with a row, in
     either word order, and the other documents that talk about hosts link the
     matrix instead of keeping a count of their own.
+11. Template inventory. Every directory under `templates/` is named by README.md,
+    AGENTS.md and SKILL.md, and every `templates/<name>` any document writes is a
+    directory that carries a CMakeLists.txt. A fourth template landed while two of
+    the three entry documents still offered three; every link resolved and every
+    count that was checked was correct, so nothing fired until a reader asked
+    which template to copy and got a list without it.
+12. Scaffold selection. A template mentioned only in passing cannot be chosen:
+    the tables in SKILL.md and README.md are where a reader picks a starting
+    point, so each of them needs a row per template.
+13. Reference paths. A `references/<name>.md` has to exist even where it is a
+    plain backticked mention rather than a link, and every reference document has
+    to be reachable from one of the documents that route.
+14. CI coverage. Every template is named by `run-tests.sh` or by a workflow, and a
+    workflow that names templates names all of them. windows.yml listed three of
+    four, so the fourth's Windows breakage would have landed on a contributor.
+15. Negated host claims. "Never ran" was the only vocabulary the host check knew;
+    a bullet saying a GPU path is "not verified inside any host" is the same claim
+    in other words and contradicted a matrix row recording exactly that. Each
+    `;`-separated item is judged on its own, so an item without a host word is not
+    read as a host claim.
 """
 
 import argparse
@@ -371,6 +391,27 @@ def check_absence_claims(root, files, texts, report):
 
 HOST_RECORD_DOC = "references/verification-status.md"
 HOST_RECORD_HEADING = "### What ran in a host"
+# The documents through which a reader learns that a template exists and which
+# one to copy. A fourth template that is missing from one of these is invisible to
+# whoever reads that one first.
+TEMPLATE_DOCS = ("README.md", "AGENTS.md", "SKILL.md")
+# Windows workflows write `templates\minimal-ofx\build.bat`, so both separators
+# have to match or the coverage check reads a file it cannot see into.
+TEMPLATE_MENTION = re.compile(r"templates[/\\]([A-Za-z0-9][A-Za-z0-9._-]*)")
+# A line that runs a template rather than naming it: `bash -n` on a build script is
+# a syntax check, not a build, so it does not make docs.yml a build workflow.
+TEMPLATE_RUN = re.compile(r"(?:build|run-tests|test)\.(?:sh|bat)\b")
+# A workflow that cannot cover a template for a stated reason says so in the file
+# rather than leaving a reader to conclude it forgot: `# not built here:
+# templates/x - no OpenCL device on this runner`.
+TEMPLATE_EXCUSED = re.compile(r"not built here:\s*templates[/\\]([A-Za-z0-9][A-Za-z0-9._-]*)")
+REFERENCE_MENTION = re.compile(r"references/([A-Za-z0-9._-]+\.md)")
+REFERENCE_ENTRY_DOCS = ("README.md", "SKILL.md", "AGENTS.md",
+                        "references/testing-layers.md")
+HOST_WORD = re.compile(r"\b(?:host|hosts|Resolve|Nuke|SCRATCH|Natron)\b", re.I)
+GPU_WORD = re.compile(r"\b(?:GPU|CUDA|OpenCL)\b", re.I)
+GPU_PATH = re.compile(r"\b(?:gpu|cuda|opencl)\b", re.I)
+
 HOST_DOCS = ("README.md", "AGENTS.md", "references/checklists.md",
              "references/host-resolve.md", "references/host-nuke-scratch-natron.md")
 
@@ -508,6 +549,33 @@ def check_host_run_claims(root, files, texts, report):
                     report.error(name, line,
                                  "claims {0} never ran, but references/verification-matrix.tsv "
                                  "records a run".format(match.group(1)))
+
+    # "Never ran" is not the only way to make the claim. A sentence that calls a
+    # GPU path unverified inside a host says the same thing in other words, and
+    # SKILL.md carried one while the matrix held a Resolve session in the host's
+    # CUDA processing mode. Items are split on `;` first: "a CUDA execution
+    # provider" names no host, so it is not read as a host claim.
+    gpu_rows = [row for row in rows if GPU_PATH.search(row[2])]
+    if gpu_rows:
+        negations = re.compile(
+            r"\b(?:not verified|unverified|unproven|not proven|never verified)\b"
+            r"(?P<tail>[^.\n]{0,200})", re.I)
+        for name in files:
+            body = strip_comments(texts[name])
+            for match in negations.finditer(body):
+                for item in match.group("tail").split(";"):
+                    if HOST_WORD.search(item) is None or GPU_WORD.search(item) is None:
+                        continue
+                    term = GPU_WORD.search(item).group(0).lower()
+                    claimed = [row for row in gpu_rows
+                               if term == "gpu" or term in row[2].lower()]
+                    if not claimed:
+                        continue
+                    line = body[:match.start()].count("\n") + 1
+                    report.error(name, line,
+                                 "calls a {0} path unverified in a host, but "
+                                 "references/verification-matrix.tsv records '{1}' "
+                                 "({2} {3}, {4})".format(term.upper(), *claimed[0]))
 
     for name in HOST_DOCS:
         if name in texts and "verification-matrix.tsv" not in texts[name]:
@@ -1028,6 +1096,137 @@ TOOL_DATA_FILES = {
 }
 
 
+def template_names(root):
+    """The templates in the tree: a `templates/<name>/CMakeLists.txt` is one."""
+    directory = os.path.join(root, "templates")
+    if not os.path.isdir(directory):
+        return []
+    return sorted(name for name in os.listdir(directory)
+                  if os.path.isfile(os.path.join(directory, name, "CMakeLists.txt")))
+
+
+def check_template_inventory(root, files, texts, report):
+    """The entry documents and the tree agree on which templates exist, by name.
+
+    The count check can only see a stated number, and a table row that is simply
+    absent states nothing. This walks the names in both directions: a template in
+    the tree that README, AGENTS or SKILL never names, and a `templates/<name>`
+    in any document that is not a template any more.
+    """
+    names = template_names(root)
+    for doc in TEMPLATE_DOCS:
+        text = texts.get(doc)
+        if text is None:
+            continue
+        mentioned = set(TEMPLATE_MENTION.findall(text))
+        for name in names:
+            if name not in mentioned:
+                report.error(doc, 1,
+                             f"does not name templates/{name}/, which is in the tree; "
+                             f"the entry documents are how a reader learns a template exists")
+    for path in files:
+        for match in TEMPLATE_MENTION.finditer(texts[path]):
+            if match.group(1) not in names:
+                line = texts[path][:match.start()].count("\n") + 1
+                report.error(path, line,
+                             f"names templates/{match.group(1)}/, which is not a template "
+                             f"in this tree (templates/*/CMakeLists.txt)")
+
+
+def check_template_selection(root, files, texts, report):
+    """Every template is offered by a table row, not only named in passing.
+
+    The router's scaffold row and the selection table in SKILL.md, and the layout
+    table in README.md, are where a reader chooses a starting point. A template
+    that appears in prose but in no row cannot be chosen, which is how the OpenCL
+    template stayed invisible while three reference documents named it.
+    """
+    names = template_names(root)
+    for doc in ("SKILL.md", "README.md"):
+        text = texts.get(doc)
+        if text is None:
+            continue
+        rows = [line for line in text.splitlines() if line.lstrip().startswith("|")]
+        for name in names:
+            # README's layout row names the directory (`minimal-ofx`) and gives the
+            # path only once, so both spellings count as offering it.
+            offered = (f"templates/{name}/", f"`{name}`")
+            if not any(any(form in row for form in offered) for row in rows):
+                report.error(doc, 1,
+                             f"no table row offers templates/{name}/ as a starting "
+                             f"point; prose elsewhere does not choose a scaffold")
+
+
+def check_reference_paths(root, files, texts, report):
+    """A `references/<name>.md` exists, and every reference is routed to.
+
+    A broken link is caught by the link check, but the mention an agent follows is
+    a backticked path in prose, and a document nobody links is invisible even
+    though every link in the tree resolves.
+    """
+    directory = os.path.join(root, "references")
+    if not os.path.isdir(directory):
+        return
+    present = {name for name in os.listdir(directory) if name.endswith(".md")}
+    for path in files:
+        for match in REFERENCE_MENTION.finditer(texts[path]):
+            if match.group(1) not in present:
+                line = texts[path][:match.start()].count("\n") + 1
+                report.error(path, line,
+                             f"names references/{match.group(1)}, which does not exist")
+    entry = " ".join(texts.get(doc, "") for doc in REFERENCE_ENTRY_DOCS)
+    for name in sorted(present):
+        if name not in entry:
+            report.error("references/" + name, 1,
+                         "is not named by README.md, SKILL.md, AGENTS.md or "
+                         "references/testing-layers.md: a document nobody routes to")
+
+
+def check_ci_template_coverage(root, files, texts, report):
+    """A template no workflow builds is one whose breakage lands on a contributor.
+
+    `linux.yml` runs `run-tests.sh`, which builds all four, so a mention in the
+    gate script counts as coverage. A workflow that enumerates templates itself
+    has to enumerate all of them: `windows.yml` listed three of four.
+    """
+    names = template_names(root)
+    if not names:
+        return
+    gate_path = os.path.join(root, "run-tests.sh")
+    gate = read(gate_path) if os.path.exists(gate_path) else ""
+    covered = set(TEMPLATE_MENTION.findall(gate))
+    workflows = {}
+    directory = os.path.join(root, ".github", "workflows")
+    if os.path.isdir(directory):
+        for name in sorted(os.listdir(directory)):
+            if not name.endswith(".yml"):
+                continue
+            relative = f".github/workflows/{name}"
+            # Only the lines that run a template make a workflow a build workflow;
+            # a canary that names one model, or a `bash -n` on a script, is not
+            # claiming to cover the set.
+            builds = set()
+            text = read(os.path.join(directory, name))
+            excused = set(TEMPLATE_EXCUSED.findall(text))
+            for line in text.splitlines():
+                if TEMPLATE_RUN.search(line) and "bash -n" not in line:
+                    builds |= set(TEMPLATE_MENTION.findall(line))
+            if builds:
+                workflows[relative] = (builds, excused)
+                covered |= builds
+    for name in names:
+        if name not in covered:
+            report.error("run-tests.sh", 1,
+                         f"no workflow and no step of the gate builds templates/{name}/")
+    for relative, (mentioned, excused) in workflows.items():
+        missing = [name for name in names
+                   if name not in mentioned and name not in excused]
+        for name in missing:
+            report.error(relative, 1,
+                         f"names {len(mentioned)} template(s) and not templates/{name}/; "
+                         f"build it here or say in the step why it is missing")
+
+
 def check_tool_inventory(root, files, texts, report):
     """Every program in tools/ has to be findable from the two places that list them.
 
@@ -1166,10 +1365,113 @@ def check_agents(root, report):
 # Entry point
 # ---------------------------------------------------------------------------
 
+def selftest():
+    """The new checks, each shown failing on a tree that carries the fault.
+
+    Two trees: one with every fault, one clean. The clean one is the half that
+    catches a rule too broad to survive - the failure mode this file exists for is
+    a check that rejects correct prose, not one that misses broken prose.
+    """
+    import tempfile
+
+    def build(base, content):
+        for relative, text in content.items():
+            target = os.path.join(base, relative)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write(text)
+        return base
+
+    matrix = "Host X\treference\tGPU\t2026-11-26\tV\tevidence/run.json\n"
+    record = ("### What ran in a host\n\n"
+              "| Host | template | path | date | evidence |\n"
+              "|---|---|---|---|---|\n"
+              "| Host X | reference | GPU | 2026-11-26 | [run](evidence/run.json) |\n")
+    broken = {
+        "templates/a/CMakeLists.txt": "",
+        "templates/b/CMakeLists.txt": "",
+        "run-tests.sh": "templates/a/test/run-tests.sh\ntemplates/b/test/run-tests.sh\n",
+        "README.md": "| `templates/a/` | the CPU one |\n\nreferences/verification-matrix.tsv\n",
+        "AGENTS.md": "# Router\n\nNo scaffold is named here. references/verification-matrix.tsv\n",
+        "SKILL.md": "| Copy a scaffold | `templates/a/` |\n\n"
+                    "- Not verified: a GPU path inside any host.\n\n"
+                    "Read `references/one.md` and `references/missing.md`.\n",
+        "references/one.md": "# one\n",
+        "references/two.md": "# two\n",
+        "references/verification-matrix.tsv": matrix,
+        "references/verification-status.md": record,
+        "evidence/run.json": "{}\n",
+        ".github/workflows/w.yml":
+            "name: w\njobs:\n  a:\n    runs-on: x\n    steps:\n"
+            "      - run: templates/a/build.sh\n",
+    }
+    clean = dict(broken)
+    clean.update({
+        "README.md": "| `templates/a/` | CPU |\n| `templates/b/` | the other |\n\n"
+                     "references/verification-matrix.tsv\n",
+        "AGENTS.md": "# Router\n\nCopy `templates/a/` or `templates/b/`. "
+                     "references/verification-matrix.tsv\n",
+        "SKILL.md": "| Copy a scaffold | `templates/a/`, `templates/b/` |\n\n"
+                    "Read `references/one.md`, `references/two.md` and "
+                    "`references/verification-status.md`.\n",
+        ".github/workflows/w.yml":
+            "name: w\njobs:\n  a:\n    runs-on: x\n    steps:\n"
+            "      - run: templates/a/build.sh && templates/b/build.sh\n",
+        # A workflow may leave one out if it says so in the file; the clean tree
+        # carries the marker so the exemption itself is exercised.
+        ".github/workflows/v.yml":
+            "name: v\n# not built here: templates/b - no device on this runner\njobs:\n"
+            "  a:\n    runs-on: x\n    steps:\n      - run: templates/a/build.sh\n",
+    })
+    expected = (
+        ("README.md", "does not name templates/b/"),
+        ("AGENTS.md", "does not name templates/a/"),
+        ("SKILL.md", "no table row offers templates/b/"),
+        ("SKILL.md", "names references/missing.md, which does not exist"),
+        ("references/two.md", "is not named by README.md"),
+        (".github/workflows/w.yml", "not templates/b/"),
+        ("SKILL.md", "a gpu path unverified in a host"),
+    )
+    failures = []
+    with tempfile.TemporaryDirectory() as directory:
+        for label, content, wanted in (("broken", broken, expected),
+                                       ("clean", clean, ())):
+            base = build(os.path.join(directory, label), content)
+            files = markdown_files(base)
+            texts = {path: read(os.path.join(base, path)) for path in files}
+            report = Report()
+            check_template_inventory(base, files, texts, report)
+            check_template_selection(base, files, texts, report)
+            check_reference_paths(base, files, texts, report)
+            check_ci_template_coverage(base, files, texts, report)
+            check_host_run_claims(base, files, texts, report)
+            problems = report.problems
+            for path, text in wanted:
+                if not any(path == problem[0] and text.lower() in problem[2].lower()
+                           for problem in problems):
+                    failures.append("%s: expected %r in %s, got %r"
+                                    % (label, text, path,
+                                       [p[2] for p in problems if p[0] == path]))
+            if not wanted and problems:
+                failures.append("%s: a clean tree was rejected: %r"
+                                % (label, problems[:3]))
+    for failure in failures:
+        print("selftest: " + failure, file=sys.stderr)
+    if failures:
+        return 1
+    print(f"selftest: {len(expected)} faults reported, the clean tree accepted")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    parser.add_argument("--selftest", action="store_true",
+                        help="check the inventory checks against two synthetic trees")
     args = parser.parse_args()
+    if args.selftest:
+        return selftest()
+
     root = os.path.abspath(args.root)
 
     files = markdown_files(root)
@@ -1192,6 +1494,10 @@ def main():
     check_bare_sections(root, files, texts, report)
     check_heading_manifest(root, files, texts, report)
     check_code_section_refs(root, files, texts, report)
+    check_template_inventory(root, files, texts, report)
+    check_template_selection(root, files, texts, report)
+    check_reference_paths(root, files, texts, report)
+    check_ci_template_coverage(root, files, texts, report)
     check_tool_inventory(root, files, texts, report)
     check_ort_pin(root, files, texts, report)
     check_agents(root, report)
