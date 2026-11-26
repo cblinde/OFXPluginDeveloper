@@ -57,6 +57,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ofxGPURender.h"  /* kOfxImageEffectPropCPURenderSupported */
+
 #include "ofxCore.h"
 #include "ofxImageEffect.h"
 #include "ofxParam.h"
@@ -352,6 +354,11 @@ static OfxStatus mainEntry(const char* action, const void* handle, OfxPropertySe
                            kOfxImageEffectContextFilter);
     g_props->propSetString(props, kOfxImageEffectPluginRenderThreadSafety, 0,
                            kOfxImageEffectRenderInstanceSafe);
+    /* The three 1.5.1 capability properties the contract asserts: this stub is
+     * a CPU plug-in with no spatial parameter, so both answers are "true". The
+     * control has to fail for the fault under test, not for a missing property. */
+    g_props->propSetString(props, kOfxImageEffectPropCPURenderSupported, 0, "true");
+    g_props->propSetString(props, kOfxImageEffectPropNoSpatialAwareness, 0, "true");
 #ifdef ROI_SELF
     /* A global effect: it does not need the host to cut it into tiles. */
     g_props->propSetInt(props, kOfxImageEffectPropSupportsTiles, 0, 0);

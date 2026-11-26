@@ -366,6 +366,12 @@ void GainPluginFactory::describe(OFX::ImageEffectDescriptor& desc)
     // instance, which would require every allocation to be keyed per render.
     desc.setRenderThreadSafety(OFX::eRenderInstanceSafe);
 
+    // OFX 1.5.1: the CPU fallback is a supported path, not a debugging mode, so
+    // a host may fall back to it; and there is no spatial parameter to disable
+    // when a host wants a spatial-free render, so both answers are "true".
+    desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+    desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
+
 #ifdef OFXPLUGIN_WITH_CUDA
     // Advertising CUDA makes the host pass device pointers. Only do it when a
     // CUDA path is actually compiled in, otherwise every frame renders black.

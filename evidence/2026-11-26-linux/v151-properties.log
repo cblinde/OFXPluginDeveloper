@@ -1,0 +1,61 @@
+$ CPU_ONLY=1 ONNXRUNTIME_ROOT=.validation/ort-1.32.0 ./run-tests.sh
+
+  ok 24 - descriptor declares CPURenderSupported
+  ok 25 - descriptor declares CPURenderSupported
+  ok 25 - descriptor declares NoSpatialAwareness
+  ok 26 - descriptor declares NoSpatialAwareness
+  ok 26 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+  ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+  ok 27 - thumbnail render produces the same frame as a full render
+  ok 28 - thumbnail render produces the same frame as a full render
+  ok 56 - descriptor declares CPURenderSupported
+  ok 57 - descriptor declares NoSpatialAwareness
+  ok 58 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+  ok 59 - thumbnail render produces the same frame as a full render
+  ok 60 - descriptor declares CPURenderSupported
+  ok 61 - descriptor declares CPURenderSupported
+  ok 61 - descriptor declares NoSpatialAwareness
+  ok 62 - descriptor declares NoSpatialAwareness
+  ok 62 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+  ok 63 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+  ok 63 - thumbnail render produces the same frame as a full render
+  ok 64 - thumbnail render produces the same frame as a full render
+ok 103 - descriptor declares CPURenderSupported
+ok 104 - descriptor declares NoSpatialAwareness
+ok 105 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 106 - thumbnail render produces the same frame as a full render
+ok 119 - descriptor declares CPURenderSupported
+ok 120 - descriptor declares NoSpatialAwareness
+ok 121 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 122 - thumbnail render produces the same frame as a full render
+ok 25 - descriptor declares CPURenderSupported
+ok 26 - descriptor declares NoSpatialAwareness
+ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 28 - thumbnail render produces the same frame as a full render
+ok 31 - descriptor declares CPURenderSupported
+ok 32 - descriptor declares CPURenderSupported
+ok 32 - descriptor declares NoSpatialAwareness
+ok 33 - descriptor declares NoSpatialAwareness
+ok 33 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 34 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 34 - thumbnail render produces the same frame as a full render
+ok 35 - descriptor declares CPURenderSupported
+ok 35 - thumbnail render produces the same frame as a full render
+ok 36 - descriptor declares NoSpatialAwareness
+ok 37 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 38 - thumbnail render produces the same frame as a full render
+ok 77 - descriptor declares CPURenderSupported
+ok 78 - descriptor declares NoSpatialAwareness
+ok 79 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 80 - thumbnail render produces the same frame as a full render
+ok 84 - descriptor declares CPURenderSupported
+ok 85 - descriptor declares NoSpatialAwareness
+ok 86 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 87 - thumbnail render produces the same frame as a full render
+
+3 contract_test: 118 checks, 0 failed
+3 contract_test: 144 checks, 0 failed
+3 contract_test: 168 checks, 0 failed
+1 contract_test: 90 checks, 0 failed
+
+[exit status of the run: 0]

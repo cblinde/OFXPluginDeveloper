@@ -26,6 +26,11 @@
 
 #include "Plugin.h"
 
+// kOfxImageEffectPropCPURenderSupported lives in the GPU header, not in
+// ofxImageEffect.h where the other 1.5.1 additions are: OFX split it that way
+// because the CPU fallback only means something next to a GPU render.
+#include "ofxGPURender.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -398,6 +403,12 @@ void InferencePluginFactory::describe(OFX::ImageEffectDescriptor& desc)
     // call concurrently, so this is the honest - and the strongest claim that
     // does not require per-render state.
     desc.setRenderThreadSafety(OFX::eRenderInstanceSafe);
+
+    // OFX 1.5.1: rendering on the CPU execution provider is a supported path
+    // here, and the graph has no spatial parameter to disable, so both answers
+    // a host may branch on are "true".
+    desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+    desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
 
     // No CUDA capability is advertised: the template links the CPU execution
     // provider. Advertising it would make the host hand over device pointers.

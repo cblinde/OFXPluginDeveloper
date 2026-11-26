@@ -145,6 +145,11 @@ public:
   // host-side outArgs property is kOfxPropName).
   OfxStatus isIdentity(double time, const OfxRectI& window, std::string* identityClip);
   OfxStatus render(double time, const OfxRectI& window);
+  // The same render with the two hints OFX 1.5.1 added set the way a host that
+  // is filling a thumbnail sets them: kOfxImageEffectPropThumbnailRender and
+  // kOfxImageEffectPropNoSpatialAwareness, both "true". A plug-in that declared
+  // support for the second has to keep going and keep the frame the same.
+  OfxStatus renderThumbnail(double time, const OfxRectI& window);
   // Sends kOfxImageEffectActionGetRegionsOfInterest and reads the answer for the
   // source clip. The plug-in reports the answer through the Support library as
   // one property per clip ("OfxImageClipPropRoI_<clip>"), so this is the only

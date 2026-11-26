@@ -17,6 +17,10 @@
 // "expected class-name before '{'" if you assume it is): it lives in
 // ofxsProcessing.h:28, which you must include yourself.
 #include "ofxsProcessing.h"
+// kOfxImageEffectPropCPURenderSupported is declared in the GPU header, not in
+// ofxImageEffect.h where OFX 1.5.1's other two additions are: it only means
+// something next to a GPU render, so the SDK groups it there.
+#include "ofxGPURender.h"
 
 namespace {
 
@@ -224,6 +228,14 @@ public:
         desc.setSupportsMultipleClipPARs(false);
         desc.setSupportsMultipleClipDepths(false);
         desc.setRenderThreadSafety(OFX::eRenderInstanceSafe);
+
+        // OFX 1.5.1 added two questions a host may ask before it renders: can
+        // this plug-in render on the CPU, and can it render without spatial
+        // awareness. This is the CPU reference, so both answers are "true".
+        // The second is a promise the plug-in keeps by having no spatial
+        // parameters to disable - a host only uses it as a hint.
+        desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+        desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
     }
 
     void describeInContext(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum context) override

@@ -25,9 +25,13 @@ All are `string × 1` except where noted. Every row was resolved against the pin
 `kOfxImageEffectPropCPURenderSupported` is the modern way to say "GPU-only": set
 `"false"` on the descriptor only when `render()` genuinely has no host-pointer
 path. A host in OpenCL/Metal mode will then skip the effect instead of handing it
-CPU images it cannot read — which is correct, and is why the templates, which do
-have a fallback, leave the default alone. A host missing the property assumes the
-default.
+CPU images it cannot read — which is correct, which is why the templates, which do
+have a fallback, set it to `"true"` explicitly rather than leaning on the default:
+a declaration a contract can read beats one a host has to assume. All three
+templates also declare `kOfxImageEffectPropNoSpatialAwareness` as `"true"`, and
+`testkit/contract_main.cpp` asserts both strings and then renders once with
+`kOfxImageEffectPropThumbnailRender` and `kOfxImageEffectPropNoSpatialAwareness`
+set on the in-args, requiring the same frame as a full render.
 
 Four traps follow from this table:
 

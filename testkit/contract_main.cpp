@@ -41,6 +41,9 @@
 #include <vector>
 
 #include "fake_host.h"
+// kOfxImageEffectPropCPURenderSupported is declared here, not in ofxImageEffect.h
+// (see the note in templates/minimal-ofx/src/Plugin.cpp).
+#include "ofxGPURender.h"
 
 namespace {
 
@@ -1116,6 +1119,40 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   const OfxStatus renderStatus = host.render(0.0, window);
   if (!check("kOfxImageEffectActionRender", renderStatus == kOfxStatOK, statusName(renderStatus))) {
     return failCycle(host);
+  }
+
+  // OFX 1.5.1 put two capability properties in the descriptor and two hints in
+  // the render arguments, and a host branches on all four before it decides how
+  // to render. Asserting them here is what keeps the declaration honest: the "I
+  // can do this" strings have to be there, and the render a host flags as a
+  // thumbnail with no spatial awareness has to produce the same frame - there is
+  // no spatial parameter to disable, so any difference is the plug-in's.
+  {
+    const std::string cpuSupported = host.descriptorString(kOfxImageEffectPropCPURenderSupported);
+    if (!check("descriptor declares CPURenderSupported", cpuSupported == "true",
+               "\"" + cpuSupported + "\" (expected \"true\")")) {
+      return failCycle(host);
+    }
+    const std::string noSpatial = host.descriptorString(kOfxImageEffectPropNoSpatialAwareness);
+    if (!check("descriptor declares NoSpatialAwareness", noSpatial == "true",
+               "\"" + noSpatial + "\" (expected \"true\")")) {
+      return failCycle(host);
+    }
+    const std::vector<float> plainPixels = host.destination();
+    stage("thumbnail render");
+    const OfxStatus thumbnailStatus = host.renderThumbnail(0.0, window);
+    if (!check("kOfxImageEffectActionRender with the 1.5.1 thumbnail hints",
+               thumbnailStatus == kOfxStatOK, statusName(thumbnailStatus))) {
+      return failCycle(host);
+    }
+    const std::vector<float> thumbnailPixels = host.destination();
+    const bool sameSize = thumbnailPixels.size() == plainPixels.size();
+    if (!check("thumbnail render produces the same frame as a full render",
+               sameSize && std::equal(plainPixels.begin(), plainPixels.end(), thumbnailPixels.begin()),
+               sameSize ? "the destination changed when the host asked for a thumbnail"
+                        : "the destination changed size")) {
+      return failCycle(host);
+    }
   }
 
   if (!spec.labelParam.empty()) {

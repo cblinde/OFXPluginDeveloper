@@ -13,6 +13,7 @@
 
 #include "ofxCore.h"
 #include "ofxImageEffect.h"
+#include "ofxGPURender.h"  /* kOfxImageEffectPropCPURenderSupported */
 #include "ofxParam.h"
 #include "ofxProperty.h"
 
@@ -51,6 +52,10 @@ static OfxStatus mainEntry(const char* action, const void* handle, OfxPropertySe
                            kOfxImageEffectContextFilter);
     g_props->propSetString(props, kOfxImageEffectPluginRenderThreadSafety, 0,
                            kOfxImageEffectRenderInstanceSafe);
+    /* Declared so this control fails for its wrong parameter type and not for a
+     * missing 1.5.1 capability property. */
+    g_props->propSetString(props, kOfxImageEffectPropCPURenderSupported, 0, "true");
+    g_props->propSetString(props, kOfxImageEffectPropNoSpatialAwareness, 0, "true");
     return kOfxStatOK;
   }
 

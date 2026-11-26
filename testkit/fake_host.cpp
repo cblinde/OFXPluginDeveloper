@@ -1374,6 +1374,20 @@ OfxStatus FakeHost::render(double time, const OfxRectI& window) {
   return mainEntry(kOfxImageEffectActionRender, &outArgs, &inArgs);
 }
 
+OfxStatus FakeHost::renderThumbnail(double time, const OfxRectI& window) {
+  PropSet inArgs;
+  PropSet outArgs;
+  setInt(&inArgs, kOfxImageEffectPropOpenCLEnabled, 0, 0);
+  setInt(&inArgs, kOfxImageEffectPropCudaEnabled, 0, 0);
+  setInt(&inArgs, kOfxImageEffectPropMetalEnabled, 0, 0);
+  // Both strings, not ints: OFX 1.5.1 defines them as C strings with the values
+  // "true"/"false", and a host that sent 1 here would be outside the spec.
+  setString(&inArgs, kOfxImageEffectPropThumbnailRender, 0, "true");
+  setString(&inArgs, kOfxImageEffectPropNoSpatialAwareness, 0, "true");
+  fillTimeArgs(&inArgs, time, window);
+  return mainEntry(kOfxImageEffectActionRender, &outArgs, &inArgs);
+}
+
 OfxStatus FakeHost::getRegionsOfInterest(double time, const OfxRectD& requested,
                                          OfxRectD* sourceRoi) {
   PropSet inArgs;

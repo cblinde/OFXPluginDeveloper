@@ -263,9 +263,10 @@ Every line below came out of that run; the logs are in
 | What | Command | Result |
 | --- | --- | --- |
 | Documentation | `python3 tools/check-docs.py` | 30 documents, 0 problems **[V]** |
-| Reference plug-in | `templates/minimal-ofx/test/run-tests.sh` | build, artifact and contract: 110 checks, 0 failed **[V]** |
-| CUDA template, CPU path | `CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | 136 checks, 0 failed; memcheck skipped, no valgrind **[V]** |
-| Inference template | `ONNXRUNTIME_ROOT=… ./build.sh`, then `test/run-tests.sh` | 160 checks per host profile plus 82 on the tiled pass, 0 failed **[V]** |
+| Reference plug-in | `templates/minimal-ofx/test/run-tests.sh` | build, artifact and contract: 118 checks, 0 failed **[V]** |
+| CUDA template, CPU path | `CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | 144 checks, 0 failed; memcheck skipped, no valgrind **[V]** |
+| Inference template | `ONNXRUNTIME_ROOT=… ./build.sh`, then `test/run-tests.sh` | 168 checks per host profile plus 90 on the tiled pass, 0 failed **[V]** |
+| OFX 1.5.1 capability properties | inside the contract: both descriptor strings, plus a render with the thumbnail and no-spatial-awareness hints | declared `"true"` in all three templates and the frame is unchanged, 0 failed; the negative-control stubs declare them too, so a control still fails for its own fault ([`v151-properties.log`](../evidence/2026-11-26-linux/v151-properties.log)) **[V]** |
 | Whole gate | `CPU_ONLY=1 ./run-tests.sh` | exit 0; the headline names the one hole, `NOT RUN: GPU kernels (CPU_ONLY)` **[V]** |
 | Negative controls | inside the gate: `testkit/run-negative-controls.sh` | every control's fault was caught (the `1 failed` lines in the log are the controls asserting failure) **[V]** |
 | ASan + UBSan | `SANITIZE=address,undefined CPU_ONLY=1 …/run-tests.sh` | 136 checks × 3, 0 failed, no sanitizer report **[V]** |
@@ -275,6 +276,10 @@ Every line below came out of that run; the logs are in
 | POSIX artifact check | `scripts/check-artifact.sh <ofx>` ×3 | two strong exports in each bundle; 5 and 6 weak C++ helpers reported, not counted **[V]** |
 | glibc bound, real bundles | `tools/check-glibc.sh --max 2.17 <bundle>` ×3 | reference 2.14, CUDA 2.14, inference 2.32 with its bundled runtime at 2.28 **[V]** |
 | ORT inspection | `python3 tools/check-runtime.py .validation/ort-1.32.0` | `ORT_API_VERSION 32`, every entry point this repository uses is declared, no provider in a CPU package **[V]** |
+
+The ASan+UBSan and TSan rows are the 2026-11-26 measurement; they predate the
+OFX 1.5.1 checks, so a fresh sanitizer run prints 118 / 144 / 168 per profile
+instead of the counts written there. The suites themselves are the same.
 
 Two consequences worth carrying forward:
 
