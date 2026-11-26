@@ -179,6 +179,30 @@ the **shape of the work**: one forward pass over a frame-shaped tensor is what t
 in-process row already covers, and each of these three is optimised for something
 else - the same reason libtorch is not a fifth row either.
 
+### Compiling the model ahead of time: measured, not adopted
+
+The alternative to shipping a runtime is compiling the graph before it ships: one
+artifact per target, no provider fallback to hide behind. `tools/aot-compile-model.sh`
+runs that whole chain on the committed model and stops at the C++ half, which is
+where a Vulkan device would be needed
+(`../evidence/2026-11-26-linux/aot-spike.log`, IREE 2026.4 on this machine):
+
+| Step | Result |
+| --- | --- |
+| `iree-import-onnx` (ONNX → MLIR/StableHLO) | 1808 bytes of MLIR, under a second |
+| `iree-compile` for `llvm-cpu`, `--iree-llvmcpu-target-cpu=generic` | **13.8 KB** `.vmfb`, under a second |
+| `iree-compile` for `vulkan` | **15.1 KB** `.vmfb`, one module carrying SPIR-V - compiled here, **not run**: no Vulkan device |
+| `iree-run-module` on the committed input, compared with the golden | max difference **5.96e-08**, i.e. float32 rounding rather than a different computation |
+
+What that buys and costs, measured or known: the graph is expressible outside
+ONNX (the import succeeded), the CPU artifact reproduces the reference to seven
+digits, and the whole compile is a second of CI per target. Against that: a
+per-target artifact, a compiler in the build, no provider to fall back to when a
+layer is unsupported, and - the part this spike did **not** reach - the IREE
+runtime C API linked into the `.ofx`, which is what decides whether the artifact
+is usable from a host at all. Until that is done, the shipped path stays ONNX
+Runtime, and this stays a measured option rather than a promise.
+
 ---
 
 ## 3. Language runtimes inside a plugin: what actually breaks

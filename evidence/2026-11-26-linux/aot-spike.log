@@ -1,0 +1,13 @@
+$ tools/aot-compile-model.sh
+== import: ONNX -> MLIR/StableHLO
+   build/aot/test_conv.mlir: 1808 bytes
+== compile: CPU artifact
+   build/aot/test_conv-cpu.vmfb: 13838 bytes
+== compile: Vulkan artifact (SPIR-V, not runnable here)
+   build/aot/test_conv-vulkan.vmfb: 15055 bytes
+   modules with SPIR-V: 1
+== run: CPU artifact on the committed input
+EXEC @test_conv
+   max |difference| = 5.96e-08
+   the ahead-of-time artifact reproduces the golden
+exit=0
