@@ -1,0 +1,71 @@
+{
+  "started": "2026-11-25T21:30:27+00:00",
+  "mode": "run",
+  "steps": [
+    {
+      "name": "validate",
+      "status": "pass",
+      "detail": "1 .ofx, decoders ['ffmpeg']",
+      "seconds": 0.03
+    },
+    {
+      "name": "install",
+      "status": "pass",
+      "detail": "C:\\Program Files\\Common Files\\OFX\\Plugins\\ReferenceGain.ofx.bundle",
+      "seconds": 0.0
+    },
+    {
+      "name": "launch",
+      "status": "pass",
+      "detail": "pid 6792",
+      "seconds": 0.02
+    },
+    {
+      "name": "connect",
+      "status": "pass",
+      "detail": "DaVinci Resolve Studio 21.2.0.5",
+      "seconds": 35.06
+    },
+    {
+      "name": "build",
+      "status": "pass",
+      "detail": "poc-kill: Reference Gain on source8k.png",
+      "seconds": 3.89
+    },
+    {
+      "name": "error",
+      "status": "fail",
+      "detail": "RuntimeError: the host exited (code 1) while render f152f638-aa5c-43c5-82c2-de2cfda6e0b5 was in flight"
+    },
+    {
+      "name": "quit",
+      "status": "pass",
+      "detail": "API quit, then the recorded PID",
+      "seconds": 0.0
+    }
+  ],
+  "facts": {
+    "ofx": [
+      "templates\\minimal-ofx\\build\\bundle\\ReferenceGain.ofx.bundle\\Contents\\Win64\\ReferenceGain.ofx"
+    ],
+    "source": "build\\resolve\\source8k.png",
+    "effect": "Reference Gain",
+    "decoders": [
+      "ffmpeg"
+    ],
+    "ofx_dir": "C:\\Program Files\\Common Files\\OFX\\Plugins",
+    "resolve": "E:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\Resolve.exe"
+  },
+  "effect": {
+    "id": "Open FX/OFX Plugin Developer/Reference Gain",
+    "applied": "Reference Gain",
+    "on_item": 1,
+    "timeline": "poc-kill"
+  },
+  "killed": {
+    "pid": 6792,
+    "at": "2026-11-25T21:31:12+00:00"
+  },
+  "result": "fail",
+  "close_error": "TypeError: 'NoneType' object is not callable"
+}

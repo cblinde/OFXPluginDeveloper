@@ -34,10 +34,9 @@ DaVinci Resolve Studio.
 
 **What it is not:** not a plugin *collection*, not a wrapper library, and not a
 substitute for testing in a real host. Two hosts have run it: `NatronRenderer`,
-headless, and DaVinci Resolve Studio 21.2 through `tests/resolve/`. The Resolve
-run whose pixels were compared is the `-DREFERENCE_GAIN_DEFAULT=2.0` build - the
-source times two, `mae 0.0`; the default-gain run was checked for its size only,
-so "identity at the default gain" is what the code does, not what was measured.
+headless, and DaVinci Resolve Studio 21.2 through `tests/resolve/`, whose frames
+are the source to the byte at the default gain and twice the source at
+`-DREFERENCE_GAIN_DEFAULT=2.0` (`mae 0.0` over 8,294,400 bytes in both runs).
 Nuke and SCRATCH have run nothing. See
 [What has actually been verified](#what-has-actually-been-verified).
 

@@ -35,8 +35,8 @@ arguments, and the `ONNXRUNTIME_ROOT`, `CPU_ONLY` and `.venv/` rules:
 ## Hard rules
 
 1. **Never claim a host render is verified beyond what ran.** Resolve Studio 21.2
-   ran `tests/resolve/poc.py` three times (all **[V]**): default gain (size checked,
-   pixels not compared), `-DREFERENCE_GAIN_DEFAULT=2.0` (source ×2, `mae 0.0`), and
+   ran `tests/resolve/poc.py` three times (all **[V]**): default gain (identical to
+   the source, `mae 0.0`), `-DREFERENCE_GAIN_DEFAULT=2.0` (source ×2, `mae 0.0`), and
    the CUDA template at `-DGAIN_DEFAULT=2.0` declaring CUDA for every render; a
    fourth run killed the host with a job in flight. `NatronRenderer` rendered one
    256×256 frame through `testkit/`. No tiled host, no second GPU, no third host.

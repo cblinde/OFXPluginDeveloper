@@ -1,0 +1,84 @@
+{
+  "started": "2026-11-25T20:19:44+00:00",
+  "mode": "run",
+  "steps": [
+    {
+      "name": "validate",
+      "status": "pass",
+      "detail": "1 .ofx, decoders ['ffmpeg']",
+      "seconds": 0.03
+    },
+    {
+      "name": "install",
+      "status": "pass",
+      "detail": "C:\\Program Files\\Common Files\\OFX\\Plugins\\ReferenceGain.ofx.bundle",
+      "seconds": 0.0
+    },
+    {
+      "name": "launch",
+      "status": "pass",
+      "detail": "pid 9920",
+      "seconds": 0.02
+    },
+    {
+      "name": "connect",
+      "status": "pass",
+      "detail": "DaVinci Resolve Studio 21.2.0.5",
+      "seconds": 17.75
+    },
+    {
+      "name": "build",
+      "status": "pass",
+      "detail": "poc: Reference Gain on source.png",
+      "seconds": 2.08
+    },
+    {
+      "name": "render",
+      "status": "pass",
+      "detail": "poc00108000.png",
+      "seconds": 8.75
+    },
+    {
+      "name": "check",
+      "status": "pass",
+      "detail": "1920x1080 via ffmpeg",
+      "seconds": 1.95
+    },
+    {
+      "name": "quit",
+      "status": "pass",
+      "detail": "API quit, then the recorded PID",
+      "seconds": 16.31
+    }
+  ],
+  "facts": {
+    "ofx": [
+      "templates\\minimal-ofx\\build\\bundle\\ReferenceGain.ofx.bundle\\Contents\\Win64\\ReferenceGain.ofx"
+    ],
+    "source": "build\\resolve\\source.png",
+    "effect": "Reference Gain",
+    "decoders": [
+      "ffmpeg"
+    ],
+    "ofx_dir": "C:\\Program Files\\Common Files\\OFX\\Plugins",
+    "reference": "build\\resolve\\source.png",
+    "resolve": "E:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\Resolve.exe"
+  },
+  "effect": {
+    "id": "Open FX/OFX Plugin Developer/Reference Gain",
+    "applied": "Reference Gain",
+    "on_item": 1,
+    "timeline": "poc"
+  },
+  "image": {
+    "width": 1920,
+    "height": 1080,
+    "channels": 4,
+    "decoder": "ffmpeg",
+    "source_format": "rgb24",
+    "mae": 0.0,
+    "max_pixel": 0,
+    "compared_bytes": 8294400
+  },
+  "result": "pass"
+}
