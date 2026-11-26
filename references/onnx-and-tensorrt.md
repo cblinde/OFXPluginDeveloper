@@ -928,6 +928,19 @@ the user will see rather than a reservation the arena honours. §3's
 device-pointer path changes where the bytes come from, not how much the arena
 keeps.
 
+**Several instances multiply that.** The template keeps one session per instance,
+so two timelines hold two arenas. Measured on 2026-11-26 with every session kept
+alive and run once: three sessions at 640×480 hold 2642 MB with the defaults and
+980 MB with `kSameAsRequested` - 881 against 327 MB per instance - and two
+sessions at 1920×1080 hold 7284 MB against 4170 MB, 3642 against 2085 MB per
+instance (**[V]**,
+[`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log)).
+The default's per-instance figure is the single-session peak rounded up the
+power-of-two curve, which is where "roughly twice" came from before it was
+measured; the strategy is the one setting here that changes what a host pays for
+a second instance, and it is the strongest argument in this document for setting
+it in the plug-in rather than describing it.
+
 ## 6. "CUDA" in the label does not mean the GPU ran every node
 
 A label that says only `CUDA (device 0, 1 thread, bundled CUDA)` is evidence that

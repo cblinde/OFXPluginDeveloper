@@ -176,3 +176,18 @@ shape 2560x1440, cudnn_conv_use_max_workspace 1 against 0
 ws       session MB   after run MB  peak delta MB
 1              16.0         2138.0         2122.0
 0              14.0         2134.0         2120.0
+
+# Row 7, second half: several sessions alive at once, which is what one plug-in
+# instance per timeline means. Each session is created, run once, and kept alive,
+# so the arena's growth is charged to the process. Defaults against
+# kSameAsRequested with a 4 GB limit, same readout as above.
+#
+# 3 sessions, 640x480
+3 sessions alive at once, 640x480, each run once
+default arena                      peak   2642.4 MB (880.8 MB per instance)
+limit=4GB, kSameAsRequested        peak    980.0 MB (326.7 MB per instance)
+#
+# 2 sessions, 1920x1080
+2 sessions alive at once, 1920x1080, each run once
+default arena                      peak   7284.4 MB (3642.2 MB per instance)
+limit=4GB, kSameAsRequested        peak   4170.0 MB (2085.0 MB per instance)
