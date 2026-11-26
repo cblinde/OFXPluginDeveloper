@@ -29,6 +29,10 @@ PIN_PATTERN = re.compile(r"onnxruntime-linux-x64-(?:gpu_cuda\d+-)?(\d+\.\d+\.\d+
 VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 
 
+class PinError(Exception):
+    """The action file no longer has the shape this check reads."""
+
+
 def read_pin():
     """The `default:` of the `version` input, and of no other input.
 
@@ -37,11 +41,19 @@ def read_pin():
     version-shaped one above it would be read as the pin without anything
     failing. So the walk is scoped: inside `inputs:`, track which input the line
     belongs to and take a default only from `version`.
+
+    The walk is also the one place that knows what the file must look like, so it
+    is where a changed shape is caught. Every way it can come up empty says which
+    part is missing and raises: a check that quietly read no pin would report that
+    every document agrees with nothing, which is the most convincing kind of
+    green.
     """
     with open(ACTION, encoding="utf-8") as fh:
         lines = fh.read().splitlines()
 
     in_inputs = False
+    seen_inputs = False
+    seen_version = False
     current = None
     for line in lines:
         stripped = line.strip()
@@ -49,17 +61,29 @@ def read_pin():
             continue
         if not line.startswith(" "):
             in_inputs = stripped == "inputs:"
+            seen_inputs = seen_inputs or in_inputs
             current = None
             continue
         if not in_inputs:
             continue
         if len(line) - len(line.lstrip()) == 2 and stripped.endswith(":"):
             current = stripped[:-1]
+            seen_version = seen_version or current == "version"
             continue
         if current == "version" and stripped.startswith("default:"):
-            match = VERSION_PATTERN.search(stripped)
-            return match.group(1) if match else None
-    return None
+            value = stripped.split(":", 1)[1].strip().strip("\"'")
+            match = VERSION_PATTERN.search(value)
+            if not match:
+                raise PinError(
+                    f"the `version` default is not a version: {value!r}"
+                )
+            return match.group(1)
+
+    if not seen_inputs:
+        raise PinError("there is no top-level `inputs:` block")
+    if not seen_version:
+        raise PinError("`inputs:` has no `version` entry")
+    raise PinError("`inputs.version` has no `default:`")
 
 
 def documents():
@@ -75,10 +99,16 @@ def documents():
 
 
 def main() -> int:
-    pin = read_pin()
-    if pin is None:
+    try:
+        pin = read_pin()
+    except OSError as exc:
+        print(f"error: {os.path.relpath(ACTION, ROOT)}: {exc.strerror}", file=sys.stderr)
+        return 1
+    except PinError as exc:
         print(
-            f"error: no default under inputs.version in {os.path.relpath(ACTION, ROOT)}",
+            f"error: {os.path.relpath(ACTION, ROOT)}: {exc}. This check reads the "
+            "`default:` of that input, so the action file's shape is part of what "
+            "it enforces; a file that changed shape has to be re-read, not passed.",
             file=sys.stderr,
         )
         return 1

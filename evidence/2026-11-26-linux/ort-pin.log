@@ -33,3 +33,46 @@ check-ort-pin: FAIL - a document and the pin disagree
 pin: 1.33.0 (the version default in .github/actions/onnx-runtime/action.yml)
 documents: 1 release-layout path(s) naming a version, 2 plain mention(s) of 1.33.0 kept as measurements
 exit=1
+
+$ # re-run 2026-11-26 with the shape guard: every way the action file can
+$ # stop having a pin is now a named failure, not an empty pass
+$ python3 tools/check-ort-pin.py
+  pin: 1.32.0 (the version default in .github/actions/onnx-runtime/action.yml)
+  documents: 1 release-layout path(s) naming a version, 51 plain mention(s) of 1.32.0 kept as measurements
+  check-ort-pin: the pin and every path that names one agree
+  exit=0
+
+$ # control: no top-level `inputs:` block
+$ python3 tools/check-ort-pin.py
+  error: .github/actions/onnx-runtime/action.yml: there is no top-level `inputs:` block. This check reads the `default:` of that input, so the action file's shape is part of what it enforces; a file that changed shape has to be re-read, not passed.
+  exit=1
+
+$ # control: `inputs:` without a `version` entry
+$ python3 tools/check-ort-pin.py
+  error: .github/actions/onnx-runtime/action.yml: `inputs:` has no `version` entry. This check reads the `default:` of that input, so the action file's shape is part of what it enforces; a file that changed shape has to be re-read, not passed.
+  exit=1
+
+$ # control: `version` without a `default:`
+$ python3 tools/check-ort-pin.py
+  error: .github/actions/onnx-runtime/action.yml: `inputs.version` has no `default:`. This check reads the `default:` of that input, so the action file's shape is part of what it enforces; a file that changed shape has to be re-read, not passed.
+  exit=1
+
+$ # control: a default that is not a version
+$ python3 tools/check-ort-pin.py
+  error: .github/actions/onnx-runtime/action.yml: the `version` default is not a version: 'latest'. This check reads the `default:` of that input, so the action file's shape is part of what it enforces; a file that changed shape has to be re-read, not passed.
+  exit=1
+
+$ # control: the action file has moved
+$ python3 tools/check-ort-pin.py
+  error: .github/actions/onnx-runtime/action.yml: No such file or directory
+  exit=1
+
+$ # still caught: the pin moved to 1.33.0
+$ python3 tools/check-ort-pin.py
+  error: references/onnx-and-tensorrt.md:268: names 1.32.0, the pin is 1.33.0
+  check-ort-pin: FAIL - a document and the pin disagree
+  pin: 1.33.0 (the version default in .github/actions/onnx-runtime/action.yml)
+  documents: 1 release-layout path(s) naming a version, 2 plain mention(s) of 1.33.0 kept as measurements
+  exit=1
+
+  (action.yml restored)
