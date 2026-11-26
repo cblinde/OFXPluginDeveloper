@@ -1,0 +1,83 @@
+== the folded pin check, controls ==
+real tree: pin=1.32.0 problems=0
+control 1: a document names 1.33.0: 1 problem(s)
+    a.md:1: names 1.33.0 in a release path; the pin is 1.32.0 (.github/actions/onnx-runtime/action.yml, `inputs.version.default`)
+control 2: a plain mention of 1.33.0 is a measurement: 0 problem(s)
+control 3: a version-shaped default above `version`: 0 problem(s)
+control 4: no `inputs:` block: 1 problem(s)
+    .github/actions/onnx-runtime/action.yml:1: there is no top-level `inputs:` block. This check reads the `default:` of that input, so the action file's shape is part of what it enforces; a file t
+control 5: `inputs:` without `version`: 1 problem(s)
+    .github/actions/onnx-runtime/action.yml:1: `inputs:` has no `version` entry. This check reads the `default:` of that input, so the action file's shape is part of what it enforces; a file that c
+control 6: `version` without a default: 1 problem(s)
+    .github/actions/onnx-runtime/action.yml:1: `inputs.version` has no `default:`. This check reads the `default:` of that input, so the action file's shape is part of what it enforces; a file that
+control 7: a default that is not a version: 1 problem(s)
+    .github/actions/onnx-runtime/action.yml:1: the `version` default is not a version: 'latest'. This check reads the `default:` of that input, so the action file's shape is part of what it enforce
+control 8: the action file is missing: 1 problem(s)
+    .github/actions/onnx-runtime/action.yml:1: cannot be read: No such file or directory. This check reads the `default:` of that input, so the action file's shape is part of what it enforces; a fi
+control 9: a CUDA package path naming the pin agrees: 0 problem(s)
+
+$ # the script those controls ran (the pin check is imported from tools/check-docs.py)
+import importlib.util, os, tempfile, textwrap
+spec = importlib.util.spec_from_file_location("cd", "tools/check-docs.py")
+mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+
+ACTION = textwrap.dedent("""\
+    name: onnx-runtime
+    inputs:
+      version:
+        description: version
+        default: '1.32.0'
+      package:
+        description: package
+        default: linux-x64
+    """)
+
+def root_with(action=ACTION, docs=None):
+    d = tempfile.mkdtemp()
+    if action is not None:
+        p = os.path.join(d, ".github", "actions", "onnx-runtime")
+        os.makedirs(p)
+        open(os.path.join(p, "action.yml"), "w").write(action)
+    files = {}
+    for name, text in (docs or {}).items():
+        open(os.path.join(d, name), "w").write(text)
+        files[name] = text
+    return d, files
+
+def probe(label, action=ACTION, docs=None):
+    d, files = root_with(action, docs)
+    r = mod.Report()
+    mod.check_ort_pin(d, list(files), files, r)
+    print(f"{label}: {len(r.problems)} problem(s)")
+    for path, line, msg in r.problems:
+        print(f"    {path}:{line}: {msg[:150]}")
+
+print("== the folded pin check, controls ==")
+# A: the real tree
+real = mod.Report()
+files = mod.markdown_files(".")
+texts = {p: mod.read(p) for p in files}
+mod.check_ort_pin(".", files, texts, real)
+pin, problem = mod.read_ort_pin(".")
+print(f"real tree: pin={pin} problems={len(real.problems)}")
+
+probe("control 1: a document names 1.33.0",
+      docs={"a.md": "install onnxruntime-linux-x64-1.33.0 now\n"})
+probe("control 2: a plain mention of 1.33.0 is a measurement",
+      docs={"a.md": "measured against ONNX Runtime 1.33.0\n"})
+probe("control 3: a version-shaped default above `version`",
+      action=ACTION.replace("  version:", "  other:\n    default: '1.30.0'\n  version:"))
+probe("control 4: no `inputs:` block", action="name: onnx-runtime\n")
+probe("control 5: `inputs:` without `version`",
+      action="name: x\ninputs:\n  package:\n    default: linux-x64\n")
+probe("control 6: `version` without a default",
+      action="name: x\ninputs:\n  version:\n    description: v\n")
+probe("control 7: a default that is not a version",
+      action=ACTION.replace("default: '1.32.0'", "default: latest"))
+probe("control 8: the action file is missing", action=None)
+probe("control 9: a CUDA package path naming the pin agrees",
+      docs={"a.md": "onnxruntime-linux-x64-gpu_cuda12-1.32.0\n"})
+
+$ python3 tools/check-docs.py   # the check in its new place, on the real tree
+check-docs: 30 documents, 0 problems
+  exit=0

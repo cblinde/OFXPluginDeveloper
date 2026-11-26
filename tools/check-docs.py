@@ -1033,7 +1033,7 @@ def check_tool_inventory(root, files, texts, report):
 
     A tool that no document names is a tool nobody runs, and the README's tools
     row had gone four entries stale before anything noticed: `check-runtime.py`,
-    `check-ort-pin.py`, `check-model-canary.py` and two C++ probes were in the
+    `check-model-canary.py` and two C++ probes were in the
     directory and in no list. The rule is deliberately the weakest useful one -
     the file name appears somewhere in README.md and in
     references/testing-layers.md - because a table row's wording is not something
@@ -1056,6 +1056,99 @@ def check_tool_inventory(root, files, texts, report):
                 report.error(place, 1,
                              f"tools/{name} is not mentioned here; a tool no document lists "
                              f"is a tool nobody runs")
+
+
+# ---------------------------------------------------------------------------
+# The ONNX Runtime pin
+# ---------------------------------------------------------------------------
+
+ORT_ACTION = ".github/actions/onnx-runtime/action.yml"
+ORT_RELEASE_PATH = re.compile(r"onnxruntime-linux-x64-(?:gpu_cuda\d+-)?(\d+\.\d+\.\d+)")
+ORT_VERSION = re.compile(r"(\d+\.\d+\.\d+)")
+
+
+def read_ort_pin(root):
+    """The `default:` of the `version` input, and the reason when there is none.
+
+    Reading the first `default:` in the file works only while `version` is the
+    first input; `package` and `platform` carry defaults too, and a second
+    version-shaped one above it would be read as the pin without anything
+    failing. So the walk is scoped: inside `inputs:`, track which input the line
+    belongs to and take a default only from `version`.
+
+    Every way the walk can come up empty returns the missing part, because a
+    check that quietly read no pin would report that every document agrees with
+    nothing, which is the most convincing kind of green.
+    """
+    try:
+        lines = read(os.path.join(root, ORT_ACTION)).splitlines()
+    except OSError as exc:
+        return None, f"cannot be read: {exc.strerror}"
+
+    in_inputs = False
+    seen_inputs = False
+    seen_version = False
+    current = None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            in_inputs = stripped == "inputs:"
+            seen_inputs = seen_inputs or in_inputs
+            current = None
+            continue
+        if not in_inputs:
+            continue
+        if len(line) - len(line.lstrip()) == 2 and stripped.endswith(":"):
+            current = stripped[:-1]
+            seen_version = seen_version or current == "version"
+            continue
+        if current == "version" and stripped.startswith("default:"):
+            value = stripped.split(":", 1)[1].strip().strip("\"'")
+            match = ORT_VERSION.search(value)
+            if not match:
+                return None, f"the `version` default is not a version: {value!r}"
+            return match.group(1), None
+
+    if not seen_inputs:
+        return None, "there is no top-level `inputs:` block"
+    if not seen_version:
+        return None, "`inputs:` has no `version` entry"
+    return None, "`inputs.version` has no `default:`"
+
+
+def check_ort_pin(root, files, texts, report):
+    """Documents that name a release path have to name the pinned version.
+
+    This was `tools/check-ort-pin.py`. It is documentation drift like the rest of
+    this file - one `default:` in the composite action, compared against every
+    `onnxruntime-linux-x64-<version>` path in the prose - and a second entry point
+    meant a second thing to wire into `run-tests.sh` and CI, which is how a local
+    gate ends up not running it.
+
+    Plain mentions of a version elsewhere are *measurements* - "verified against
+    1.32.0" - and keep their historical number, so only release-layout paths are
+    failed; the two are different claims and only the first one is about what CI
+    downloads.
+    """
+    pin, problem = read_ort_pin(root)
+    if problem is not None:
+        report.error(ORT_ACTION, 1,
+                     f"{problem}. This check reads the `default:` of that input, so the "
+                     f"action file's shape is part of what it enforces; a file that "
+                     f"changed shape has to be re-read, not passed.")
+        return
+    for path in files:
+        text = texts.get(path)
+        if text is None:
+            continue
+        for number, line in enumerate(text.splitlines(), start=1):
+            for found in ORT_RELEASE_PATH.findall(line):
+                if found != pin:
+                    report.error(path, number,
+                                 f"names {found} in a release path; the pin is {pin} "
+                                 f"({ORT_ACTION}, `inputs.version.default`)")
 
 
 def check_agents(root, report):
@@ -1100,6 +1193,7 @@ def main():
     check_heading_manifest(root, files, texts, report)
     check_code_section_refs(root, files, texts, report)
     check_tool_inventory(root, files, texts, report)
+    check_ort_pin(root, files, texts, report)
     check_agents(root, report)
 
     status = report.show()

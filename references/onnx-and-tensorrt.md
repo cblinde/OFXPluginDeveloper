@@ -258,7 +258,7 @@ same bundle" below) — that is a change to this template, not a second one.
 
 The version in that path is the version `linux.yml` installs: it is a single
 `default:` in [`.github/actions/onnx-runtime/action.yml`](../.github/actions/onnx-runtime/action.yml),
-and bumping it there is the whole change. `tools/check-ort-pin.py` keeps the
+and bumping it there is the whole change. `tools/check-docs.py` keeps the
 documents honest about a bump - it reads that default, fails when any release
 path in the documentation names a different version, and counts the plain
 mentions it leaves alone: those are measurements, and they keep the number they
