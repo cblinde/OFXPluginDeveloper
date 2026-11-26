@@ -103,14 +103,25 @@ jobs:
         # No `nobuild` here: this template's Windows script builds in its first
         # stage (unlike the other three), so it is called the way its own header
         # documents and the exit code is read from that one run.
+        #
+        # `call`, and the code read in ranges, because neither is optional here.
+        # A batch file invoked by name without `call` transfers control instead of
+        # returning: the rest of this block never runs and the script's exit code
+        # becomes the step's, so an exit 2 failed the job with no notice at all.
+        # Measured on Windows with a stub that exits 0/1/2/3: that shape gave
+        # 0/1/2/3 and printed nothing; with `call` the code is readable, but
+        # `if errorlevel 2` alone is true for 3 as well, which is a suite failure
+        # (run-tests.sh maps exactly 2 to NOT RUN and everything else to FAILED).
+        # So: high to low, exactly the mapping the POSIX gate uses.
         shell: cmd
         run: |
-          templates\minimal-opencl-ofx\test\run-tests.bat Release && exit /b 0
+          call templates\minimal-opencl-ofx\test\run-tests.bat Release
+          if errorlevel 3 exit /b 1
           if errorlevel 2 (
             echo ::notice title=No OpenCL device on this runner::the CPU path and the artifact check passed; the OpenCL suite needs a device and this job does not claim one.
             exit /b 0
           )
-          exit /b 1
+          if errorlevel 1 exit /b 1
 
       - name: Negative controls
         shell: cmd
