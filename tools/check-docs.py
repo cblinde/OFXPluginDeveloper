@@ -52,6 +52,14 @@ What it checks, and why each one exists:
    rows that claim the same heading in the same file are an error rather than
    tolerance, because a dedupe that keeps one of them removes the other from
    coverage while leaving a believable row count.
+10. The host record. references/verification-matrix.tsv is the only authority on
+    what ran in a host, and §1 of verification-status.md carries the same rows as a
+    table. Every matrix tuple has to be in that table and every table row in the
+    matrix - host, template, path, date and evidence filename - so a row that went
+    stale fails whichever direction it went stale, which the first version of this
+    check could not see. A "never ran" sentence fails for any host with a row, in
+    either word order, and the other documents that talk about hosts link the
+    matrix instead of keeping a count of their own.
 """
 
 import argparse
@@ -361,49 +369,151 @@ def check_absence_claims(root, files, texts, report):
                                  f"claims there is no `{claimed}`, but it exists")
 
 
-def check_host_run_claims(root, files, texts, report):
-    """A document that says a host has never run something has to be right.
+HOST_RECORD_DOC = "references/verification-status.md"
+HOST_RECORD_HEADING = "### What ran in a host"
+HOST_DOCS = ("README.md", "AGENTS.md", "references/checklists.md",
+             "references/host-resolve.md", "references/host-nuke-scratch-natron.md")
 
-    `checklists.md` still read "Resolve, Nuke and SCRATCH have never run this
-    template" after Resolve had rendered frames through two of them. That is the
-    same class of stale absence claim as the missing LICENSE above, one level up:
-    the claim names a host instead of a path, so the file that records what ran
-    where is the authority and this reads it.
+
+def host_matrix_rows(root, report):
+    """The matrix as (host, template, path, date, evidence basename) tuples.
+
+    The evidence basename is part of the key because two runs of one template on
+    one day differ only by which report they wrote - Resolve's default-gain run
+    and its gain-2.0 run share host, template, path and date.
     """
     matrix = os.path.join(root, "references", "verification-matrix.tsv")
     if not os.path.exists(matrix):
         report.error("references/verification-matrix.tsv", 1,
-                     "missing: a claim that a host never ran cannot be checked")
-        return
-    hosts = set()
+                     "missing: a claim that a host ran or never ran has no authority")
+        return None
+    rows = []
     for number, line in enumerate(read(matrix).splitlines(), 1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
-        parts = line.split("\t")
+        parts = [field.strip() for field in line.split("\t")]
         if len(parts) < 6:
             report.error("references/verification-matrix.tsv", number,
-                         "row needs six tab-separated fields: host, template, path, date, label, evidence")
+                         "row needs at least six tab-separated fields: host, template, path, "
+                         "date, label, evidence")
             continue
-        host = parts[0].strip()
-        hosts.add(host)
-        hosts.add(host.split()[0])
-        evidence = parts[5].strip()
-        if evidence and not os.path.exists(os.path.normpath(os.path.join(root, evidence))):
+        evidence = parts[5]
+        if not os.path.exists(os.path.normpath(os.path.join(root, evidence))):
             report.error("references/verification-matrix.tsv", number,
                          f"evidence `{evidence}` does not exist")
-    if not hosts:
+        rows.append((parts[0], parts[1], parts[2], parts[3], os.path.basename(evidence)))
+    return rows
+
+
+def host_record_table(text, report):
+    """The table under HOST_RECORD_HEADING, as the same tuple shape."""
+    lines = text.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if line.strip() == HOST_RECORD_HEADING:
+            start = index
+            break
+    if start is None:
+        report.error(HOST_RECORD_DOC, 1,
+                     f'no "{HOST_RECORD_HEADING}" section: the host record has to be a '
+                     "table, because that is the only form the matrix can be checked "
+                     "against")
+        return None
+    rows = []
+    header_seen = False
+    for index in range(start + 1, len(lines)):
+        line = lines[index].strip()
+        # The section ends at the next heading, and the table ends at the first
+        # line that is neither blank nor a row - §1 has three other tables below
+        # this one (the kernel timings among them), and reading into them made
+        # every timing row look like a host claim.
+        if line.startswith("#"):
+            break
+        if not line.startswith("|"):
+            if header_seen and rows and line:
+                break
+            continue
+        cells = [cell.strip().strip("`") for cell in line.strip("|").split("|")]
+        if not header_seen:
+            if cells and cells[0].lower() == "host":
+                header_seen = True
+            continue
+        joined = "".join(cells)
+        if joined and set(joined) <= set("-: "):
+            continue
+        if len(cells) < 5:
+            report.error(HOST_RECORD_DOC, index + 1,
+                         "host record row needs host, template, path, date and evidence")
+            continue
+        link = cells[4]
+        name = link.replace(")", "").replace("]", "").rsplit("/", 1)[-1]
+        rows.append((cells[0], cells[1], cells[2], cells[3], name))
+    return rows
+
+
+def check_host_run_claims(root, files, texts, report):
+    """The matrix and the host record have to agree, in both directions.
+
+    The first version of this check could only see one sentence shape - "a host has
+    never run this template" - and only in one direction, so a row added to the
+    matrix or removed from it went unnoticed until a reader compared the two by
+    hand. Two runs of the same template on the same day made even a count check
+    impossible, which is why the record is a table with one row per matrix row:
+    every tuple in the matrix has to be in it, every tuple in it has to be in the
+    matrix, and the evidence files have to be the same ones.
+
+    The never-claims stay, widened to both word orders ("Nuke and SCRATCH have run
+    nothing" puts the host first) and to rendered/executed/loaded, and scoped to a
+    sentence so a host named two lines earlier is not dragged in.
+
+    The other documents that talk about hosts link `verification-matrix.tsv`
+    instead of keeping their own record; a claim kept in two places is the bug
+    this check exists for.
+    """
+    rows = host_matrix_rows(root, report)
+    if rows is None:
         return
-    alternatives = "|".join(re.escape(host) for host in sorted(hosts, key=len, reverse=True))
-    pattern = re.compile(
-        r"(?P<host>" + alternatives + r")[^\n]{0,160}?"
-        r"(?:have never|has never|never)\s+(?:run|ran)\s+(?:this|that|any)\s+"
-        r"(?:template|plug-in|plugin|build)", re.I)
-    for name in files:
-        for match in pattern.finditer(texts[name]):
-            line = texts[name][:match.start()].count("\n") + 1
-            report.error(name, line,
-                         f"claims {match.group('host')} never ran, but "
-                         "references/verification-matrix.tsv records a run")
+
+    record = host_record_table(texts.get(HOST_RECORD_DOC, ""), report)
+    if record is not None:
+        for row in rows:
+            if row not in record:
+                report.error(HOST_RECORD_DOC, 1,
+                             "the matrix records '{0}' ({1} {2} {3}, {4}) and the record does not: "
+                             "the record cannot be older than the runs it reports".format(*row))
+        for row in record:
+            if row not in rows:
+                report.error(HOST_RECORD_DOC, 1,
+                             "the record claims '{0}' ({1} {2} {3}, {4}) and the matrix has no "
+                             "such row: the matrix is the authority".format(*row))
+
+    hosts = sorted({row[0] for row in rows}, key=len, reverse=True)
+    if hosts:
+        alternatives = "|".join(re.escape(host) for host in hosts)
+        verbs = r"(?:run|ran|rendered|executed|loaded)"
+        # A sentence, at most: `[^.\n]` keeps a host named in the previous sentence
+        # from being read as the subject of this one.
+        patterns = (
+            re.compile(r"(" + alternatives + r")[^.\n]{0,120}?\b(?:never|not)\b[^.\n]{0,40}?\b" + verbs, re.I),
+            re.compile(r"(" + alternatives + r")[^.\n]{0,120}?\b(?:have|has|had)\s+" + verbs +
+                       r"\s+nothing", re.I),
+            re.compile(r"\b(?:never|nothing)\b[^.\n]{0,60}?\b" + verbs +
+                       r"[^.\n]{0,60}?\b(" + alternatives + r")", re.I),
+        )
+        for name in files:
+            body = strip_comments(texts[name])
+            for pattern in patterns:
+                for match in pattern.finditer(body):
+                    line = body[:match.start()].count("\n") + 1
+                    report.error(name, line,
+                                 "claims {0} never ran, but references/verification-matrix.tsv "
+                                 "records a run".format(match.group(1)))
+
+    for name in HOST_DOCS:
+        if name in texts and "verification-matrix.tsv" not in texts[name]:
+            report.error(name, 1,
+                         "does not link references/verification-matrix.tsv: what ran in a host "
+                         "is recorded in one place, and the others point at it")
 
 
 def check_section_numbering(root, files, texts, report):

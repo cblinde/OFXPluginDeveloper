@@ -133,9 +133,9 @@ Do not use Natron to validate GPU behaviour: it will not exercise it.
 - **Untiled rendering.** `setSupportsTiles(false)` is safe here and leaves the
   host's tile parallelism unused.
 - **One headless render is not a Natron test.** `NatronRenderer` rendered a frame
-  of one template on 2026-11-24 (`evidence/2026-11-24-windows/`), which proves a
-  host can load a bundle headless; it says nothing about this plug-in's CUDA path
-  or about a Natron timeline.
+  of one template, which proves a host can load a bundle headless; it says nothing
+  about this plug-in's CUDA path or about a Natron timeline. The frame, its date and
+  its pixels are a row in `verification-matrix.tsv`, not a claim in this document.
 
 ---
 

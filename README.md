@@ -36,7 +36,9 @@ DaVinci Resolve Studio.
 substitute for testing in a real host. Two hosts have run it: `NatronRenderer`,
 headless, and DaVinci Resolve Studio 21.2 through `tests/resolve/`, whose frames
 are the source to the byte at the default gain and twice the source at
-`-DREFERENCE_GAIN_DEFAULT=2.0` (`mae 0.0` over 8,294,400 bytes in both runs).
+`-DREFERENCE_GAIN_DEFAULT=2.0` (`mae 0.0` over 8,294,400 bytes in both runs). Each run, its date and its committed
+report are a row in
+[`references/verification-matrix.tsv`](references/verification-matrix.tsv).
 Nuke and SCRATCH have run nothing. See
 [What has actually been verified](#what-has-actually-been-verified).
 

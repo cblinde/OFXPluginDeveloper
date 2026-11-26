@@ -50,22 +50,16 @@ OpenFX `OFX_Release_1.5.1`):
   28/28 bit-exact and measured throughput, the CPU loop and the copy cost
   (`../README.md` §"What has actually been verified"). Multi-GPU binding and real
   async ordering across many streams remain unverified.
-- **Two hosts, one frame each, both headless.** `NatronRenderer` rendered one
-  256×256 frame through the template on 2026-11-24
-  (`testkit/verify-bundle.bat`), pixels checked. DaVinci Resolve Studio 21.2.0.5
-  ran `tests/resolve/poc.py --build-project` twice on 2026-11-25 and produced one
-  1920×1080 PNG each time. At the default gain the frame is identical to the source
-  over all 8,294,400 bytes (`mae 0.0`, `max 0`), and with the bundle built at
-  `-DREFERENCE_GAIN_DEFAULT=2.0` it is the source times two to the byte (`mae 0.0`,
-  `max 0`), so the kernel did run inside that host. Both comparisons live in the
-  run's own report - `resolve-poc-report.json` and `resolve-poc-gain-report.json`
-  beside the logs - which is where the console transcript's "1920x1080 via ffmpeg"
-  line had hidden them: until 2026-11-26 `tests/resolve/reports/` was ignored, so
-  the documents cited a path no reader could open. The failure path was measured as well: killing
-  the host with a job in flight ends the run `fail` with the host's exit code in
-  47 s and leaves no process behind (`resolve-poc-kill.log`). Nuke and SCRATCH
-  have run nothing, and every host-specific claim in
-  `references/host-resolve.md` remains graded B/C.
+- **Two hosts, one frame each, both headless.** The runs are the table above:
+  one 256×256 frame in `NatronRenderer` through `testkit/verify-bundle.bat`, and
+  Resolve Studio 21.2.0.5 through `tests/resolve/poc.py --build-project` at the
+  default gain (identical to the source over 8,294,400 bytes), at
+  `-DREFERENCE_GAIN_DEFAULT=2.0` (the source times two), with a CUDA build whose
+  declaration names the CUDA path for all eight invocations, and one run in which
+  the host was killed with a job in flight - that one ends `fail` with the host's
+  exit code and leaves no process behind. Neither is a GUI session, and the host is
+  entitled to skip `render()`. Nuke and SCRATCH have run nothing, and every
+  host-specific claim in `references/host-resolve.md` remains graded B/C.
 - **A GPU kernel ran inside Resolve (2026-11-26).** The CUDA template, rebuilt with
   `-DGAIN_DEFAULT=2.0`, produced a 1920×1080 PNG that is the source times two over
   8,294,400 bytes (`mae 0.0`, `max 0`), and its declaration names the CUDA path for
@@ -106,6 +100,22 @@ Built and checked on Linux x86-64 with GCC 13.3.0, CUDA 12.9.41, CMake 3.31.6 an
 OpenFX `OFX_Release_1.5.1`. Lines marked **[V]** are measurements or artifact
 inspections from that machine; the commands and the full results are in
 `testing-layers.md` §13.
+
+### What ran in a host
+
+One row per run, and the same rows as
+[`verification-matrix.tsv`](verification-matrix.tsv) - `tools/check-docs.py` compares
+the two in both directions, so a run added to the matrix has to be reported here and
+a run reported here has to be in the matrix. Evidence is the report the run wrote,
+not the console transcript.
+
+| Host | Template | Path | Date | Evidence |
+|---|---|---|---|---|
+| `Resolve Studio 21.2.0.5` | reference | CPU | 2026-11-25 | [`resolve-poc-report.json`](../evidence/2026-11-25-windows/resolve-poc-report.json) |
+| `Resolve Studio 21.2.0.5` | reference | CPU | 2026-11-25 | [`resolve-poc-gain-report.json`](../evidence/2026-11-25-windows/resolve-poc-gain-report.json) |
+| `Resolve Studio 21.2.0.5` | CUDA gain | GPU | 2026-11-26 | [`resolve-poc-cuda-gain-report.json`](../evidence/2026-11-26-windows/resolve-poc-cuda-gain-report.json) |
+| `Resolve Studio 21.2.0.5` | reference | kill | 2026-11-25 | [`resolve-poc-kill-report.json`](../evidence/2026-11-25-windows/resolve-poc-kill-report.json) |
+| `NatronRenderer` | reference | CPU | 2026-11-24 | [`report.txt`](../evidence/2026-11-24-windows/report.txt) |
 
 - CUDA-enabled configure + build compiles `Kernel.cu` with real `nvcc` for
   `75;80;86;89;90;100;120`, links `libcudart.so.12`, and produces
@@ -245,13 +255,13 @@ The review ran a mechanical check of the repo against the official sources.
   source on the CPU (`field-evidence.md` §4), which is not the same as running SASS on a GPU. The
   same checks are committed as `templates/minimal-cuda-ofx/test/run-tests.sh` so
   they can be re-run after any change.
-- **Two headless hosts, one frame each.** `NatronRenderer` loaded the bundle and
-  rendered a 256×256 frame through `testkit/verify-bundle.bat` on 2026-11-24, and
-  Resolve Studio 21.2 did the same through `tests/resolve/poc.py` on 2026-11-25
-  (**[V]** for both). Neither is a GUI session; Resolve's `render()` was forced to
-  run by a build default of 2.0, and that frame is the source times two to the
-  byte. Nuke and SCRATCH have run nothing, and every host-behaviour claim in this
-  document is graded **[R]** or **[S]**, never **[M]**.
+- **Two headless hosts, one frame each.** Which host ran what, on which date,
+  with which argument and which committed report is the table in §1 - deliberately
+  not recounted here, because a count kept in two places is how the matrix went
+  stale. What the table does not say is a limit: neither run is a GUI session,
+  Resolve's `render()` had to be forced by a build default of 2.0, and Nuke and
+  SCRATCH have run nothing. Every host-behaviour claim in this document is graded
+  **[R]** or **[S]**, never **[M]**.
 - **Resolve's scanline padding** (256-byte alignment, the 208×117 thumbnail case
   in `Kernel.cu`'s comment) is a community observation carried in the template's
   source, not something measured against Resolve here. It is safe to depend on
