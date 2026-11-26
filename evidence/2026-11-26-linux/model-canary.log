@@ -1,0 +1,17 @@
+$ python3 tools/check-model-canary.py
+model    : templates/onnx-inference-ofx/models/test_conv.onnx
+runtime  : onnxruntime 1.32.0
+model    : opset 17, IR 8
+onnx     : package knows opset 28 (not a bound, context)
+output   : max |difference| = 0 (tolerance 0)
+canary: the shipped model still loads and still matches its golden
+exit=0
+
+$ python3 tools/check-model-canary.py --golden <golden + 0.5>   # negative control
+  canary: FAIL - the runtime no longer reproduces the committed golden
+  model    : templates/onnx-inference-ofx/models/test_conv.onnx
+  runtime  : onnxruntime 1.32.0
+  model    : opset 17, IR 8
+  onnx     : package knows opset 28 (not a bound, context)
+  output   : max |difference| = 0.5 (tolerance 0)
+  exit=1 (the shift is caught)

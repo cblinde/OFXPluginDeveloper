@@ -1,0 +1,44 @@
+name: canary
+
+# The gate in linux.yml runs the ONNX Runtime the documents name, so a runtime
+# release that changes a fusion or refuses the shipped model is noticed only when
+# somebody bumps the pin - which is exactly the news nobody reads on release day.
+# This job asks the same question of whatever is newest, weekly: does the shipped
+# model still load, and does it still reproduce the golden committed beside it?
+#
+# One assertion, no build: tools/check-model-canary.py loads
+# templates/onnx-inference-ofx/models/test_conv.onnx, runs it on the shipped
+# input, and compares against test_golden.bin. It prints the runtime version and
+# the model's opset, because "the numbers moved" and "the model no longer loads"
+# are different findings.
+#
+# A red run here is not a broken repository: it is the early warning that the pin
+# is about to matter. The fix is a decision, not a revert - see
+# references/onnx-and-tensorrt.md and the "newest runtime" row in
+# references/testing-layers.md section 13.
+on:
+  schedule:
+    # Mondays, 04:17 UTC, off the hour so it does not queue behind everyone else.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  newest-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Newest ONNX Runtime, ONNX and numpy
+        # Deliberately unpinned: this job exists to run what the pinned job does
+        # not. The pinned versions live in .github/actions/onnx-runtime.
+        run: python3 -m pip install --quiet --disable-pip-version-check onnx onnxruntime numpy
+
+      - name: The shipped model still loads and still matches its golden
+        run: python3 tools/check-model-canary.py

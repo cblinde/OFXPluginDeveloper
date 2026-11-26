@@ -819,6 +819,12 @@ the tag in a trailing comment (`actions/checkout` v4.4.0,
 `docs.yml`, after checking the digest of its own tarball; it reports nothing on
 the current tree (run here, 2026-11-26).
 
+A third workflow, `canary.yml`, runs on a schedule and installs nothing pinned:
+`tools/check-model-canary.py` loads the shipped model on the newest ONNX Runtime
+and compares it with the committed golden. The pinned gate proves the version
+this repository targets; the weekly job is what notices that the next version
+changed a fusion or refused the model, which is a decision, not a revert.
+
 The release gate itself is [`checklists.md`](checklists.md):
 §1 lists the mechanical gates with their commands and, importantly, what a pass
 does *not* prove; §2–§4 are the questions a reviewer signs off.
@@ -878,6 +884,7 @@ worth reaching for while debugging rather than through the suite:
 | `python3 tools/probe-env.py` | which compiler, generator, CUDA toolkit and Python this machine has; `--self-test` removes a capability and has to report not-ready |
 | `python3 tools/check-docs.py` | documentation drift - links, anchors, counts, provenance labels, section references; ~1 s |
 | `python3 tools/check-runtime.py <ort-root>` | `ORT_API_VERSION`, the entry points this repository calls, provider exports and the CUDA imports; `--require-api` and `--require-plugin-provider` gate a root, `--self-test` proves the reading on fixtures it builds |
+| `python3 tools/check-model-canary.py` | does the shipped model still load on **whatever runtime is installed**, and does it still reproduce the committed golden? Prints the runtime version and the model's opset; unpinned by design, so the weekly `canary` job can ask it of the newest release |
 | `python3 tools/make-testmodels.py --out <dir>` | synthetic 1/3/4-channel and 2x ONNX models, so nothing needs a download |
 | `python3 tools/model_probe.py model.onnx` | shapes, dynamic dims, size factor, and the alignment multiple the model wants |
 | `python3 tools/bench_ep.py model.onnx` | median/p90 per execution provider |
@@ -1052,6 +1059,7 @@ ONNX Runtime 1.20.1 and then 1.32.0
 | Artifact + fake host (reference) | 118 checks per host profile (3 × 118 in a suite run), 0 failed, two load/unload cycles, two live instances with separate values |
 | Artifact + fake host (CUDA) | 144 checks per host profile (3 × 144), 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path, which the Windows rows above cover |
 | Artifact + fake host (inference) | 168 checks per host profile (3 × 168), 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 90 checks for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
+| Model canary, shipped model on the installed runtime (2026-11-26) | `tools/check-model-canary.py` on this machine's ONNX Runtime 1.32.0: model opset 17 / IR 8, output compared with the committed golden, **max difference 0** at tolerance 0; the control - the same golden shifted by 0.5 - exits 1 and names the difference. The tool is what `canary.yml` runs weekly against an unpinned install ([`model-canary.log`](../evidence/2026-11-26-linux/model-canary.log)) |
 | OFX 1.5.1 capability properties (2026-11-26) | all three templates declare `kOfxImageEffectPropCPURenderSupported` and `kOfxImageEffectPropNoSpatialAwareness` as `"true"` in their descriptor, and the contract asserts both strings plus a render the host flags with the two 1.5.1 hints (`kOfxImageEffectPropThumbnailRender`, `kOfxImageEffectPropNoSpatialAwareness` on `inArgs`), which has to produce the same frame as a full render: **118 / 144 / 168 checks** per profile and **90** on the tiled pass, 0 failed. The negative-control stubs carry the same two declarations, so a control still fails for its own fault and not for a missing property ([`v151-properties.log`](../evidence/2026-11-26-linux/v151-properties.log)) |
 | glibc bound, real bundles (2026-11-26) | the `./run-tests.sh` stage, `tools/check-glibc.sh` per bundle at its own bound: `ReferenceGain` and `MinimalCudaGain` `GLIBC_2.14` against 2.17, `OnnxInference` `GLIBC_2.32` (bundled ONNX Runtime 2.28) against 2.32 — a bundle above its bound fails the run ([`check-glibc.log`](../evidence/2026-11-26-linux/check-glibc.log)) |
 | Linux gate, 2026-11-26 | `CPU_ONLY=1 ./run-tests.sh` from a fast-forwarded tree: exit 0, documentation 30 documents 0 problems, 110 + 136 + (160 × 3 + 82) checks 0 failed, negative controls and comparator green, and the one hole named as `NOT RUN: GPU kernels (CPU_ONLY)`. ASan+UBSan ran the CUDA host suite separately, 136 × 3 clean ([`run-tests.log`](../evidence/2026-11-26-linux/run-tests.log), [`asan-ubsan-cuda.log`](../evidence/2026-11-26-linux/asan-ubsan-cuda.log)) |

@@ -1084,6 +1084,20 @@ processes - the plug-in loads its private core as `onnxruntime-ofx.dll` and
 preloads the CUDA groups before registering, the probe does neither - and that is
 what the row now names.
 
+**The third question is about the model, not the API.** A runtime can keep every
+entry point and still change a fusion, an ordering or a rounding, and the only
+way to see that is to run the graph. `tools/check-model-canary.py` loads the
+shipped `test_conv.onnx` on whatever runtime is installed and compares the output
+with the committed golden at tolerance 0 - the CPU execution provider reproduced
+that golden bit for bit on 1.20.1 and on 1.32.0, so a difference is news. It
+prints the runtime version, the model's opset and the newest opset the installed
+`onnx` package knows, and exits 1 on a mismatch. `canary.yml` calls it weekly
+against an unpinned install, which is what turns "a runtime was released" into
+"the pin is about to matter" before a user hits it; the pinned gate in
+`linux.yml` still runs the version the documents name. Measured here on
+1.32.0: opset 17, IR 8, max difference 0, and a golden shifted by 0.5 exits 1
+(`../evidence/2026-11-26-linux/model-canary.log`).
+
 **What the import table already settles.** The 1.32 plugin provider imports
 neither cuDNN, cuFFT nor cudart, and it does not import the core library at all -
 it receives the api pointer in `CreateEpFactories`. §4's preload story - load the
