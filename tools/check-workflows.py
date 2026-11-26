@@ -14,13 +14,21 @@ What it checks, and nothing more:
 * **Pins.** Every `uses:` in a workflow or in a composite action is
   `<owner>/<repo>[@<path>]@<40 hex characters>`, followed by a `# vX.Y.Z`
   comment so the pin can be read and bumped. A local `./` action is exempt.
-* **Shape.** No tab indentation, quotes and flow brackets balanced outside block
-  scalars, every block scalar indented deeper than its key, no key repeated in
-  one mapping, every job with `runs-on` or `uses`, and a `uses:` that belongs to
-  a step.
+* **Shape.** No tab indentation, no key twice in one mapping, a quoted or flow
+  value that opens on a line has to close on that line, a block scalar's content
+  is indented deeper than its key, every job has `runs-on` or a job-level `uses:`
+  but not both, and the jobs are found by the indentation they actually use.
+
+Two rules keep this from growing into a parser, and both were paid for by false
+positives. A value is only looked at when it *starts* with a quote or a flow
+bracket, so an apostrophe in a plain scalar and a `]` inside a quoted string are
+none of its business - the previous version counted characters per line and
+rejected a valid file for `echo "a ] b"`. And a flow collection has to close on
+its own line: this tree writes them inline, a flow across lines is actionlint's
+job, and the message says that rather than pretending to follow it.
 
 It is not a YAML parser. An invalid file it accepts is actionlint's job; a valid
-file it rejects is a bug here, and `--selftest` feeds it the faults it exists for.
+file it rejects is a bug here, and `--selftest` feeds it one case per check.
 """
 
 import argparse
@@ -29,11 +37,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-USES = re.compile(r"^(?P<indent> *)(?:- +)?uses: *(?P<target>\S+)(?P<rest>.*)$")
-KEY = re.compile(r"^(?P<indent> *)(?:- +)?(?P<key>[A-Za-z_][\w.-]*):(?P<rest>.*)$")
-BLOCK = re.compile(r"^(?P<indent> *)(?:- +)?[A-Za-z_][\w.-]*: *[|>][+-]?\d* *$")
+# No `indent` groups: the column a check needs is measured on the line, and a
+# group nothing reads is a promise the code does not keep.
+USES = re.compile(r"^ *(?:- +)?uses: *(?P<target>\S+)(?P<rest>.*)$")
+KEY = re.compile(r"^ *(?:- +)?(?P<key>[A-Za-z_][\w.-]*):(?P<rest>.*)$")
+BLOCK = re.compile(r"^ *(?:- +)?[A-Za-z_][\w.-]*: *[|>][+-]?\d* *$")
+ITEM = re.compile(r"^ *- +(?P<rest>.*)$")
 PINNED = re.compile(r"[0-9a-f]{40}")
-COMMENT = re.compile(r"(^|\s)#")
 
 
 class Report:
@@ -58,7 +68,35 @@ def strip_comment(line):
     return line
 
 
-def check_pin(path, number, indent, target, rest, report):
+def value_of(line):
+    """The scalar after the first `key:` or `- `, or "" when the line is a key."""
+    match = KEY.match(line)
+    if match is not None:
+        return match.group("rest").strip()
+    match = ITEM.match(line)
+    if match is not None:
+        return match.group("rest").strip()
+    return ""
+
+
+def flow_balance(text):
+    """Bracket depth of one line, with quoted parts left alone."""
+    depth = 0
+    quote = None
+    for character in text:
+        if quote:
+            if character == quote:
+                quote = None
+        elif character in "'\"":
+            quote = character
+        elif character in "[{":
+            depth += 1
+        elif character in "]}":
+            depth -= 1
+    return depth
+
+
+def check_pin(path, number, target, rest, report):
     if target.startswith("./"):
         return
     name, _, ref = target.partition("@")
@@ -75,56 +113,83 @@ def check_pin(path, number, indent, target, rest, report):
 
 def check_shape(path, text, report):
     lines = text.splitlines()
-    mappings = []          # [(indent, {keys})]
-    flow_depth = 0
+    mappings = []          # [(indent, {keys seen at that indent})]
     block_indent = None    # indentation of the key that opened the block scalar
     block_line = 0
+    block_key = ""
     jobs_indent = None
     job_indent = None
-    job_has_key = {}
-    pending_step = None
+    job_line = None
+    job_keys = {}          # {line of a job id: {keys at that job's key indent}}
 
     for number, raw in enumerate(lines, 1):
         line = raw.rstrip()
-        indent = len(line) - len(line.lstrip(" "))
+        stripped = line.lstrip(" ")
+        indent = len(line) - len(stripped)
 
-        if line.lstrip(" ").startswith("\t") or "\t" in line[:indent]:
+        if stripped.startswith("\t"):
             report.error(path, number, "tab indentation; YAML forbids tabs here")
+
         if block_indent is not None:
             if not line.strip() or indent > block_indent:
                 continue
             block_indent = None
-        if not line.strip():
-            continue
-        if line.lstrip().startswith("#"):
+            # A dedent to another key closes the scalar, and so does a comment: the
+            # composite action carries one after its `description: >-`. A dedent to
+            # anything else means the content sits at the key's own column, which
+            # YAML rejects - that is the case this check exists for.
+            if KEY.match(line) is None and not stripped.startswith("#"):
+                report.error(
+                    path, number,
+                    "this line ends the block scalar of %r, opened at line %d, and is "
+                    "not a key - so that scalar's content is not indented deeper than "
+                    "its key" % (block_key, block_line))
+
+        if not line.strip() or stripped.startswith("#"):
             continue
 
         body = strip_comment(line)
-        if body.count('"') % 2 or body.count("'") % 2:
-            report.error(path, number, "unbalanced quote on the line: %r" % line.strip())
-        flow_depth += body.count("[") - body.count("]") + body.count("{") - body.count("}")
-        if flow_depth < 0:
-            report.error(path, number, "a flow bracket closes before it opens")
-            flow_depth = 0
+        value = value_of(body)
+
+        if value[:1] in ("'", '"'):
+            if len(value) < 2 or not value.endswith(value[0]):
+                report.error(path, number,
+                             "a value that opens with %s does not close it on the "
+                             "same line: %r" % (value[0], value))
+        elif value[:1] in ("[", "{"):
+            if flow_balance(value):
+                report.error(
+                    path, number,
+                    "a flow collection that opens here does not close on the same "
+                    "line (%r); this checker does not follow a flow across lines, "
+                    "actionlint does" % value)
+        elif value.count('"') % 2:
+            # Double quotes must pair inside a plain scalar too - `run: echo "a`
+            # opens a quoted segment that never closes. Single quotes are left
+            # alone on purpose: an apostrophe in `Don't break` is a plain scalar.
+            report.error(path, number,
+                         "an odd number of double quotes in a plain scalar: %r"
+                         % value)
 
         if BLOCK.match(line):
-            block_indent = indent
+            # The column of the *key*, not of the dash: `- run: |` at indent 6 needs
+            # its content deeper than column 8, and comparing against the dash let a
+            # body at the key's own column through.
+            opened = KEY.match(line)
+            block_indent = opened.start("key") if opened is not None else indent
             block_line = number
-            continue
-
-        if flow_depth:
+            block_key = opened.group("key") if opened is not None else ""
             continue
 
         key = KEY.match(line)
         if key is None:
             continue
         name = key.group("key")
-        if key.group("rest").strip() == "" and job_indent == indent + 2:
-            pending_step = number
+
         # A `- ` item starts a new mapping at its own level, so two sibling steps
         # both name themselves `name:` without that being a duplicate. Without
         # this the checker reported 27 collisions in four clean workflows.
-        item = None if not re.match(r"^ *- ", line) else indent
+        item = indent if ITEM.match(line) else None
         key_indent = indent + 2 if item is not None else indent
         while mappings and mappings[-1][0] > key_indent:
             mappings.pop()
@@ -136,30 +201,32 @@ def check_shape(path, text, report):
             report.error(path, number, "key %r appears twice in one mapping" % name)
         mappings[-1][1].add(name)
 
-        if name in ("on", "jobs", "name", "permissions") and indent == 0:
-            if name == "jobs":
-                jobs_indent = indent
-        elif jobs_indent is not None and indent == 2 and key.group("rest").strip() == "":
-            job_indent = indent
-            job_has_key[number] = set()
-        elif job_indent is not None and indent == 4 and job_has_key:
-            job_has_key[max(job_has_key)].add(name)
+        # The jobs are found by the indentation they use, not by a hard-coded 2,
+        # so a workflow that indents its job ids differently is still read.
+        if name == "jobs" and indent == 0:
+            jobs_indent = indent
+        elif jobs_indent is not None and indent > jobs_indent:
+            if job_indent is None:
+                job_indent = indent
+            if indent == job_indent:
+                job_line = number
+                job_keys[job_line] = set()
+            elif indent == job_indent + 2 and job_line is not None:
+                job_keys[job_line].add(name)
 
-    for start, names in job_has_key.items():
+    for start, names in job_keys.items():
         if "runs-on" not in names and "uses" not in names:
             report.error(path, start,
                          "this job has neither runs-on nor uses, so it cannot start")
-
-    if flow_depth:
-        report.error(path, len(lines), "a flow bracket is still open at the end of the file")
+        elif "runs-on" in names and "uses" in names:
+            report.error(path, start,
+                         "this job has both runs-on and a job-level uses:, so it is a "
+                         "run and a reusable-workflow call at once")
 
     for number, raw in enumerate(lines, 1):
         match = USES.match(raw)
-        if match:
-            if pending_step is not None and number < pending_step:
-                report.error(path, number, "a uses: before the first step of a job")
-            check_pin(path, number, len(match.group("indent")), match.group("target"),
-                      match.group("rest"), report)
+        if match is not None:
+            check_pin(path, number, match.group("target"), match.group("rest"), report)
 
 
 def files(root):
@@ -175,20 +242,21 @@ def check(root, report):
     for path in workflows + actions:
         relative = path.relative_to(root).as_posix()
         text = path.read_bytes().decode("utf-8")
-        if "\t" in text.replace("\r\n", "\n") and not any(
-                line.startswith(" ") for line in text.splitlines()):
-            report.error(relative, 1, "the file is not indented with spaces")
         check_shape(relative, text, report)
         print("%-46s %s" % (relative, "checked"))
     return workflows, actions
 
 
 def selftest():
-    """Feed the faults this script exists for, and require each to be reported."""
+    """One case per check, a clean file that must pass, and an empty root."""
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / ".github" / "workflows").mkdir(parents=True)
         (root / ".github" / "actions" / "build").mkdir(parents=True)
+        # The last two lines are the false positives the old per-line character
+        # counts produced: an apostrophe in a plain scalar and a `]` inside a
+        # quoted string, both valid YAML. A clean fixture that cannot exercise
+        # them is how they survived.
         good = """name: good
 
 on:
@@ -202,45 +270,79 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           fetch-depth: 0
-      - name: run
+      - name: Don't break
         run: |
           echo "a ' quote and a [ bracket in a block scalar are fine"
+          echo "balanced ] inside quotes"
 """
         (root / ".github" / "workflows" / "good.yml").write_text(good, encoding="utf-8")
         cases = {
-            "tag.yml": ("name: tag\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n"
-                        "      - uses: actions/checkout@v4\n"),
-            "tab.yml": ("name: tab\non: push\njobs:\n  a:\n\truns-on: x\n"),
-            "dup.yml": ("name: dup\non: push\njobs:\n  a:\n    runs-on: x\n    runs-on: y\n"),
-            "norun.yml": ("name: norun\non: push\njobs:\n  a:\n    steps:\n"
-                          "      - uses: ./local\n"),
-            "quote.yml": ("name: quote\non: push\njobs:\n  a:\n    runs-on: \"x\n"),
+            "tag.yml": (
+                "name: tag\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n"
+                "      - uses: actions/checkout@v4  # v4.4.0\n",
+                "not pinned to a commit"),
+            "nocomment.yml": (
+                "name: p\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n"
+                "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262\n",
+                "no '# vX.Y.Z' comment"),
+            "tab.yml": (
+                "name: tab\non: push\njobs:\n  a:\n\truns-on: x\n",
+                "tab indentation"),
+            "dup.yml": (
+                "name: dup\non: push\njobs:\n  a:\n    runs-on: x\n    runs-on: y\n",
+                "appears twice"),
+            "norun.yml": (
+                "name: norun\non: push\njobs:\n  a:\n    steps:\n"
+                "      - uses: ./local\n",
+                "neither runs-on nor uses"),
+            "both.yml": (
+                "name: both\non: push\njobs:\n  a:\n    runs-on: x\n"
+                "    uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0\n",
+                "both runs-on and a job-level uses:"),
+            "quote.yml": ("name: quote\non: push\njobs:\n  a:\n    runs-on: \"x\n",
+                          "does not close it on the same line"),
+            "oddquote.yml": (
+                "name: odd\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n"
+                "      - run: echo \"a\n",
+                "odd number of double quotes"),
+            "flow.yml": ("name: flow\non:\n  push:\n    branches: [main\n",
+                         "does not close on the same line"),
+            "block.yml": (
+                "name: block\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n"
+                "      - run: |\n        echo hi\n",
+                "not indented deeper than its key"),
         }
-        for name, text in cases.items():
+        for name, (text, _) in cases.items():
             (root / ".github" / "workflows" / name).write_text(text, encoding="utf-8")
 
         report = Report()
         check(root, report)
-        expected = {
-            "tag.yml": "not pinned to a commit",
-            "tab.yml": "tab indentation",
-            "dup.yml": "appears twice",
-            "norun.yml": "neither runs-on nor uses",
-            "quote.yml": "unbalanced quote",
-        }
         failures = []
-        for case, wanted in expected.items():
+        for case, (_, wanted) in cases.items():
             hits = [problem for problem in report.problems if case in problem]
             if not any(wanted in hit for hit in hits):
                 failures.append("%s: expected %r, got %r" % (case, wanted, hits))
         good_hits = [problem for problem in report.problems if "good.yml" in problem]
         if good_hits:
             failures.append("good.yml: a clean file was rejected: %r" % good_hits)
+
+        # No workflows at all has to be a problem, not a silent pass - an empty
+        # checkout is how a gate that checks nothing looks green.
+        empty = root / "empty"
+        (empty / ".github" / "workflows").mkdir(parents=True)
+        empty_report = Report()
+        check(empty, empty_report)
+        if not any("no workflow files found" in problem
+                   for problem in empty_report.problems):
+            failures.append("empty root: expected 'no workflow files found', got %r"
+                            % empty_report.problems)
+
         for failure in failures:
             print("selftest: " + failure, file=sys.stderr)
         if failures:
             return 1
-        print("selftest: %d faults reported, the clean file accepted" % len(expected))
+        print("selftest: %d faults reported, the clean file accepted, "
+              "the empty root named" % len(cases))
         return 0
 
 

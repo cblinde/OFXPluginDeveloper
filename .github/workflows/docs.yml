@@ -69,8 +69,11 @@ jobs:
       - name: Action pins and workflow shape
         # The half that needs no download, so it runs before the actionlint fetch:
         # every `uses:` names a 40-character commit and a version comment, and the
-        # faults a YAML error leaves behind (tab indentation, unbalanced quotes,
-        # a key twice in one mapping, a job without runs-on) are reported here.
+        # faults a YAML error leaves behind (tab indentation, a value that opens a
+        # quote or a bracket without closing it, a key twice in one mapping, a
+        # block scalar at its key's column, a job with no runs-on or both runs-on
+        # and uses) are reported here. Ten fixtures prove each of them fails, the
+        # clean one has to pass.
         # run-tests.sh runs the same two commands on the way to a push.
         run: |
           python3 tools/check-workflows.py --selftest
