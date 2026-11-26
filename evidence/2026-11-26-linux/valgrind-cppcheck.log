@@ -118,3 +118,75 @@ $ # wall time per reference memcheck pass, three runs back to back (the number i
   resolve: 1356 ms, exit=0, ERROR SUMMARY: 0 errors from 0 contexts
   natron:  1353 ms, exit=0, ERROR SUMMARY: 0 errors from 0 contexts
   total:   4.06 s for the three
+
+== the OpenCL template's suite under the same tool (2026-11-26) ==
+$ RUN_VALGRIND=1 ./templates/minimal-opencl-ofx/test/run-tests.sh
+
+# First attempt, before this stage existed, over the suite alone:
+#   definitely lost: 1,024 bytes in 3 blocks
+#   indirectly lost: 4,215,392 bytes in 117 blocks
+#   ERROR SUMMARY: 3 errors from 3 contexts
+# All three were the test's own: the suite never sent kOfxActionDestroyInstance
+# or kOfxActionUnload, so the factory entry and the instance (with its built
+# programs and kernels) were still held at exit. Stage [8/8] now does both, and
+# the same pass over the same suite reads:
+#   definitely lost: 0 bytes in 0 blocks
+#   indirectly lost: 0 bytes in 0 blocks
+#   ERROR SUMMARY: 0 errors from 0 contexts
+# PoCL keeps ~70 MB reachable and 1,536 bytes possibly lost (its compiler and
+# device runtime are never torn down); --errors-for-leak-kinds=definite, the rule
+# the other templates use, does not count that.
+[5/6] running the OpenCL suite against /workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-opencl-ofx/build/bundle/OpenCLGain.ofx.bundle/Contents/Linux-x86-64/OpenCLGain.ofx
+[1/8] loading /workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-opencl-ofx/build/bundle/OpenCLGain.ofx.bundle/Contents/Linux-x86-64/OpenCLGain.ofx
+  ok 1 - OfxGetNumberOfPlugins() is 1
+  ok 2 - the module identifies itself as com.ofxplugindeveloper.openclgain
+[2/8] opening an OpenCL device for the host to hand over
+  platform: Portable Computing Language
+  device  : cpu-haswell-AMD Ryzen 7 3800X 8-Core Processor (OpenCL 3.0 PoCL HSTR: cpu-x86_64-pc-linux-gnu-haswell)
+  ok 3 - load answered kOfxStatOK
+  ok 4 - describe answered kOfxStatOK
+  ok 5 - the descriptor advertises OpenCL Buffers render
+  ok 6 - the descriptor advertises OpenCL Images render
+  ok 7 - the descriptor keeps the CPU path advertised
+  ok 8 - describeInContext answered kOfxStatOK
+  ok 9 - createInstance answered a handle
+  ok 10 - the host set gain to 2.0
+[3/8] the CPU path, with the host offering no device
+  ok 11 - render answered kOfxStatOK without OpenCL
+  ok 12 - the CPU frame is the source times two, bit for bit
+  ok 13 - no device buffer was written while OpenCL was off
+[4/8] the same render with the device enabled
+  ok 14 - the host re-opened the device
+  ok 15 - render answered kOfxStatOK with OpenCL enabled
+  ok 16 - the plug-in wrote through the cl_mem it was handed, not a host pointer
+  ok 17 - the device frame is the source times two, bit for bit (max delta 0.000000)
+[5/8] a render window smaller than the frame
+  ok 18 - the host set gain to 3.0
+  ok 19 - render answered kOfxStatOK for the window
+  ok 20 - inside the window the frame is the source times three
+  ok 21 - outside the window the previous frame is untouched (the kernel wrote no padding)
+[6/8] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage
+  ok 22 - the host set gain to 2.0 for the Images pass
+  ok 23 - render answered kOfxStatOK over image2d_t
+  ok 24 - the plug-in wrote through the image it was handed
+  ok 25 - the image frame is the source times two, bit for bit (max delta 0.000000)
+  ok 26 - the host set gain to 3.0 for the image window
+  ok 27 - render answered kOfxStatOK for an image window
+  ok 28 - inside the image window the frame is the source times three
+  ok 29 - outside the image window the previous frame is untouched
+  ok 30 - the host set gain back to 2.0
+  ok 31 - the buffers handover still renders after the image one
+[7/8] a negative row pitch is refused, not walked backwards
+  ok 32 - render refused a negative row pitch on an OpenCL buffer
+  ok 33 - the refusal wrote nothing into the device buffer
+[8/8] the host destroys the instance and unloads the plug-in
+  ok 34 - kOfxActionDestroyInstance answered kOfxStatOK
+  ok 35 - kOfxActionUnload answered kOfxStatOK
+opencl_suite: 35 checks, 0 failed
+[6/6] valgrind memcheck
+  contract harness, CPU path:
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+  the OpenCL suite, both handovers:
+       definitely lost: 0 bytes in 0 blocks
+       indirectly lost: 0 bytes in 0 blocks
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

@@ -14,7 +14,7 @@ contract_test: 118 checks, 0 failed
 contract_test: 118 checks, 0 failed
 
 $ # with a real device the suite now runs both handovers on the same frame
-[6/7] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage
+[6/8] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage
   ok 22 - the host set gain to 2.0 for the Images pass
   ok 23 - render answered kOfxStatOK over image2d_t
   ok 24 - the plug-in wrote through the image it was handed
@@ -25,11 +25,13 @@ $ # with a real device the suite now runs both handovers on the same frame
   ok 29 - outside the image window the previous frame is untouched
   ok 30 - the host set gain back to 2.0
   ok 31 - the buffers handover still renders after the image one
-[7/7] a negative row pitch is refused, not walked backwards
+[7/8] a negative row pitch is refused, not walked backwards
   ok 32 - render refused a negative row pitch on an OpenCL buffer
   ok 33 - the refusal wrote nothing into the device buffer
-opencl_suite: 33 checks, 0 failed
-
+[8/8] the host destroys the instance and unloads the plug-in
+  ok 34 - kOfxActionDestroyInstance answered kOfxStatOK
+  ok 35 - kOfxActionUnload answered kOfxStatOK
+opencl_suite: 35 checks, 0 failed
 # What this proves, and what it does not:
 #
 # [V] both handovers are advertised - the descriptor carries
@@ -45,9 +47,13 @@ opencl_suite: 33 checks, 0 failed
 #     result.
 # [V] the two programs coexist: switching the host back to the Buffers handover
 #     renders again, with the buffer kernel that was already built.
-# [V] the plugin chooses by property, not by mode flag: the Host sets only the
+# [V] the plug-in chooses by property, not by mode flag: the host sets only the
 #     images property in this pass, which is the rule the header states for a
 #     plug-in that supports both handovers.
+# [V] the suite leaves nothing behind: stage 8 destroys the instance and unloads
+#     the plug-in, so the programs, kernels and factory map are released (the
+#     memcheck stage in run-tests.sh, and valgrind-cppcheck.log, hold the numbers:
+#     definitely lost 0 bytes).
 # [U] every GPU number: PoCL is a CPU device, and this cell has no GPU.
 # [U] a device without image support. The suite reports NOT RUN and skips the
 #     images stage instead of failing, but only a machine with such a device can

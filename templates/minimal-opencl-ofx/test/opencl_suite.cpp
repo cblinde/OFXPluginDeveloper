@@ -121,7 +121,7 @@ int main(int argc, char** argv)
     }
     const char* path = argv[1];
 
-    std::printf("[1/7] loading %s\n", path);
+    std::printf("[1/8] loading %s\n", path);
     void* lib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (lib == nullptr) {
         std::fprintf(stderr, "FAIL: dlopen: %s\n", dlerror());
@@ -140,7 +140,7 @@ int main(int argc, char** argv)
           "the module identifies itself as com.ofxplugindeveloper.openclgain");
 
     testkit::FakeHost host;
-    std::printf("[2/7] opening an OpenCL device for the host to hand over\n");
+    std::printf("[2/8] opening an OpenCL device for the host to hand over\n");
     if (!host.setOpenCL(true)) {
         std::fprintf(stderr,
                      "no OpenCL device: nothing to test (set OPENCL_LOADER_LIB / OCL_ICD_VENDORS)\n");
@@ -172,14 +172,14 @@ int main(int argc, char** argv)
     host.setSourcePixels(src, kWidth, kHeight);
     const OfxRectI full{0, 0, kWidth, kHeight};
 
-    std::printf("[3/7] the CPU path, with the host offering no device\n");
+    std::printf("[3/8] the CPU path, with the host offering no device\n");
     host.setOpenCL(false);
     check(host.render(0.0, full) == kOfxStatOK, "render answered kOfxStatOK without OpenCL");
     const std::vector<float> cpu = host.destination();
     check(sameBits(cpu, scale(src, 2.0f)), "the CPU frame is the source times two, bit for bit");
     check(!host.openclDestinationWritten(), "no device buffer was written while OpenCL was off");
 
-    std::printf("[4/7] the same render with the device enabled\n");
+    std::printf("[4/8] the same render with the device enabled\n");
     check(host.setOpenCL(true), "the host re-opened the device");
     check(host.render(0.0, full) == kOfxStatOK, "render answered kOfxStatOK with OpenCL enabled");
     check(host.openclDestinationWritten(),
@@ -190,7 +190,7 @@ int main(int argc, char** argv)
           "the device frame is the source times two, bit for bit (max delta " +
               std::to_string(fullDelta.inside) + ")");
 
-    std::printf("[5/7] a render window smaller than the frame\n");
+    std::printf("[5/8] a render window smaller than the frame\n");
     check(host.setParam("gain", "3.0"), "the host set gain to 3.0");
     const OfxRectI window{5, 7, 29, 31};
     check(host.render(0.0, window) == kOfxStatOK, "render answered kOfxStatOK for the window");
@@ -201,7 +201,7 @@ int main(int argc, char** argv)
     check(outWindow.outside == 0.0,
           "outside the window the previous frame is untouched (the kernel wrote no padding)");
 
-    std::printf("[6/7] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage\n");
+    std::printf("[6/8] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage\n");
     if (!host.openclImageSupport()) {
         std::printf("  NOT RUN: the device reports no image support (nothing to test)\n");
     } else {
@@ -242,12 +242,21 @@ int main(int argc, char** argv)
               "the buffers handover still renders after the image one");
     }
 
-    std::printf("[7/7] a negative row pitch is refused, not walked backwards\n");
+    std::printf("[7/8] a negative row pitch is refused, not walked backwards\n");
     host.setNegativePitch(true);
     host.setParam("gain", "2.0");
     const OfxStatus refused = host.render(0.0, full);
     check(refused != kOfxStatOK, "render refused a negative row pitch on an OpenCL buffer");
     check(!host.openclDestinationWritten(), "the refusal wrote nothing into the device buffer");
+
+    // A host that loads the plug-in also lets it go: destroy the instance (so
+    // the runtime releases the programs and kernels it built) and unload (so the
+    // factory map goes). Without this the suite leaves several megabytes behind,
+    // which is a leak in the test, not in the plug-in.
+    std::printf("[8/8] the host destroys the instance and unloads the plug-in\n");
+    check(host.destroyInstance() == kOfxStatOK,
+          "kOfxActionDestroyInstance answered kOfxStatOK");
+    check(host.unload() == kOfxStatOK, "kOfxActionUnload answered kOfxStatOK");
 
     std::printf("opencl_suite: %d checks, %d failed\n", gChecks, gFailed);
     return gFailed == 0 ? 0 : 1;
