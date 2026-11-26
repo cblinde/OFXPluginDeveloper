@@ -1,0 +1,12 @@
+root: /workspace/chats/178f73e54dd5ef590a75a324/.validation/ort-gpu-1.32.0
+header: none in this root (a bundle, or a package shipped without headers); the provider facts below still apply
+core: onnxruntime_pybind11_state.cpython-312-x86_64-linux-gnu.so
+provider libonnxruntime_providers_cuda.so: 4 exports, plugin EP
+        exports: ReleaseEpFactory, CreateEpFactories
+        imports: cuBLASLt 13, cuBLAS 13, CUDA runtime 13
+        imports the core by name: no
+provider libonnxruntime_providers_tensorrt.so: 2 exports, built-in provider
+        imports: cuBLAS 13, CUDA runtime 13, cuDNN 9
+        imports the core by name: no
+other providers: libonnxruntime_providers_shared.so
+verdict: inspection only, no gate asked for

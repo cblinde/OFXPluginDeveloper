@@ -1,0 +1,23 @@
+$ CPU_ONLY=1 ONNXRUNTIME_ROOT=.validation/ort-1.32.0 ./run-tests.sh
+
+== artifact check: exports and dependents of every built .ofx ==
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    libstdc++.so.6
+    libgcc_s.so.1
+    libc.so.6
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin), plus 5 weak C++ helper(s)
+           a version script (templates/minimal-ofx/exports.map) drops the weak ones
+  dependents:
+    libstdc++.so.6
+    libgcc_s.so.1
+    libc.so.6
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin), plus 6 weak C++ helper(s)
+           a version script (templates/minimal-ofx/exports.map) drops the weak ones
+  dependents:
+    libonnxruntime.so.1
+    libstdc++.so.6
+    libgcc_s.so.1
+    libc.so.6
+
+[exit status of the run: 0]

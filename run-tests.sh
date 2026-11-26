@@ -388,6 +388,41 @@ else
   echo "-- onnx-inference-ofx: NOT CHECKED (ONNXRUNTIME_ROOT unset, no bundle built)"
 fi
 
+# ---------------------------------------------------------------------------
+# Artifact check, read back from the built image
+# ---------------------------------------------------------------------------
+# The suites each inspect their own bundle, but `scripts/check-artifact.sh` had
+# no caller at all - which is how it kept an executable bit missing and a wrong
+# export count for weeks while every run stayed green. It reads the artifact
+# rather than the sources: the export table, the loader's dependencies, and,
+# when the build had a toolkit, the device code in the image. The CUDA flag is
+# passed only for a run that actually compiled one, so a CPU_ONLY build is not
+# asked to prove cubins it does not have.
+echo
+echo "== artifact check: exports and dependents of every built .ofx =="
+artifact_check() {
+  local name="$1"
+  local candidates=( "${ROOT}/templates/${name}/build/bundle/"*.ofx.bundle/Contents/*/*.ofx )
+  local ofx="${candidates[0]}"
+  if [[ ! -f "${ofx}" ]]; then
+    echo "error: ${name}: no .ofx under build/bundle" >&2
+    echo "       the build stage did not produce it, so nothing was checked" >&2
+    exit 2
+  fi
+  if [[ "${name}" == "minimal-cuda-ofx" && "${gpu_mode}" == "CUDA" ]]; then
+    "${ROOT}/scripts/check-artifact.sh" "${ofx}" --cuda
+  else
+    "${ROOT}/scripts/check-artifact.sh" "${ofx}"
+  fi
+}
+artifact_check minimal-ofx
+artifact_check minimal-cuda-ofx
+if [[ "${onnx}" == "1" ]]; then
+  artifact_check onnx-inference-ofx
+else
+  echo "-- onnx-inference-ofx: NOT CHECKED (ONNXRUNTIME_ROOT unset, no bundle built)"
+fi
+
 # The controls assert their own failures and exit 0 when every fault is caught,
 # so running them here keeps a green run green. They need a C compiler, which a
 # suite run already implies; without one the stage says so instead of vanishing.
@@ -419,6 +454,7 @@ echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
 echo "  glibc bound per bundle          (2.17 / 2.17 / 2.32, cmake-and-linking.md §5)"
+echo "  artifact check per bundle       (exports, dependents, device code)"
 if [[ "${gpu_mode}" == "CUDA" ]]; then
   echo "  GPU kernels                     (minimal-cuda-ofx, on the device)"
 else
