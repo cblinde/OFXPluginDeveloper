@@ -35,6 +35,12 @@ python tests/resolve/test_stale_file.py # two runs in one directory, the second 
 decoder - prints one line per step and writes the same JSON report a real run
 writes. Its exit code is 2 when a path is wrong.
 
+The step names and their order are one table (`poc.STEPS`): `--plan` prints it,
+the run path reports into it, a name outside it raises, a step reported out of its
+order raises, and a successful run that did not report one of its steps exits 1
+rather than claiming a pass. Until 2026-11-26 the plan list and the run path were
+two separate literals and drifted - `gpu` existed in neither shared list.
+
 `checks.py` is pure Python on bytes and has twelve cases of its own; the self-test
 fails when the checks stop catching a uniform frame, a black frame, a wrong size,
 a wrong channel count, a reference that differs by one pixel, or a frame that

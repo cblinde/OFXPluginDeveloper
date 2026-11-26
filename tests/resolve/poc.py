@@ -31,6 +31,7 @@ import shutil
 import threading
 import time
 import re
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -41,7 +42,46 @@ import resolve_api
 HERE = Path(__file__).resolve().parent
 REPORTS = HERE / "reports"
 
-STEPS = ("validate", "install", "launch", "connect", "load", "build", "render", "check", "quit")
+# The steps, in the order a run reports them, as one table.
+#
+# They used to exist twice - as string literals where the run reports them and as
+# a tuple of names in the `--plan` branch - which is how the plan table drifted:
+# `gpu` was added to the run path and to the plan list but to neither the shared
+# name tuple nor the other way round, and nothing noticed because the two were
+# only ever compared by a reader. Every name `step()` accepts comes from here,
+# `--plan` prints this table, and a name reported out of this order raises.
+#
+# `plan` says whether `--plan` shows the step at all; `status` and `detail` are
+# what it prints for it. The steps that are not shown are the ones `--plan`
+# either runs for real (`validate`) or cannot know about (`path` needs
+# `--path-log`, `error` needs a failure).
+Step = namedtuple("Step", "name plan status detail")
+
+STEPS = (
+    Step("validate", False, "", ""),
+    Step("install", True, "not-run", "needs a Resolve host; --plan stops here"),
+    Step("launch", True, "not-run", "needs a Resolve host; --plan stops here"),
+    Step("connect", True, "not-run", "needs a Resolve host; --plan stops here"),
+    # `gpu` belongs between connect and build: it reads the host's own compute-API
+    # line out of the log of the session that just connected, so it needs a
+    # running host but no effect yet.
+    Step("gpu", True, "not-run",
+         "needs a running host; reads its compute-API line from the log"),
+    Step("build", True, "not-run",
+         "needs a Resolve host; --plan stops here (only with --build-project)"),
+    Step("load", True, "not-run", "needs a Resolve host; --plan stops here"),
+    Step("render", True, "not-run", "needs a Resolve host; --plan stops here"),
+    Step("check", True, "ready", "decoder present; would run after the render"),
+    Step("path", False, "", ""),
+    Step("error", False, "", ""),
+    Step("quit", True, "not-run", "needs a Resolve host; --plan stops here"),
+)
+ORDER = {entry.name: index for index, entry in enumerate(STEPS)}
+# What every successful run has to report. `build` and `load` are alternatives -
+# one project mode or the other, never both - so they are checked as a group.
+ALWAYS = ("validate", "install", "launch", "connect", "gpu", "render", "check", "quit")
+ALTERNATIVES = (("build", "load"),)
+_reported = []
 
 
 def stamp():
@@ -179,6 +219,16 @@ def parse_expect(text):
 
 
 def step(report, name, status, detail="", seconds=None):
+    """Record one step, refusing a name the table lacks and an order it contradicts."""
+    if name not in ORDER:
+        raise AssertionError(
+            f"step {name!r} is not in poc.STEPS: --plan would never show it and the "
+            f"report would carry a step the table does not know")
+    if _reported and ORDER[name] < ORDER[_reported[-1]]:
+        raise AssertionError(
+            f"step {name!r} reported after {_reported[-1]!r}, but poc.STEPS orders "
+            f"them the other way")
+    _reported.append(name)
     entry = {"name": name, "status": status, "detail": detail}
     if seconds is not None:
         entry["seconds"] = round(seconds, 2)
@@ -187,6 +237,14 @@ def step(report, name, status, detail="", seconds=None):
     # steps it already paid for: block buffering did exactly that once.
     print(f"  {name:<9} {status:<8} {detail}".rstrip(), flush=True)
     return entry
+
+
+def unreported():
+    """Steps a successful run still owes; `build` and `load` count as one."""
+    missing = [name for name in ALWAYS if name not in _reported]
+    missing += [" or ".join(group) for group in ALTERNATIVES
+                if not any(name in _reported for name in group)]
+    return missing
 
 
 def host_log_path():
@@ -235,6 +293,7 @@ def compute_api_lines(since):
 
 
 def run(args, report):
+    _reported.clear()
     started = time.monotonic()
     problems, facts = validate(args)
     report["facts"] = facts
@@ -246,23 +305,10 @@ def run(args, report):
          f"{len(facts['ofx'])} .ofx, decoders {facts['decoders']}", time.monotonic() - started)
 
     if args.plan:
-        # The names and the order are the ones a real run reports, because that is
-        # what --plan is for. `gpu` belongs between connect and build: it reads the
-        # host's own compute-API line out of the log of the session that just
-        # connected, so it needs a running host but no effect yet.
-        for name, status, detail in (
-                ("install", "not-run", "needs a Resolve host; --plan stops here"),
-                ("launch", "not-run", "needs a Resolve host; --plan stops here"),
-                ("connect", "not-run", "needs a Resolve host; --plan stops here"),
-                ("gpu", "not-run",
-                 "needs a running host; reads its compute-API line from the log"),
-                ("build", "not-run",
-                 "needs a Resolve host; --plan stops here (only with --build-project)"),
-                ("load", "not-run", "needs a Resolve host; --plan stops here"),
-                ("render", "not-run", "needs a Resolve host; --plan stops here"),
-                ("check", "ready", "decoder present; would run after the render"),
-                ("quit", "not-run", "needs a Resolve host; --plan stops here")):
-            step(report, name, status, detail)
+        # Printed from the same table the run path reports into, in its order.
+        for entry in STEPS:
+            if entry.plan:
+                step(report, entry.name, entry.status, entry.detail)
         report["result"] = "not-run"
         return 0
 
@@ -428,6 +474,19 @@ def run(args, report):
             shutil.rmtree(installed, ignore_errors=True)
         step(report, "quit", "pass", quit_detail,
              time.monotonic() - started)
+
+    # A step that the table knows and the run never reported is the drift this
+    # table exists to prevent, so a successful exit is not enough to call it done.
+    # Written here rather than through `step()`: `quit` has already been reported
+    # by the `finally` block, and `error` sits before it in the table.
+    missing = unreported()
+    if missing:
+        detail = (f"never reported: {', '.join(missing)} - the run and poc.STEPS "
+                  f"have drifted apart")
+        report["steps"].append({"name": "error", "status": "fail", "detail": detail})
+        print(f"  error     fail     {detail}", flush=True)
+        report["result"] = "fail"
+        return 1
 
     report["result"] = "pass"
     return 0
