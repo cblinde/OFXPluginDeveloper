@@ -54,8 +54,12 @@ cmake missing.
 | T10 | ORT inspection | `python3 tools/check-runtime.py .validation/ort-1.32.0` | `ORT_API_VERSION 32`, every entry point this repository uses is declared, no provider in a CPU package |
 | T11 | provider label | T4 contract output | `label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."` |
 
+| T12 | ThreadSanitizer | `SANITIZE=thread` … under `setarch $(uname -m) -R` | **136 checks × 3, 0 failed**, no race reported |
+| T13 | POSIX artifact check | `scripts/check-artifact.sh <ofx>` ×3 | two strong exports in each; 5 (CUDA) and 6 (inference) weak helpers named, not counted as failures |
+
 T11 is the first run that **observed** the label form rather than inferring it
 from the source: the format change had no executed evidence before this report.
+T12 needed `setarch -R` before it could start at all, see F5.
 
 ---
 
@@ -103,13 +107,38 @@ template's own checks started. Deleting the build tree fixed it. Nothing to
 change in the repository: a build directory is not a committed artefact, but a
 restored workspace can carry one, and the error names the missing path.
 
+### F4 - the POSIX artifact check rejected two correct bundles (fixed)
+
+`scripts/check-artifact.sh` counted `T`, `t` **and `W`** names as exports and
+failed above two, so it declared `MinimalCudaGain.ofx` (7 names) and
+`OnnxInference.ofx` (8 names) broken while the build's own report - which greps
+`' T '` - said `2 (expected 2)`. The extra names are weak `std::` template
+instantiations, the ones `-fvisibility=hidden` alone leaves behind and the
+version script of `templates/minimal-ofx/exports.map` removes.
+
+Both entry points must now be strong `T` definitions, a third `T` still fails
+(checked with a synthetic module exporting three names), and the weak helpers are
+printed as a note. The file was also tracked without its executable bit, so all
+three bundles now run it with exit 0.
+
+### F5 - ThreadSanitizer cannot start under this container's ASLR (environment)
+
+`SANITIZE=thread` died before the first check with
+`FATAL: ThreadSanitizer: unexpected memory mapping 0x…`. This is the known clash
+between TSan's fixed shadow layout and high-entropy ASLR, not a defect in the
+suite: rerunning under `setarch $(uname -m) -R` (ASLR off for that process tree)
+runs the whole suite to `136 checks × 3, 0 failed` with no race reported. Nothing
+to change in the repository; a Linux CI job that wants TSan has to disable ASLR
+for the step.
+
 ---
 
 ## 4. What did not run, and why
 
 - **GPU kernels** - no device and no `nvcc`; `run-tests.sh` names it
   (`NOT RUN: GPU kernels (CPU_ONLY)`). Unchanged by this run.
-- **valgrind memcheck** - the distribution's valgrind 3.22 extracted into a
+- **valgrind memcheck** - superseded here by ASan+UBSan and by TSan under
+  `setarch -R`, which both ran. The distribution's valgrind 3.22 extracted into a
   private prefix refuses to start: the mandatory `strlen` redirection in
   `ld-linux-x86-64.so.2` needs `libc6-dbg` at the system path, and
   `--extra-debuginfo-path` with an extracted `libc6-dbg` did not satisfy it.

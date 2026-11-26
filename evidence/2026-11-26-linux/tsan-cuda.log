@@ -1,0 +1,481 @@
+== [1/5] host suite (g++, sanitizer: none) ==
+[1/4] IsVec4Addressable decisions
+  aligned base, aligned pitch        yes  (expected yes)
+  src base + 4                       no   (expected no)
+  dst base + 8                       no   (expected no)
+  src pitch 256 + 8                  no   (expected no)
+  negative pitch, multiple of 16     yes  (expected yes)
+  negative pitch, not multiple       no   (expected no)
+  pitch 0 (single row)               yes  (expected yes)
+[2/4] vec4 kernel vs scalar kernel vs reference
+  3240 grid launches (vec4=1152 scalar=2304), failures=0
+[3/4] hoisted row pointers vs per-pixel addressing (CPU path)
+  1464 components compared, failures=0
+[4/4] concurrent kernel runs on disjoint buffers (reentrancy)
+  6 threads, 4 vec4 + 2 scalar, failures=0
+
+PASS: all cases match
+
+== [2/5] PTX check skipped: nvcc not on PATH ==
+
+== [3/5] bundle hygiene ==
+  build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx
+  exported dynamic symbols: 2 (expect 2)
+  launcher references:      0 (0 in a CPU-only build)
+  nv_fatbin sections:       0 (0 in a CPU-only build)
+
+== [4/5] host contract (dlopen + fake host) ==
+  build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx
+  host profile: nuke
+[stage] render
+[stage] compare parameter
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution) (nuke)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - param 'gainAlpha' declared
+ok 22 - param 'gainAlpha' type
+ok 23 - clip 'Source' declared
+ok 24 - clip 'Output' declared
+ok 25 - kOfxActionCreateInstance
+ok 26 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 27 - identity clip is the source clip
+ok 28 - set param 'gain'
+ok 29 - isIdentity is false once a setting changes the output
+ok 30 - kOfxImageEffectActionRender
+ok 31 - destination is readable
+ok 32 - render applied the parameter value
+ok 33 - alpha is unchanged
+ok 34 - a second instance can be created
+ok 35 - two instances are live at the same time
+ok 36 - baseline gain on instance 0
+ok 37 - baseline gain on instance 1
+ok 38 - instance 0 accepts its own gain
+ok 39 - instance 1 accepts a different gain
+ok 40 - render instance 0 while instance 1 is alive
+ok 41 - render instance 1 with its own settings
+ok 42 - instance 0 used its own value, not its neighbour's
+ok 43 - instance 1 used its own value, not its neighbour's
+ok 44 - instance for parallel worker 2
+ok 45 - baseline gain on instance 2
+ok 46 - instance for parallel worker 3
+ok 47 - baseline gain on instance 3
+ok 48 - set gain on the instance of parallel worker 0
+ok 49 - set gain on the instance of parallel worker 1
+ok 50 - set gain on the instance of parallel worker 2
+ok 51 - set gain on the instance of parallel worker 3
+ok 52 - concurrent renders produced every record
+ok 53 - every concurrent render returned kOfxStatOK
+ok 54 - every concurrent render produced a readable destination
+ok 55 - concurrent instances kept their own parameter values
+ok 56 - destroy instance 3
+ok 57 - destroy instance 2
+ok 58 - destroy instance 1
+ok 59 - render rejects a byte image
+ok 60 - baseline render before the rejected window
+ok 61 - render rejects a window outside the source bounds
+ok 62 - destination is unchanged after the rejected render
+ok 63 - baseline render inside the destination bounds
+ok 64 - render rejects a window outside the destination bounds
+ok 65 - destination is unchanged after the rejected render
+ok 66 - kOfxActionDestroyInstance
+ok 67 - kOfxActionUnload
+ok 68 - unload cycle completed
+ok 69 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx)
+ok 70 - OfxGetNumberOfPlugins is exported
+ok 71 - OfxGetPlugin is exported
+ok 72 - OfxGetNumberOfPlugins() >= 1
+ok 73 - OfxGetPlugin(0) returns a plug-in
+ok 74 - pluginApi
+ok 75 - apiVersion
+ok 76 - pluginIdentifier is non-empty
+ok 77 - pluginIdentifier
+ok 78 - pluginIdentifier stable across loads
+ok 79 - pluginVersion
+ok 80 - setHost is non-null
+ok 81 - mainEntry is non-null
+ok 82 - kOfxActionLoad
+ok 83 - kOfxActionDescribe
+ok 84 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 85 - descriptor lists the requested context
+ok 86 - descriptor sets a legal render thread safety
+ok 87 - param 'gain' declared
+ok 88 - param 'gain' type
+ok 89 - param 'gainAlpha' declared
+ok 90 - param 'gainAlpha' type
+ok 91 - clip 'Source' declared
+ok 92 - clip 'Output' declared
+ok 93 - kOfxActionCreateInstance
+ok 94 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 95 - identity clip is the source clip
+ok 96 - set param 'ga[stage] render
+[stage] compare parameter
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+in'
+ok 97 - isIdentity is false once a setting changes the output
+ok 98 - kOfxImageEffectActionRender
+ok 99 - destination is readable
+ok 100 - render applied the parameter value
+ok 101 - alpha is unchanged
+ok 102 - a second instance can be created
+ok 103 - two instances are live at the same time
+ok 104 - baseline gain on instance 0
+ok 105 - baseline gain on instance 1
+ok 106 - instance 0 accepts its own gain
+ok 107 - instance 1 accepts a different gain
+ok 108 - render instance 0 while instance 1 is alive
+ok 109 - render instance 1 with its own settings
+ok 110 - instance 0 used its own value, not its neighbour's
+ok 111 - instance 1 used its own value, not its neighbour's
+ok 112 - instance for parallel worker 2
+ok 113 - baseline gain on instance 2
+ok 114 - instance for parallel worker 3
+ok 115 - baseline gain on instance 3
+ok 116 - set gain on the instance of parallel worker 0
+ok 117 - set gain on the instance of parallel worker 1
+ok 118 - set gain on the instance of parallel worker 2
+ok 119 - set gain on the instance of parallel worker 3
+ok 120 - concurrent renders produced every record
+ok 121 - every concurrent render returned kOfxStatOK
+ok 122 - every concurrent render produced a readable destination
+ok 123 - concurrent instances kept their own parameter values
+ok 124 - destroy instance 3
+ok 125 - destroy instance 2
+ok 126 - destroy instance 1
+ok 127 - render rejects a byte image
+ok 128 - baseline render before the rejected window
+ok 129 - render rejects a window outside the source bounds
+ok 130 - destination is unchanged after the rejected render
+ok 131 - baseline render inside the destination bounds
+ok 132 - render rejects a window outside the destination bounds
+ok 133 - destination is unchanged after the rejected render
+ok 134 - kOfxActionDestroyInstance
+ok 135 - kOfxActionUnload
+ok 136 - unload cycle completed
+contract_test: 136 checks, 0 failed
+  host profile: resolve
+[stage] render
+[stage] compare parameter
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution) (resolve)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - param 'gainAlpha' declared
+ok 22 - param 'gainAlpha' type
+ok 23 - clip 'Source' declared
+ok 24 - clip 'Output' declared
+ok 25 - kOfxActionCreateInstance
+ok 26 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 27 - identity clip is the source clip
+ok 28 - set param 'gain'
+ok 29 - isIdentity is false once a setting changes the output
+ok 30 - kOfxImageEffectActionRender
+ok 31 - destination is readable
+ok 32 - render applied the parameter value
+ok 33 - alpha is unchanged
+ok 34 - a second instance can be created
+ok 35 - two instances are live at the same time
+ok 36 - baseline gain on instance 0
+ok 37 - baseline gain on instance 1
+ok 38 - instance 0 accepts its own gain
+ok 39 - instance 1 accepts a different gain
+ok 40 - render instance 0 while instance 1 is alive
+ok 41 - render instance 1 with its own settings
+ok 42 - instance 0 used its own value, not its neighbour's
+ok 43 - instance 1 used its own value, not its neighbour's
+ok 44 - instance for parallel worker 2
+ok 45 - baseline gain on instance 2
+ok 46 - instance for parallel worker 3
+ok 47 - baseline gain on instance 3
+ok 48 - set gain on the instance of parallel worker 0
+ok 49 - set gain on the instance of parallel worker 1
+ok 50 - set gain on the instance of parallel worker 2
+ok 51 - set gain on the instance of parallel worker 3
+ok 52 - concurrent renders produced every record
+ok 53 - every concurrent render returned kOfxStatOK
+ok 54 - every concurrent render produced a readable destination
+ok 55 - concurrent instances kept their own parameter values
+ok 56 - destroy instance 3
+ok 57 - destroy instance 2
+ok 58 - destroy instance 1
+ok 59 - render rejects a byte image
+ok 60 - baseline render before the rejected window
+ok 61 - render rejects a window outside the source bounds
+ok 62 - destination is unchanged after the rejected render
+ok 63 - baseline render inside the destination bounds
+ok 64 - render rejects a window outside the destination bounds
+ok 65 - destination is unchanged after the rejected render
+ok 66 - kOfxActionDestroyInstance
+ok 67 - kOfxActionUnload
+ok 68 - unload cycle completed
+ok 69 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx)
+ok 70 - OfxGetNumberOfPlugins is exported
+ok 71 - OfxGetPlugin is exported
+ok 72 - OfxGetNumberOfPlugins() >= 1
+ok 73 - OfxGetPlugin(0) returns a plug-in
+ok 74 - pluginApi
+ok 75 - apiVersion
+ok 76 - pluginIdentifier is non-empty
+ok 77 - pluginIdentifier
+ok 78 - pluginIdentifier stable across loads
+ok 79 - pluginVersion
+ok 80 - setHost is non-null
+ok 81 - mainEntry is non-null
+ok 82 - kOfxActionLoad
+ok 83 - kOfxActionDescribe
+ok 84 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 85 - descriptor lists the requested context
+ok 86 - descriptor sets a legal render thread safety
+ok 87 - param 'gain' declared
+ok 88 - param 'gain' type
+ok 89 - param 'gainAlpha' declared
+ok 90 - param 'gainAlpha' type
+ok 91 - clip 'Source' declared
+ok 92 - clip 'Output' declared
+ok 93 - kOfxActionCreateInstance
+ok 94 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 95 - identity clip is the source clip
+ok 96 - s[stage] render
+[stage] compare parameter
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+et param 'gain'
+ok 97 - isIdentity is false once a setting changes the output
+ok 98 - kOfxImageEffectActionRender
+ok 99 - destination is readable
+ok 100 - render applied the parameter value
+ok 101 - alpha is unchanged
+ok 102 - a second instance can be created
+ok 103 - two instances are live at the same time
+ok 104 - baseline gain on instance 0
+ok 105 - baseline gain on instance 1
+ok 106 - instance 0 accepts its own gain
+ok 107 - instance 1 accepts a different gain
+ok 108 - render instance 0 while instance 1 is alive
+ok 109 - render instance 1 with its own settings
+ok 110 - instance 0 used its own value, not its neighbour's
+ok 111 - instance 1 used its own value, not its neighbour's
+ok 112 - instance for parallel worker 2
+ok 113 - baseline gain on instance 2
+ok 114 - instance for parallel worker 3
+ok 115 - baseline gain on instance 3
+ok 116 - set gain on the instance of parallel worker 0
+ok 117 - set gain on the instance of parallel worker 1
+ok 118 - set gain on the instance of parallel worker 2
+ok 119 - set gain on the instance of parallel worker 3
+ok 120 - concurrent renders produced every record
+ok 121 - every concurrent render returned kOfxStatOK
+ok 122 - every concurrent render produced a readable destination
+ok 123 - concurrent instances kept their own parameter values
+ok 124 - destroy instance 3
+ok 125 - destroy instance 2
+ok 126 - destroy instance 1
+ok 127 - render rejects a byte image
+ok 128 - baseline render before the rejected window
+ok 129 - render rejects a window outside the source bounds
+ok 130 - destination is unchanged after the rejected render
+ok 131 - baseline render inside the destination bounds
+ok 132 - render rejects a window outside the destination bounds
+ok 133 - destination is unchanged after the rejected render
+ok 134 - kOfxActionDestroyInstance
+ok 135 - kOfxActionUnload
+ok 136 - unload cycle completed
+contract_test: 136 checks, 0 failed
+  host profile: natron
+[stage] render
+[stage] compare parameter
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - param 'gainAlpha' declared
+ok 22 - param 'gainAlpha' type
+ok 23 - clip 'Source' declared
+ok 24 - clip 'Output' declared
+ok 25 - kOfxActionCreateInstance
+ok 26 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 27 - identity clip is the source clip
+ok 28 - set param 'gain'
+ok 29 - isIdentity is false once a setting changes the output
+ok 30 - kOfxImageEffectActionRender
+ok 31 - destination is readable
+ok 32 - render applied the parameter value
+ok 33 - alpha is unchanged
+ok 34 - a second instance can be created
+ok 35 - two instances are live at the same time
+ok 36 - baseline gain on instance 0
+ok 37 - baseline gain on instance 1
+ok 38 - instance 0 accepts its own gain
+ok 39 - instance 1 accepts a different gain
+ok 40 - render instance 0 while instance 1 is alive
+ok 41 - render instance 1 with its own settings
+ok 42 - instance 0 used its own value, not its neighbour's
+ok 43 - instance 1 used its own value, not its neighbour's
+ok 44 - instance for parallel worker 2
+ok 45 - baseline gain on instance 2
+ok 46 - instance for parallel worker 3
+ok 47 - baseline gain on instance 3
+ok 48 - set gain on the instance of parallel worker 0
+ok 49 - set gain on the instance of parallel worker 1
+ok 50 - set gain on the instance of parallel worker 2
+ok 51 - set gain on the instance of parallel worker 3
+ok 52 - concurrent renders produced every record
+ok 53 - every concurrent render returned kOfxStatOK
+ok 54 - every concurrent render produced a readable destination
+ok 55 - concurrent instances kept their own parameter values
+ok 56 - destroy instance 3
+ok 57 - destroy instance 2
+ok 58 - destroy instance 1
+ok 59 - render rejects a byte image
+ok 60 - baseline render before the rejected window
+ok 61 - render rejects a window outside the source bounds
+ok 62 - destination is unchanged after the rejected render
+ok 63 - baseline render inside the destination bounds
+ok 64 - render rejects a window outside the destination bounds
+ok 65 - destination is unchanged after the rejected render
+ok 66 - kOfxActionDestroyInstance
+ok 67 - kOfxActionUnload
+ok 68 - unload cycle completed
+ok 69 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx)
+ok 70 - OfxGetNumberOfPlugins is exported
+ok 71 - OfxGetPlugin is exported
+ok 72 - OfxGetNumberOfPlugins() >= 1
+ok 73 - OfxGetPlugin(0) returns a plug-in
+ok 74 - pluginApi
+ok 75 - apiVersion
+ok 76 - pluginIdentifier is non-empty
+ok 77 - pluginIdentifier
+ok 78 - pluginIdentifier stable across loads
+ok 79 - pluginVersion
+ok 80 - setHost is non-null
+ok 81 - mainEntry is non-null
+ok 82 - kOfxActionLoad
+ok 83 - kOfxActionDescribe
+ok 84 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 85 - descriptor lists the requested context
+ok 86 - descriptor sets a legal render thread safety
+ok 87 - param 'gain' declared
+ok 88 - param 'gain' type
+ok 89 - param 'gainAlpha' declared
+ok 90 - param 'gainAlpha' type
+ok 91 - clip 'Source' declared
+ok 92 - clip 'Output' declared
+ok 93 - kOfxActionCreateInstance
+ok 94 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 95 - identity clip is the source clip
+ok 96 - set pa[stage] render
+[stage] compare parameter
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+ram 'gain'
+ok 97 - isIdentity is false once a setting changes the output
+ok 98 - kOfxImageEffectActionRender
+ok 99 - destination is readable
+ok 100 - render applied the parameter value
+ok 101 - alpha is unchanged
+ok 102 - a second instance can be created
+ok 103 - two instances are live at the same time
+ok 104 - baseline gain on instance 0
+ok 105 - baseline gain on instance 1
+ok 106 - instance 0 accepts its own gain
+ok 107 - instance 1 accepts a different gain
+ok 108 - render instance 0 while instance 1 is alive
+ok 109 - render instance 1 with its own settings
+ok 110 - instance 0 used its own value, not its neighbour's
+ok 111 - instance 1 used its own value, not its neighbour's
+ok 112 - instance for parallel worker 2
+ok 113 - baseline gain on instance 2
+ok 114 - instance for parallel worker 3
+ok 115 - baseline gain on instance 3
+ok 116 - set gain on the instance of parallel worker 0
+ok 117 - set gain on the instance of parallel worker 1
+ok 118 - set gain on the instance of parallel worker 2
+ok 119 - set gain on the instance of parallel worker 3
+ok 120 - concurrent renders produced every record
+ok 121 - every concurrent render returned kOfxStatOK
+ok 122 - every concurrent render produced a readable destination
+ok 123 - concurrent instances kept their own parameter values
+ok 124 - destroy instance 3
+ok 125 - destroy instance 2
+ok 126 - destroy instance 1
+ok 127 - render rejects a byte image
+ok 128 - baseline render before the rejected window
+ok 129 - render rejects a window outside the source bounds
+ok 130 - destination is unchanged after the rejected render
+ok 131 - baseline render inside the destination bounds
+ok 132 - render rejects a window outside the destination bounds
+ok 133 - destination is unchanged after the rejected render
+ok 134 - kOfxActionDestroyInstance
+ok 135 - kOfxActionUnload
+ok 136 - unload cycle completed
+contract_test: 136 checks, 0 failed
+
+== [5/5] valgrind memcheck ==
+  skipped: valgrind not on PATH (install valgrind; on Debian/Ubuntu the
+  tracebacks want libc6-dbg as well)
+
+all checks passed
