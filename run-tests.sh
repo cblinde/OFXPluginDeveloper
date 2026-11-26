@@ -68,6 +68,15 @@ echo "== docs =="
 echo
 "${documentation_python}" "${ROOT}/tools/check-docs.py" --selftest
 
+# Every tracked shell script is parsed before anything is built, so a syntax
+# error in a script this run does not happen to call - a `run-analysis.sh`, the
+# OpenCL `build.sh` - fails here instead of on the machine that first runs it.
+# The same tool runs in docs.yml, from the same list, so CI and this cannot
+# disagree about what was checked.
+echo
+echo "== shell syntax =="
+"${ROOT}/tools/check-shell.sh"
+
 if [[ -z "${OFX_SOURCE_DIR:-}" && -f "${ROOT}/.ofx-ref/include/ofxCore.h" ]]; then
   OFX_SOURCE_DIR="${ROOT}/.ofx-ref"
 fi

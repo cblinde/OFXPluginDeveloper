@@ -63,13 +63,15 @@ jobs:
           tools/measure-halo.sh templates/onnx-inference-ofx/models/test_conv.onnx --check
 
       - name: Script syntax
+        # No file list: `tools/check-shell.sh` parses every tracked `*.sh` with
+        # `bash -n`, which is what this step used to do for five of them. A list
+        # here is a list nobody extends - the five were the scripts that existed
+        # when the step was written, and the next seventeen were checked by
+        # nobody until a contributor ran them. `run-tests.sh` runs the same tool,
+        # so the same list is checked before the push as well.
         run: |
           python3 -m py_compile tools/*.py tests/resolve/*.py
-          bash -n run-tests.sh
-          bash -n templates/minimal-ofx/build.sh
-          bash -n templates/minimal-ofx/test/run-tests.sh
-          bash -n templates/minimal-cuda-ofx/build.sh
-          bash -n templates/onnx-inference-ofx/build.sh
+          tools/check-shell.sh
 
       - name: Action pins and workflow shape
         # The half that needs no download, so it runs before the actionlint fetch:
