@@ -152,6 +152,53 @@ Rules:
 
 ---
 
+### 1.7 Colour management, and what OFX 1.6 will change here
+
+OFX 1.5.1 already carries image and clip colour management, and the headers in
+this tree are that tag (`.ofx-ref`, `OFX_Release_1.5.1`): `kOfxImageEffectPropColourManagementStyle`
+with its five values (`None`, `Basic`, `Core`, `Full`, `OCIO`),
+`kOfxImageEffectPropColourManagementConfig`,
+`kOfxImageEffectPropColourManagementAvailableConfigs` and
+`kOfxImageEffectPropDisplayColourspace`, all in `ofxColour.h` **[V]**. A plug-in
+that declares `None` - which is what "every colour parameter is declared None"
+means in practice: the *effect* takes no position on colour - gets images in the
+host's working space and says so.
+
+What is **not** in the 1.5.1 tag is any parameter-level colour property
+**[V]**: `grep -r ColourManagement .ofx-ref/include` finds the image-effect
+properties above and nothing named `kOfxParamPropColourManagement`. The 1.6
+documentation defines exactly that property - three values, `None` (legacy,
+default), `Managed` (values are ACES2065-1/AP0, scene-linear, **not** clamped to
+0..1) and `SRGB` (display-referred UI colours, clamped) - and labels it
+"introduced in 1.5.1", which the tag does not bear out: treat the property as
+1.6-only until a 1.6 header says otherwise **[B]**
+([parameter reference](https://openfx.readthedocs.io/en/latest/Reference/ofxParameter.html)).
+
+1.6 itself is merged but unreleased as of November 2026: the project's own
+status update lists the new C++ bindings, a machine-readable property metadata
+system and several new properties as merged, with the release still pending
+**[B]** ([ASWF TAC update, 2026-10-14](https://tac.aswf.io/meetings/2026-10-14/OpenFX_ASWF_TAC_Update_Oct_2026.pdf)),
+and the `Color Managed Color Parameter` issue sits in the 1.6 milestone **[B]**
+([milestone](https://github.com/AcademySoftwareFoundation/openfx/milestone/4)).
+
+Decisions for this repository, so the next 1.6 question has an answer:
+
+- **The templates stay on the 1.5.1 tag** until 1.6 is released. They declare
+  `apiVersion` 1 and the contract asserts it; moving early would mean building
+  against an unreleased tag for features no host can require yet.
+- **No template has a colour parameter**, so there is nothing to declare today.
+  `gain` is a double, `tileSize` and `halo` are ints, `modelPath` and `provider`
+  are strings.
+- **The rule for the first colour parameter** that is added: if the value takes
+  part in image processing (a key colour, a fill), declare `Managed` and expect
+  ACES2065-1; if it is a UI colour drawn with the draw suite, declare `SRGB`;
+  otherwise leave it `None`, which is the legacy behaviour every host already
+  understands.
+- **When 1.6 lands**, the work is mechanical and worth one commit: bump the
+  `GIT_TAG` in the three `CMakeLists.txt`, re-run the contract (it asserts the
+  API version and the three 1.5.1 capability properties), and add the colour
+  declaration to whichever template just gained a colour parameter.
+
 ## 2. Verified quirks in the OFX 1.5.1 headers
 
 Found by reading the headers during this pass. Each one has bitten somebody.

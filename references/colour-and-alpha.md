@@ -11,7 +11,9 @@ the default: unless both sides declare a style in
 working space it uses and expects the same space back. OFX 1.5 added the opt-in
 contract in `ofxColour.h` (`kOfxImageClipPropColourspace`,
 `kOfxImageEffectActionGetOutputColourspace`), and Resolve 21 implements it
-(**[B]**, `host-resolve.md` §2). Either way the rules below hold;
+(**[B]**, `host-resolve.md` §2). What the 1.5.1 tag here does and does not carry,
+and what OFX 1.6 adds for *parameters* - the rule for the first colour parameter
+any template gets - is in [`ofx-api-constants.md`](ofx-api-constants.md) §1.7. Either way the rules below hold;
 the first one is what a declared style turns from advice into a contract:
 
 1. **Never bake in a transform you were not asked for.** A "gain" that silently
