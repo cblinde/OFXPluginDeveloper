@@ -811,24 +811,27 @@ the 611-byte model exists for this), fixed seeds, a timeout on every test (a han
 must fail, not stall the queue), and **no test whose pass condition is "it did not
 crash"**.
 
-Each workflow runs its half of the gate once per push: `docs.yml` checks the
-documents, their coverage against `4290e68`, the two tool self-tests and the shell
-syntax, `linux.yml` runs the template suites, the sanitizers and the glibc stage.
-The `templates` job that ran the whole gate a second time was deleted, so a green
-tick has one meaning and one runtime download.
+Four workflows, one half each, once per push: `docs.yml` checks the documents,
+their coverage against `4290e68`, the tool self-tests and the shell syntax,
+`linux.yml` runs the template suites, the sanitizers and the glibc stage,
+`windows.yml` builds all four templates with MSVC and runs the contract, ONNX CPU
+and negative-control steps, and `canary.yml` asks the newest ONNX Runtime release
+once a week whether the shipped model still loads. The `templates` job that ran
+the whole gate a second time was deleted, so a green tick has one meaning and one
+runtime download.
 
 One check is in both on purpose: `check-workflows.py` reads the files these jobs
 are made of, so it runs in `docs.yml` as the fast gate **and** as the first step
 of `linux.yml`'s `suites` job - where the file it validates is the one whose
 broken pin would stop the job from starting, and the only report would be a
 `check-docs` failure for a reason nobody looking for missing suites reads. Each
-run costs a second and neither downloads anything. Both files carry
+run costs a second and neither downloads anything. All four workflows carry
 `permissions: contents: read`, a `concurrency` group that cancels a superseded
 pull-request run and leaves `main` alone, and pinned actions by commit SHA with
 the tag in a trailing comment (`actions/checkout` v4.4.0,
-`actions/upload-artifact` v4.6.2). `actionlint` 1.7.7 reads both files in
-`docs.yml`, after checking the digest of its own tarball; it reports nothing on
-the current tree (run here, 2026-11-26).
+`actions/upload-artifact` v4.6.2). `actionlint` 1.7.7 reads
+`.github/workflows/*.yml` in `docs.yml`, after checking the digest of its own
+tarball; it reports nothing on the current tree (run here, 2026-11-26).
 
 A third workflow, `canary.yml`, runs on a schedule and installs nothing pinned:
 `tools/check-model-canary.py` loads the shipped model on the newest ONNX Runtime
@@ -1035,8 +1038,9 @@ from the CUDA Toolkit or the `nvidia-*` wheels, which is what
 [`packaging-and-install.md`](packaging-and-install.md).
 
 **The version this repository pins is a single default.**
-`.github/actions/onnx-runtime/action.yml` carries it, both workflows call that
-action without a version argument, and no workflow names one of its own - so a
+`.github/actions/onnx-runtime/action.yml` carries it, the three workflows that
+need the runtime call that action without a version argument, and no workflow
+names one of its own - so a
 bump is that one field plus whatever in the documents states which version a
 measurement was taken with, because those sentences are claims about an evidence
 log rather than pins.
