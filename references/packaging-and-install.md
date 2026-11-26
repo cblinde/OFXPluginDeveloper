@@ -62,7 +62,10 @@ in `OnnxInference.ofx` and `GLIBC_2.28` in the `libonnxruntime.so.1` beside it
 is prebuilt for a newer baseline and this container's libstdc++ adds to it, so an
 inference bundle cannot be shipped to a CentOS 7 host: check the bound you
 target with the same command, and treat "glibc 2.17" as a property of a bundle,
-not of the repository.
+not of the repository. `./run-tests.sh` enforces the bound per bundle — 2.17 for
+the reference and CUDA plug-ins, 2.32 for the inference bundle — and
+`GLIBC_MAX_MINIMAL_OFX`, `GLIBC_MAX_MINIMAL_CUDA` and `GLIBC_MAX_ONNX` override a
+bound when another platform is the target.
 
 **The CUDA provider belongs in the same bundle.** One bundle that appends the
 provider and falls back to the CPU, never a second "GPU build": the provider plus

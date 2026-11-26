@@ -133,7 +133,26 @@ for the step.
 
 ---
 
-## 4. What did not run, and why
+## 4. Follow-up: the gate now enforces the bound (same day)
+
+F2 was found by hand, and that is the defect the finding exposed: `run-tests.sh`
+ran only `tools/check-glibc.sh --selftest`, so a bundle that breaches its floor
+left the suite green. The gate now runs the real check over every bundle it
+builds, with one bound per template:
+
+| Template | Bound | Default override |
+|---|---|---|
+| `minimal-ofx` | 2.17 | `GLIBC_MAX_MINIMAL_OFX` |
+| `minimal-cuda-ofx` | 2.17 | `GLIBC_MAX_MINIMAL_CUDA` |
+| `onnx-inference-ofx` | 2.32 | `GLIBC_MAX_ONNX` |
+
+Both directions were run on this machine: the gate passes with the defaults
+(exit 0, `run-tests.log`), and with `GLIBC_MAX_ONNX=2.17` it stops
+at the stage with exit 1 and no summary, naming both offending objects
+(`glibc-gate-control.log`). The same override is the way to test another
+target platform's floor rather than trusting the number.
+
+## 5. What did not run, and why
 
 - **GPU kernels** - no device and no `nvcc`; `run-tests.sh` names it
   (`NOT RUN: GPU kernels (CPU_ONLY)`). Unchanged by this run.

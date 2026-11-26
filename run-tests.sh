@@ -21,6 +21,8 @@
 #   CPU_ONLY=1         force the CUDA template to build its CPU path only
 #   RUN_VALGRIND       auto | 1 | 0 (forwarded to both suites)
 #   SANITIZE           e.g. address,undefined (forwarded; skips memcheck)
+#   GLIBC_MAX_*        per-bundle glibc bound (defaults below; see
+#                      references/cmake-and-linking.md section 5)
 #
 # Neither template needs a GPU or an OFX host application; what that leaves
 # unproven is listed in references/testing-layers.md.
@@ -293,7 +295,8 @@ if [[ "${windows}" == "1" ]]; then
   if [[ "${onnx}" == "0" ]]; then
     echo "  NOT RUN: onnx-inference-ofx     (ONNXRUNTIME_ROOT unset)"
   fi
-  echo "RUN_VALGRIND and SANITIZE are POSIX-only; this route has no valgrind"
+  echo "RUN_VALGRIND, SANITIZE and the glibc bound are POSIX-only: no valgrind,"
+  echo "no readelf, and a PE image has no GLIBC_ version table"
   echo "=================================================================="
   report_skipped_onnx
   report_skipped_gpu
@@ -338,6 +341,53 @@ else
   echo "== test: onnx-inference-ofx (skipped: ONNXRUNTIME_ROOT unset) =="
 fi
 
+# ---------------------------------------------------------------------------
+# glibc bound
+# ---------------------------------------------------------------------------
+# The floor is a property of the bundle, not of the repository. The two plug-ins
+# this repository builds from its own sources target the 2.17 baseline the OFX
+# SDK is built against; the inference bundle ships a prebuilt ONNX Runtime that
+# needs 2.28 and, built with this container's toolchain, links 2.32 in the
+# plug-in itself. Each number is a claim in references/cmake-and-linking.md
+# section 5, not a slice of a newer measurement.
+#
+# It runs here because a hand-run check found the inference bundle above the
+# 2.17 floor on 2026-11-26 while this script stayed green: a bound that only
+# appears in a checklist is a bound nobody enforces. Point GLIBC_MAX_* at another
+# number when you target another platform - the default is the claim, the
+# override is the experiment.
+glibc_max_minimal="${GLIBC_MAX_MINIMAL_OFX:-2.17}"
+glibc_max_cuda="${GLIBC_MAX_MINIMAL_CUDA:-2.17}"
+glibc_max_onnx="${GLIBC_MAX_ONNX:-2.32}"
+
+glibc_gate() {
+  local name="$1" bound="$2"
+  shift 2
+  local bundle
+  for bundle in "$@"; do
+    if [[ ! -d "${bundle}" ]]; then
+      echo "error: ${name}: no bundle at ${bundle}" >&2
+      echo "       the build stage did not produce it, so nothing was checked" >&2
+      exit 2
+    fi
+    echo "-- ${name}: glibc <= ${bound}"
+    "${ROOT}/tools/check-glibc.sh" --max "${bound}" "${bundle}"
+  done
+}
+
+echo
+echo "== glibc bound: every built bundle against the floor its template targets =="
+glibc_gate "minimal-ofx" "${glibc_max_minimal}" \
+  "${ROOT}"/templates/minimal-ofx/build/bundle/*.ofx.bundle
+glibc_gate "minimal-cuda-ofx" "${glibc_max_cuda}" \
+  "${ROOT}"/templates/minimal-cuda-ofx/build/bundle/*.ofx.bundle
+if [[ "${onnx}" == "1" ]]; then
+  glibc_gate "onnx-inference-ofx" "${glibc_max_onnx}" \
+    "${ROOT}"/templates/onnx-inference-ofx/build/bundle/*.ofx.bundle
+else
+  echo "-- onnx-inference-ofx: NOT CHECKED (ONNXRUNTIME_ROOT unset, no bundle built)"
+fi
+
 # The controls assert their own failures and exit 0 when every fault is caught,
 # so running them here keeps a green run green. They need a C compiler, which a
 # suite run already implies; without one the stage says so instead of vanishing.
@@ -368,6 +418,7 @@ summary_tool_tests
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
+echo "  glibc bound per bundle          (2.17 / 2.17 / 2.32, cmake-and-linking.md §5)"
 if [[ "${gpu_mode}" == "CUDA" ]]; then
   echo "  GPU kernels                     (minimal-cuda-ofx, on the device)"
 else

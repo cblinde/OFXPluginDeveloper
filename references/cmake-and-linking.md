@@ -410,15 +410,29 @@ CentOS 7's glibc 2.17 the floor the SDK itself targets (**[V]** for the note,
 inherits that container's symbol versions: it links `memcpy@GLIBC_2.14` without
 noticing and then fails to load where the host process runs on the older glibc,
 with a `GLIBC_2.28 not found` error at load time, before any OFX code runs.
-Nothing here measures that - every Linux run in this repository happens in one
-container, so it proves the build runs where it was built and nothing about an
-older host. The check is cheap and belongs in a release checklist, so it is one:
-[`checklists.md`](checklists.md) §6, "before calling it done", asks for
-`readelf --version-info` on the `.ofx` and on every bundled `.so`, with the
-highest `GLIBC_` version compared against the target platform's - and it is a
-command rather than a paragraph, `tools/check-glibc.sh --max 2.17 <bundle>`,
-whose `--selftest` proves the comparison fails on a bound that is one step too
-low.
+The check is a command, not a paragraph: `tools/check-glibc.sh --max <bound>
+<bundle>` reads the version table of the `.ofx` and of every `.so` the bundle
+ships, its `--selftest` proves the comparison fails on a bound one step too low,
+and `./run-tests.sh` runs it over every bundle it just built.
+
+**The bound is per bundle, because it belongs to what the bundle contains.**
+A single floor for the whole repository was wrong in exactly one place, and the
+gate stayed green while a hand-run check found it (2026-11-26):
+
+| Bundle | Bound | What sets it |
+| --- | --- | --- |
+| `ReferenceGain.ofx` | 2.17 | built from this repository's sources, nothing prebuilt beside it |
+| `MinimalCudaGain.ofx` | 2.17 | the same, plus a CUDA toolkit whose runtime does not raise the floor |
+| `OnnxInference.ofx` | 2.32 | ships a prebuilt ONNX Runtime that needs 2.28, and the plug-in links 2.32 with this container's toolchain |
+
+Measured on the three bundles built here: 2.14, 2.14, and 2.32/2.28
+(`../evidence/2026-11-26-linux/check-glibc.log`). The numbers in the table are
+the claims the gate enforces; `GLIBC_MAX_MINIMAL_OFX`, `GLIBC_MAX_MINIMAL_CUDA`
+and `GLIBC_MAX_ONNX` override them when you target another platform, so a bound
+can be tested rather than trusted. A bundle above its bound fails
+`./run-tests.sh` — the same treatment a failing contract check gets — and the
+`--selftest` above still runs, so the checker is shown failing before it is
+credited with passing.
 
 ## 6. Toolchain notes that cause real failures
 
