@@ -123,3 +123,56 @@ limit=1GB, kSameAsRequested        failed: Non-zero status code returned while r
 4 EXHAUSTIVE    32.42 ms, first run   199.20 ms (19660800 values)
 5 HEURISTIC    33.05 ms, first run   198.69 ms (19660800 values)
 5 EXHAUSTIVE    32.09 ms, first run   199.99 ms (19660800 values)
+
+# Row 4, the search for a plan that wants the large workspace: six model families at
+# 1920x1080 and two at 2560x1440. cudnn_conv_use_max_workspace 1 against 0, same
+# readout as above. Models built by .validation/make-workspace-models.py (7x7 at
+# 128 channels, stride-2 downsampling, dilation 4, 15x15 kernels) plus big_conv7.
+
+# big_conv, 1920x1080
+shape 1920x1080, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              12.0         3126.0         3114.0
+0              10.0         3122.0         3112.0
+
+# big_conv7, 1920x1080
+shape 1920x1080, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              16.0         1082.0         1066.0
+0              14.0         1078.0         1064.0
+
+# ws_wide7, 1920x1080
+shape 1920x1080, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              16.0         3130.0         3114.0
+0              14.0         3126.0         3112.0
+
+# ws_stride2, 1920x1080
+shape 1920x1080, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              18.0         1084.0         1066.0
+0              16.0         1080.0         1064.0
+
+# ws_dilated, 1920x1080
+shape 1920x1080, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              12.0         2102.0         2090.0
+0              10.0         2098.0         2088.0
+
+# ws_bigkernel, 1920x1080
+shape 1920x1080, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              16.0         1082.0         1066.0
+0              14.0         1078.0         1064.0
+
+# ws_wide7, 2560x1440
+shape 2560x1440, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              16.0         4186.0         4170.0
+0              14.0         4182.0         4168.0
+
+# ws_bigkernel, 2560x1440
+shape 2560x1440, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              16.0         2138.0         2122.0
+0              14.0         2134.0         2120.0

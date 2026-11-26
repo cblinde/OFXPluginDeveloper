@@ -12,6 +12,9 @@ description: >-
 # The extracted tree is cached under .ort/, so the 184 MB download happens once
 # per package version rather than once per run.
 
+# This default is the one place CI names the version. The documents name the
+# version their own measurements used, which is a fact about a log rather than a
+# pin; testing-layers.md section 13 says the same in prose.
 inputs:
   version:
     description: Microsoft.ML.OnnxRuntime package version

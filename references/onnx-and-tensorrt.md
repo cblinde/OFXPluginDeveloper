@@ -800,9 +800,18 @@ fits the small one either way. A second model with 7×7 kernels at the same shap
 moved the same 4 MB - 1082 MB with the permission, 1078 MB without it - so kernel
 size is not what decides it either (**[V]**,
 [`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log)).
-What the setting buys is a bound on the worst case, not a saving on either model;
-the model whose chosen plan wants the large workspace is still unfound, and that
-search is what the backlog keeps.
+What the setting buys is a bound on the worst case, not a saving on either model.
+The search for a plan that *does* want the large workspace ran on 2026-11-26 over
+six families at 1920×1080 - 3×3, 7×7 and 15×15 kernels, a 128→128 7×7 pair, a
+stride-2 downsample chain and a dilation-4 pair - and two of them again at
+2560×1440. Every one moved the footprint by the same 4 MB: the permission costs
+one extra arena block, and the plan chosen under `HEURISTIC` never asks for more
+(**V**,
+[`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log)). So the
+setting is a bound on a worst case this GPU has not produced in eight measured
+configurations, which is what the template's `=0` is for: it costs nothing here
+and removes the case where a host's VRAM budget meets a plan that reserves
+freely.
 
 **`HEURISTIC` versus `EXHAUSTIVE` does not separate in wall-clock time, cold or
 warm, and the reason is not a cache.** There is nothing to clear between runs on

@@ -1004,6 +1004,13 @@ from the CUDA Toolkit or the `nvidia-*` wheels, which is what
 1540 MB. Shipping them is a licence question before it is a download step:
 [`packaging-and-install.md`](packaging-and-install.md).
 
+**The version this repository pins is a single default.**
+`.github/actions/onnx-runtime/action.yml` carries it, both workflows call that
+action without a version argument, and no workflow names one of its own - so a
+bump is that one field plus whatever in the documents states which version a
+measurement was taken with, because those sentences are claims about an evidence
+log rather than pins.
+
 Measured on the machines this repository has been exercised on: a Linux x86-64
 box with no GPU and no host, and a Windows 11 box with an RTX 3060. The 2026-11-22
 Windows rows are **[B]** (that run was on another machine); the 2026-11-24 rows

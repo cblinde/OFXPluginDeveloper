@@ -138,3 +138,12 @@ Do not use Natron to validate GPU behaviour: it will not exercise it.
   or about a Natron timeline.
 
 ---
+
+**Two hosts that arrived after this list was written.** Pomfort Livegrade
+Frontier, the on-set grading tool, now offers an OFX host beside its own pipeline
+(**[B]**, Pomfort's 2026 product notes), and EffectCraft merged an opt-in OpenFX
+host in October 2026, so a plug-in appears there only when the user enables it
+(**[B]**, the project's pull request). Neither has been run here, and both fall
+under the same rule as the three hosts above: probe capabilities, never the host
+name - and assume a CPU image path until that host's own documentation says it
+offers a GPU one.

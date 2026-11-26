@@ -133,6 +133,22 @@ The decision rule that survives contact with the projects above:
    Every project that started there either moved the interpreter to a worker or
    wrapped it in a supervisor.
 
+**Three runtimes that are not a fifth row.** ExecuTorch, LiteRT and GGUF are what
+comes up whenever "ONNX Runtime is heavy" comes up, and none of them changes the
+table above. ExecuTorch is PyTorch's ahead-of-time format: a `.pte` file, a
+runtime measured in kilobytes, a dozen backends (**[B]**, PyTorch's own ExecuTorch
+documentation). It is not a candidate here for the reason libtorch is not - the
+models this repository ships arrive as ONNX, and the ones that do not arrive as
+PyTorch, which the sidecar row already covers. LiteRT is TensorFlow Lite's
+successor and mobile-first (**[B]**, Google's LiteRT documentation); a desktop
+host handing over a 1080p float frame gets nothing from its delegate model that an
+in-process runtime does not already do. GGUF is the container the local inference
+tools converged on, and llama.cpp runs it on CPU, Metal, CUDA and Vulkan (**[B]**,
+the llama.cpp repository) - excellent at generating tokens, irrelevant to a filter
+whose whole job is one pass over a frame. The point of writing it down is that the
+decision is about the *shape of the work*, not about the runtime's quality: a
+per-frame 1080p filter is one forward pass with a frame-shaped tensor, and each of
+these three is optimised for something else.
 ---
 
 ## 3. Language runtimes inside a plugin: what actually breaks
