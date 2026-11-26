@@ -78,9 +78,14 @@ The scripting README has exactly two sentences about it **[B]**:
 That is a statement about the *API*, not about rendering, the GPU, or a Windows
 session. One third-party project measured it on Resolve Studio 19.1.3.7 on macOS
 and reports all seven pages addressable, `SetRenderSettings` + `AddRenderJob` +
-`StartRendering(isInteractiveMode=False)` + polling to `Complete` + a non-empty
-file **[B]**. Nothing in this research ran `-nogui` on Windows, with a GPU, or
-with an OFX plug-in loaded.
+`StartRendering(isInteractiveMode=False)` + polling to `Complete` + a non-empty file **[B]**. It has since run on Windows: every session in
+`tests/resolve/` launches `-nogui`, including the ones on a GPU and the ones with
+the ONNX plug-in loaded, and the frame each one produced was compared against its
+source (**[V]**, [`resolve-fusion-path.log`](../evidence/2026-11-26-windows/resolve-fusion-path.log),
+[`resolve-provider-only.log`](../evidence/2026-11-26-windows/resolve-provider-only.log)).
+What the flag does not promise is speed: the same launch took 18.2 s, 40.2 s and
+351 s on this machine, the last with a 673 MB provider bundle installed, so a
+constant is the wrong thing to hard-code.
 
 Consequence for the framework: `-nogui` is the intended mode and the default
 choice, but a started process proves nothing. The readiness check is
@@ -850,14 +855,16 @@ process = subprocess.Popen([exe, "-nogui"], cwd=str(Path(exe).parent))
 - `-nogui` is documented as "the user interface is disabled, the various scripting
   APIs will continue to work as expected", and that held: 18.2 s from launch to a
   live `scriptapp` on this machine, with a project open and `GetProjectManager()`
-  answering.
+  answering - but the same start took 40.2 s and 351 s on 2026-11-26 with a 673 MB
+  provider bundle installed, so budget a deadline, not a duration.
 - `scriptapp` returns `None` while the host is down and an object once it is up.
   If Resolve is **already running**, the call attaches to that instance instead of
   starting another - convenient for iterating, and a reason to check for a
   running host before launching one.
 - Poll, do not sleep a fixed amount: cold start varies with the project library.
-  `resolve_api.connect()` polls every 2 s against a deadline and reports the last
-  error it saw.
+  `resolve_api.connect()` backs off from 0.1 s to 2 s against a deadline and reports
+  the last error it saw; pass `process=` and it also fails within seconds when the
+  host it started has already exited, instead of waiting out the deadline.
 - `-nogui` ran here in an interactive desktop session with a display attached to
   the GPU. Whether it works from a service session, a scheduled task with no
   desktop, or a machine without a display is **not** measured.
