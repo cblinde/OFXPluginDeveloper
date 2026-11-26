@@ -67,19 +67,27 @@ What it checks, and why each one exists:
     count that was checked was correct, so nothing fired until a reader asked
     which template to copy and got a list without it.
 12. Scaffold selection. A template mentioned only in passing cannot be chosen:
-    the tables in SKILL.md and README.md are where a reader picks a starting
-    point, so each of them needs a row per template.
+    SKILL.md's scaffold table or README.md's layout table needs a row for it. One
+    row in either is enough - the first version wanted one in both, which made a
+    second copy of the same list the price of adding a template.
 13. Reference paths. A `references/<name>.md` has to exist even where it is a
     plain backticked mention rather than a link, and every reference document has
-    to be reachable from one of the documents that route.
-14. CI coverage. Every template is named by `run-tests.sh` or by a workflow, and a
-    workflow that names templates names all of them. windows.yml listed three of
-    four, so the fourth's Windows breakage would have landed on a contributor.
+    to be named by some document. Being named from the reference that owns the
+    subject is enough: the four entry documents are not the only way a reader
+    arrives, and requiring one of them made every detail document add a line to a
+    list it does not belong in.
+14. CI coverage. Every template is named by `run-tests.sh` or by a workflow. A
+    workflow that names two or more templates is enumerating the family and has to
+    name all of them, or say why one is missing; a workflow that builds exactly
+    one is a dedicated job, not a claim about the set, and is left alone.
+    windows.yml listed three of four, so the fourth's Windows breakage would have
+    landed on a contributor.
 15. Negated host claims. "Never ran" was the only vocabulary the host check knew;
     a bullet saying a GPU path is "not verified inside any host" is the same claim
     in other words and contradicted a matrix row recording exactly that. Each
-    `;`-separated item is judged on its own, so an item without a host word is not
-    read as a host claim.
+    `;`-separated item is judged on its own, and only the host it names can
+    contradict it - "unverified in Natron" is true while Resolve is the only GPU
+    row - with "any host" read as every host.
 """
 
 import argparse
@@ -406,8 +414,6 @@ TEMPLATE_RUN = re.compile(r"(?:build|run-tests|test)\.(?:sh|bat)\b")
 # templates/x - no OpenCL device on this runner`.
 TEMPLATE_EXCUSED = re.compile(r"not built here:\s*templates[/\\]([A-Za-z0-9][A-Za-z0-9._-]*)")
 REFERENCE_MENTION = re.compile(r"references/([A-Za-z0-9._-]+\.md)")
-REFERENCE_ENTRY_DOCS = ("README.md", "SKILL.md", "AGENTS.md",
-                        "references/testing-layers.md")
 HOST_WORD = re.compile(r"\b(?:host|hosts|Resolve|Nuke|SCRATCH|Natron)\b", re.I)
 GPU_WORD = re.compile(r"\b(?:GPU|CUDA|OpenCL)\b", re.I)
 GPU_PATH = re.compile(r"\b(?:gpu|cuda|opencl)\b", re.I)
@@ -567,8 +573,18 @@ def check_host_run_claims(root, files, texts, report):
                     if HOST_WORD.search(item) is None or GPU_WORD.search(item) is None:
                         continue
                     term = GPU_WORD.search(item).group(0).lower()
+                    # Which host the item names decides which rows can contradict
+                    # it. "The GPU path is unverified in Natron" is true while only
+                    # Resolve has a GPU row, and the first version of this rule
+                    # fired on it because it matched the word, not the host.
+                    named = {host.lower() for host in hosts if host.lower() in item.lower()}
+                    universal = re.search(r"\b(?:any|no|every|each)\s+host", item,
+                                          re.I) is not None
+                    if not named and not universal:
+                        continue
                     claimed = [row for row in gpu_rows
-                               if term == "gpu" or term in row[2].lower()]
+                               if (term == "gpu" or term in row[2].lower())
+                               and (universal or row[0].lower() in named)]
                     if not claimed:
                         continue
                     line = body[:match.start()].count("\n") + 1
@@ -1136,25 +1152,30 @@ def check_template_inventory(root, files, texts, report):
 def check_template_selection(root, files, texts, report):
     """Every template is offered by a table row, not only named in passing.
 
-    The router's scaffold row and the selection table in SKILL.md, and the layout
-    table in README.md, are where a reader chooses a starting point. A template
-    that appears in prose but in no row cannot be chosen, which is how the OpenCL
-    template stayed invisible while three reference documents named it.
+    The scaffold table in SKILL.md and the layout table in README.md are where a
+    reader chooses a starting point. A template that appears in prose but in no
+    row cannot be chosen, which is how the OpenCL template stayed invisible while
+    three reference documents named it.
+
+    One row in either document is enough. Demanding a row in both made a second
+    copy of the same list the price of adding a template, and the two tables serve
+    different readers - README's is about what the tree contains, SKILL's about
+    what to copy. A single-template project therefore spends its effort where the
+    choice is actually made.
     """
     names = template_names(root)
-    for doc in ("SKILL.md", "README.md"):
-        text = texts.get(doc)
-        if text is None:
-            continue
-        rows = [line for line in text.splitlines() if line.lstrip().startswith("|")]
-        for name in names:
-            # README's layout row names the directory (`minimal-ofx`) and gives the
-            # path only once, so both spellings count as offering it.
-            offered = (f"templates/{name}/", f"`{name}`")
-            if not any(any(form in row for form in offered) for row in rows):
-                report.error(doc, 1,
-                             f"no table row offers templates/{name}/ as a starting "
-                             f"point; prose elsewhere does not choose a scaffold")
+    rows = [line
+            for doc in ("SKILL.md", "README.md")
+            for line in texts.get(doc, "").splitlines()
+            if line.lstrip().startswith("|")]
+    for name in names:
+        # README's layout row names the directory (`minimal-ofx`) and gives the
+        # path only once, so both spellings count as offering it.
+        offered = (f"templates/{name}/", f"`{name}`")
+        if not any(any(form in row for form in offered) for row in rows):
+            report.error("SKILL.md", 1,
+                         f"no table row in SKILL.md or README.md offers templates/{name}/ "
+                         f"as a starting point; prose elsewhere does not choose a scaffold")
 
 
 def check_reference_paths(root, files, texts, report):
@@ -1174,12 +1195,18 @@ def check_reference_paths(root, files, texts, report):
                 line = texts[path][:match.start()].count("\n") + 1
                 report.error(path, line,
                              f"names references/{match.group(1)}, which does not exist")
-    entry = " ".join(texts.get(doc, "") for doc in REFERENCE_ENTRY_DOCS)
+    # Reachable from anywhere, not only from the four documents that route: a
+    # detail document linked from the reference that owns the subject is routed
+    # just as well, and requiring an entry-document mention made every new
+    # reference add a line to a list it does not belong in. What the rule still
+    # catches is the document nobody names at all - a file that may as well not
+    # be in the tree.
     for name in sorted(present):
-        if name not in entry:
-            report.error("references/" + name, 1,
-                         "is not named by README.md, SKILL.md, AGENTS.md or "
-                         "references/testing-layers.md: a document nobody routes to")
+        own = "references/" + name
+        if not any(name in texts[path] for path in files if path != own):
+            report.error(own, 1,
+                         "is named by no document; a reference nothing routes to is "
+                         "invisible even though every link in the tree resolves")
 
 
 def check_ci_template_coverage(root, files, texts, report):
@@ -1212,8 +1239,14 @@ def check_ci_template_coverage(root, files, texts, report):
                 if TEMPLATE_RUN.search(line) and "bash -n" not in line:
                     builds |= set(TEMPLATE_MENTION.findall(line))
             if builds:
-                workflows[relative] = (builds, excused)
                 covered |= builds
+                # A workflow that builds one template is not claiming the set:
+                # a dedicated job for a single template is a legitimate shape,
+                # and demanding the other three (or an excuse comment) made that
+                # shape cost a comment nobody reads. From two templates upward
+                # the workflow is enumerating the family and has to be complete.
+                if len(builds) >= 2:
+                    workflows[relative] = (builds, excused)
     for name in names:
         if name not in covered:
             report.error("run-tests.sh", 1,
@@ -1390,7 +1423,9 @@ def selftest():
     broken = {
         "templates/a/CMakeLists.txt": "",
         "templates/b/CMakeLists.txt": "",
-        "run-tests.sh": "templates/a/test/run-tests.sh\ntemplates/b/test/run-tests.sh\n",
+        "templates/c/CMakeLists.txt": "",
+        "run-tests.sh": "templates/a/test/run-tests.sh\ntemplates/b/test/run-tests.sh\n"
+                        "templates/c/test/run-tests.sh\n",
         "README.md": "| `templates/a/` | the CPU one |\n\nreferences/verification-matrix.tsv\n",
         "AGENTS.md": "# Router\n\nNo scaffold is named here. references/verification-matrix.tsv\n",
         "SKILL.md": "| Copy a scaffold | `templates/a/` |\n\n"
@@ -1401,35 +1436,50 @@ def selftest():
         "references/verification-matrix.tsv": matrix,
         "references/verification-status.md": record,
         "evidence/run.json": "{}\n",
+        # Two of three: a workflow that enumerates the family has to finish the
+        # list.
         ".github/workflows/w.yml":
             "name: w\njobs:\n  a:\n    runs-on: x\n    steps:\n"
-            "      - run: templates/a/build.sh\n",
+            "      - run: templates/a/build.sh && templates/b/build.sh\n",
     }
     clean = dict(broken)
     clean.update({
         "README.md": "| `templates/a/` | CPU |\n| `templates/b/` | the other |\n\n"
+                     "The CUDA one is `templates/c/`.\n\n"
                      "references/verification-matrix.tsv\n",
-        "AGENTS.md": "# Router\n\nCopy `templates/a/` or `templates/b/`. "
+        "AGENTS.md": "# Router\n\nCopy `templates/a/`, `templates/b/` or `templates/c/`. "
                      "references/verification-matrix.tsv\n",
-        "SKILL.md": "| Copy a scaffold | `templates/a/`, `templates/b/` |\n\n"
-                    "Read `references/one.md`, `references/two.md` and "
-                    "`references/verification-status.md`.\n",
+        # A row in README covers a and b, a row in SKILL covers c: one document is
+        # enough, and the scaffold table is not a second copy of the layout table.
+        "SKILL.md": "| Copy a scaffold | `templates/c/` |\n\n"
+                    "The other two are `templates/a/` and `templates/b/`.\n\n"
+                    "- The GPU path is unverified in Natron.\n\n"
+                    "Read `references/one.md` and `references/verification-status.md`.\n",
+        # Reached only from the reference that owns the subject, not from an entry
+        # document: a routed document all the same.
+        "references/one.md": "# one\n\nDetails in references/two.md.\n",
         ".github/workflows/w.yml":
             "name: w\njobs:\n  a:\n    runs-on: x\n    steps:\n"
-            "      - run: templates/a/build.sh && templates/b/build.sh\n",
+            "      - run: templates/a/build.sh && templates/b/build.sh "
+            "&& templates/c/build.sh\n",
         # A workflow may leave one out if it says so in the file; the clean tree
         # carries the marker so the exemption itself is exercised.
         ".github/workflows/v.yml":
-            "name: v\n# not built here: templates/b - no device on this runner\njobs:\n"
-            "  a:\n    runs-on: x\n    steps:\n      - run: templates/a/build.sh\n",
+            "name: v\n# not built here: templates/c - no device on this runner\njobs:\n"
+            "  a:\n    runs-on: x\n    steps:\n"
+            "      - run: templates/a/build.sh && templates/b/build.sh\n",
+        # One template only: a dedicated job, not a claim that it covers the set.
+        ".github/workflows/s.yml":
+            "name: s\njobs:\n  a:\n    runs-on: x\n    steps:\n"
+            "      - run: templates/a/build.sh\n",
     })
     expected = (
         ("README.md", "does not name templates/b/"),
         ("AGENTS.md", "does not name templates/a/"),
-        ("SKILL.md", "no table row offers templates/b/"),
+        ("SKILL.md", "no table row in SKILL.md or README.md offers templates/b/"),
         ("SKILL.md", "names references/missing.md, which does not exist"),
-        ("references/two.md", "is not named by README.md"),
-        (".github/workflows/w.yml", "not templates/b/"),
+        ("references/two.md", "is named by no document"),
+        (".github/workflows/w.yml", "not templates/c/"),
         ("SKILL.md", "a gpu path unverified in a host"),
     )
     failures = []
