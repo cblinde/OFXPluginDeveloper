@@ -33,6 +33,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -108,6 +109,83 @@ def parse_gpu_csv(text):
             gpu["compute_cap"] = parts[3]
         gpus.append(gpu)
     return gpus
+
+
+def msvc_version_of(toolset):
+    """The `_MSC_VER` a toolset directory stands for: "14.44.35207" -> 1944.
+
+    MSVC writes it as major*100 + minor, which is why 14.44 is 1944 and 14.50 is
+    1950 - one number that compares and that `host_config.h` speaks in.
+    """
+    parts = str(toolset).split(".")
+    try:
+        major, minor = int(parts[0]), int(parts[1])
+    except (IndexError, ValueError):
+        return None
+    # The directory says 14.44, the compiler says 19.44, and host_config.h
+    # compares against `_MSC_VER`, which is 1900 + 44.
+    return 1900 + minor if major == 14 else major * 100 + minor
+
+
+def parse_msvc_limit(text):
+    """The `_MSC_VER` window a CUDA toolkit accepts, read from crt/host_config.h.
+
+    CUDA 13 spells it as one guard -
+
+        #if _MSC_VER < 1920 || _MSC_VER >= 1950
+        #error -- unsupported Microsoft Visual Studio version! ...
+
+    - so both bounds and the excluded upper end are in that line. Read rather than
+    assumed: the window moves with the toolkit (CUDA 12 accepted 1930..), and a
+    hardcoded 14.44 would be wrong on the next one. A header that changes shape
+    returns None, and the caller reports the limit as unknown instead of guessing.
+    """
+    match = re.search(r"_MSC_VER\s*<\s*(\d+)\s*\|\|\s*_MSC_VER\s*>=\s*(\d+)", text or "")
+    if not match:
+        return None
+    return {"lowest": int(match.group(1)), "highest": int(match.group(2)) - 1,
+            "upper_bound": int(match.group(2))}
+
+
+def host_toolset_choice(limit, toolsets):
+    """Which toolset on disk this CUDA limit accepts, and which one it rejects.
+
+    `toolsets` is [{"version", "msc_ver", "path"}]. The interesting one is
+    `newest`: that is what a Visual Studio generator takes without being told
+    otherwise, and on a machine that also holds an older toolset it is exactly the
+    wrong choice. `accepted` is the newest one inside the window - the value to
+    hand `vcvars64 -vcvars_ver`.
+    """
+    choice = {"limit": limit, "newest": None, "accepted": None, "too_new": None,
+              "too_old": None}
+    usable = [entry for entry in toolsets or [] if entry.get("msc_ver")]
+    if not limit or not usable:
+        return choice
+    choice["newest"] = max(usable, key=lambda entry: entry["msc_ver"])
+    inside = [entry for entry in usable
+              if limit["lowest"] <= entry["msc_ver"] <= limit["highest"]]
+    if inside:
+        choice["accepted"] = max(inside, key=lambda entry: entry["msc_ver"])
+    if choice["newest"]["msc_ver"] > limit["highest"]:
+        choice["too_new"] = choice["newest"]
+    elif choice["newest"]["msc_ver"] < limit["lowest"]:
+        choice["too_old"] = choice["newest"]
+    return choice
+
+
+def cuda_host_compiler(facts):
+    """The toolset question for the toolkit that is actually in use."""
+    cuda = facts["cuda"]
+    toolkits = cuda["toolkits"]
+    if not toolkits:
+        return None
+    active = next((toolkit for toolkit in toolkits
+                   if toolkit["version"] == cuda["active"]), toolkits[-1])
+    choice = host_toolset_choice(active.get("msvc_limit"),
+                                 facts["tools"].get("msvc_toolsets"))
+    choice["toolkit"] = {"version": active["version"], "path": active["path"],
+                         "host_config": active.get("host_config")}
+    return choice
 
 
 def evaluate(capabilities, suites=SUITES):
@@ -214,6 +292,43 @@ def probe_tools(sources):
                 tools["msvc"] = None
         else:
             tools["msvc"] = None
+
+        # Every instance, not just the newest: an older toolset installed beside
+        # the newest one is the fix for a CUDA build (see parse_msvc_limit), and
+        # it is often in an instance the -latest query does not name.
+        if vswhere.is_file():
+            ok, output, command = run([
+                str(vswhere), "-products", "*",
+                "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property", "installationPath"])
+            sources["tools.msvc.instances"] = command
+            instances = ([line.strip() for line in output.splitlines() if line.strip()]
+                         if ok else [])
+            toolsets = []
+            for instance in instances:
+                folder = Path(instance) / "VC/Tools/MSVC"
+                if not folder.is_dir():
+                    continue
+                for entry in folder.iterdir():
+                    if not entry.is_dir():
+                        continue
+                    toolsets.append({"version": entry.name,
+                                     "msc_ver": msvc_version_of(entry.name),
+                                     "path": str(entry)})
+            # Two instances can hold the same toolset version; the report is about
+            # which versions are on the machine, not about which folders repeat.
+            unique = {}
+            for entry in toolsets:
+                if entry["msc_ver"] and entry["version"] not in unique:
+                    unique[entry["version"]] = entry
+            toolsets = list(unique.values())
+            tools["msvc_toolsets"] = sorted(toolsets,
+                                            key=lambda entry: entry["msc_ver"],
+                                            reverse=True)
+            sources["tools.msvc_toolsets"] = ("VC/Tools/MSVC/* under every instance "
+                                              "vswhere lists with the C++ component")
+        else:
+            tools["msvc_toolsets"] = []
     return tools
 
 
@@ -242,8 +357,21 @@ def probe_cuda(sources):
         seen.add(str(root))
         ok, output, command = run([str(nvcc), "--version"])
         sources[f"cuda.toolkit:{root.name}"] = command
+        # The host-compiler window is a property of the toolkit, next to nvcc -
+        # crt/host_config.h is the file that produces the "unsupported Microsoft
+        # Visual Studio version" error, so its guard is what to compare against.
+        header = root / "include/crt/host_config.h"
+        limit = None
+        if header.is_file():
+            try:
+                limit = parse_msvc_limit(header.read_text(errors="replace"))
+            except OSError:
+                limit = None
+            sources[f"cuda.host_config:{root.name}"] = str(header)
         toolkits.append({"path": str(root), "nvcc": str(nvcc),
-                         "version": parse_nvcc(output) if ok else None})
+                         "version": parse_nvcc(output) if ok else None,
+                         "msvc_limit": limit,
+                         "host_config": str(header) if header.is_file() else None})
 
     ok, output, command = run(["nvidia-smi", "--query-gpu=name,driver_version,"
                                "memory.total,compute_cap", "--format=csv,noheader"])
@@ -486,6 +614,10 @@ def collect(connect_host):
             "scripting": connected.get("connected"),
         })
         facts["resolve"]["connect"] = connected
+    # The toolset question belongs to the CUDA answer: "compile.cuda" only says an
+    # nvcc exists, and a machine whose only MSVC is newer than that nvcc accepts
+    # cannot compile a .cu without a pin. Recorded here so --json carries it too.
+    facts["cuda"]["host_compiler"] = cuda_host_compiler(facts)
     capabilities = capabilities_of(facts, connected)
     unknown = []
     unprobed_resolve = [name for name in ("host.resolve.studio",
@@ -548,6 +680,10 @@ def status_mark(status):
     return {"ready": "ok", "blocked": "--", "unknown": "??"}.get(status, "--")
 
 
+def _oldest_first(toolsets):
+    return sorted(toolsets, key=lambda entry: entry.get("msc_ver") or 0)
+
+
 def show(report):
     facts = report["facts"]
     platform_line = facts["platform"].get("name") or (
@@ -564,6 +700,11 @@ def show(report):
     for name in ("cmake", "msvc", "gcc", "g++", "clang", "clang++", "ffmpeg"):
         tool = facts["tools"].get(name)
         print(f"  {name:<15} {tool['version'] if tool else 'not found'}")
+    toolsets = facts["tools"].get("msvc_toolsets") or []
+    if toolsets:
+        newest = toolsets[0]
+        print("  msvc toolsets   " + ", ".join(entry["version"] for entry in _oldest_first(toolsets))
+              + f"   (newest {newest['version']}: _MSC_VER {newest['msc_ver']})")
     cuda = facts["cuda"]
     versions = ", ".join(toolkit["version"] or "unversioned"
                          for toolkit in cuda["toolkits"]) or "no nvcc found"
@@ -576,6 +717,31 @@ def show(report):
                   f"{gpu['memory']}{capability}")
     else:
         print("  gpu             no device reported by nvidia-smi")
+    host = facts["cuda"].get("host_compiler") or cuda_host_compiler(facts)
+    if host:
+        limit = host["limit"]
+        toolkit = host["toolkit"]
+        if not limit:
+            print(f"  cuda host       CUDA {toolkit['version'] or '?'}: no _MSC_VER window "
+                  f"found in {toolkit['host_config'] or 'crt/host_config.h'}")
+        else:
+            line = (f"  cuda host       CUDA {toolkit['version']} accepts _MSC_VER "
+                    f"{limit['lowest']}..{limit['highest']}")
+            if host["too_new"]:
+                suggestion = host["accepted"]
+                line += f": {host['too_new']['version']} is newer"
+                if suggestion:
+                    line += (f" - pin {suggestion['version']} "
+                             f"(vcvars64 -vcvars_ver={suggestion['version']})")
+                else:
+                    line += " - no accepted toolset on disk"
+            elif host["too_old"]:
+                line += f": {host['too_old']['version']} is older than the toolkit accepts"
+            elif host["newest"]:
+                line += f": {host['newest']['version']} is inside it"
+            else:
+                line += ": no MSVC toolset found"
+            print(line)
     resolve = facts["resolve"]
     print(f"  resolve         {resolve['executable'] or 'not installed'}")
     if resolve["installed"]:
@@ -650,6 +816,41 @@ def selftest():
          parse_gpu_csv("Tesla T4, 470.82, 15360 MiB"),
          [{"name": "Tesla T4", "driver": "470.82", "memory": "15360 MiB"}])
     case("gpu row that is a message", parse_gpu_csv("No devices were found"), [])
+
+    cuda13 = parse_msvc_limit(
+        "#if _MSC_VER < 1920 || _MSC_VER >= 1950\n"
+        "#error -- unsupported Microsoft Visual Studio version! Only the versions "
+        "between 2019 and 2022 (inclusive) are supported!\n#error")
+    case("the _MSC_VER window CUDA 13 spells in host_config.h", cuda13,
+         {"lowest": 1920, "highest": 1949, "upper_bound": 1950})
+    case("a host_config.h without that guard is unknown, not assumed",
+         parse_msvc_limit("#pragma once\n#define something 1"), None)
+    case("a toolset directory name is its _MSC_VER",
+         [msvc_version_of("14.44.35207"), msvc_version_of("14.50.35717"),
+          msvc_version_of("nonsense")], [1944, 1950, None])
+
+    on_disk = [{"version": "14.50.35717", "msc_ver": 1950, "path": "a"},
+               {"version": "14.44.35207", "msc_ver": 1944, "path": "b"}]
+
+    def verdict_of(choice):
+        return {name: (entry["version"] if isinstance(entry, dict) else entry)
+                for name, entry in choice.items()
+                if name in ("newest", "accepted", "too_new")}
+
+    case("a too-new newest toolset names the older one that lies beside it",
+         verdict_of(host_toolset_choice(cuda13, on_disk)),
+         {"newest": "14.50.35717", "accepted": "14.44.35207",
+          "too_new": "14.50.35717"})
+    case("a newest toolset inside the window needs no pin",
+         host_toolset_choice(cuda13, on_disk[1:])["too_new"], None)
+    case("no accepted toolset on disk is said, not papered over",
+         [host_toolset_choice(cuda13, on_disk[:1])["accepted"],
+          host_toolset_choice(cuda13, on_disk[:1])["too_new"]["version"]],
+         [None, "14.50.35717"])
+    case("without a readable limit nothing is claimed either way",
+         host_toolset_choice(None, on_disk),
+         {"limit": None, "newest": None, "accepted": None, "too_new": None,
+          "too_old": None})
 
     all_yes = {"compile.cpu": True, "compile.cuda": True, "run.cuda": True,
                "host.resolve": True, "host.resolve.studio": True,
