@@ -1,0 +1,66 @@
+# The Fusion route to modelPath in Resolve Studio 21.2.0.5, 2026-11-26.
+#
+# Question: the scripted OFX effect object has no SetParam - only GetInfo,
+# GetIndex, GetIsEnabled, SetIndex and SetIsEnabled - but it does offer
+# GetFusionComp. Can modelPath be set through the effect's Fusion comp, so the
+# frame stops being a pass-through and onnxruntime_providers_cuda loads?
+#
+# Answer: no. GetFusionComp() returns None for an effect added with
+# AddEffect("ofx", ...), and a Fusion comp added to the timeline item does not
+# take the OFX node either. Both shapes were tried in one session each.
+
+## 0. what was installed and rendered
+
+bundle: templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle, built
+against the 1.20.1 GPU package (ONNXRUNTIME_ROOT=.validation/ort-gpu-1.20.1,
+OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON), so the cuBLAS-12 imports resolve in this host
+onnxruntime_providers_cuda.dll: 673,741,344 bytes
+onnxruntime-ofx.dll: 12,400,160 bytes
+installed into: C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+source: .validation/resolve-source.png, 1920x1080
+model: templates/onnx-inference-ofx/models/test_conv.onnx
+
+## 1. the effect's own Fusion comp (.validation/fusion-probe.py)
+
+install                pass     C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+connect                pass     DaVinci Resolve Studio 21.2.0.5 in 40.2s
+build                  pass     ONNX Inference on resolve-source.png
+GetFusionComp          fail     NoneType
+tools                  fail     0 tool(s)
+find-ofx-node          fail     no tool exposes modelPath
+render                 pass     fusion00108000.png 1920x1080
+compare                fail     mae 0.0 max 0 problems []
+modules                fail     ['icuuc75.dll, soxr.dll, onnxruntime.dll,']
+
+## 2. a comp on the timeline item (.validation/fusion-item-probe.py, same host)
+
+connect                pass     DaVinci Resolve Studio 21.2.0.5
+build                  pass     ONNX Inference
+item-methods           info     AddFusionComp, DeleteFusionCompByName, ExportFusionComp,
+                                GetFusionCompByIndex, GetFusionCompByName,
+                                GetFusionCompCount, GetFusionCompNameList, ...
+effect.GetFusionComp   info     None
+AddFusionComp          info     PyRemoteObject <BlackmagicFusion.PyRemoteObject ...>
+tools-before           info     ['1', '2']            # MediaIn, MediaOut
+AddTool(OFXcom.ofxplugindeveloper.onnxinference) info None
+AddTool(com.ofxplugindeveloper.onnxinference)    info None
+AddTool(OFXonnxinference)                        info None
+tools-after            info     ['1', '2']
+modules                info     ['icuuc75.dll, soxr.dll, onnxruntime.dll,']
+
+## 3. what the module list says about the host, not about the plug-in
+
+`tasklist /FI "IMAGENAME eq Resolve.exe" /M` lists onnxruntime.dll in the host
+before the plug-in has run a session at all: Resolve ships its own ONNX Runtime.
+A module-name check therefore cannot show which runtime answered - the bundled
+core is called onnxruntime-ofx.dll for exactly that reason - and
+onnxruntime_providers_cuda was not loaded in either run, because no session was
+created without modelPath.
+
+## 4. conclusion
+
+modelPath cannot be reached in this host through either Fusion shape. What remains
+is a project that already carries the value (a .drp written with the parameter
+set) or a host whose effect object exposes a parameter API. Until one of those
+exists, the frame stays a pass-through and the claim that the plug-in uses
+Resolve's own cuDNN stays unproven.

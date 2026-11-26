@@ -98,14 +98,22 @@ message. Two host-facing facts:
   hold four files (`OnnxInference.ofx`, `onnxruntime-ofx.dll`,
   `onnxruntime_providers_cuda.dll`, `onnxruntime_providers_shared.dll`) and no
   cuDNN, cuBLAS, cuFFT or cudart of their own, and at run time the host's process
-  carried `cudnn64_9.dll` from its own install folder (**[V]**,
+  carried `cudnn64_9.dll` from its own install folder, and its module list also names its
+own `onnxruntime.dll` (**[V]**,
   [`resolve-provider-only.log`](../evidence/2026-11-26-windows/resolve-provider-only.log)).
   The frame is a **pass-through**, and not because of the packaging: Resolve hands a
   script an OFX effect object with `GetInfo`, `GetIndex`, `GetIsEnabled`, `SetIndex`
   and `SetIsEnabled` and nothing else, so `modelPath` cannot be set, `isIdentity`
-  stays true and `render()` never runs. A device render in this host needs a project
-  that already carries the parameter value, so "uses Resolve's own cuDNN" is not
-  claimed here.
+  stays true and `render()` never runs. **The Fusion route is closed too**, which
+  closes the last scripting door: `effect.GetFusionComp()` returns `None` for an
+  effect added with `AddEffect("ofx", …)`, and a comp added to the timeline item
+  (`item.AddFusionComp()`) holds only `MediaIn`/`MediaOut` - `AddTool` refuses the
+  plug-in under each identifier tried, and no frame was rendered from it (**[V]**,
+  [`resolve-fusion-path.log`](../evidence/2026-11-26-windows/resolve-fusion-path.log)).
+  A device render in this host needs a project that already carries the parameter
+  value, so "uses Resolve's own cuDNN" is not claimed here. Neither does a module
+  list help settle it on its own: the host loads its own `onnxruntime.dll`, so
+  `tasklist /M` names a runtime whether or not the plug-in ever created a session.
 
   Neither fact is visible to a fake host, which has nothing loaded and therefore
   always uses the bundle's own DLLs. The reproduction is
