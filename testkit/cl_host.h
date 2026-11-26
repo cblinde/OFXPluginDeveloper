@@ -19,7 +19,21 @@
 
 #pragma once
 
-#include <dlfcn.h>
+// The loader is opened by name, because whether an ICD is installed is a fact
+// about the machine, not about the build: libOpenCL.so.1 with dlopen on POSIX,
+// OpenCL.dll with LoadLibrary on Windows (the driver installs it). Only the
+// three loader calls differ; the entry points are looked up by name either way.
+#if defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#else
+#  include <dlfcn.h>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -116,13 +130,35 @@ namespace detail {
 inline std::string loaderPath()
 {
   const char* fromEnv = std::getenv("OPENCL_LOADER_LIB");
+#if defined(_WIN32)
+  return fromEnv != nullptr && *fromEnv != '\0' ? std::string(fromEnv) : std::string("OpenCL.dll");
+#else
   return fromEnv != nullptr && *fromEnv != '\0' ? std::string(fromEnv) : std::string("libOpenCL.so.1");
+#endif
+}
+
+/// The loader's own words, or a number when it has none: dlopen reports through
+/// dlerror, LoadLibrary through GetLastError, and both messages end up in the
+/// same report.
+inline std::string loaderError()
+{
+#if defined(_WIN32)
+  return "GetLastError " + std::to_string(static_cast<long>(GetLastError()));
+#else
+  const char* message = dlerror();
+  return message == nullptr ? std::string("no dlerror text") : std::string(message);
+#endif
 }
 
 template <typename T>
 bool symbol(void* handle, const char* name, T& out)
 {
+#if defined(_WIN32)
+  // GetProcAddress returns FARPROC; the entry points are the same addresses.
+  auto* found = reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle), name));
+#else
   void* found = dlsym(handle, name);
+#endif
   if (found == nullptr) return false;
   std::memcpy(&out, &found, sizeof(out));
   return true;
@@ -159,9 +195,13 @@ inline DeviceInfo openDevice()
   DeviceInfo info;
   const std::string path = detail::loaderPath();
   Api& api = info.api;
+#if defined(_WIN32)
+  api.handle = static_cast<void*>(LoadLibraryA(path.c_str()));
+#else
   api.handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+#endif
   if (api.handle == nullptr) {
-    info.error = "cannot dlopen " + path + ": " + dlerror();
+    info.error = "cannot load " + path + ": " + detail::loaderError();
     return info;
   }
   void* h = api.handle;
@@ -184,7 +224,7 @@ inline DeviceInfo openDevice()
       detail::symbol(h, "clEnqueueWriteImage", api.EnqueueWriteImage) &&
       detail::symbol(h, "clEnqueueReadImage", api.EnqueueReadImage);
   if (!resolved) {
-    info.error = std::string("the loader has no OpenCL 1.2 entry point: ") + dlerror();
+    info.error = std::string("the loader has no OpenCL 1.2 entry point: ") + detail::loaderError();
     return info;
   }
 
