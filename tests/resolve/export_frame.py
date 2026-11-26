@@ -151,7 +151,7 @@ def run(args, report):
 
         started = time.monotonic()
         resolve = resolve_api.connect(timeout=args.timeout,
-                                     executable=facts["resolve"])
+                                     executable=facts["resolve"], process=process)
         step(report, "connect", "pass",
              f"{resolve.GetProductName()} {resolve.GetVersionString()}")
 

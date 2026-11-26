@@ -287,7 +287,8 @@ def run(args, report):
         step(report, "launch", "pass", f"pid {process.pid}", time.monotonic() - started)
 
         started = time.monotonic()
-        resolve = resolve_api.connect(timeout=args.timeout, executable=facts["resolve"])
+        resolve = resolve_api.connect(timeout=args.timeout, executable=facts["resolve"],
+                                      process=process)
         step(report, "connect", "pass",
              f"{resolve.GetProductName()} {resolve.GetVersionString()}",
              time.monotonic() - started)

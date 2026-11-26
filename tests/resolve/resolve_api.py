@@ -61,8 +61,27 @@ def library_path(executable=None):
     return None
 
 
-def connect(timeout=120, poll=2.0, executable=None):
-    """Return a Resolve object with a project open, or raise."""
+def poll_delay(attempt, ceiling=2.0):
+    """Seconds to wait before the next check: 0.1, 0.2, 0.4 ... capped.
+
+    A flat `sleep(2)` costs up to two seconds on a host that was ready 100 ms
+    after the last attempt, and these loops run against a GPU-strong machine
+    where the host is usually the only slow part. Backing off keeps the first
+    seconds responsive without spinning a core for the minutes a cold start
+    takes. Measured: a `-nogui` start answered 351 s after launch, so the tail
+    has to stay cheap.
+    """
+    return min(ceiling, 0.1 * (2 ** min(attempt, 6)))
+
+
+def connect(timeout=120, poll=2.0, executable=None, process=None):
+    """Return a Resolve object with a project open, or raise.
+
+    `process` is the host this run started, if any. With it, a host that exits
+    before answering fails the call in the next hundred milliseconds instead of
+    burning the whole timeout - a start that dies after a second used to look
+    exactly like one that is still loading.
+    """
     api_dir = scripting_api_dir()
     if not api_dir:
         raise NotRun("RESOLVE_SCRIPT_API is not set; see references/resolve-automation.md section 2")
@@ -78,7 +97,12 @@ def connect(timeout=120, poll=2.0, executable=None):
 
     deadline = time.monotonic() + timeout
     last_error = None
+    attempt = 0
     while time.monotonic() < deadline:
+        if process is not None and process.poll() is not None:
+            raise RuntimeError(
+                f"the host exited (code {process.returncode}) before the scripting "
+                f"API answered; last error: {last_error}")
         try:
             resolve = dvr.scriptapp("Resolve")   # RUN: None until Resolve is up
         except Exception as error:
@@ -88,7 +112,8 @@ def connect(timeout=120, poll=2.0, executable=None):
             manager = resolve.GetProjectManager()          # RUN
             if manager and manager.GetCurrentProject():    # RUN
                 return resolve
-        time.sleep(poll)
+        time.sleep(poll_delay(attempt, poll))
+        attempt += 1
     raise TimeoutError(f"no Resolve after {timeout}s (last error: {last_error})")
 
 
@@ -144,11 +169,13 @@ def project_manager(resolve, timeout=120):
     what was missing.
     """
     deadline = time.monotonic() + timeout
+    attempt = 0
     while True:
         manager = resolve.GetProjectManager()                 # RUN
         if manager is not None or time.monotonic() >= deadline:
             break
-        time.sleep(2)
+        time.sleep(poll_delay(attempt))
+        attempt += 1
     if manager is None:
         raise RuntimeError(f"the host offered no project manager within {timeout}s")
     return manager
@@ -321,6 +348,7 @@ def render_one_frame(project, output_directory, custom_name, timeout, process=No
 
     deadline = time.monotonic() + timeout
     in_flight_since = time.monotonic()
+    attempt = 0
     while time.monotonic() < deadline:
         # Liveness first: a killed host makes every later call a question nobody
         # will answer, and a socket that is merely closed can take its own time
@@ -342,7 +370,8 @@ def render_one_frame(project, output_directory, custom_name, timeout, process=No
             break
         if on_poll is not None:
             on_poll(time.monotonic() - in_flight_since)
-        time.sleep(poll)
+        time.sleep(poll_delay(attempt, poll))
+        attempt += 1
     else:
         project.StopRendering()                           # NOT RUN: no render timed out here
         raise TimeoutError(f"render {job_id} exceeded {timeout}s")
