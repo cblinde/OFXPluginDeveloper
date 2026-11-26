@@ -19,7 +19,10 @@ What it checks, and why each one exists:
    quoted fragment after the number (`§4, "Models that only accept certain
    sizes"`) is resolved against that section's text as well: three rows of
    `pattern-index.md` named headings that live in another document, and the
-   number alone had looked fine.
+   number alone had looked fine. A bare `§4 "Detection heads"` names no
+   document, so the title resolves it - exactly one document must have that
+   text in that section, which is also how a reference that lost its document
+   is caught.
 3. Count drift. The number of templates, testing layers and AI repositories is
    derived from the tree at run time and compared with the prose that counts
    them. This is what caught "both templates" after a third template landed.
@@ -425,8 +428,10 @@ def check_section_numbering(root, files, texts, report):
 
 def check_section_refs(root, files, texts, report):
     """`FILE.md` §12 / §3.5 - a cross-reference no renderer validates."""
+    bodies_all = {path: section_bodies(texts[path]) for path in files}
     for path in files:
         text = texts[path]
+        claimed = []
         # Both spellings: `FILE.md` §5 and [`FILE.md`](FILE.md) §5. The link
         # form put `)` between the name and the §, so an optional-backtick
         # pattern skipped every reference written that way - the whole class
@@ -438,6 +443,7 @@ def check_section_refs(root, files, texts, report):
         for match in re.finditer(
                 r"([A-Za-z0-9_./-]+\.md)[`'\")\\]]*[ \t]*§[ \t]*(\d+(?:\.\d+)*)"
                 r"(?:[ \t]*,?[ \t]*[\"“]([^\"”\n]{3,90})[\"”])?", text):
+            claimed.append(match.span())
             target, dotted = match.group(1), match.group(2)
             named = match.group(3)
             parts = dotted.split(".")
@@ -468,10 +474,37 @@ def check_section_refs(root, files, texts, report):
                 # it a renumbering cannot fake.
                 body = section_bodies(texts[relative]).get(number, "")
                 if " ".join(named.split()).lower() not in " ".join(body.split()).lower():
-                    report.error(
+                                        report.error(
                         path, line,
                         f"{target} §{number} does not contain \"{named}\"; that "
                         f"section is \"{section_title(texts[relative], number)}\"")
+
+        # A bare `§4 "Detection heads"` does not name its document: the file was
+        # usually named earlier in the sentence. The title is enough to resolve
+        # it when exactly one document has that text in that section - and
+        # when none or two do, the reference is worth a line number, because
+        # that is what a renumbering produces. References already claimed by a
+        # named match above are skipped: their `§` sits in the same match.
+        for match in re.finditer(
+                r"§[ \t]*(\d+(?:\.\d+)*)[ \t]*,?[ \t]*[\"“]([^\"”\n]{3,90})[\"”]", text):
+            if any(start <= match.start() < end for start, end in claimed):
+                continue
+            dotted, named = match.group(1), match.group(2)
+            number = int(dotted.split(".")[0])
+            flat = " ".join(named.split()).lower()
+            homes = [doc for doc in files
+                     if flat in " ".join(bodies_all[doc].get(number, "").split()).lower()]
+            if len(homes) == 1:
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            if not homes:
+                report.error(path, line,
+                             f"§{dotted} \"{named}\" is in no document's §{number}; "
+                             f"either the number or the title moved")
+            else:
+                report.error(path, line,
+                             f"§{dotted} \"{named}\" matches {len(homes)} documents "
+                             f"({', '.join(sorted(homes))}); name the one you mean")
 
 
 def check_counts(root, files, texts, report):
@@ -829,7 +862,7 @@ def check_code_section_refs(root, files, texts, report):
                     report.error(
                         path, line_number,
                         f"says {name} section {number} contains \"{named}\"; that "
-                        f"section is \"{section_title(texts[target], number)}\"")
+                        f"section is \"{section_title(texts[target], number)}\"")
 
 
 def check_agents(root, report):
