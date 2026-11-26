@@ -1,0 +1,6 @@
+root: /workspace/chats/178f73e54dd5ef590a75a324/.validation/ort-1.32.0
+header: ORT_API_VERSION 32  (.validation/ort-1.32.0/include/onnxruntime_c_api.h)
+        every entry point this repository uses is declared
+core: libonnxruntime.so
+provider: none in this root (a CPU package has no CUDA provider)
+verdict: inspection only, no gate asked for

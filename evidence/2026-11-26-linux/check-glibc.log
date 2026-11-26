@@ -1,0 +1,16 @@
+== templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle
+checking 1 object(s) against glibc 2.17
+  ok   templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx  max GLIBC_2.14
+glibc check: 1 object(s) within 2.17
+exit=0
+== templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle
+checking 1 object(s) against glibc 2.17
+  ok   templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx  max GLIBC_2.14
+glibc check: 1 object(s) within 2.17
+exit=0
+== templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+checking 2 object(s) against glibc 2.17
+  FAIL templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx  needs GLIBC_2.32, bound 2.17
+  FAIL templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/libonnxruntime.so.1  needs GLIBC_2.28, bound 2.17
+glibc check: 2 of 2 object(s) need a newer glibc than 2.17
+exit=1

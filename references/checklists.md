@@ -243,10 +243,15 @@ Copy this into the pull request. "N/A" needs the reason next to it.
       of them is above the bound. An object it cannot read is an error as well,
       because a member nobody inspected is not a pass. `--selftest` drives the
       same comparison with a canned `readelf` and fails on a bound that is one
-      step too low, so the checker itself can be seen failing. Nothing in this
-      repository has run the real check: every Linux run here happens in one
-      container, so it proves the build runs where it was built and nothing about
-      an older host.
+      step too low, so the checker itself can be seen failing. It has now run on
+      real artefacts: on 2026-11-26 the three bundles built in this repository's
+      Linux container were checked against 2.17 — `ReferenceGain` and
+      `MinimalCudaGain` sit at `GLIBC_2.14`, while `OnnxInference` needs
+      `GLIBC_2.32` and the ONNX Runtime it bundles needs `GLIBC_2.28`, so that
+      template cannot load on a glibc-2.17 host at all
+      ([`check-glibc.log`](../evidence/2026-11-26-linux/check-glibc.log)). One
+      container still says nothing about an older host it was not run on, which
+      is why this stays a release check rather than a test.
 - [ ] Windows: `dumpbin /exports <Name>.ofx` shows the same two names and nothing
       else; `cuobjdump -lelf` lists the cubins when CUDA is on. Both are checked
       by `testkit/check-ofx-artifact.bat` with `--strict`, which finds

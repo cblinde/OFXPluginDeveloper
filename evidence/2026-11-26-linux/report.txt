@@ -1,0 +1,154 @@
+# OFXPluginDeveloper - first full Linux run of the host-side suites
+
+**Subject:** `cblinde/OFXPluginDeveloper` at `main`, fast-forwarded to `53fe1da`
+**Machine:** Linux x86-64, Ubuntu 24.04.5 LTS, 2 vCPU, no GPU, no display
+**Toolchain:** GCC/G++ 13.3.0, CMake 4.4.5 (pip wheel in a project `.venv`),
+GNU Make 4.3, ONNX Runtime 1.32.0 (CPU, headers and `libonnxruntime.so` from the
+`Microsoft.ML.OnnxRuntime` NuGet package), Python 3.12.3 with numpy 2.5.5,
+onnx 1.23.2, onnxruntime 1.32.0, shellcheck 0.11.0 (pip)
+**Scope:** run every Linux suite this machine can run, fix what fails, and write
+down what could not run.
+
+Every command ran inside a clone of this repository. Build trees
+(`templates/*/build/`) and the ONNX Runtime tree (`.validation/ort-1.32.0/`) are
+covered by `.gitignore` and were not committed.
+
+---
+
+## 1. Verdict
+
+The **Linux path works from a clean tree**. Documentation, all three template
+builds, all three host-contract suites, the negative controls, the comparator
+self-test and the tool self-tests pass with no changes to the sources. The
+provider label introduced on 2026-11-26 reads as intended in a real run.
+
+Three things did not run, each named rather than skipped silently: the GPU step
+(no device), valgrind memcheck (the image's glibc has no matching debug info),
+and cppcheck (its compiled `FILESDIR` is not writable without root). ASan+UBSan
+and shellcheck did run.
+
+One finding has a document consequence: the **inference bundle cannot meet the
+repository's glibc 2.17 floor**, because the ONNX Runtime it bundles needs 2.28
+and the plug-in itself links 2.32 in this container. The reference and CUDA
+bundles sit at 2.14, as the documents say.
+
+One code defect was found and fixed: `tools/probe-env.py` reported
+`none: no C++ toolchain found` on a machine with g++ 13.3 on `PATH` and only
+cmake missing.
+
+---
+
+## 2. Tests executed
+
+| # | Test | Command | Result |
+|---|---|---|---|
+| T1 | documentation drift | `python3 tools/check-docs.py` | **30 documents, 0 problems** |
+| T2 | reference template | `templates/minimal-ofx/test/run-tests.sh` | build + artifact + contract: **110 checks, 0 failed** |
+| T3 | CUDA template, CPU path | `CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | build + artifact + contract: **136 checks, 0 failed**; memcheck skipped (no valgrind) |
+| T4 | inference template | `ONNXRUNTIME_ROOT=.validation/ort-1.32.0 templates/onnx-inference-ofx/build.sh` then `test/run-tests.sh` | build (2 exported symbols, ORT bundled), **160 checks × 3 host profiles + 82 tiled, 0 failed** |
+| T5 | whole gate | `CPU_ONLY=1 RUN_VALGRIND=0 ./run-tests.sh` | **exit 0**; headline names the one hole: `NOT RUN: GPU kernels (CPU_ONLY)` |
+| T6 | negative controls | inside T5: `testkit/run-negative-controls.sh` | every control caught its fault (the `28/24/20 checks, 1 failed` lines in the log are the controls asserting failure) |
+| T7 | ASan + UBSan | `SANITIZE=address,undefined CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | **136 checks × 3, 0 failed**, no sanitizer report |
+| T8 | static analysis | `templates/minimal-cuda-ofx/test/run-analysis.sh` | shellcheck 0.11.0 over 11 scripts, no findings; **cppcheck not runnable** |
+| T9 | glibc bound, real bundles | `tools/check-glibc.sh --max 2.17 <bundle>` ×3 | reference **2.14 ok**, CUDA **2.14 ok**, inference **FAIL: 2.32 (plug-in) / 2.28 (bundled ORT)** |
+| T10 | ORT inspection | `python3 tools/check-runtime.py .validation/ort-1.32.0` | `ORT_API_VERSION 32`, every entry point this repository uses is declared, no provider in a CPU package |
+| T11 | provider label | T4 contract output | `label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."` |
+
+T11 is the first run that **observed** the label form rather than inferring it
+from the source: the format change had no executed evidence before this report.
+
+---
+
+## 3. Findings
+
+### F1 - `probe-env.py` blamed the toolchain for a missing cmake (fixed)
+
+`tools/probe-env.py` printed
+
+```
+templates that fit this machine
+  none: no C++ toolchain found
+```
+
+on a machine that has `gcc` and `g++` 13.3 and no `cmake` on `PATH`
+(`compile.cpu` is `cmake AND a compiler`). The message sent a reader after a
+compiler that was already installed. `verdict_note()` now names the missing
+prerequisite, and three self-test cases pin the three wordings. Fixed in the
+commit `fix(tools): name the missing prerequisite instead of the whole toolchain`.
+
+### F2 - the inference bundle exceeds the glibc 2.17 floor (documented, not fixable here)
+
+`tools/check-glibc.sh --max 2.17` on the three bundles built here:
+
+```
+ReferenceGain.ofx      max GLIBC_2.14   ok
+MinimalCudaGain.ofx    max GLIBC_2.14   ok
+OnnxInference.ofx      needs GLIBC_2.32
+libonnxruntime.so.1    needs GLIBC_2.28
+```
+
+The floor comes from the prebuilt ONNX Runtime and from this container's
+libstdc++/glibc, not from the template's own code or a compiler flag that could
+be lowered. A host on CentOS 7 (glibc 2.17) therefore cannot load the inference
+bundle; it can load the reference and CUDA bundles. This is now stated in the
+checklist and in the packaging reference instead of being implied by a single
+floor for every bundle.
+
+### F3 - the stale build tree from an earlier session (fixed locally, no commit)
+
+`templates/onnx-inference-ofx/build/` was restored from a checkpoint and its
+`CMakeCache.txt` pointed at `/tmp/pytools/cmake/data/bin/cmake`, a path that no
+longer exists, so `run-tests.sh` died in `cmake_check_build_system` before the
+template's own checks started. Deleting the build tree fixed it. Nothing to
+change in the repository: a build directory is not a committed artefact, but a
+restored workspace can carry one, and the error names the missing path.
+
+---
+
+## 4. What did not run, and why
+
+- **GPU kernels** - no device and no `nvcc`; `run-tests.sh` names it
+  (`NOT RUN: GPU kernels (CPU_ONLY)`). Unchanged by this run.
+- **valgrind memcheck** - the distribution's valgrind 3.22 extracted into a
+  private prefix refuses to start: the mandatory `strlen` redirection in
+  `ld-linux-x86-64.so.2` needs `libc6-dbg` at the system path, and
+  `--extra-debuginfo-path` with an extracted `libc6-dbg` did not satisfy it.
+  ASan+UBSan covered the same harness instead.
+- **cppcheck** - Ubuntu's package was extracted without root, but the binary was
+  built with `FILESDIR=/usr/lib/x86_64-linux-gnu/cppcheck` and cannot be pointed
+  at another configuration directory in 2.13.0, so it exits before analysing
+  anything. `run-analysis.sh` reports it skipped, not clean.
+- **Resolve, Nuke, NatronRenderer** - no host, no display. The host-free halves of
+  `tests/resolve/` ran inside `run-tests.sh`; nothing spoke to a host.
+- **CUDA EP** - the CPU ONNX Runtime package has no provider; the label says so.
+
+---
+
+## 5. Reproducing this run
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install cmake numpy onnx onnxruntime
+
+# ONNX Runtime 1.32.0 headers + libonnxruntime.so from the NuGet package,
+# because the pip wheel ships the shared library without headers.
+curl -fsSL -o .validation/ort.nupkg \
+  https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.32.0/microsoft.ml.onnxruntime.1.32.0.nupkg
+python3 - <<'PY'
+import os, shutil, zipfile
+root = '.validation/ort-1.32.0'
+os.makedirs(root + '/include', exist_ok=True); os.makedirs(root + '/lib', exist_ok=True)
+z = zipfile.ZipFile('.validation/ort.nupkg')
+with z.open('runtimes/linux-x64/native/libonnxruntime.so') as s, open(root + '/lib/libonnxruntime.so', 'wb') as d:
+    shutil.copyfileobj(s, d, 1 << 20)
+for n in z.namelist():
+    if n.startswith('build/native/include/') and n.endswith('.h'):
+        with z.open(n) as s, open(root + '/include/' + os.path.basename(n), 'wb') as d:
+            shutil.copyfileobj(s, d)
+PY
+
+export PATH="$PWD/.venv/bin:$PATH"
+export ONNXRUNTIME_ROOT="$PWD/.validation/ort-1.32.0"
+(cd templates/onnx-inference-ofx && CPU_ONLY=1 ./build.sh)
+CPU_ONLY=1 ./run-tests.sh
+```

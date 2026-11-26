@@ -252,6 +252,47 @@ The review ran a mechanical check of the repo against the official sources.
 - `cudaPointerGetAttributes` cost per launch is unmeasured here. It is cheap on
   UVA systems; if a profile ever shows it, cache the device per allocation.
 
+## 4. The 2026-11-26 Linux run of the host-side suites
+
+One container (Ubuntu 24.04.5, GCC 13.3, CMake 4.4.5 from a project `.venv`, two
+vCPUs, no GPU), from a fast-forwarded `main`, with ONNX Runtime 1.32.0 taken from
+its NuGet package because the pip wheel ships the shared library without headers.
+Every line below came out of that run; the logs are in
+[`evidence/2026-11-26-linux/`](../evidence/2026-11-26-linux/report.txt).
+
+| What | Command | Result |
+| --- | --- | --- |
+| Documentation | `python3 tools/check-docs.py` | 30 documents, 0 problems **[V]** |
+| Reference plug-in | `templates/minimal-ofx/test/run-tests.sh` | build, artifact and contract: 110 checks, 0 failed **[V]** |
+| CUDA template, CPU path | `CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | 136 checks, 0 failed; memcheck skipped, no valgrind **[V]** |
+| Inference template | `ONNXRUNTIME_ROOT=… ./build.sh`, then `test/run-tests.sh` | 160 checks per host profile plus 82 on the tiled pass, 0 failed **[V]** |
+| Whole gate | `CPU_ONLY=1 ./run-tests.sh` | exit 0; the headline names the one hole, `NOT RUN: GPU kernels (CPU_ONLY)` **[V]** |
+| Negative controls | inside the gate: `testkit/run-negative-controls.sh` | every control's fault was caught (the `1 failed` lines in the log are the controls asserting failure) **[V]** |
+| ASan + UBSan | `SANITIZE=address,undefined CPU_ONLY=1 …/run-tests.sh` | 136 checks × 3, 0 failed, no sanitizer report **[V]** |
+| Static analysis | `templates/minimal-cuda-ofx/test/run-analysis.sh` | shellcheck 0.11.0 clean over 11 scripts; cppcheck not runnable in this image **[V]** for shellcheck |
+| glibc bound, real bundles | `tools/check-glibc.sh --max 2.17 <bundle>` ×3 | reference 2.14, CUDA 2.14, inference 2.32 with its bundled runtime at 2.28 **[V]** |
+| ORT inspection | `python3 tools/check-runtime.py .validation/ort-1.32.0` | `ORT_API_VERSION 32`, every entry point this repository uses is declared, no provider in a CPU package **[V]** |
+
+Two consequences worth carrying forward:
+
+- **The glibc 2.17 floor holds for two of the three bundles, not all three.** The
+  inference bundle is built here with `GLIBC_2.32` in the plug-in and `GLIBC_2.28`
+  in the ONNX Runtime it ships, so it cannot load on a CentOS 7 host at all; a
+  prebuilt runtime and this container's libstdc++ set that floor, not the
+  template's own code. `checklists.md` §6 and
+  `packaging-and-install.md` §2 now say so instead of implying one floor.
+- **The provider label was observed, not inferred.** The contract output in all
+  three host profiles carries `CPU (1 thread) - fallback: CUDA execution provider
+  is not enabled in this build.` **[V]** — the format changed on 2026-11-26 and
+  had no executed evidence before this run.
+
+Not run there, and therefore not claimed: any GPU execution (no device, no
+`nvcc`), valgrind memcheck (the extracted 3.22 cannot set up its `strlen`
+redirection without `libc6-dbg` at the system path), cppcheck (Ubuntu's 2.13.0
+expects its configuration files at a compiled-in directory that needs root), and
+any host process — the host-free halves of `tests/resolve/` ran, nothing spoke to
+Resolve, Nuke or Natron.
+
 ## Provenance labels
 
 Tags in this document mean exactly what they meant in the document it came from:

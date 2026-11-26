@@ -1,0 +1,9 @@
+== cppcheck ==
+Cppcheck 2.13.0
+cppcheck: Failed to load library configuration file 'std.cfg'. File not found
+Failed to load std.cfg. Your Cppcheck installation is broken, please re-install. The Cppcheck binary was compiled with FILESDIR set to "/usr/lib/x86_64-linux-gnu/cppcheck" and will therefore search for std.cfg in /usr/lib/x86_64-linux-gnu/cppcheck/cfg.
+
+== shellcheck ==
+version: 0.11.0
+
+static analysis: findings above
