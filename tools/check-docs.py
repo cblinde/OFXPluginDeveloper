@@ -504,7 +504,7 @@ def check_section_refs(root, files, texts, report):
             else:
                 report.error(path, line,
                              f"§{dotted} \"{named}\" matches {len(homes)} documents "
-                             f"({', '.join(sorted(homes))}); name the one you mean")
+                             f"({', '.join(sorted(homes))}); name the one you mean")
 
 
 def check_counts(root, files, texts, report):
