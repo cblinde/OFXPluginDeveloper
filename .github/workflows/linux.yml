@@ -232,9 +232,20 @@ jobs:
           valgrind --error-exitcode=1 --leak-check=full /bin/true
           cppcheck --version
 
-      - name: cppcheck and shellcheck
-        # REQUIRE_ANALYSIS=1 turns a missing tool into a failure instead of a skip.
-        run: REQUIRE_ANALYSIS=1 ./templates/minimal-cuda-ofx/test/run-analysis.sh
+      - name: cppcheck and shellcheck, all three templates
+        # REQUIRE_ANALYSIS=1 turns a missing tool into a failure instead of a skip,
+        # and the grep refuses a run that never printed its summary - the three
+        # templates had their own analysis entry points so that a finding names the
+        # template it is in.
+        shell: bash
+        run: |
+          set -euo pipefail
+          for template in minimal-ofx minimal-cuda-ofx onnx-inference-ofx; do
+            echo "== ${template}"
+            REQUIRE_ANALYSIS=1 "./templates/${template}/test/run-analysis.sh" 2>&1 \
+              | tee "analysis-${template}.log"
+            grep -qF 'static analysis: clean' "analysis-${template}.log"
+          done
 
       - name: memcheck, both harnesses
         # The greps refuse a run whose valgrind stage disappeared: the suites print
@@ -254,5 +265,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: linux-analysis-logs
-          path: memcheck-*.log
+          path: |
+            memcheck-*.log
+            analysis-*.log
           if-no-files-found: warn

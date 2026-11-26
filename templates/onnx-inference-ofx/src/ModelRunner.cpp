@@ -2,6 +2,7 @@
 
 #include "ModelRunner.h"
 
+#include <algorithm>
 #include <cstring>
 #include <cwchar>
 #include <map>
@@ -125,9 +126,9 @@ std::wstring PrivateRuntimePath()
 /// not a host DLL this guard has to recognise.
 std::wstring Folded(std::wstring text)
 {
-    for (wchar_t& c : text) {
-        if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
-    }
+    std::transform(text.begin(), text.end(), text.begin(), [](wchar_t c) {
+        return (c >= L'A' && c <= L'Z') ? static_cast<wchar_t>(c - L'A' + L'a') : c;
+    });
     return text;
 }
 
@@ -234,7 +235,9 @@ std::string PreloadSummary()
     const std::string prefix = "preload: ";
     constexpr size_t kMax = 140;
     if (prefix.size() + text.size() > kMax) {
-        text = text.substr(0, kMax - prefix.size() - 3) + "...";
+        // Truncate in place: `text = text.substr(...) + "..."` copies the kept
+        // prefix into a temporary and assigns it back over itself.
+        text.replace(kMax - prefix.size() - 3, std::string::npos, "...");
     }
     return prefix + text;
 }
@@ -390,7 +393,7 @@ std::string ShortMessage(const std::string& text)
     }
     constexpr size_t kMax = 120;
     if (line.size() > kMax) {
-        line = line.substr(0, kMax) + "...";
+        line.replace(kMax, std::string::npos, "...");
     }
     return line;
 }

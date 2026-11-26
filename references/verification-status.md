@@ -144,9 +144,9 @@ not the console transcript.
   under ThreadSanitizer (which is given real threads by the concurrent test), and
   under valgrind memcheck (`0 errors from 0 contexts`, every heap block freed).
 - `test/run-analysis.sh` reports nothing unresolved from cppcheck or shellcheck;
-  the two intentional cppcheck suppressions are the byte↔float accessors that
-  reproduce OFX's `void*` + row-bytes image contract, and are documented in the
-  checklist.
+  the two intentional cppcheck suppressions in this template are the byte↔float
+  accessors that reproduce OFX's `void*` + row-bytes image contract, and are
+  documented in the checklist.
 - `OFXPLUGIN_CUDA_STATIC_RUNTIME=ON` builds and links: `libcudart.so.12` disappears
   from `NEEDED` and there are zero undefined `cuda*` symbols.
 - `CPU_ONLY=1`, and "CUDA requested but no compiler", both still build and pass
@@ -293,7 +293,7 @@ Every line below came out of that run; the logs are in
 | ASan + UBSan | `SANITIZE=address,undefined CPU_ONLY=1 …/run-tests.sh` | 136 checks × 3, 0 failed, no sanitizer report **[V]** |
 | TSan | `SANITIZE=thread`, started under `setarch -R`, all three templates | 110 × 3, 136 × 3 and 160 × 3 + 82 checks, 0 failed, no race reported; without ASLR off TSan aborts at its shadow layout **[V]** |
 | ASan + UBSan, all three templates | `SANITIZE=address,undefined` over the reference, CUDA and inference suites | the same check counts, 0 failed, no sanitizer report **[V]** |
-| Static analysis | `REQUIRE_ANALYSIS=1 templates/minimal-cuda-ofx/test/run-analysis.sh` | shellcheck 0.11.0 and cppcheck 2.13.0 both clean, script exit 0 **[V]** |
+| Static analysis | `REQUIRE_ANALYSIS=1 <template>/test/run-analysis.sh`, all three templates | shellcheck 0.11.0 and cppcheck 2.13.0 both clean, each template exit 0; the inference template needed eight findings fixed first (five inline suppressions on the OFX pointer contract, one loop as `std::transform`, two in-place truncations) **[V]** |
 | memcheck | `CPU_ONLY=1 RUN_VALGRIND=1` on the CUDA suite and the inference contract harness, valgrind 3.22.0 | `0 errors from 0 contexts` in both, exit 0; needs `libc6-dbg`, which the valgrind package does not pull **[V]** |
 | POSIX artifact check | `scripts/check-artifact.sh <ofx>` ×3 | two strong exports in each bundle; 5 and 6 weak C++ helpers reported, not counted **[V]** |
 | glibc bound, real bundles | `tools/check-glibc.sh --max 2.17 <bundle>` ×3 | reference 2.14, CUDA 2.14, inference 2.32 with its bundled runtime at 2.28 **[V]** |

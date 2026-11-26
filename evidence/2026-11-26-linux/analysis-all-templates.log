@@ -1,0 +1,104 @@
+$ # analysis over the two templates that did not have a run-analysis.sh
+$ # (first run, before the findings below were fixed)
+
+$ REQUIRE_ANALYSIS=1 templates/minimal-ofx/test/run-analysis.sh
+  == cppcheck ==
+  Cppcheck 2.13.0
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: clean
+  exit=0
+
+$ REQUIRE_ANALYSIS=1 templates/onnx-inference-ofx/test/run-analysis.sh
+  == cppcheck ==
+  Cppcheck 2.13.0
+  src/ModelRunner.cpp:393:16: performance: Ineffective call of function 'substr' because a prefix of the string is assigned to itself. Use replace() instead. [uselessCallsSubstr]
+          line = line.substr(0, kMax) + "...";
+                 ^
+  src/ModelRunner.cpp:237:16: performance: Ineffective call of function 'substr' because a prefix of the string is assigned to itself. Use replace() instead. [uselessCallsSubstr]
+          text = text.substr(0, kMax - prefix.size() - 3) + "...";
+                 ^
+  src/ModelRunner.cpp:129:39: style: Consider using std::transform algorithm instead of a raw loop. [useStlAlgorithm]
+          if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c - L'A' + L'a');
+                                        ^
+  src/Plugin.cpp:86:26: portability: Casting between const signed char * and const float * which have an incompatible binary data representation. [invalidPointerCast]
+          const float* s = reinterpret_cast<const float*>(srcBase + static_cast<long long>(y) * srcPitch);
+                           ^
+  src/Plugin.cpp:87:20: portability: Casting between signed char * and float * which have an incompatible binary data representation. [invalidPointerCast]
+          float* d = reinterpret_cast<float*>(dstBase + static_cast<long long>(y) * dstPitch);
+                     ^
+  src/Plugin.cpp:331:31: portability: Casting between const signed char * and const float * which have an incompatible binary data representation. [invalidPointerCast]
+              RunWhole(*runner, reinterpret_cast<const float*>(inBase), channels, inW, inH,
+                                ^
+  src/Plugin.cpp:334:31: portability: Casting between const signed char * and const float * which have an incompatible binary data representation. [invalidPointerCast]
+              RunTiled(*runner, reinterpret_cast<const float*>(inBase), channels, inW, inH,
+                                ^
+  src/Plugin.cpp:353:49: portability: Casting between signed char * and float * which have an incompatible binary data representation. [invalidPointerCast]
+          UnpackRGB(planar.data(), width, height, reinterpret_cast<float*>(dstBase), dstPitch, 0, 0);
+                                                  ^
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: findings above
+  exit=1
+
+$ # after the fixes: four pointer-cast suppressions in Plugin.cpp (the OFX byte-buffer contract), Folded() as std::transform, two in-place truncations instead of self-assignment
+$ REQUIRE_ANALYSIS=1 templates/minimal-ofx/test/run-analysis.sh
+  == cppcheck ==
+  Cppcheck 2.13.0
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: clean
+  exit=0
+
+$ REQUIRE_ANALYSIS=1 templates/onnx-inference-ofx/test/run-analysis.sh
+  == cppcheck ==
+  Cppcheck 2.13.0
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: clean
+  exit=0
+
+$ REQUIRE_ANALYSIS=1 templates/minimal-cuda-ofx/test/run-analysis.sh
+  == cppcheck ==
+  Cppcheck 2.13.0
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: clean
+  exit=0
+
+$ # the static-analysis step as linux.yml runs it, word for word
+  == minimal-ofx
+  == cppcheck ==
+  Cppcheck 2.13.0
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: clean
+  == minimal-cuda-ofx
+  == cppcheck ==
+  Cppcheck 2.13.0
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: clean
+  == onnx-inference-ofx
+  == cppcheck ==
+  Cppcheck 2.13.0
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: clean
+  exit=0

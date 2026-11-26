@@ -83,7 +83,11 @@ void CopyAlpha(const OFX::Image* src, OFX::Image* dst, const OfxRectI& window)
 
     const int w = window.x2 - window.x1;
     for (int y = 0; y < window.y2 - window.y1; ++y) {
+        // OFX hands over a byte pointer (`kOfxImagePropData`); this clip is
+        // float32, which is the format the host was told about in describe().
+        // cppcheck-suppress invalidPointerCast
         const float* s = reinterpret_cast<const float*>(srcBase + static_cast<long long>(y) * srcPitch);
+        // cppcheck-suppress invalidPointerCast
         float* d = reinterpret_cast<float*>(dstBase + static_cast<long long>(y) * dstPitch);
         for (int x = 0; x < w; ++x) {
             d[4 * x + 3] = s[4 * x + 3];
@@ -328,9 +332,12 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
         opts.halo = halo;
 
         if (tileSize <= 0 || (tileSize >= inW && tileSize >= inH)) {
+            // Same byte-to-float contract as above: float32 clip, byte pointer.
+            // cppcheck-suppress invalidPointerCast
             RunWhole(*runner, reinterpret_cast<const float*>(inBase), channels, inW, inH,
                      srcPitch, inferenceOut);
         } else {
+            // cppcheck-suppress invalidPointerCast
             RunTiled(*runner, reinterpret_cast<const float*>(inBase), channels, inW, inH,
                      srcPitch, opts, inferenceOut);
         }
@@ -350,6 +357,7 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
                 }
             }
         }
+        // cppcheck-suppress invalidPointerCast
         UnpackRGB(planar.data(), width, height, reinterpret_cast<float*>(dstBase), dstPitch, 0, 0);
     } catch (const std::exception& e) {
         OFX::Log::print("%s: inference failed: %s", kPluginName, e.what());

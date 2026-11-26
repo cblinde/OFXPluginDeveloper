@@ -88,7 +88,7 @@ All of these run without a GPU and without a host. They live in the template's
 | Data races | `SANITIZE=thread ./test/run-tests.sh` | The `[4/4]` concurrent test runs clean: the kernels touch only their arguments and their own indices. Build the plug-in with `-fsanitize=thread` too, or this says nothing about the plug-in image. On a kernel with high-entropy ASLR (Ubuntu 24.04 randomises `mmap` with 32 bits) TSan aborts before the first check with `FATAL: ThreadSanitizer: unexpected memory mapping`; run it under `setarch -R`, which is what `.github/workflows/linux.yml` does and says why. |
 | Thread-safety claim | `contract_test … --concurrency-param <numeric>` | Two live instances keep separate values and the declared level holds: `InstanceSafe` renders different instances in parallel, `FullySafe` also one instance across threads, `Unsafe` is skipped **by name**. A pass without the flag proves only that serial renders work. |
 | Leaks | `RUN_VALGRIND=1 ./test/run-tests.sh` | memcheck: `0 errors from 0 contexts`, all heap blocks freed. |
-| Static analysis | `./test/run-analysis.sh` | cppcheck and shellcheck report nothing unresolved over `src/Plugin.cpp`, `test/` and the scripts. |
+| Static analysis | `./test/run-analysis.sh` | cppcheck and shellcheck report nothing unresolved over the template's sources, `test/` and its scripts; every template has the script and `REQUIRE_ANALYSIS=1` makes a missing tool fatal. |
 | ABI | `nm -D --defined-only <bundle>/*.ofx \| grep ' T '` | Exactly two dynamic exports (see [D2](#d-hosts-and-packaging)). |
 
 Each gate also prints the reason it skipped if a tool is missing, so a green run
