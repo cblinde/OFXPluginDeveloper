@@ -28,7 +28,8 @@ import os
 import shutil
 import threading
 import time
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import checks
@@ -188,37 +189,36 @@ def host_log_path():
     return path if path.is_file() else None
 
 
-def host_log_size():
-    path = host_log_path()
-    try:
-        return path.stat().st_size if path else 0
-    except OSError:
-        return 0
-
-
-def compute_api_lines(offset):
-    """The host's own statement of the compute API, from what it wrote since `offset`.
+def compute_api_lines(since):
+    """The host's own statement of the compute API, from lines written since `since`.
 
     "Compute API set to automatic, defaulting to CUDA" is what an Auto session
     says; an explicit choice logs "Selected compute API: CUDA" without that line.
     The distinction is the point of running two sessions, and no scripting call
     exposes it, so it is read from the log instead of assumed - a report claiming
-    "Auto" without this line would be a guess, and the offset keeps a previous
-    session's line from answering for this one.
+    "Auto" without this line would be a guess.
+
+    Filtered by the line's own timestamp and not by a file offset: the host
+    rotates `davinci_resolve.log` at start-up, so an offset taken before the
+    launch can point past the end of the new file, and the first run that used
+    one reported `unknown` for a session that had written the line.
     """
     path = host_log_path()
     if path is None:
         return []
     try:
-        with open(path, "rb") as handle:
-            handle.seek(offset)
-            text = handle.read().decode("utf-8", "replace")
+        text = path.read_bytes().decode("utf-8", "replace")
     except OSError:
         return []
     lines = []
     for line in text.splitlines():
         if "Main.GPUConfig" not in line or "ompute API" not in line:
             continue
+        stamp = re.search(r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d{3}", line)
+        if stamp is not None:
+            written = datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M:%S")
+            if written < since:
+                continue
         message = line.split("|", 3)[-1].strip() if "|" in line else line.strip()
         lines.append(message)
     return lines
@@ -244,6 +244,7 @@ def run(args, report):
 
     process = None
     resolve = None
+    effect = None
     installed = None
     manager = None
     project = None
@@ -266,7 +267,7 @@ def run(args, report):
                 declared_path.unlink()
             environment = dict(os.environ,
                                MCOFX_PATH_LOG=str(declared_path.resolve()))
-        log_mark = host_log_size()
+        log_mark = datetime.now() - timedelta(seconds=5)
         process = resolve_api.launch(facts["resolve"], nogui=True,
                                      environment=environment)
         step(report, "launch", "pass", f"pid {process.pid}", time.monotonic() - started)

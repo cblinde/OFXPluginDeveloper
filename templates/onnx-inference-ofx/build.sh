@@ -75,6 +75,11 @@ fi
 if [[ -n "${OFXPLUGIN_CUDA_RUNTIME_DIRS:-}" ]]; then
   CMAKE_ARGS+=("-DOFXPLUGIN_CUDA_RUNTIME_DIRS=${OFXPLUGIN_CUDA_RUNTIME_DIRS}")
 fi
+# The third switch had the same fault: a provider-only bundle cannot be built
+# from an exported variable that never reaches CMake.
+if [[ -n "${OFXPLUGIN_CUDA_FROM_HOST:-}" ]]; then
+  CMAKE_ARGS+=("-DOFXPLUGIN_CUDA_FROM_HOST=${OFXPLUGIN_CUDA_FROM_HOST}")
+fi
 
 echo "[build] configuring (${BUILD_TYPE})"
 cmake "${CMAKE_ARGS[@]}"

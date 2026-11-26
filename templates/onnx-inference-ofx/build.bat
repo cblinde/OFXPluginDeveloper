@@ -119,6 +119,9 @@ rem with no provider at all, and the suite still passed on the CPU fallback - a
 rem green run that proved nothing about the GPU path.
 if defined OFXPLUGIN_BUNDLE_CUDA_PROVIDER set "EXTRA=%EXTRA% "-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=%OFXPLUGIN_BUNDLE_CUDA_PROVIDER%""
 if defined OFXPLUGIN_CUDA_RUNTIME_DIRS set "EXTRA=%EXTRA% "-DOFXPLUGIN_CUDA_RUNTIME_DIRS=%OFXPLUGIN_CUDA_RUNTIME_DIRS%""
+rem The third switch, and it was the same bug: FROM_HOST=ON with no forward built a
+rem bundle that ships its own cuDNN and still reports a green suite.
+if defined OFXPLUGIN_CUDA_FROM_HOST set "EXTRA=%EXTRA% "-DOFXPLUGIN_CUDA_FROM_HOST=%OFXPLUGIN_CUDA_FROM_HOST%""
 
 set "GENARG="
 if /I "!GEN!"=="Ninja" (

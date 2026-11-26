@@ -134,6 +134,26 @@ def find_effect(resolve, name):
     return matches[0]["id"]
 
 
+def project_manager(resolve, timeout=120):
+    """The project manager, waiting for it if the host's UI is not up yet.
+
+    `GetProjectManager()` answers None for a while after a `-nogui` start - with
+    a 207 MB bundle installed it was still None at the moment `connect`
+    succeeded, and the next call then failed as `'NoneType' object has no
+    attribute 'ImportMedia'`, which says nothing about the cause. Wait, then say
+    what was missing.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        manager = resolve.GetProjectManager()                 # RUN
+        if manager is not None or time.monotonic() >= deadline:
+            break
+        time.sleep(2)
+    if manager is None:
+        raise RuntimeError(f"the host offered no project manager within {timeout}s")
+    return manager
+
+
 def new_project(resolve, name):
     """Create an empty project; returns (manager, project).
 
@@ -143,7 +163,7 @@ def new_project(resolve, name):
     next run: `CreateProject` refuses a duplicate, and a harness that can only be
     run once is not a harness.
     """
-    manager = resolve.GetProjectManager()                 # RUN
+    manager = project_manager(resolve)
     project = manager.CreateProject(name)                 # RUN
     if not project:
         stale = manager.LoadProject(name)                 # RUN: after a killed run
@@ -337,6 +357,18 @@ def render_one_frame(project, output_directory, custom_name, timeout, process=No
     newest = output_files.newest_new_file(out, custom_name, before)
 
     return {"job": job_id, "file": str(newest), "status": status}
+
+
+def effect_methods(effect):
+    """What a host's OFX effect object exposes, measured rather than assumed.
+
+    Resolve 21.2.0.5 answered `['GetFusionComp', 'GetIndex', 'GetInfo',
+    'GetIsEnabled', 'SetIndex', 'SetIsEnabled']` on 2026-11-26 - no `GetParam`,
+    no `SetParam`. A run inside that host therefore cannot name a model through
+    the effect, which is why the ONNX template renders it as a pass-through and
+    why `packaging-and-install.md` §2 does not claim a device render in Resolve.
+    """
+    return [name for name in dir(effect) if not name.startswith('_')]  # RUN
 
 
 def quit_resolve(resolve, process, grace=30):

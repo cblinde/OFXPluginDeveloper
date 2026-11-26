@@ -1,0 +1,76 @@
+# The provider-only bundle (OFXPLUGIN_CUDA_FROM_HOST=ON) in Resolve Studio 21.2.0.5, 2026-11-26.
+#
+# Two packages, same switch:
+#   1.32.0 GPU package -> the host refuses the plug-in
+#   1.20.1 GPU package -> the host loads it, applies it, renders one frame
+#
+# Why the difference is a packaging fact, not a bug in the switch: the provider DLL
+# is what the host has to load, and it imports a specific CUDA major.
+
+## 1. what the bundles contain (no cuDNN, cuBLAS, cuFFT or cudart of ours)
+
+bundle (1.32.0 package): OnnxInference.ofx, onnxruntime-ofx.dll, onnxruntime_providers_cuda.dll, onnxruntime_providers_shared.dll
+bundle (1.20.1 package): the same four files
+build log, 1.32.0: -- CUDA provider bundle: provider only (OFXPLUGIN_CUDA_FROM_HOST=ON). The host must supply cuDNN 9, cuBLAS/cuBLASLt 12, cuFFT 11 and the CUDA 12 runtime; the bundle ships none of them, so it cannot create a second copy of a base name the host has loaded.
+
+## 2. what the provider DLL imports (dumpbin /dependents)
+
+## 1.32.0 package
+    cublasLt64_13.dll
+    cublas64_13.dll
+## 1.20.1 package
+    cublasLt64_12.dll
+    cublas64_12.dll
+    cufft64_11.dll
+    cudart64_12.dll
+    cudnn64_9.dll
+
+## 3. Resolve log with the 1.32.0 bundle installed (refused)
+
+[0x00000b88] | OpenFX               | WARN  | 2026-11-26 18:55:24,009 | Create context [OfxImageEffectContextFilter_91cf5c27-cecb-454d-b392-2be940b30b6c] failed for plugin [com.ofxplugindeveloper.onnxinference]!!!!
+
+## 4. Resolve log with the 1.20.1 bundle installed (loaded)
+
+[0x0000127c] | OpenFX               | INFO  | 2026-11-26 18:57:48,401 | OFX: loading com.ofxplugindeveloper.onnxinference
+
+## 5. the run: one still, project built through the API, one render
+
+installed C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+connected DaVinci Resolve Studio 21.2.0.5
+effect ONNX Inference on resolve-source.png
+model (env): Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_conv.onnx
+render onnx00108000.png 1920x1080 via ffmpeg
+against the source: mae 0.0 max 0 problems []
+module: E:\Program Files\Blackmagic Design\DaVinci Resolve\cudart64_12.dll
+module: E:\Program Files\Blackmagic Design\DaVinci Resolve\cublas64_12.dll
+module: E:\Program Files\Blackmagic Design\DaVinci Resolve\cudnn64_9.dll
+module: E:\Program Files\Blackmagic Design\DaVinci Resolve\cufft64_11.dll
+module: E:\Program Files\Blackmagic Design\DaVinci Resolve\onnxruntime.dll
+module: E:\Program Files\Blackmagic Design\DaVinci Resolve\cudart64_110.dll
+module: E:\Program Files\Blackmagic Design\DaVinci Resolve\cublasLt64_12.dll
+quit
+
+## 6. the host process module list, run time
+
+E:\Program Files\Blackmagic Design\DaVinci Resolve\cudart64_12.dll
+E:\Program Files\Blackmagic Design\DaVinci Resolve\cublas64_12.dll
+E:\Program Files\Blackmagic Design\DaVinci Resolve\cudnn64_9.dll
+E:\Program Files\Blackmagic Design\DaVinci Resolve\cufft64_11.dll
+E:\Program Files\Blackmagic Design\DaVinci Resolve\onnxruntime.dll
+E:\Program Files\Blackmagic Design\DaVinci Resolve\cudart64_110.dll
+E:\Program Files\Blackmagic Design\DaVinci Resolve\cublasLt64_12.dll
+
+## What this says
+
+# The switch does what it is for: the bundle ships no cuDNN, cuBLAS, cuFFT or cudart,
+# and the host's process keeps its own cudnn64_9.dll from its install folder. No second
+# module of a base name enters the process.
+#
+# It does not by itself make the bundle loadable: the provider imports cuBLAS 13 in the
+# 1.32.0 package and cuBLAS 12 in the 1.20.1 one, and Resolve 21.2 ships 12. Build the
+# provider-only bundle against a runtime whose CUDA major matches the host.
+#
+# The frame is a pass-through: Resolve's scripted OFX effect exposes GetInfo, GetIndex,
+# GetIsEnabled, SetIndex and SetIsEnabled and nothing else, so the model parameter cannot
+# be set and render() never runs. A device render in Resolve needs a project that already
+# carries the parameter value - not a script.

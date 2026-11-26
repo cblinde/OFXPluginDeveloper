@@ -85,6 +85,28 @@ message. Two host-facing facts:
   of ours to collide (2.8 GB → 1.1 GB in the reporter's bundle **[B]**). It needs a
   CUDA host; it does not replace the runtime guard on a full bundle.
 
+  **Measured in Resolve Studio 21.2.0.5, 2026-11-26.** Both facts hold, and the
+  provider-only bundle has a constraint the switch alone does not express: the
+  provider DLL is what the host must load, and it imports a specific CUDA major.
+  Built against the 1.32.0 package its provider imports `cublas64_13.dll` and
+  `cublasLt64_13.dll`; the host ships 12, so the host refuses the plug-in outright -
+  `Create context [OfxImageEffectContextFilter_...] failed for plugin
+  [com.ofxplugindeveloper.onnxinference]` and `Plugin [...] is not available!!!!`
+  repeat, and nothing renders. Built against the 1.20.1 package - cuBLAS/cuBLASLt
+  12, cuFFT 11, cudart 12 and cuDNN 9, exactly the files in the host's folder - the
+  host loads the plug-in, applies it and renders one 1920x1080 frame. Both bundles
+  hold four files (`OnnxInference.ofx`, `onnxruntime-ofx.dll`,
+  `onnxruntime_providers_cuda.dll`, `onnxruntime_providers_shared.dll`) and no
+  cuDNN, cuBLAS, cuFFT or cudart of their own, and at run time the host's process
+  carried `cudnn64_9.dll` from its own install folder (**[V]**,
+  [`resolve-provider-only.log`](../evidence/2026-11-26-windows/resolve-provider-only.log)).
+  The frame is a **pass-through**, and not because of the packaging: Resolve hands a
+  script an OFX effect object with `GetInfo`, `GetIndex`, `GetIsEnabled`, `SetIndex`
+  and `SetIsEnabled` and nothing else, so `modelPath` cannot be set, `isIdentity`
+  stays true and `render()` never runs. A device render in this host needs a project
+  that already carries the parameter value, so "uses Resolve's own cuDNN" is not
+  claimed here.
+
   Neither fact is visible to a fake host, which has nothing loaded and therefore
   always uses the bundle's own DLLs. The reproduction is
   `tools/host_cuda_probe.cpp`; the detail and the measured evidence are
