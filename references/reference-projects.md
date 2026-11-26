@@ -517,9 +517,11 @@ Nine of the ten sources include `OFX::ImageProcessor`:
   have not, so their behaviour still lives in
   [`host-resolve.md`](host-resolve.md) at grade B/C.
 - **One GPU, and only the gain kernel.** The 2026-11-24 run executes the real
-  kernels on an RTX 3060 and measures them; no CUDA execution provider executes,
-  and nothing runs on a second GPU. Statements about models, other GPUs and host
-  scheduling stay derived from headers and documentation.
+  kernels on an RTX 3060 and measures them, and it does not go through the ONNX
+  Runtime CUDA provider - that provider is measured separately, on the same card
+  (`onnx-and-tensorrt.md` §5). Nothing runs on a second GPU. Statements about
+  models, other GPUs and host scheduling stay derived from headers and
+  documentation.
 - **The SDK samples were read, not executed.** Their line numbers are for tag
   `OFX_Release_1.5.1` and will drift on other tags; re-grep the symbol if a line
   looks wrong.

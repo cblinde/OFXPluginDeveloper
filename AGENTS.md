@@ -34,17 +34,21 @@ arguments, and the `ONNXRUNTIME_ROOT`, `CPU_ONLY` and `.venv/` rules:
 ---
 ## Hard rules
 
-1. **Never claim a host render is verified beyond what ran.** `NatronRenderer` and
-   Resolve Studio 21.2 ran `tests/resolve/poc.py` three times (all **[V]**): identity,
-   source ×2, and the CUDA template at `-DGAIN_DEFAULT=2.0` declaring CUDA for
-   every render. No tiled host, no second GPU, no third host.
+1. **Never claim a host render is verified beyond what ran.** Resolve Studio 21.2
+   ran `tests/resolve/poc.py` three times (all **[V]**): default gain (size checked,
+   pixels not compared), `-DREFERENCE_GAIN_DEFAULT=2.0` (source ×2, `mae 0.0`), and
+   the CUDA template at `-DGAIN_DEFAULT=2.0` declaring CUDA for every render; a
+   fourth run killed the host with a job in flight. `NatronRenderer` rendered one
+   256×256 frame through `testkit/`. No tiled host, no second GPU, no third host.
+   Every prose claim about a host has to agree with `references/verification-matrix.tsv`.
 2. **Claim nothing a compiler, `nm` or a test did not prove.** `[V]` means the
    command ran in this repository; `[I]` means inferred; `[B]` means external
    evidence. Labels are defined in `references/cmake-and-linking.md`.
 3. **Measure before wording a performance claim.** The gain kernel's throughput,
    the CPU loop it replaces and the cost of a frame copy are measured on one
-   RTX 3060 (`evidence/2026-11-24-windows/`); nothing is measured on a second GPU,
-   inside a host, or with a CUDA execution provider.
+   RTX 3060 (`evidence/2026-11-24-windows/`), and the ONNX Runtime CUDA provider is
+   measured on the same card (`references/onnx-and-tensorrt.md` §5). Nothing is
+   measured on a second GPU, inside a host, or on a vendor other than NVIDIA.
 4. **Keep the docs passing `python3 tools/check-docs.py`.** It runs in
    `./run-tests.sh` and in CI, and checks links, anchors, count drift, duplicated
    measurements and provenance labels.

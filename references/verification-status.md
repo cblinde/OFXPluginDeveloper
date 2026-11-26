@@ -54,10 +54,12 @@ OpenFX `OFX_Release_1.5.1`):
   256×256 frame through the template on 2026-11-24
   (`testkit/verify-bundle.bat`), pixels checked. DaVinci Resolve Studio 21.2.0.5
   ran `tests/resolve/poc.py --build-project` twice on 2026-11-25 and produced one
-  1920×1080 PNG each time: at the default gain the pixels are identical to the
-  source (the host is entitled to skip `render()`), and with the bundle built at
-  `-DREFERENCE_GAIN_DEFAULT=2.0` they are the source times two to the byte, so the
-  kernel did run inside that host. The failure path was measured as well: killing
+  1920×1080 PNG each time. At the default gain the log records the frame's size and
+  nothing more, so "identical to the source" is what an identity kernel should
+  produce rather than something this run compared (**[I]**; the host is also
+  entitled to skip `render()` entirely). With the bundle built at
+  `-DREFERENCE_GAIN_DEFAULT=2.0` the frame is the source times two to the byte
+  (`mae 0.0`, `max 0`), so the kernel did run inside that host. The failure path was measured as well: killing
   the host with a job in flight ends the run `fail` with the host's exit code in
   47 s and leaves no process behind (`resolve-poc-kill.log`). Nuke and SCRATCH
   have run nothing, and every host-specific claim in

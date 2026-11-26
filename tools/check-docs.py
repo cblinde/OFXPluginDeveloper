@@ -910,6 +910,44 @@ def check_code_section_refs(root, files, texts, report):
                         f"section is \"{section_title(texts[target], number)}\"")
 
 
+TOOL_DATA_FILES = {
+    # Not programs: a shared import helper and two data files the tools read.
+    "_ort_common.py",
+    "heading-manifest.tsv",
+    "coverage-exceptions.txt",
+}
+
+
+def check_tool_inventory(root, files, texts, report):
+    """Every program in tools/ has to be findable from the two places that list them.
+
+    A tool that no document names is a tool nobody runs, and the README's tools
+    row had gone four entries stale before anything noticed: `check-runtime.py`,
+    `check-ort-pin.py`, `check-model-canary.py` and two C++ probes were in the
+    directory and in no list. The rule is deliberately the weakest useful one -
+    the file name appears somewhere in README.md and in
+    references/testing-layers.md - because a table row's wording is not something
+    a checker can judge.
+    """
+    tools_dir = os.path.join(root, "tools")
+    if not os.path.isdir(tools_dir):
+        return
+    listed_where = ("README.md", "references/testing-layers.md")
+    for name in sorted(os.listdir(tools_dir)):
+        if name in TOOL_DATA_FILES or name.startswith(".") or name == "__pycache__":
+            continue
+        if not os.path.isfile(os.path.join(tools_dir, name)):
+            continue
+        for place in listed_where:
+            text = texts.get(place)
+            if text is None:
+                continue
+            if name not in text:
+                report.error(place, 1,
+                             f"tools/{name} is not mentioned here; a tool no document lists "
+                             f"is a tool nobody runs")
+
+
 def check_agents(root, report):
     path = os.path.join(root, "AGENTS.md")
     if not os.path.exists(path):
@@ -951,6 +989,7 @@ def main():
     check_bare_sections(root, files, texts, report)
     check_heading_manifest(root, files, texts, report)
     check_code_section_refs(root, files, texts, report)
+    check_tool_inventory(root, files, texts, report)
     check_agents(root, report)
 
     status = report.show()

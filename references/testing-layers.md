@@ -892,7 +892,9 @@ worth reaching for while debugging rather than through the suite:
 | `tools/aot-compile-model.sh [model] [outdir]` | compiles the committed model ahead of time with IREE - ONNX to MLIR, an `llvm-cpu` artifact and a Vulkan/SPIR-V artifact - then runs the CPU one and compares it with the golden; names the missing tool instead of failing silently |
 | `python3 tools/bench_openvino.py model.onnx --size 1920x1080` | OpenVINO's CPU plugin against ONNX Runtime's CPU provider on the same frame, with the one-off compile and session costs reported apart from the per-frame time |
 | `tools/measure-halo.sh model.onnx` | tile overlap per model, writes `<model>.halo.json` |
+| `tools/measure-halo.cpp` | the same measurement without a shell, walking the plug-in's own `RunWhole`/`RunTiled` so the number is the one the plug-in will need (Windows, MSVC or clang) |
 | `tools/sweep-vram.sh model.onnx` | largest tile before ORT runs out of VRAM (needs a GPU) |
+| `tools/host_cuda_probe.cpp` | which CUDA loader wins inside a host process, reproduced without the host: the module list and the file a name resolves to (Windows) |
 | `tools/ep_register_probe.cpp` | whether the 1.22 registration API works outside a plug-in: registration, device list, append, run, unregister, with `--stop N` to bisect |
 
 Every comparison the harness trusts is shown failing before it is credited with

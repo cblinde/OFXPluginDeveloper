@@ -34,9 +34,11 @@ DaVinci Resolve Studio.
 
 **What it is not:** not a plugin *collection*, not a wrapper library, and not a
 substitute for testing in a real host. Two hosts have run it: `NatronRenderer`,
-headless, and DaVinci Resolve Studio 21.2 through `tests/resolve/` — whose frame
-is pixel-identical to its source because the plug-in is identity at its default
-gain. Nuke and SCRATCH have run nothing. See
+headless, and DaVinci Resolve Studio 21.2 through `tests/resolve/`. The Resolve
+run whose pixels were compared is the `-DREFERENCE_GAIN_DEFAULT=2.0` build - the
+source times two, `mae 0.0`; the default-gain run was checked for its size only,
+so "identity at the default gain" is what the code does, not what was measured.
+Nuke and SCRATCH have run nothing. See
 [What has actually been verified](#what-has-actually-been-verified).
 
 ## Where everything lives
@@ -47,7 +49,7 @@ gain. Nuke and SCRATCH have run nothing. See
 | `references/` | 23 single-subject documents - constants, lifecycle, streams, pixels, RoI, colour, host quirks, CMake, packaging, debugging, performance, ONNX, AI architectures, pattern index, testing, verification status, field evidence, reference projects, checklists, Resolve automation |
 | `templates/` | Three complete plug-ins: `minimal-ofx` (CPU), `minimal-cuda-ofx` (CUDA + fallback), `onnx-inference-ofx` (model per frame) |
 | `testkit/` | The host harness: `dlopen` + contract checks, the official OFX host, and the headless Natron render |
-| `tools/` | `probe-env.py` (which capabilities this machine has, and which suites that unblocks), `check-docs.py` (documentation drift, including the heading skeleton in `heading-manifest.tsv`), `check-glibc.sh` (the glibc bound over a built bundle), `coverage-check.py` (restructure proof), `make-testmodels.py`, `model_probe.py`, `bench_ep.py`, `bench_openvino.py`, `measure-halo.sh`, `aot-compile-model.sh`, `sweep-vram.sh`, `host_cuda_probe.cpp` |
+| `tools/` | `probe-env.py` (which capabilities this machine has, and which suites that unblocks), `check-docs.py` (documentation drift: the heading skeleton in `heading-manifest.tsv`, and an inventory of the tools below), `check-runtime.py` (an ONNX Runtime root's entry points and provider exports), `check-ort-pin.py` (one runtime version across the documents and the action), `check-model-canary.py` (the shipped model on whatever runtime is installed), `check-glibc.sh` (the glibc bound over a built bundle), `coverage-check.py` (restructure proof), `make-testmodels.py`, `model_probe.py`, `bench_ep.py`, `bench_openvino.py`, `measure-halo.sh` and `measure-halo.cpp`, `aot-compile-model.sh`, `sweep-vram.sh`, `host_cuda_probe.cpp`, `ep_register_probe.cpp` |
 | `scripts/` | `check-artifact.sh` - the POSIX twin of the testkit artifact check (exports, dependents, device code) |
 | `evidence/` | Raw logs of every run the documents cite |
 | `LICENSE`, `THIRD_PARTY_NOTICES.md` | BSD-3-Clause, and what the fetched dependencies oblige |
