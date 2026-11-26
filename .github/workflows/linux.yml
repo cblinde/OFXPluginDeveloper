@@ -28,6 +28,18 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: the jobs read the tree and upload their own logs.
+permissions:
+  contents: read
+
+concurrency:
+  # A branch and its pull request are one line of work, and a newer push
+  # supersedes the run it replaces - three template suites twice over is what a
+  # redundant run costs. `main` is not cancelled, so the log for a merged commit
+  # still exists when someone reads it later.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   suites:
     runs-on: ubuntu-latest
@@ -35,7 +47,7 @@ jobs:
       CPU_ONLY: "1"
       RUN_VALGRIND: "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: ONNX Runtime
         # Without this the inference template is skipped by name, and a CI run
@@ -74,7 +86,7 @@ jobs:
 
       - name: Upload the log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: linux-suites-log
           path: run-tests.log
@@ -83,7 +95,7 @@ jobs:
   thread-sanitizer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: ONNX Runtime
         uses: ./.github/actions/onnx-runtime
@@ -134,7 +146,7 @@ jobs:
 
       - name: Upload the logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: linux-tsan-logs
           path: tsan-*.log
@@ -143,7 +155,7 @@ jobs:
   address-undefined:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: ONNX Runtime
         uses: ./.github/actions/onnx-runtime
@@ -177,7 +189,7 @@ jobs:
 
       - name: Upload the logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: linux-asan-logs
           path: asan-*.log
