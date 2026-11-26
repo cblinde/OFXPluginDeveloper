@@ -387,12 +387,14 @@ times faster than ONNX Runtime (**B**). Rule 3 says such a number is reproduced 
 the machine in front of you or not written down, so here is the reproduction, and
 it does not go the same way.
 
-Method (`tools/bench_openvino.py`, `../evidence/2026-11-26-linux/openvino-bench.log`):
+Method (`../evidence/2026-11-26-linux/openvino-bench.log`):
 the committed `test_conv.onnx` from the inference template, a generated
 1920x1080 float32 frame, the same thread count for both runtimes, three warm-up
 runs discarded, ten measured, median and p90. One-off costs are reported
 separately, because OpenVINO compiles the graph while ONNX Runtime builds a
-session in milliseconds.
+session in milliseconds. The script that produced the log went with the other
+cut on 2026-11-26; the log is what remains, so this can be re-read but not
+re-run without rewriting it.
 
 | Threads | ONNX Runtime 1.32.0 CPU | OpenVINO 2026.4.1 CPU | Ratio |
 | --- | --- | --- | --- |

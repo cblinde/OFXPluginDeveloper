@@ -51,7 +51,7 @@ Nuke and SCRATCH have run nothing. See
 | `templates/` | Three complete plug-ins: `minimal-ofx` (CPU), `minimal-cuda-ofx` (CUDA + fallback), `onnx-inference-ofx` (model per frame) |
 | `testkit/` | The host harness: `dlopen` + contract checks, the official OFX host, and the headless Natron render |
 | `tools/` | `probe-env.py` (which capabilities this machine has, and which suites that unblocks), `check-docs.py` (documentation drift: the heading skeleton in `heading-manifest.tsv`, an inventory of the tools below, and the ONNX Runtime pin across the documents and the action), `check-runtime.py` (an ONNX Runtime root's entry points and provider exports), `check-model-canary.py` (the shipped model on whatever runtime is installed), `check-glibc.sh` (the glibc bound over a built bundle), `coverage-check.py` (restructure proof), `_model_shape.py` (the frame a model and its
-`test_shape.txt` agree on, shared by the three tools that feed one), `make-testmodels.py`, `model_probe.py`, `bench_ep.py`, `bench_openvino.py`, `measure-halo.sh` and `measure-halo.cpp`, `aot-compile-model.sh`, `sweep-vram.sh`, `host_cuda_probe.cpp`, `ep_register_probe.cpp` |
+`test_shape.txt` agree on, shared by the three tools that feed one), `make-testmodels.py`, `model_probe.py`, `bench_ep.py`, `measure-halo.sh` and `measure-halo.cpp`, `aot-compile-model.sh`, `sweep-vram.sh`, `host_cuda_probe.cpp`, `ep_register_probe.cpp` |
 | `scripts/` | `check-artifact.sh` - the POSIX twin of the testkit artifact check (exports, dependents, device code) |
 | `evidence/` | Raw logs of every run the documents cite |
 | `LICENSE`, `THIRD_PARTY_NOTICES.md` | BSD-3-Clause, and what the fetched dependencies oblige |
