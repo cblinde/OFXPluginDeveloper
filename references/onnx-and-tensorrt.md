@@ -1137,6 +1137,66 @@ run a GPU run; (5) add the row to the matrix above and the log to `evidence/`,
 and keep the older rows: they are what tells the next reader which code paths
 still have a runtime to serve.
 
+## 8. A Windows GPU path without CUDA: what DirectML measured here
+
+Every GPU path in this repository is CUDA, and CUDA reaches one vendor. A Windows
+machine with an AMD or Intel GPU gets the CPU provider and nothing else, which is
+what this section measures: ONNX Runtime ships a DirectML provider, it installs as a
+wheel (`onnxruntime-directml`), and it runs on whatever the machine has.
+
+Measured on 2026-11-26 on the RTX 3060 - the same GPU the CUDA numbers come from,
+so the comparison is provider against provider rather than card against card -
+`onnxruntime-directml` 1.23.0, 20 iterations after three warm-up runs, median of
+wall clock, output compared with the CPU provider element-wise (**[V]**,
+[`../evidence/2026-11-26-windows/directml-vs-cpu.log`](../evidence/2026-11-26-windows/directml-vs-cpu.log)):
+
+| Model | Frame | CPU | DirectML | CPU/DML | max abs difference |
+|---|---|---|---|---|---|
+| `test_conv.onnx` (shipped, 3 channels, one conv) | 640×480 | 1.88 ms | 2.14 ms | **0.88×** | 7.5e-08 |
+| the same | 1920×1080 | 13.83 ms | 14.17 ms | **0.98×** | 1.2e-07 |
+| 128 channels, two convs | 640×480 | 149.5 ms | 31.9 ms | **4.69×** | 5.1e-07 |
+| the same | 1920×1080 | 926.4 ms | 206.6 ms | **4.48×** | 7.2e-06 |
+
+**Three things follow, and the first is the one that matters for a plug-in.**
+
+*DirectML is not automatically faster than the CPU.* On the model this repository
+actually ships - three channels, one convolution - it is at best level with the
+CPU and at worst slower: the two runs behind this log gave 0.74× and 0.88× at
+640×480, 0.91× and 0.98× at 1080p. A per-call dispatch cost meets a kernel the
+i7-8700K's AVX2 finishes in 1.9 ms, and there is nothing left to amortise. The
+128-channel stack is the case where it pays, 4.5 to 4.7 times the CPU.
+
+*It is still far behind CUDA.* The same model at 1920×1080 runs 206.6 ms here
+against **32.1 ms** in the table of §5, so a Windows machine with an AMD or Intel
+GPU is not offered "the GPU path with another vendor" but one roughly six times
+slower than the path Section 5 documents. That comparison crosses runtime versions -
+1.23.0 for this run, 1.32.0 for Section 5 - so it is an order of magnitude, not a
+ratio.
+
+*The CPU side moved as well.* Section 5 records 450 ms for the same model and size
+on the CPU provider under 1.32.0; this run measures 926 ms under 1.23.0. The CPU
+provider therefore got about twice as fast between those two versions, which is the
+number a DirectML decision has to be judged against: 4.5 times the CPU it was
+measured with is closer to 2.2 times the CPU this repository would ship beside.
+
+*The tolerance does not carry over.* The largest difference against the CPU is
+7.2e-06 at 1080p, against 5.4e-07 the CUDA path measured on the same model (§5).
+A test that compares provider output with a tolerance written for CUDA would fail
+on DirectML while the model is fine; the going guess is that DirectML downcasts
+some ops to 16-bit, which this run does not prove. Either way the golden and its
+tolerance belong to the provider, not to the model - the same lesson §6 draws
+about a label that names a provider.
+
+**What this means for the template.** Nothing here argues for adding DirectML
+today: the provider is in sustained engineering upstream while new Windows work
+has moved to WinML, and this repository's guarantee is a measured path, not a list
+of providers. What the numbers do support is a narrower statement, and it is the
+one thing this section leaves open: a non-CUDA Windows GPU earns its place on a
+model with enough work per call - a 128-channel stack, not a single 3-channel
+convolution - and the model this repository ships is in the second group. Anyone
+who needs the first group has these four numbers to start from, and a tolerance
+that belongs to the provider rather than to the model.
+
 ## Provenance labels
 
 Tags in this document mean exactly what they meant in the document it came from:

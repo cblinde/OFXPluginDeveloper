@@ -1,0 +1,44 @@
+# Backlog row 37: the DirectML provider against the CPU provider on this machine,
+# 2026-11-26.
+#
+# Runtime: a scratch venv with onnxruntime-directml 1.23.0 (providers
+# DmlExecutionProvider, CPUExecutionProvider), numpy, onnx. Machine: RTX 3060,
+# i7-8700K, Windows 11. 20 iterations after 3 warm-up runs, median of wall clock,
+# one process per model. The script is .validation/bench-dml.py: same input
+# (RandomState(7)), the output of both providers compared element-wise.
+#
+# The first model is the one this repository ships, templates/onnx-inference-ofx/
+# models/test_conv.onnx (opset 17, one 3-channel convolution); the second is the
+# 128-channel two-convolution model the CUDA numbers in section 5 use.
+#
+# 1. the shipped model
+onnxruntime 1.23.0 | templates/onnx-inference-ofx/models/test_conv.onnx
+available ['DmlExecutionProvider', 'CPUExecutionProvider']
+
+640x480  (20 iterations, median of wall clock)
+  CPU     1.880 ms  min    1.279  providers ['CPUExecutionProvider']
+  DML     2.143 ms  min    1.989  providers ['DmlExecutionProvider', 'CPUExecutionProvider']
+  speedup CPU/DML: 0.88x
+  max abs difference: 7.451e-08 (max |cpu| = 0.519)
+
+1920x1080  (20 iterations, median of wall clock)
+  CPU    13.833 ms  min   12.034  providers ['CPUExecutionProvider']
+  DML    14.172 ms  min   13.425  providers ['DmlExecutionProvider', 'CPUExecutionProvider']
+  speedup CPU/DML: 0.98x
+  max abs difference: 1.192e-07 (max |cpu| = 0.533)
+
+# 2. the 128-channel model
+onnxruntime 1.23.0 | .validation/big_conv.onnx
+available ['DmlExecutionProvider', 'CPUExecutionProvider']
+
+640x480  (20 iterations, median of wall clock)
+  CPU   149.508 ms  min  141.726  providers ['CPUExecutionProvider']
+  DML    31.863 ms  min   30.573  providers ['DmlExecutionProvider', 'CPUExecutionProvider']
+  speedup CPU/DML: 4.69x
+  max abs difference: 5.066e-07 (max |cpu| = 0.905)
+
+1920x1080  (20 iterations, median of wall clock)
+  CPU   926.359 ms  min  888.076  providers ['CPUExecutionProvider']
+  DML   206.566 ms  min  194.161  providers ['DmlExecutionProvider', 'CPUExecutionProvider']
+  speedup CPU/DML: 4.48x
+  max abs difference: 7.227e-06 (max |cpu| = 0.921)
