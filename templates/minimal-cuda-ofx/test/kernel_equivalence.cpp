@@ -10,8 +10,12 @@
 //      pitches - the cases where choosing the vector kernel would fault.
 //   2. GainKernelRGBA32FVec4 vs GainKernelRGBA32FScalar, byte for byte, over
 //      widths 0-63 (all four width % 4 classes), odd sizes and odd origins.
-//   3. The hoisted row-pointer CPU loop vs the original per-pixel form.
-//   4. Both kernels run concurrently from several threads on disjoint buffers,
+//   3. GainKernelRGBA16FHalf4 against a reference that rounds the same way, over
+//      the frame shapes an earlier hardware run measured (1920x1080, 1919x1081
+//      with and without a 64-byte pad, 63x1, 1x1) and over the widths where the
+//      boundary check matters.
+//   4. The hoisted row-pointer CPU loop vs the original per-pixel form.
+//   5. Both 32F kernels run concurrently from several threads on disjoint buffers,
 //      which is what "the kernel is reentrant" means: it reads only its
 //      arguments and its own (thread-local) indices. This test is also the one
 //      that gives ThreadSanitizer something real to look at.
@@ -75,6 +79,12 @@ inline float* asFloat(unsigned char* p) { return reinterpret_cast<float*>(p); }
 // cppcheck-suppress invalidPointerCast
 inline const float* asFloat(const unsigned char* p) { return reinterpret_cast<const float*>(p); }
 
+// cppcheck-suppress invalidPointerCast
+inline __half* asHalf(unsigned char* p) { return reinterpret_cast<__half*>(p); }
+
+// cppcheck-suppress invalidPointerCast
+inline const __half* asHalf(const unsigned char* p) { return reinterpret_cast<const __half*>(p); }
+
 void referenceScale(const unsigned char* src, unsigned char* dst, int w, int h,
                     long long sp, long long dp, const float g[4])
 {
@@ -128,7 +138,7 @@ struct PredicateCase {
 
 void testPredicate()
 {
-    std::printf("[1/4] IsVec4Addressable decisions\n");
+    std::printf("[1/5] IsVec4Addressable and IsHalf2Addressable decisions\n");
 
     alignas(16) static unsigned char a[4096];
     alignas(16) static unsigned char b[4096];
@@ -152,13 +162,42 @@ void testPredicate()
             fail("predicate", 0, 0, 0, c.srcShift, 0, 0, 0);
         }
     }
+
+    // The 16F path needs a quarter of the alignment: four-byte rows, not sixteen.
+    // These cases are what makes the difference visible rather than asserted.
+    struct HalfPredicateCase {
+        const char* label;
+        int srcShift;
+        int dstShift;
+        long long srcPitch;
+        long long dstPitch;
+        bool expected;
+    };
+    const HalfPredicateCase halfCases[] = {
+        { "half2: aligned, pitch 15360",      0, 0, 15360, 15360, true  },
+        { "half2: base + 2 (would fault)",    2, 0, 15360, 15360, false },
+        { "half2: base + 4",                  4, 0, 15360, 15360, true  },
+        { "half2: pitch + 2",                 0, 0, 15362, 15360, false },
+        { "half2: negative pitch /4",         0, 0, -15360, -15360, true },
+        { "half2: negative pitch not /4",     0, 0, -15362, 15360, false },
+        { "half2: pitch 0 (single row)",      0, 0,     0,     0, true },
+    };
+    for (const HalfPredicateCase& c : halfCases) {
+        const bool got = mcofx::IsHalf2Addressable(a + c.srcShift, b + c.dstShift,
+                                                   c.srcPitch, c.dstPitch);
+        std::printf("  %-34s %-4s (expected %s)\n", c.label, got ? "yes" : "no",
+                    c.expected ? "yes" : "no");
+        if (got != c.expected) {
+            fail("half-pred", 0, 0, 0, c.srcShift, 0, 0, 0);
+        }
+    }
 }
 
 // ------------------------------------------------- 2. kernels, byte for byte
 
 void testKernels()
 {
-    std::printf("[2/4] vec4 kernel vs scalar kernel vs reference\n");
+    std::printf("[2/5] vec4 kernel vs scalar kernel vs reference\n");
 
     const float g[4] = { 1.75f, 0.5f, 2.25f, 1.0f };
     const float4 gain4 = make_float4(g[0], g[1], g[2], g[3]);
@@ -302,11 +341,210 @@ void testKernels()
                 launches, vecRuns, scalarRuns, g_failures);
 }
 
+// -------------------------------------- 3. 16F kernel, over measured shapes
+
+/// One shape the half kernel is driven over: a frame, plus padding added to the
+/// pitch so the row stride is not simply width * 8.
+struct HalfShape {
+    int w;
+    int h;
+    int pad;
+    const char* label;
+    bool tabulate; // print one line per shape in the summary table
+};
+
+/// Runs one shape and returns its mismatch count. `gain` is in halves already,
+/// because the kernel takes halves: the reference has to see the same operands.
+int runHalfShape(const HalfShape& shape, const __half2 gainRG, const __half2 gainBA,
+                 const __half g[4])
+{
+    const int boundsW = shape.w + 2;
+    const int boundsH = shape.h + 2;
+    const int pitch = boundsW * 8 + shape.pad;
+    const size_t bytes = static_cast<size_t>(pitch) * static_cast<size_t>(boundsH);
+
+    unsigned char* src = nullptr;
+    unsigned char* dst = nullptr;
+    if (posix_memalign(reinterpret_cast<void**>(&src), 8, bytes) != 0) {
+        return 1;
+    }
+    if (posix_memalign(reinterpret_cast<void**>(&dst), 8, bytes) != 0) {
+        std::free(src);
+        return 1;
+    }
+
+    for (int y = 0; y < boundsH; ++y) {
+        __half* row = asHalf(src + static_cast<long long>(y) * pitch);
+        for (int i = 0; i < boundsW * 4; ++i) {
+            row[i] = __float2half_rn(nextFloat());
+        }
+    }
+    std::memset(dst, 0x7f, bytes);
+
+    const int ox = 1;
+    const int oy = 1;
+    const unsigned char* srcOrigin = src + static_cast<long long>(oy) * pitch +
+                                     static_cast<long long>(ox) * 8;
+    unsigned char* dstOrigin = dst + static_cast<long long>(oy) * pitch +
+                               static_cast<long long>(ox) * 8;
+
+    if (!mcofx::IsHalf2Addressable(srcOrigin, dstOrigin, pitch, pitch)) {
+        std::printf("  FAIL %s: fixture is not half2-addressable\n", shape.label);
+        std::free(src);
+        std::free(dst);
+        return 1;
+    }
+
+    emulate(shape.w, shape.h, [&] {
+        GainKernelRGBA16FHalf4(asHalf(srcOrigin), asHalf(dstOrigin), shape.w, shape.h, pitch,
+                               pitch, gainRG, gainBA);
+    });
+
+    // Reference: the same conversion and the same single rounding, per half.
+    int wrong = 0;
+    for (int y = 0; y < shape.h; ++y) {
+        const __half* s = asHalf(srcOrigin + static_cast<long long>(y) * pitch);
+        const __half* d = asHalf(dstOrigin + static_cast<long long>(y) * pitch);
+        for (int x = 0; x < shape.w * 4; ++x) {
+            const float product = __half2float(s[x]) * __half2float(g[x % 4]);
+            const __half expected = __float2half_rn(product);
+            if (d[x].bits != expected.bits) {
+                ++wrong;
+                if (wrong == 1) {
+                    std::printf("  FAIL %s at x=%d y=%d: %04x != %04x\n", shape.label, x, y,
+                                static_cast<unsigned>(d[x].bits),
+                                static_cast<unsigned>(expected.bits));
+                }
+            }
+        }
+    }
+
+    // Nothing outside the render window may be written: the 16F kernel writes
+    // 8 bytes per pixel, so a wrong index would show up here first.
+    if (wrong == 0) {
+        for (int y = 0; y < boundsH && wrong == 0; ++y) {
+            const unsigned char* row = dst + static_cast<long long>(y) * pitch;
+            for (int x = 0; x < boundsW * 8; ++x) {
+                const int px = x / 8;
+                const int py = y;
+                const bool inside =
+                    (px >= ox && px < ox + shape.w && py >= oy && py < oy + shape.h);
+                if (!inside && row[x] != 0x7f) {
+                    std::printf("  FAIL %s: wrote outside the window at (%d,%d)\n", shape.label,
+                                px, py);
+                    wrong = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (shape.tabulate) {
+        std::printf("  %-24s pitch %5d  %7d pixels  %s\n", shape.label, pitch,
+                    shape.w * shape.h, wrong == 0 ? "ok" : "MISMATCH");
+    }
+
+    std::free(src);
+    std::free(dst);
+    return wrong;
+}
+
+void testHalfKernel()
+{
+    std::printf("[3/5] 16F half kernel, over the frame shapes an earlier run measured\n");
+
+    const float gainF[4] = { 1.75f, 0.5f, 2.25f, 1.0f };
+    const __half g[4] = { __float2half_rn(gainF[0]), __float2half_rn(gainF[1]),
+                          __float2half_rn(gainF[2]), __float2half_rn(gainF[3]) };
+    const __half2 gainRG = __halves2half2(g[0], g[1]);
+    const __half2 gainBA = __halves2half2(g[2], g[3]);
+
+    // The shapes from evidence/2026-11-26-windows/kernel-shapes.log, at the
+    // pitch a 16F frame has (8 bytes per pixel): the odd width and the padded
+    // row are the two that a float4 kernel could not take.
+    const HalfShape measured[] = {
+        { 1920, 1080, 0, "1920x1080", true },
+        { 1919, 1081, 0, "1919x1081 odd width", true },
+        { 1919, 1081, 64, "1919x1081, 64-byte pad", true },
+        { 63, 1, 0, "63x1", true },
+        { 1, 1, 0, "1x1", true },
+    };
+
+    long shapes = 0;
+    long wrong = 0;
+    for (const HalfShape& shape : measured) {
+        wrong += runHalfShape(shape, gainRG, gainBA, g);
+        ++shapes;
+    }
+
+    // Widths around the block boundary, odd heights and a padded pitch: the
+    // cases where the boundary check or the row arithmetic can be off by one.
+    const int widths[] = { 1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 33 };
+    const int heights[] = { 1, 2, 3, 5 };
+    const int pads[] = { 0, 4, 8 };
+    for (int w : widths) {
+        for (int h : heights) {
+            for (int pad : pads) {
+                wrong += runHalfShape(HalfShape{ w, h, pad, "boundary", false }, gainRG, gainBA, g);
+                ++shapes;
+            }
+        }
+    }
+
+    // A negative pitch, the flipped-image case the predicate allows.
+    {
+        HalfShape flipped{ 17, 5, 0, "17x5 negative pitch", true };
+        const int boundsW = flipped.w + 2;
+        const int boundsH = flipped.h + 2;
+        const int pitch = boundsW * 8;
+        const size_t bytes = static_cast<size_t>(pitch) * static_cast<size_t>(boundsH);
+        unsigned char* src = static_cast<unsigned char*>(std::malloc(bytes));
+        unsigned char* dst = static_cast<unsigned char*>(std::malloc(bytes));
+        for (int y = 0; y < boundsH; ++y) {
+            __half* row = asHalf(src + static_cast<long long>(y) * pitch);
+            for (int i = 0; i < boundsW * 4; ++i) {
+                row[i] = __float2half_rn(nextFloat());
+            }
+        }
+        std::memset(dst, 0x7f, bytes);
+        // Row 0 of the window is the last row of the buffer being addressed.
+        unsigned char* srcOrigin = src + static_cast<long long>(boundsH - 2) * pitch + 8;
+        unsigned char* dstOrigin = dst + static_cast<long long>(boundsH - 2) * pitch + 8;
+        emulate(flipped.w, flipped.h, [&] {
+            GainKernelRGBA16FHalf4(asHalf(srcOrigin), asHalf(dstOrigin), flipped.w, flipped.h,
+                                   -pitch, -pitch, gainRG, gainBA);
+        });
+        int bad = 0;
+        for (int y = 0; y < flipped.h; ++y) {
+            const __half* s = asHalf(srcOrigin - static_cast<long long>(y) * pitch);
+            const __half* d = asHalf(dstOrigin - static_cast<long long>(y) * pitch);
+            for (int x = 0; x < flipped.w * 4; ++x) {
+                const __half expected = __float2half_rn(__half2float(s[x]) * __half2float(g[x % 4]));
+                if (d[x].bits != expected.bits) ++bad;
+            }
+        }
+        if (bad != 0) {
+            std::printf("  FAIL negative pitch: %d halves wrong\n", bad);
+        }
+        std::printf("  %-24s pitch %5d  %7d pixels  %s\n", flipped.label, -pitch,
+                    flipped.w * flipped.h, bad == 0 ? "ok" : "MISMATCH");
+        wrong += bad;
+        ++shapes;
+        std::free(src);
+        std::free(dst);
+    }
+
+    std::printf("  %ld shapes, %ld halves wrong\n", shapes, wrong);
+    if (wrong != 0) {
+        ++g_failures;
+    }
+}
+
 // ------------------------------------------- 3. CPU loop hoist, byte for byte
 
 void testCpuLoop()
 {
-    std::printf("[3/4] hoisted row pointers vs per-pixel addressing (CPU path)\n");
+    std::printf("[4/5] hoisted row pointers vs per-pixel addressing (CPU path)\n");
 
     const float gain[4] = { 1.5f, 0.25f, 3.0f, 1.0f };
     const int widths[] = { 1, 2, 3, 5, 17, 33 };
@@ -457,7 +695,7 @@ int runConcurrentCase(const ConcCase& c, const float4& gain4, const float g[4], 
 
 void testConcurrent()
 {
-    std::printf("[4/4] concurrent kernel runs on disjoint buffers (reentrancy)\n");
+    std::printf("[5/5] concurrent kernel runs on disjoint buffers (reentrancy)\n");
 
     const ConcCase cases[] = {
         { 17, 5, 0, 0 },  // vec4
@@ -508,6 +746,7 @@ int main()
 {
     testPredicate();
     testKernels();
+    testHalfKernel();
     testCpuLoop();
     testConcurrent();
 

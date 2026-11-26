@@ -71,7 +71,7 @@ templates/minimal-ofx/
 templates/minimal-cuda-ofx/
   CMakeLists.txt                     bundle-producing build, CUDA optional
   src/Plugin.h  src/Plugin.cpp       OFX host wrapper: params, dispatch, isIdentity
-  src/Kernel.cuh src/Kernel.cu       CUDA interface + vec4/scalar kernels + launcher
+  src/Kernel.cuh src/Kernel.cu       CUDA interface + vec4/scalar kernels + 16F kernel (no launcher) + launcher
   test/run-tests.sh                  GPU-free suite: equivalence, concurrency, PTX, bundle, memcheck
   test/run-analysis.sh               cppcheck + shellcheck over sources and scripts
   test/kernel_equivalence.cpp        host harness for kernels and CPU loop

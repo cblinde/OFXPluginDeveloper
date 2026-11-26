@@ -191,8 +191,9 @@ reach the host's UI; see `debugging-and-symptoms.md` §1 for the channel that do
 
 ### 3.1 One 16-byte load and one 16-byte store per pixel
 
-The template ships two kernels with the same arithmetic: a vectorized fast path
-and a scalar fallback for the buffers that cannot legally be vectorized. Both
+The template ships two **RGBA32F** kernels with the same arithmetic: a vectorized
+fast path and a scalar fallback for the buffers that cannot legally be vectorized
+(a third kernel, 16F, has no launcher yet - §3.6). Both
 call `ScalePixel`, so they cannot drift apart. Measured with the real toolchain
 on this repo's `Kernel.cu` (`nvcc -arch=sm_89 -ptx`, nvcc 12.9.41) **[M]**:
 
@@ -321,6 +322,47 @@ four divergent copies of a grade is not.
   denormals; a "difference only in the blacks" report is often this.
 - Never use `double` in a device kernel for image maths you could do in `float`.
   On consumer GPUs FP64 runs at a small fraction of FP32 **[D]**.
+
+### 3.6 Half precision: a kernel, an addressing question, and no timings
+
+`GainKernelRGBA16FHalf4` exists in `Kernel.cu`: four `__half` per pixel, 8 bytes,
+two `__half2` loads and two stores, arithmetic through `float` with one
+round-to-nearest-even conversion per channel. That arithmetic is exact rather
+than approximate - both operands are halves, so their product fits a `float`
+without rounding, and the single conversion back is the same rounding `__hmul2`
+applies - which is why the harness compares against a bit-identical reference
+instead of a tolerance.
+
+**No launcher calls it and nothing advertises RGBA16F.** A kernel alone promises
+nothing to a host; declaring a half clip and handing device pointers into it is a
+separate promise about the host's buffers, and it is not made here.
+
+What the kernel is good for is the addressing question, which this machine can
+answer without a device: a 16F pixel is 8 bytes, so the kernel needs 4-byte rows
+where the float4 path needed 16, and `IsHalf2Addressable` encodes exactly that.
+The harness drives the shipped kernel - compiled through `test/shim`, thread
+mapping emulated - over the frame shapes an earlier hardware run measured, at the
+pitch a 16F frame has **[V]**:
+
+| Frame | Fixture pitch | Pixels | Result |
+| --- | --- | --- | --- |
+| 1920x1080 | 15376 | 2,073,600 | ok |
+| 1919x1081, odd width | 15368 | 2,074,439 | ok |
+| 1919x1081, 64-byte pad | 15432 | 2,074,439 | ok |
+| 63x1 | 520 | 63 | ok |
+| 1x1 | 24 | 1 | ok |
+| 17x5, negative pitch | -152 | 85 | ok |
+
+162 shapes in all - the six above plus widths 1-33 around the 16x16 block
+boundary, heights 1/2/3/5 and three pad values - **0 halves wrong**, and no byte
+written outside the render window. The fixture pitch is the allocation pitch
+(bounds plus two columns, plus the pad), not the frame's row stride.
+
+**Throughput is [U].** Nothing here ran this kernel on a device. Half precision
+on a GPU is a bandwidth question - 8 bytes per pixel against 16 for RGBA32F, so
+half the traffic for the same frame **[A]** - and the only honest statement about
+it is that it has not been measured. The 32F numbers in §3.1 are not this
+kernel's.
 
 ---
 

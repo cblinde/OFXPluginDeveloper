@@ -5,6 +5,7 @@
 
 #ifdef OFXPLUGIN_WITH_CUDA
 
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
 namespace {
@@ -80,6 +81,55 @@ __global__ void GainKernelRGBA32FScalar(const float* __restrict__ src,
     d[1] = s[1] * gain.y;
     d[2] = s[2] * gain.z;
     d[3] = s[3] * gain.w;
+}
+
+/// The 16F arithmetic: convert both operands to float, multiply, convert back.
+///
+/// Both operands are halves, so the product is exact in float (11 + 11
+/// significand bits fit in 24) and the single conversion rounds once - the same
+/// rounding `__hmul2` applies, so this agrees with half arithmetic bit for bit.
+/// That is what lets the emulated harness compare against a float reference
+/// without a tolerance.
+__device__ __forceinline__ __half2 ScaleHalf2(const __half2 v, const __half2 gain)
+{
+    const float2 f = __half22float2(v);
+    const float2 g = __half22float2(gain);
+    return __floats2half2_rn(f.x * g.x, f.y * g.y);
+}
+
+/// Half-precision RGBA: four `__half` per pixel, 8 bytes, two `__half2` loads
+/// and two stores per pixel.
+///
+/// There is no launcher for this kernel and nothing advertises 16F: an OFX clip
+/// that declares RGBA16F and then hands the data here is a promise about the
+/// host's buffers (4-byte-addressable rows, and a host that actually accepts a
+/// half clip), and that promise is not made until a plug-in path uses it. What
+/// this kernel is for is the arithmetic and the addressing: an odd width that a
+/// float4 access could not take, a padded pitch, and a negative row stride.
+__global__ void GainKernelRGBA16FHalf4(const __half* __restrict__ src,
+                                       __half* __restrict__ dst,
+                                       const int width,
+                                       const int height,
+                                       const long long srcPitch,
+                                       const long long dstPitch,
+                                       const __half2 gainRG,
+                                       const __half2 gainBA)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= width || y >= height) {
+        return;
+    }
+
+    const __half2* s = reinterpret_cast<const __half2*>(
+        reinterpret_cast<const char*>(src) + static_cast<long long>(y) * srcPitch);
+    __half2* d = reinterpret_cast<__half2*>(
+        reinterpret_cast<char*>(dst) + static_cast<long long>(y) * dstPitch);
+
+    // Pixel x occupies half2 slots 2x (R,G) and 2x+1 (B,A).
+    d[2 * x] = ScaleHalf2(s[2 * x], gainRG);
+    d[2 * x + 1] = ScaleHalf2(s[2 * x + 1], gainBA);
 }
 
 /// Restores the thread's previous CUDA device on scope exit. Without this, a

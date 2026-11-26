@@ -50,6 +50,33 @@ inline bool IsVec4Addressable(const void* src, const void* dst,
     return true;
 }
 
+/// True when a 4-byte `__half2` access is legal for this pair of buffers.
+///
+/// A 16F pixel is four halves = 8 bytes = two `__half2`, so the row base and
+/// the pitch have to be 4-byte addressable - half of what the RGBA32F vec4 path
+/// needs, which is why the 16F kernel can take an odd width where a float4
+/// access could not. Same signed-pitch rule as above: a negative multiple of 4
+/// is still selectable.
+inline bool IsHalf2Addressable(const void* src, const void* dst,
+                               std::int64_t srcPitch, std::int64_t dstPitch)
+{
+    constexpr std::uintptr_t kHalf2Alignment = 4u;
+
+    if (reinterpret_cast<std::uintptr_t>(src) % kHalf2Alignment != 0) {
+        return false;
+    }
+    if (reinterpret_cast<std::uintptr_t>(dst) % kHalf2Alignment != 0) {
+        return false;
+    }
+    if (srcPitch % static_cast<std::int64_t>(kHalf2Alignment) != 0) {
+        return false;
+    }
+    if (dstPitch % static_cast<std::int64_t>(kHalf2Alignment) != 0) {
+        return false;
+    }
+    return true;
+}
+
 // The launcher interface uses C language linkage on purpose. Kernel.cu is
 // compiled by nvcc (C++ host compiler) while Plugin.cpp may be compiled by a
 // different host compiler; C linkage removes any dependence on both sides

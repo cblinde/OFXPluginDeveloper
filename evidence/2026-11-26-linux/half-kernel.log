@@ -1,0 +1,47 @@
+$ # backlog row 21, the 16F half: a __half kernel that compiles through the shim and
+$ # runs on the CPU, driven over the frame shapes the hardware run measured.
+$ # No nvcc on this machine (CPU_ONLY path), no device: the arithmetic and the
+$ # addressing are what is checked, the timing is not measured at all.
+$ uname -sr; g++ --version | head -1
+Linux 7.0.0-38-generic
+g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+
+$ CPU_ONLY=1 ./templates/minimal-cuda-ofx/test/run-tests.sh
+  exit=0
+  [3/5] 16F half kernel, over the frame shapes an earlier run measured
+    1920x1080                pitch 15376  2073600 pixels  ok
+    1919x1081 odd width      pitch 15368  2074439 pixels  ok
+    1919x1081, 64-byte pad   pitch 15432  2074439 pixels  ok
+    63x1                     pitch   520       63 pixels  ok
+    1x1                      pitch    24        1 pixels  ok
+    17x5 negative pitch      pitch  -152       85 pixels  ok
+    162 shapes, 0 halves wrong
+  [4/5] hoisted row pointers vs per-pixel addressing (CPU path)
+
+$ # the rest of the harness, unchanged and still green
+  [1/5] IsVec4Addressable and IsHalf2Addressable decisions
+  [2/5] vec4 kernel vs scalar kernel vs reference
+    3240 grid launches (vec4=1152 scalar=2304), failures=0
+  [4/5] hoisted row pointers vs per-pixel addressing (CPU path)
+    1464 components compared, failures=0
+  [5/5] concurrent kernel runs on disjoint buffers (reentrancy)
+    6 threads, 4 vec4 + 2 scalar, failures=0
+  PASS: all cases match
+  contract_test: 144 checks, 0 failed
+  contract_test: 144 checks, 0 failed
+  contract_test: 144 checks, 0 failed
+
+# What the harness compared: the shipped GainKernelRGBA16FHalf4, compiled through
+# test/shim (Kernel.cu up to the launcher namespace), against a reference that
+# does the same float multiply and the same single round-to-nearest-even
+# conversion. Bit equality, not a tolerance: both operands are halves, so the
+# product is exact in float and one rounding is all either side applies.
+#
+# The pitch column is the fixture allocation pitch (bounds + 2 columns, plus the
+# pad), not the frame row stride, exactly as the RGBA32F harness allocates.
+#
+# Not measured, and deliberately so: anything about a GPU. The 16F kernel has no
+# launcher (nothing advertises RGBA16F), so there is no device path to time; the
+# only claim the bytes support is arithmetic - 8 bytes per pixel against 16 for
+# RGBA32F, i.e. half the traffic for the same frame [A]. A device number for
+# this kernel is [U].
