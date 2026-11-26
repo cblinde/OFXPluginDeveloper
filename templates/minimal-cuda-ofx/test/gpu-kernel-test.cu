@@ -604,14 +604,22 @@ void runThroughput()
     struct Size {
         int w;
         int h;
+        int pitchPad;  // extra bytes per row, the way a host's padded pitch arrives
         int gpuIterations;
         int cpuIterations;
         const char* name;
     };
     const Size sizes[] = {
-        {1920, 1080, 100, 5, "1080p"},
-        {3840, 2160, 30, 2, "4K"},
-        {7680, 4320, 10, 1, "8K"},
+        {1920, 1080, 0, 100, 5, "1080p"},
+        {3840, 2160, 0, 30, 2, "4K"},
+        {7680, 4320, 0, 10, 1, "8K"},
+        // An odd width, with and without the 64-byte pad a scanline-aligned host
+        // hands over; then the degenerate sizes, where launch overhead is the
+        // whole cost.
+        {1919, 1081, 0, 100, 5, "1919x1081"},
+        {1919, 1081, 64, 100, 5, "1919+64"},
+        {1, 1, 0, 1000, 200, "1x1"},
+        {63, 1, 0, 1000, 200, "63x1"},
     };
 
     const float4 g = make_float4(kGain[0], kGain[1], kGain[2], kGain[3]);
@@ -621,7 +629,7 @@ void runThroughput()
     cudaEventCreate(&stop);
 
     for (const Size& size : sizes) {
-        const long long pitch = static_cast<long long>(size.w) * kPixelBytes;
+        const long long pitch = static_cast<long long>(size.w) * kPixelBytes + size.pitchPad;
         const size_t bytes = static_cast<size_t>(pitch) * size.h;
         unsigned char* src = nullptr;
         unsigned char* dst = nullptr;
@@ -642,7 +650,8 @@ void runThroughput()
         const dim3 grid(static_cast<unsigned>((size.w + 15) / 16),
                         static_cast<unsigned>((size.h + 15) / 16));
 
-        std::printf("  %s %dx%d: %.1f MPix, %.1f MB per buffer\n", size.name, size.w, size.h,
+        std::printf("  %s %dx%d (pitch %lld, pad %d): %.1f MPix, %.1f MB per buffer\n", size.name,
+                    size.w, size.h, pitch, size.pitchPad,
                     static_cast<double>(size.w) * size.h / 1e6,
                     static_cast<double>(bytes) / 1e6);
 
@@ -689,16 +698,18 @@ void runThroughput()
         // This is the comparison that decides whether the GPU path earns its copy.
         {
             const std::chrono::steady_clock::time_point began = std::chrono::steady_clock::now();
+            const size_t rowPixels = static_cast<size_t>(size.w) * kPixelBytes / sizeof(float4);
             for (int iteration = 0; iteration < size.cpuIterations; ++iteration) {
-                float4* pixels = reinterpret_cast<float4*>(host);
-                const size_t count = bytes / sizeof(float4);
-                for (size_t i = 0; i < count; ++i) {
-                    float4 value = pixels[i];
-                    value.x *= g.x;
-                    value.y *= g.y;
-                    value.z *= g.z;
-                    value.w *= g.w;
-                    pixels[i] = value;
+                for (int y = 0; y < size.h; ++y) {
+                    float4* pixels = reinterpret_cast<float4*>(host + static_cast<size_t>(y) * pitch);
+                    for (size_t i = 0; i < rowPixels; ++i) {
+                        float4 value = pixels[i];
+                        value.x *= g.x;
+                        value.y *= g.y;
+                        value.z *= g.z;
+                        value.w *= g.w;
+                        pixels[i] = value;
+                    }
                 }
             }
             const std::chrono::steady_clock::time_point ended = std::chrono::steady_clock::now();

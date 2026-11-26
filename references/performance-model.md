@@ -242,7 +242,30 @@ archived in [`field-evidence.md`](field-evidence.md) §4:
 
 Four times fewer memory instructions bought about **4%** on a ~360 GB/s card:
 both paths are bandwidth-bound, so the PTX count is a correctness property, not
-a speed claim. The vector path still earns its place (no extra cost, fewer
+a speed claim.
+
+**Shape and pitch, measured here** (2026-11-26, same harness, RTX 3060 sm_86,
+100 iterations, four sizes added: an odd width with and without a 64-byte pad, and
+1×1 and 63×1) **[V]**,
+[`../evidence/2026-11-26-windows/kernel-shapes.log`](../evidence/2026-11-26-windows/kernel-shapes.log):
+
+| Frame | Pitch | ms/frame | Effective bandwidth |
+|---|---|---|---|
+| 1920×1080 | 30720 | 0.206 | 321 GB/s |
+| 1919×1081 (odd width) | 30704 | 0.206 | 322 GB/s |
+| 1919×1081, 64-byte pad | 30768 | 0.208 | 320 GB/s |
+| 63×1 | 1008 | 0.009 | — |
+| 1×1 | 16 | 0.009 | — |
+
+An odd width costs **nothing measurable** - 0.206 ms against 0.206 ms, 322 against
+321 GB/s - because the kernel is written over a pitch and a grid padded to 16×16
+blocks, so 1919 is as wide as 1920 to it. The padding is the same story: 64 extra
+bytes per row are 0.2 % more bytes and land 1 % away, inside run-to-run noise. The
+degenerate sizes are the interesting ones: a 1×1 frame still costs **9 µs**, which
+is launch and event overhead and nothing else, so a tiled host that hands over
+small windows pays a fixed price per launch rather than a per-pixel one. Shape is
+therefore not a performance variable in this kernel - **format** would be, and the
+template has no 16F or 8-bit kernel to measure. The vector path still earns its place (no extra cost, fewer
 instructions), but a plug-in should not be architected around it as the
 performance lever — reduce traffic (region of interest, half precision,
 fewer passes) before widening loads. This repository has not measured any of
