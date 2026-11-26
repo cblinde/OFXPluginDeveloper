@@ -90,7 +90,22 @@ if not defined VCVARS (
   echo == [2/3] GPU harness skipped: no vcvars64.bat ^(no MSVC C++ toolset^) ==
   goto :contract
 )
-call "!VCVARS!" -vcvars_ver=14.44 >nul 2>&1 || call "!VCVARS!" >nul 2>&1
+rem Same pin build.bat applies: nvcc 13 accepts MSVC up to 14.44, and the newest
+rem toolset in a Visual Studio 18 instance is 14.50. Take the 14.4x one when it is
+rem there, so the harness compiles the way the template does.
+set "MSVC_PIN="
+if defined VSROOT if exist "!VSROOT!\VC\Tools\MSVC" (
+  for /f "delims=" %%V in ('dir /b /ad /o-n "!VSROOT!\VC\Tools\MSVC" 2^>nul') do (
+    set "CANDIDATE=%%V"
+    if not defined MSVC_PIN if "!CANDIDATE:~0,5!"=="14.44" set "MSVC_PIN=!CANDIDATE!"
+  )
+)
+if defined MSVC_PIN (
+  call "!VCVARS!" -vcvars_ver=!MSVC_PIN! >nul 2>&1 || call "!VCVARS!" >nul 2>&1
+) else (
+  call "!VCVARS!" >nul 2>&1
+)
+cl 2>&1 | findstr /C:"Version"
 
 echo == [2/3] GPU harness (real device code, not emulated) ==
 set "ARCHS=%CUDA_ARCHS%"
@@ -116,14 +131,23 @@ if not defined NVARCH (
   goto :error
 )
 
-rem CUDA 13.0 host_config.h accepts MSVC 2019-2022 only, so a newer Visual Studio
-rem stops nvcc before it compiles a line. The strict attempt stays the default;
-rem if it fails, retry once with the flag that overrides the version check and
-rem say so on the console, so an unsupported-host-compiler build is never silent.
+rem CUDA 13.0 host_config.h accepts MSVC up to 14.44 only, so the toolset is
+rem pinned above rather than worked around: a retry with
+rem -allow-unsupported-compiler produced a binary from a compiler the toolkit was
+rem never tested against, and hid the fact that the wrong one was chosen. When the
+rem pin is unavailable, say which toolset ran and what to install.
 nvcc -DOFXPLUGIN_WITH_CUDA=1 !NVARCH! -O2 -std=c++17 "%HERE%\gpu-kernel-test.cu" -o "%BUILD_DIR%\gpu-kernel-test.exe"
 if errorlevel 1 (
-  echo note: nvcc rejected this host compiler; retrying with -allow-unsupported-compiler
-  nvcc -DOFXPLUGIN_WITH_CUDA=1 -allow-unsupported-compiler !NVARCH! -O2 -std=c++17 "%HERE%\gpu-kernel-test.cu" -o "%BUILD_DIR%\gpu-kernel-test.exe" || goto :error
+  echo.
+  echo error: nvcc rejected the host compiler ^(see the message above^).
+  if defined MSVC_PIN (
+    echo        The pin was !MSVC_PIN!; a failure here is not a toolset problem.
+  ) else (
+    echo        No 14.4x MSVC under "!VSROOT!\VC\Tools\MSVC", so the newest toolset
+    echo        ran. Install MSVC 14.44 in that instance - CUDA 13 accepts nothing
+    echo        newer - and re-run.
+  )
+  goto :error
 )
 "%BUILD_DIR%\gpu-kernel-test.exe" || goto :error
 

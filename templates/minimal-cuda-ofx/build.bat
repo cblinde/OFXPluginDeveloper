@@ -167,8 +167,33 @@ if defined VSROOT if exist "!VSROOT!\MSBuild\Microsoft\VC" (
   )
 )
 
+rem The second half of the same question is the MSVC toolset: nvcc 13 refuses
+rem _MSC_VER 1950 (MSVC 14.50) in host_config.h, and a Visual Studio generator
+rem cannot be told to take an older one - CMake hands .cu files to NVIDIA's
+rem MSBuild customisations, which use the newest toolset in the instance (`-T
+rem version=` is rejected as an invalid specification, measured, and
+rem `-DCMAKE_VS_PLATFORM_TOOLSET_VERSION` leaves CMake with no CXX compiler at
+rem all). The one place the pin applies is vcvars64 -vcvars_ver, and only the
+rem Ninja branch runs it.
+set "MSVC_NEWEST="
+set "MSVC_PIN="
+if defined VSROOT if exist "!VSROOT!\VC\Tools\MSVC" (
+  for /f "delims=" %%V in ('dir /b /ad /o-n "!VSROOT!\VC\Tools\MSVC" 2^>nul') do (
+    set "CANDIDATE=%%V"
+    if not defined MSVC_NEWEST set "MSVC_NEWEST=!CANDIDATE!"
+    rem 14.44 is the newest series CUDA 13 accepts. A newer one present beside
+    rem it is exactly what the Visual Studio generator would pick on its own.
+    if not defined MSVC_PIN if "!CANDIDATE:~0,5!"=="14.44" set "MSVC_PIN=!CANDIDATE!"
+  )
+)
+set "VS_TOOLSET_FINE="
+if defined MSVC_NEWEST if "!MSVC_NEWEST:~0,5!"=="14.44" set "VS_TOOLSET_FINE=1"
+
 set "USE_NINJA="
 if defined CUDA_FOUND if not defined VS_CUDA_CUSTOMISATIONS if not defined CMAKE_GENERATOR set "USE_NINJA=1"
+rem Second reason to pick Ninja: the newest toolset is newer than nvcc accepts,
+rem so the generator's default cannot compile the .cu and only vcvars can pin it.
+if defined CUDA_FOUND if not defined VS_TOOLSET_FINE if defined MSVC_PIN if not defined CMAKE_GENERATOR set "USE_NINJA=1"
 if defined USE_NINJA set "GEN=Ninja"
 
 rem ---- reuse the generator a previous run chose -------------------------
@@ -196,8 +221,18 @@ if /I "!GEN!"=="Ninja" (
     echo        Run this from a "x64 Native Tools Command Prompt for VS".
     exit /b 2
   )
-  rem 14.44 is the newest MSVC that CUDA 13 accepts; fall back if it is absent.
-  call "!VCVARS!" -vcvars_ver=14.44 >nul 2>&1 || call "!VCVARS!" >nul 2>&1
+  rem Pin the toolset found above - this branch is the only one that can, and an
+  rem unpinned CUDA build stops in host_config.h instead of compiling.
+  if defined MSVC_PIN (
+    call "!VCVARS!" -vcvars_ver=!MSVC_PIN! >nul 2>&1 || call "!VCVARS!" >nul 2>&1
+  ) else (
+    call "!VCVARS!" >nul 2>&1
+    if defined CUDA_FOUND (
+      echo warning: no 14.4x MSVC under "!VSROOT!\VC\Tools\MSVC"; nvcc 13 rejects
+      echo          the newest toolset there. Install MSVC 14.44 in that instance,
+      echo          or point CUDA_HOME at a toolkit that accepts this one.
+    )
+  )
   cl 2>&1 | findstr /C:"Version"
   where ninja >nul 2>&1 || (
     echo error: ninja is not on PATH; install it ^(pip install ninja^) or set CMAKE_GENERATOR.
@@ -210,6 +245,15 @@ if /I "!GEN!"=="Ninja" (
       echo error: build\CMakeCache.txt is configured with "!GEN!", which has no NVIDIA
       echo        CUDA build customisations, so it cannot compile Kernel.cu.
       echo        Delete "%BUILD_DIR%" and re-run; the script will then pick Ninja.
+      exit /b 2
+    )
+    if defined CUDA_FOUND if defined VS_CUDA_CUSTOMISATIONS if not defined VS_TOOLSET_FINE (
+      echo error: "!GEN!" compiles the .cu through NVIDIA's MSBuild customisations,
+      echo        which take the newest MSVC in the instance ^(!MSVC_NEWEST!^); CUDA 13
+      echo        rejects that in host_config.h and only vcvars64 -vcvars_ver can pin
+      echo        it - a generator that never runs vcvars cannot.
+      echo        Delete "%BUILD_DIR%" and re-run without CMAKE_GENERATOR, so the
+      echo        script picks Ninja and pins !MSVC_PIN!.
       exit /b 2
     )
     set "GENARG=-G "!GEN!" -A x64"

@@ -8,6 +8,27 @@ set(PLUGIN_BUNDLE "${PLUGIN_TARGET}.ofx.bundle")
 option(OFXPLUGIN_ENABLE_CUDA "Compile the CUDA render path (requires the CUDA Toolkit)" ON)
 option(OFXPLUGIN_CUDA_STATIC_RUNTIME "Link cudart statically instead of dynamically" OFF)
 
+# CUDA 13.0's host_config.h stops at _MSC_VER 1950 - MSVC 14.50, the default
+# toolset of Visual Studio 18 - and a Visual Studio generator cannot be pointed
+# at an older toolset from here: CMake hands .cu files to NVIDIA's MSBuild
+# customisations, which take the newest toolset in the instance. `-T
+# version=14.44.35207` is rejected as an invalid version specification (measured),
+# and `-DCMAKE_VS_PLATFORM_TOOLSET_VERSION` leaves CMake without a C++ compiler.
+# The pin lives in build.bat, which therefore builds CUDA with Ninja and calls
+# vcvars64 -vcvars_ver. A hand-written cmake command has no such pin, so it fails
+# here with the reason instead of in nvcc with an invitation to
+# -allow-unsupported-compiler.
+if(MSVC AND OFXPLUGIN_ENABLE_CUDA AND MSVC_VERSION GREATER 1944 AND
+   CMAKE_GENERATOR MATCHES "Visual Studio")
+  message(FATAL_ERROR
+    "MSVC ${MSVC_VERSION} (${CMAKE_CXX_COMPILER_VERSION}) is newer than CUDA 13 "
+    "accepts (14.44): host_config.h rejects it and nvcc stops at the first .cu, "
+    "and a Visual Studio generator always takes the newest toolset in the "
+    "instance. Build with build.bat, which pins 14.44 through vcvars64, or "
+    "configure with Ninja inside `vcvars64.bat -vcvars_ver=14.44`, or pass "
+    "-DOFXPLUGIN_ENABLE_CUDA=OFF for the CPU path.")
+endif()
+
 # ---------------------------------------------------------------------------
 # 1. OpenFX headers + C++ Support library
 # ---------------------------------------------------------------------------

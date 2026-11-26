@@ -1,0 +1,76 @@
+# The MSVC toolset is chosen by the build scripts, not by the harness
+
+Backlog-adjacent: `test/run-tests.bat` used to be the only place that pinned MSVC
+14.44 for nvcc (`vcvars64 -vcvars_ver=14.44`) and retried with
+`-allow-unsupported-compiler` when the host compiler was rejected. A plain
+`build.bat`, or a hand-written `cmake` command, took the newest toolset in the
+Visual Studio instance - 14.50 in VS 18 - which CUDA 13 refuses in
+`crt/host_config.h`.
+
+What was measured here on 2026-11-26, Windows 11, CUDA 13.0.48, VS 18 BuildTools
+holding MSVC 14.44.35207 and 14.50.35717:
+
+## 1. A Visual Studio generator cannot be pinned (so the scripts use Ninja)
+
+    cmake -G "Visual Studio 18 2026" -A x64 -T version=14.44.35207 ...
+      CMake Error at CMakeLists.txt:3 (project):
+        Generator Visual Studio 18 2026
+        given toolset and version specification v145,version=14.44.35207
+        contains an invalid version specification.
+
+    cmake -G "Visual Studio 18 2026" -A x64 -T v144,version=14.44.35207 ...
+      Failed to run MSBuild command ... to get the value of VCTargetsPath
+
+    cmake -G "Visual Studio 18 2026" -A x64 -DCMAKE_VS_PLATFORM_TOOLSET_VERSION=14.44 ...
+      -- The CXX compiler identification is unknown
+      CMake Error: No CMAKE_CXX_COMPILER could be found.
+
+The default configure of the same generator reports MSVC 19.50.35726.0, i.e. the
+toolset nvcc would reject. `CMakeLists.txt` now refuses that combination at
+configure time instead of letting nvcc invite the flag:
+
+CMake Error at CMakeLists.txt:23 (message):
+  MSVC 1950 (19.50.35726.0) is newer than CUDA 13 accepts (14.44):
+  host_config.h rejects it and nvcc stops at the first .cu, and a Visual
+  Studio generator always takes the newest toolset in the instance.  Build
+  with build.bat, which pins 14.44 through vcvars64, or configure with Ninja
+  inside `vcvars64.bat -vcvars_ver=14.44`, or pass
+  -DOFXPLUGIN_ENABLE_CUDA=OFF for the CPU path.
+
+
+
+## 2. build.bat pins 14.44 itself
+
+    templates\minimal-cuda-ofx\build.bat Release
+
+[build] generator: Ninja (no NVIDIA build customisations for the installed Visual Studio)
+Microsoft (R) C/C++-Optimierungscompiler Version 19.44.35224 f�r x64
+Bundle: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle
+
+Exit status 0. The `MSVC_PIN` the script found is `14.44.35207`; it is passed to
+`vcvars64 -vcvars_ver` before CMake runs, and the cl it lands on is 19.44.35224.
+
+## 3. test\run-tests.bat uses the same pin and no longer retries with the flag
+
+    templates\minimal-cuda-ofx\test\run-tests.bat Release nobuild
+
+== [1/3] artifact (exports, dependents, device code) ==
+Microsoft (R) C/C++-Optimierungscompiler Version 19.44.35224 f�r x64
+== [2/3] GPU harness (real device code, not emulated) ==
+== [3/3] host contract (LoadLibraryExW + fake host) ==
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+all Windows checks passed
+
+Exit status 0, "all Windows checks passed", and no `-allow-unsupported-compiler`
+line in the output - the harness compiled the `.cu` with the pinned toolset on the
+first attempt.
+
+## What is not proven here
+
+The Visual Studio generator branch that refuses a too-new toolset
+(`VS_CUDA_CUSTOMISATIONS` present, `CMAKE_GENERATOR` forced) did not run: this
+machine has no NVIDIA MSBuild customisations for VS 18, so build.bat takes the
+Ninja branch and the earlier "no customisations" error fires first. The reasoning
+is in the script; the measurable part - that the generator takes 14.50 - is item 1.
