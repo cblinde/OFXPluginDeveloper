@@ -720,8 +720,13 @@ CODE_SKIP_DIRS = {".git", ".validation", ".ofx-ref", "build", "build-sanitize",
 # carry a comment marker: a wrapped reference is the normal case ("... see
 # references/foo.md\n# section 7"), while a bare line break would let a name at the
 # end of one paragraph claim a "section 3" from the next.
+# A markdown link between the name and the marker is the same reference in
+# another dress: `[`references/x.md`](references/x.md) §5`. The old pattern
+# required the marker adjacent to the name, so that spelling - the one a comment
+# picks when it wants the reference clickable - was never checked at all.
 SECTION_REF = re.compile(
-    r"([A-Za-z0-9_][A-Za-z0-9_.-]*\.md)`?[ \t]*"
+    r"([A-Za-z0-9_][A-Za-z0-9_.-]*\.md)`?"
+    r"(?:\]\([^)\n]*\))?[ \t]*"
     r"(?:\n[ \t]*(?:#|//|\*)[ \t]*)?"
     r"(?:section|§)[ \t]*(\d+)")
 
