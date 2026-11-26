@@ -434,6 +434,21 @@ can be tested rather than trusted. A bundle above its bound fails
 `--selftest` above still runs, so the checker is shown failing before it is
 credited with passing.
 
+**The inference bundle's 2.32 is a decision, not an oversight** (2026-11-26).
+It stays, and the requirement is stated where a host question starts, in
+`../README.md`'s requirements table. Lowering it was the alternative and it costs
+a container, not a flag: the plug-in inherits its symbol versions from the machine
+that compiles it, so 2.28 would mean building this one template in a
+`manylinux_2_28` image. 2.17 for this bundle is impossible by construction, since
+the runtime shipped beside the plug-in needs 2.28 itself - the wheel for it is
+tagged `manylinux_2_28` and `readelf` reports `GLIBC_2.28` on the bundled
+`libonnxruntime.so.1` (`../evidence/2026-11-26-linux/check-glibc.log`). Between
+the plug-in and its runtime the whole difference is **one symbol**:
+`__libc_single_threaded`, which newer libstdc++ headers reference for the
+`shared_ptr` refcount fast path and which glibc only defines from 2.32; nothing
+in the template's source asks for it. A host on glibc 2.28-2.31 loads the runtime
+and refuses the plug-in; below 2.28 it loads neither.
+
 ## 6. Toolchain notes that cause real failures
 
 ### `nvcc` flags

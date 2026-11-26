@@ -302,6 +302,7 @@ Plugins. Details in `references/debugging-and-symptoms.md` §1.
 | Bootstrap tooling | `curl`, `tar`, `gzip`, `awk`, binutils (`ar`, `nm`) | not applicable — no bootstrap on Windows |
 | CMake | ≥ 3.21 (verified 3.31.6) | ≥ 3.21 |
 | OpenFX | `OFX_Release_1.5.1`, fetched automatically or `OFX_SOURCE_DIR` | same |
+| glibc (load-time floor) | ≥ 2.17 for the reference and CUDA bundles; ≥ 2.32 for the inference bundle, whose bundled ONNX Runtime needs 2.28 and whose plug-in links 2.32 — `references/cmake-and-linking.md` §5 has the one symbol behind it | not applicable — a Windows host loads a DLL |
 | GPU | not needed to build; needed to run the CUDA path | same |
 
 ---
