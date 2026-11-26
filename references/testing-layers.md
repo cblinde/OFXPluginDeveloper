@@ -938,6 +938,60 @@ export ONNXRUNTIME_ROOT="$PWD/.validation/ort-1.32.0"
 version the header declares, whether the entry points this repository calls are
 there, and what the provider libraries export.
 
+**On Windows the same recipe is one package and three directories.**
+`Microsoft.ML.OnnxRuntime.Gpu.Windows` carries the headers, the core library, the
+CUDA provider and the TensorRT provider in a single `.nupkg`, and the template
+wants `include\onnxruntime_cxx_api.h`, `bin\onnxruntime.dll` and
+`lib\onnxruntime.lib`. Verified on 2026-11-26 by unpacking the package this
+checkout already had and building the template against the result:
+
+```bash
+curl -fsSL -o ort-gpu-win.nupkg \
+  https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.windows/1.32.0/microsoft.ml.onnxruntime.gpu.windows.1.32.0.nupkg
+python3 - <<'PY'
+import os, shutil, zipfile
+root = ".validation/ort-gpu-1.32.0"
+for sub in ("include", "lib", "bin"):
+    os.makedirs(f"{root}/{sub}", exist_ok=True)
+with zipfile.ZipFile("ort-gpu-win.nupkg") as package:
+    for name in package.namelist():
+        base = os.path.basename(name)
+        if "/native/include/" in name and name.endswith(".h"):
+            target = f"{root}/include/{base}"
+        elif name.startswith("runtimes/win-x64/native/") and name.endswith(".dll"):
+            target = f"{root}/bin/{base}"
+        elif name.startswith("runtimes/win-x64/native/") and name.endswith(".lib"):
+            target = f"{root}/lib/{base}"
+        else:
+            continue
+        with package.open(name) as source, open(target, "wb") as destination:
+            shutil.copyfileobj(source, destination)
+PY
+export ONNXRUNTIME_ROOT="$PWD/.validation/ort-gpu-1.32.0"
+```
+
+Three details are where a hand-written extraction goes wrong first: the GPU
+package keeps its headers under `buildTransitive/native/include` where the core
+package uses `build/native/include` (matching on `/native/include/` covers both);
+the DLLs and the import libraries go to different directories, and the template
+links neither - it loads `bin\onnxruntime.dll` from beside the `.ofx`; and the
+download is 246 MB, so cache the unpacked tree, not the package.
+
+What that run produced from the 1.20.1 package in this checkout - the 1.32.0 tree
+behind the 2026-11-26 rows has the same `include`/`lib`/`bin` layout - is nine
+headers, four DLLs and four import libraries. `tools/check-runtime.py` reads
+`ORT_API_VERSION 20` out of it and reports the CUDA provider exporting one symbol
+and importing cuBLASLt 12, cuBLAS 12, cuFFT 11, cudart 12 and cuDNN 9; with
+`ONNXRUNTIME_ROOT` pointing at it, `templates\onnx-inference-ofx\build.bat`
+produced `build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx`
+([log](../evidence/2026-11-26-windows/ort-nuget-recipe.log)).
+
+**The CUDA DLLs are not in that package.** The provider imports them and they come
+from the CUDA Toolkit or the `nvidia-*` wheels, which is what
+`-DOFXPLUGIN_CUDA_RUNTIME_DIRS` is for; the bundle in that log reports 16 files at
+1540 MB. Shipping them is a licence question before it is a download step:
+[`packaging-and-install.md`](packaging-and-install.md).
+
 Measured on the machines this repository has been exercised on: a Linux x86-64
 box with no GPU and no host, and a Windows 11 box with an RTX 3060. The 2026-11-22
 Windows rows are **[B]** (that run was on another machine); the 2026-11-24 rows

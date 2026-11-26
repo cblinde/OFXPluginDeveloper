@@ -1,0 +1,51 @@
+# The Windows half of the ONNX Runtime NuGet recipe in testing-layers.md, 2026-11-26.
+#
+# Package: .validation/ort-gpu-win.nupkg = Microsoft.ML.OnnxRuntime.Gpu.Windows 1.20.1,
+#   the copy this checkout already had. The document names 1.32.0; the version is the
+#   only difference, and the 1.32.0 tree behind the 2026-11-26 rows has the same layout.
+# Extraction: .validation/check-nuget-recipe.py, the same steps the document shows.
+#
+## 1. Extract into include/ + lib/ + bin/
+extracted into .validation/ort-recipe-check {'include': 9, 'lib': 4, 'bin': 4}
+  include/onnxruntime_cxx_api.h ok
+  bin/onnxruntime.dll ok
+  lib/onnxruntime.lib ok
+
+## 2. What came out
+cpu_provider_factory.h onnxruntime_c_api.h onnxruntime_cxx_api.h onnxruntime_cxx_inline.h onnxruntime_float16.h onnxruntime_lite_custom_op.h onnxruntime_run_options_config_keys.h onnxruntime_session_options_config_keys.h provider_options.h 
+onnxruntime.lib onnxruntime_providers_cuda.lib onnxruntime_providers_shared.lib onnxruntime_providers_tensorrt.lib 
+onnxruntime.dll onnxruntime_providers_cuda.dll onnxruntime_providers_shared.dll onnxruntime_providers_tensorrt.dll 
+
+## 3. tools/check-runtime.py reads it back
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\ort-recipe-check
+header: ORT_API_VERSION 20  (.validation/ort-recipe-check\include\onnxruntime_c_api.h)
+        missing: RegisterExecutionProviderLibrary (since 22)
+        missing: UnregisterExecutionProviderLibrary (since 22)
+        missing: GetEpDevices (since 22)
+        missing: SessionOptionsAppendExecutionProvider_V2 (since 22)
+        missing: EpDevice_EpName (since 22)
+core: onnxruntime.dll
+provider onnxruntime_providers_cuda.dll: 1 exports, built-in provider
+        imports: cuBLASLt 12, cuBLAS 12, cuFFT 11, CUDA runtime 12, cuDNN 9
+        imports the core by name: no
+provider onnxruntime_providers_tensorrt.dll: 1 exports, built-in provider
+        imports: cuBLAS 12, CUDA runtime 12, cuDNN 9
+        imports the core by name: no
+other providers: onnxruntime_providers_shared.dll
+verdict: inspection only, no gate asked for
+
+## 4. The template builds against it
+
+    ONNXRUNTIME_ROOT=<the extracted tree> CPU_ONLY=1 cmd //c templates\onnx-inference-ofx\build.bat
+
+    VAR: ONNXRUNTIME_INCLUDE_DIR
+    VAR: ONNXRUNTIME_LIBRARY
+    Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-recipe-check/lib/onnxruntime.lib
+-- ONNX Runtime library: not linked (loaded from beside the .ofx)
+    VAR: ONNXRUNTIME_DLL
+    Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-recipe-check/bin/onnxruntime.dll
+-- CUDA provider bundle: 16 file(s), 1540 MB
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+
+    exit: 0
+    the bundle exists at templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
