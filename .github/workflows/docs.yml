@@ -33,6 +33,12 @@ jobs:
       - name: Documentation drift
         run: python3 tools/check-docs.py
 
+      - name: ONNX Runtime pin
+        # The pin is one field in the composite action both workflows call; this
+        # fails when a document that names a release path keeps naming the old
+        # version, which is the half of a bump nobody remembers.
+        run: python3 tools/check-ort-pin.py
+
       - name: Documentation coverage gate
         # Every distinctive word of the corpus as it stood at 4290e68 - the last
         # commit before the move into references/ - must still occur somewhere in

@@ -256,6 +256,14 @@ same bundle" below) — that is a change to this template, not a second one.
 | Generator | `tools/make-test-model.py` | rebuilds model and golden (`onnx` + `onnxruntime`) |
 | Tests | `test/run-tests.sh`, `test/ai_pipeline_test.cpp` | 5 stages, exit-code gated, `SANITIZE=` support |
 
+The version in that path is the version `linux.yml` installs: it is a single
+`default:` in [`.github/actions/onnx-runtime/action.yml`](../.github/actions/onnx-runtime/action.yml),
+and bumping it there is the whole change. `tools/check-ort-pin.py` keeps the
+documents honest about a bump - it reads that default, fails when any release
+path in the documentation names a different version, and counts the plain
+mentions it leaves alone: those are measurements, and they keep the number they
+were measured on.
+
 ```bash
 export ONNXRUNTIME_ROOT=/path/to/onnxruntime-linux-x64-1.32.0
 ./build.sh                      # configures, builds, asserts exports and bundle
