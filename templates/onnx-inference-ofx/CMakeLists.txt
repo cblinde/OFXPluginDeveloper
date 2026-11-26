@@ -548,6 +548,72 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
 endif()
 
 # ---------------------------------------------------------------------------
+# 3b. Licence texts the bundle owes
+# ---------------------------------------------------------------------------
+# A shipped bundle carries ONNX Runtime's MIT notice and, with NVIDIA's
+# libraries, their EULA and SLA (packaging-and-install.md section 2 says what the
+# terms ask for). The build copied binaries and no text at all, so the shipper
+# had to remember both. This copies whatever licence file lies beside what was
+# copied, into Contents/Resources, and names it in the configure log.
+#
+# A configure, not a POST_BUILD: the texts do not depend on a successful compile,
+# and a configure that is run on a machine without a CUDA toolkit still has to
+# say what its bundle would be missing. Missing texts are reported, not warned
+# about: a release zip unpacked into include/ and bin/ need not keep its LICENSE
+# beside them, and a build is the wrong place to fail for a file the shipper adds
+# last.
+set(_licence_resources
+  "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
+set(_licence_dirs "${ONNXRUNTIME_ROOT}")
+foreach(_dir IN LISTS _cuda_dirs)
+  get_filename_component(_parent "${_dir}" DIRECTORY)
+  list(APPEND _licence_dirs "${_dir}" "${_parent}")
+endforeach()
+list(REMOVE_DUPLICATES _licence_dirs)
+set(_licence_log)
+foreach(_dir IN LISTS _licence_dirs)
+  if(NOT IS_DIRECTORY "${_dir}")
+    continue()
+  endif()
+  # The prefix is a guess from where the file was found, not a statement about
+  # its owner: two files called LICENSE would otherwise overwrite each other,
+  # and the text inside is what decides what it covers.
+  if(_dir STREQUAL "${ONNXRUNTIME_ROOT}")
+    set(_licence_prefix "ONNXRuntime-")
+  else()
+    set(_licence_prefix "NVIDIA-")
+  endif()
+  # Both spellings of the notices file: NVIDIA's wheels write THIRD_PARTY_NOTICES,
+  # ONNX Runtime's release zip writes ThirdPartyNotices.txt.
+  file(GLOB _hits
+    "${_dir}/LICENSE*" "${_dir}/LICENCE*" "${_dir}/NOTICE*"
+    "${_dir}/ThirdParty*" "${_dir}/THIRD_PARTY*" "${_dir}/EULA*")
+  foreach(_hit IN LISTS _hits)
+    if(IS_DIRECTORY "${_hit}")
+      continue()
+    endif()
+    get_filename_component(_name "${_hit}" NAME)
+    string(REGEX REPLACE "[^A-Za-z0-9._-]" "-" _name "${_name}")
+    file(SIZE "${_hit}" _size)
+    configure_file("${_hit}" "${_licence_resources}/${_licence_prefix}${_name}"
+                   COPYONLY)
+    list(APPEND _licence_log "${_licence_prefix}${_name} (${_size} bytes, from ${_dir})")
+  endforeach()
+endforeach()
+if(_licence_log)
+  list(LENGTH _licence_log _licence_count)
+  message(STATUS "Licence texts in Contents/Resources: ${_licence_count} file(s)")
+  foreach(_licence_line IN LISTS _licence_log)
+    message(STATUS "  ${_licence_line}")
+  endforeach()
+else()
+  message(STATUS
+    "Licence texts in Contents/Resources: none found beside the runtime. Add ONNX "
+    "Runtime's LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before "
+    "shipping (packaging-and-install.md section 2).")
+endif()
+
+# ---------------------------------------------------------------------------
 # 4. Tests: the host harness needs the runtime, not the OFX library
 # ---------------------------------------------------------------------------
 enable_testing()

@@ -108,7 +108,32 @@ those come from NVIDIA's redistributables, which is why the
 build takes `-DOFXPLUGIN_CUDA_RUNTIME_DIRS` and why the missing-file warnings
 name them one by one. A bundle built this way therefore carries **two licences
 with different owners** - ONNX Runtime's MIT and NVIDIA's EULA - and the build
-copies **no licence text with either**.
+copies only the licence text that lies beside what it copies:
+
+```
+-- Licence texts in Contents/Resources: 2 file(s)
+--   ONNXRuntime-LICENSE (1572 bytes, from .../ort-gpu-1.32.0)
+--   NVIDIA-LICENSE (51 bytes, from .../cudnn-9.14/bin)
+```
+
+The build looks for `LICENSE*`, `LICENCE*`, `NOTICE*`, `ThirdParty*`,
+`THIRD_PARTY*` and `EULA*` in the ONNX Runtime root and in the directories
+`OFXPLUGIN_CUDA_RUNTIME_DIRS` and their parents, and copies what it finds into
+`Contents/Resources`. The `ONNXRuntime-` or `NVIDIA-` prefix records where the
+file was found, not what it covers - two files called `LICENSE` would otherwise
+overwrite each other, and the text inside decides what it covers. When nothing
+is found the line says so (`none found beside the runtime. Add ONNX Runtime's
+LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before shipping`) rather
+than leaving the bundle silent.
+
+What the build cannot do is invent the text. An ONNX Runtime release zip
+unpacked into `include/` and `bin/` may keep its notices in the archive root
+rather than in the unpacked tree, and NVIDIA's EULA ships with the toolkit
+installer, not with the redistributable DLLs - both are still added by hand, and
+the configure line is what makes the omission visible instead of implicit. The
+copy is a configure step, not a `POST_BUILD`: the texts do not depend on a
+successful compile, and a configure on a machine without a CUDA toolkit has to
+report the same bundle contents.
 
 Two runtime pairs have been measured on this machine, and they differ by more
 than a factor of one and a half: the same 16 files, a different CUDA generation
