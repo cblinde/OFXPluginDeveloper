@@ -351,6 +351,23 @@ int main(int argc, char** argv)
     }
     Check(runner->InputChannels() == channels, "model channel count matches the fixture");
 
+    // The provider label is where a run says which arithmetic it used and how much
+    // of the device it asked for, so print it - and hold it to its own words. On
+    // CUDA the arena strategy has to be the one this template requests, because
+    // that is what makes a second instance cost 327 MB instead of 881 MB at
+    // 640x480 (references/onnx-and-tensorrt.md section 5); "NOT applied" is the
+    // label's own way of saying the runtime dropped the key.
+    std::printf("provider: %s\n", runner->Provider().c_str());
+    const std::string provider = runner->Provider();
+    if (provider.compare(0, 4, "CUDA") == 0) {
+        Check(provider.find("kSameAsRequested") != std::string::npos,
+              "the CUDA label names the arena strategy");
+        Check(provider.find("arena NOT applied") == std::string::npos,
+              "the CUDA label does not report the arena strategy as dropped");
+    } else {
+        std::printf("          (CPU path: arena_extend_strategy is a CUDA option and was not requested)\n");
+    }
+
     TestPacking(planar, channels, width, height);
     TestWhole(*runner, planar, golden, channels, width, height);
 

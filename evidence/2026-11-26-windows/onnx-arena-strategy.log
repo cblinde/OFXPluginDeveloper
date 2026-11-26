@@ -1,0 +1,52 @@
+# arena_extend_strategy=kSameAsRequested in the ONNX template, 2026-11-26.
+#
+# Why: section 5 of references/onnx-and-tensorrt.md measured that the default arena
+# rounds every allocation up the power-of-two curve, so a second session pays for
+# that rounding twice - three 640x480 sessions hold 2642 MB with the defaults and
+# 980 MB with this strategy. The template now requests it, and the label repeats
+# the provider's own serialisation of the accepted keys, not the request.
+#
+# No gpu_mem_limit is set, on purpose: section 5 also measured that a limit is a cap
+# the allocator fails on ("Available memory of 222494976 is smaller than requested
+# bytes of 530841600"), not a budget it stays inside, and any fixed number is wrong
+# for the next frame size.
+#
+# Machine: Windows 11, MSVC 14.50, onnxruntime 1.32.0. Command, both runs:
+#   set ONNXRUNTIME_ROOT=<package>   then   templates\onnx-inference-ofx\test\test.bat Release
+#
+# 1. against the CUDA package (provider and CUDA DLLs): the label comes from the
+#    contract harness, which reads the plug-in's own label parameter
+
+provider: CPU (1 thread)
+          (CPU path: arena_extend_strategy is a CUDA option and was not requested)
+PASS: inference pipeline behaves as specified
+ok 39 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA)"
+ok 123 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA)"
+contract_test: 168 checks, 0 failed
+ok 39 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA)"
+ok 123 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA)"
+contract_test: 168 checks, 0 failed
+ok 39 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA)"
+ok 123 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA)"
+contract_test: 168 checks, 0 failed
+contract_test: 90 checks, 0 failed
+all checks passed
+
+# 2. against the CPU package, which is what CI runs: the suite has to stay green
+#    when the provider request fails, and the label has to say CPU rather than
+#    claim an arena strategy for a provider that was never created
+
+provider: CPU (1 thread)
+          (CPU path: arena_extend_strategy is a CUDA option and was not requested)
+PASS: inference pipeline behaves as specified
+ok 39 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+ok 123 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+contract_test: 168 checks, 0 failed
+ok 39 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+ok 123 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+contract_test: 168 checks, 0 failed
+ok 39 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+ok 123 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+contract_test: 168 checks, 0 failed
+contract_test: 90 checks, 0 failed
+all checks passed

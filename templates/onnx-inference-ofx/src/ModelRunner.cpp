@@ -514,8 +514,22 @@ bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
             // Copies stay on the provider's stream: the only safe choice when the
             // host hands over host memory.
             "do_copy_in_default_stream",
+            // kSameAsRequested grows the arena by exactly what the session asked
+            // for instead of rounding to the next power of two. This is the one
+            // option here that changes what a second instance costs: measured on
+            // this machine, three 640x480 sessions hold 2642 MB with the default
+            // and 980 MB with this, and two 1080p sessions 7284 MB against 4170 MB
+            // (references/onnx-and-tensorrt.md section 5). The default's per-instance
+            // figure is the single-session peak rounded up the curve.
+            "arena_extend_strategy",
         };
-        const char* values[] = { "0", "0", "HEURISTIC", "0", "1" };
+        // No `gpu_mem_limit`, deliberately: a limit is a cap the allocator fails
+        // on, not a budget it stays inside - section 5 measured the failure
+        // ("Available memory of ... is smaller than requested bytes of ...") - and
+        // any fixed number is wrong for the next frame size. The arena strategy
+        // is the lever that lowers what an instance holds; a limit only decides
+        // when it dies.
+        const char* values[] = { "0", "0", "HEURISTIC", "0", "1", "kSameAsRequested" };
         cuda.Set(keys, values, sizeof(keys) / sizeof(keys[0]));
         Ort::ThrowOnError(Ort::GetApi().SessionOptionsAppendExecutionProvider_CUDA_V2(
             options, cuda.get()));
@@ -625,7 +639,8 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
     const int threads = SessionThreads(intraThreads);
     Ort::SessionOptions options = MakeSessionOptions(intraThreads);
     std::string providerReason;
-    if (AppendCudaProvider(options, &providerReason)) {
+    std::string appliedOptions;
+    if (AppendCudaProvider(options, &providerReason, &appliedOptions)) {
         // Both providers print the thread count, because that label is the only
         // evidence that the value reached the session, in either mode.
         _impl->provider = "CUDA (device 0, " + ThreadLabel(threads);
@@ -638,6 +653,12 @@ ModelRunner::ModelRunner(const std::string& modelPath, int intraThreads)
         // The one option that changes the numbers rather than the memory: it
         // belongs in the label, so a run says which arithmetic it measured.
         _impl->provider += ", tf32 off";
+        // The label repeats the provider's own serialisation of the options, not
+        // the request: a runtime that dropped the arena key has to show up as
+        // "NOT applied" rather than as a label that reads like a constant.
+        _impl->provider += appliedOptions.find("kSameAsRequested") != std::string::npos
+                               ? ", arena kSameAsRequested"
+                               : ", arena NOT applied";
         // "CUDA" alone is the strong claim, not the true one: an unsupported node
         // sits on the CPU EP and the session still builds. The probe settles it,
         // and its answer goes where a reader looks - the label.

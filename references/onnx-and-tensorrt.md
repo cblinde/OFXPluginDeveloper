@@ -430,10 +430,11 @@ make the choice visible — and the consequence is packaging, not a second build
   inside a `try`; every failure — no device, no driver, missing cuDNN DLL, not
   enough VRAM — ends on a CPU session instead of an exception the host turns into
   a red frame. This template does exactly that, through the key/value API rather
-  than the struct, because two of the five options it needs do not exist as
+  than the struct, because two of the six options it needs do not exist as
   struct fields (§5): `ModelRunner::AppendCudaProvider()` states `device_id`,
   `use_tf32=0`, `cudnn_conv_algo_search=HEURISTIC`,
-  `cudnn_conv_use_max_workspace=0` and `do_copy_in_default_stream=1`, catches the
+  `cudnn_conv_use_max_workspace=0`, `do_copy_in_default_stream=1` and
+  `arena_extend_strategy=kSameAsRequested`, catches the
   failure and rebuilds the options for the CPU session, and `Plugin.cpp` writes
   provider plus reason into the `provider` label parameter. Two lazily built sessions are simpler than a
   retry ladder.
@@ -597,8 +598,10 @@ benchmarks well makes a timeline stutter. Five rules keep it one budget:
   several threads.
 - **Print the count in the status label, in both modes** — `CPU (8 threads)`,
   `CUDA (device 0: …, 6 threads)`; the template writes `CPU (1 thread)` and
-  `CUDA (device 0, 1 thread, host CUDA stack, tf32 off, all nodes on CUDA)`. That
-  line is what makes a value
+  `CUDA (device 0, 1 thread, host CUDA stack, tf32 off, arena kSameAsRequested,
+  all nodes on CUDA)` (**[V]**,
+  [`../evidence/2026-11-26-windows/onnx-arena-strategy.log`](../evidence/2026-11-26-windows/onnx-arena-strategy.log)).
+  That line is what makes a value
   like `--set intraThreads=3` checkable from the contract harness
   (`--label-param`): without it the parameter can be wired to nothing and no test
   notices.
@@ -621,6 +624,8 @@ libonnxruntime_providers_shared.so`, and the `provider` label carries that reaso
 [`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
 That log predates the fallback probe, so it proves the provider was created and
 nothing more; the same line now reads `CUDA (device 0, 1 thread, bundled CUDA,
+tf32 off, arena kSameAsRequested, all nodes on CUDA)` - arithmetic, arena policy
+and node coverage stated (§5, §6),
 tf32 off, all nodes on CUDA)` - arithmetic and node coverage stated (§5, §6),
 which are stronger claims than that log could make. The figures above stay external evidence from one RTX 3060
 (**[B]**); the success path is now both documented from the ORT API and observed
@@ -761,9 +766,10 @@ defaults as much as the plug-in. That is why the clause is in the label: a log
 without it says which run it was.
 
 The template therefore appends the provider through the key/value API and states
-five keys explicitly - `device_id`, `use_tf32=0`, `cudnn_conv_algo_search=HEURISTIC`,
-`cudnn_conv_use_max_workspace=0`, `do_copy_in_default_stream=1` - instead of
-filling in a struct and inheriting the rest (see §4).
+six keys explicitly - `device_id`, `use_tf32=0`, `cudnn_conv_algo_search=HEURISTIC`,
+`cudnn_conv_use_max_workspace=0`, `do_copy_in_default_stream=1`,
+`arena_extend_strategy=kSameAsRequested` - instead of filling in a struct and
+inheriting the rest (see §4).
 
 **Why the C API and not the C++ wrapper.** `Ort::CUDAProviderOptions` - the
 wrapper that takes a `std::unordered_map` and returns a serialised string - does
@@ -946,8 +952,11 @@ instance (**[V]**,
 The default's per-instance figure is the single-session peak rounded up the
 power-of-two curve, which is where "roughly twice" came from before it was
 measured; the strategy is the one setting here that changes what a host pays for
-a second instance, and it is the strongest argument in this document for setting
-it in the plug-in rather than describing it.
+a second instance. The template sets it since 2026-11-26
+(`templates/onnx-inference-ofx/src/ModelRunner.cpp`), and its label repeats what
+the provider reports rather than what the code asked for: `arena
+kSameAsRequested` when the runtime accepted the key, `arena NOT applied` when
+it dropped it.
 
 ## 6. "CUDA" in the label does not mean the GPU ran every node
 
