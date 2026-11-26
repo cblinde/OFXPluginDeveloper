@@ -253,7 +253,9 @@ jobs:
         # The greps refuse a run whose valgrind stage disappeared or whose passes
         # stopped happening: the suites print the stage number, and a stage that
         # stops existing would otherwise just shorten the log. The reference suite
-        # runs memcheck once per host profile, so it owes three clean summaries.
+        # runs memcheck once per host profile, so it owes three clean summaries;
+        # the inference suite covers the whole-frame and the tiled render, so it
+        # owes two.
         shell: bash
         run: |
           set -o pipefail
@@ -266,6 +268,8 @@ jobs:
           ( cd templates/onnx-inference-ofx && ./build.sh )
           CPU_ONLY=1 RUN_VALGRIND=1 ./templates/onnx-inference-ofx/test/run-tests.sh 2>&1 | tee memcheck-inference.log
           grep -qF '== [5/5] valgrind memcheck' memcheck-inference.log
+          grep -qF 'contract_test: 90 checks, 0 failed' memcheck-inference.log
+          test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-inference.log)" = 2
 
       - name: Upload the logs
         if: always()

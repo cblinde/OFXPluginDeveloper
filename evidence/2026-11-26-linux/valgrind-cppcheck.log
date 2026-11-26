@@ -86,3 +86,29 @@ $ # the CI step's own assertions on that log
   stage marker: found
   reference checks: 118, 0 failed
   clean summaries: 3 of 3
+
+$ # the inference suite now runs memcheck over the tiled render as well
+$ ONNXRUNTIME_ROOT=... CPU_ONLY=1 RUN_VALGRIND=1 ./templates/onnx-inference-ofx/test/run-tests.sh
+  exit=0
+  contract_test: 168 checks, 0 failed
+  contract_test: 168 checks, 0 failed
+  contract_test: 168 checks, 0 failed
+    tiled render (tileSize=16), tolerance 0.02:
+  contract_test: 90 checks, 0 failed
+  == [5/5] valgrind memcheck (contract harness, whole frame and tiled) ==
+       definitely lost: 0 bytes in 0 blocks
+       indirectly lost: 0 bytes in 0 blocks
+         possibly lost: 0 bytes in 0 blocks
+       still reachable: 19,936 bytes in 53 blocks
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+    tiled render under the same tool:
+  contract_test: 90 checks, 0 failed
+       definitely lost: 0 bytes in 0 blocks
+       indirectly lost: 0 bytes in 0 blocks
+         possibly lost: 0 bytes in 0 blocks
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+$ # the CI step's own assertions on that log
+  stage marker: found
+  tiled pass: 90 checks, 0 failed
+  clean summaries: 2 of 2

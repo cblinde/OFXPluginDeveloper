@@ -11,7 +11,8 @@
 #      compared against the same golden, but through the OFX API instead of
 #      AiCore directly
 #   4. bundle hygiene, when a build/ tree exists
-#   5. valgrind memcheck of the contract harness, when valgrind is installed
+#   5. valgrind memcheck of the contract harness, whole-frame and tiled, when
+#      valgrind is installed
 #
 # Environment:
 #   ONNXRUNTIME_ROOT  required: onnxruntime_cxx_api.h + libonnxruntime.so
@@ -181,13 +182,18 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
   # and 0.1875 without the context region, so 0.02 leaves an order of magnitude
   # between the check and the failure, and matches the halo-ladder threshold in
   # references/onnx-and-tensorrt.md section 4 ("The halo is measured, not guessed").
-  echo "  tiled render (tileSize=16), tolerance 0.02:"
-  "${TMP}/contract_test" "${BUNDLE_OFX}" \
-    --id com.ofxplugindeveloper.onnxinference \
-    --param modelPath:string --param tileSize:int --param halo:int \
-    --clip Source --clip Output --size 64x48 \
-    --set "modelPath=${ROOT}/models/test_conv.onnx" --set halo=2 --set tileSize=16 \
+  # One list for the tiled render, used here and by the memcheck pass below:
+  # the two have to ask the plug-in the same question, or memcheck covers a
+  # different run than the one the suite reports.
+  TILED_ARGS=(
+    --id com.ofxplugindeveloper.onnxinference
+    --param modelPath:string --param tileSize:int --param halo:int
+    --clip Source --clip Output --size 64x48
+    --set "modelPath=${ROOT}/models/test_conv.onnx" --set halo=2 --set tileSize=16
     --set-status-only --concurrency-threads 0 --roi-context-tolerance 0.02
+  )
+  echo "  tiled render (tileSize=16), tolerance 0.02:"
+  "${TMP}/contract_test" "${BUNDLE_OFX}" "${TILED_ARGS[@]}"
 else
   echo "  FAIL: no .ofx under build/bundle; run ./build.sh first" >&2
   exit 1
@@ -225,7 +231,7 @@ else
 fi
 
 echo
-echo "== [5/5] valgrind memcheck (contract harness) =="
+echo "== [5/5] valgrind memcheck (contract harness, whole frame and tiled) =="
 WANT="${RUN_VALGRIND:-auto}"
 if [[ "${WANT}" == "0" ]]; then
   echo "  skipped: RUN_VALGRIND=0"
@@ -260,6 +266,22 @@ else
     }
   grep -E "ERROR SUMMARY|definitely lost|indirectly lost|possibly lost|still reachable" \
     "${TMP}/vg-contract.log" | sed 's/^==[0-9]*== /  /'
+
+  # The tiled pass allocates the whole accumulator, its halo rings and the
+  # feathering weights, and it is the path a real render of a large frame takes -
+  # so it gets its own memcheck run rather than being covered by the whole-frame
+  # one. Same bound, not bit-equality: see the tolerance note above.
+  echo "  tiled render under the same tool:"
+  valgrind --error-exitcode=1 --leak-check=full --show-leak-kinds=definite \
+    --errors-for-leak-kinds=definite --track-origins=yes \
+    "${TMP}/contract_test" "${BUNDLE_OFX}" "${TILED_ARGS[@]}" \
+    > "${TMP}/vg-tiled.log" 2>&1 || {
+      echo "  FAIL: memcheck reported errors on the tiled pass" >&2
+      grep -E "ERROR SUMMARY|Invalid|uninitialised|definitely lost" "${TMP}/vg-tiled.log" | head -20 >&2
+      exit 1
+    }
+  grep -E "contract_test:|ERROR SUMMARY|definitely lost|indirectly lost|possibly lost" \
+    "${TMP}/vg-tiled.log" | sed 's/^==[0-9]*== /  /'
 fi
 
 echo
