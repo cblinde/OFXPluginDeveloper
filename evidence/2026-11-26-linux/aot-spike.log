@@ -6,7 +6,7 @@ $ tools/aot-compile-model.sh
 == compile: Vulkan artifact (SPIR-V, not runnable here)
    build/aot/test_conv-vulkan.vmfb: 15055 bytes
    modules with SPIR-V: 1
-== run: CPU artifact on the committed input
+== run: CPU artifact on the committed input (1x3x48x64xf32, from test_shape.txt)
 EXEC @test_conv
    max |difference| = 5.96e-08
    the ahead-of-time artifact reproduces the golden

@@ -25,12 +25,10 @@ import argparse
 import os
 import sys
 
+import _model_shape
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS = os.path.join(ROOT, "templates", "onnx-inference-ofx", "models")
-
-
-class ShapeError(Exception):
-    """The model and `test_shape.txt` disagree about the frame."""
 
 
 def input_shape(session, shape_file):
@@ -38,37 +36,15 @@ def input_shape(session, shape_file):
 
     The model declares batch and channels as numbers and H and W as symbols
     (`[1, 3, 'h', 'w']`); `test_shape.txt` holds the `channels height width` the
-    input and the golden beside it were generated with. Both files are committed
-    together, so a number in one that the other contradicts means one of them was
-    regenerated alone - worth failing on, rather than reshaping the input to
-    whatever the model happens to accept.
+    input and the golden beside it were generated with. The merge is
+    `_model_shape.resolve`, shared with the two other tools that feed this model a
+    frame, so all three fail the same way when the two halves disagree.
     """
-    with open(shape_file, encoding="utf-8") as fh:
-        values = [int(value) for value in fh.read().split()]
-    if len(values) != 3:
-        raise ShapeError(
-            f"{os.path.relpath(shape_file, ROOT)} must hold \"channels height width\", "
-            f"found {values}"
-        )
-    declared = list(session.get_inputs()[0].shape)
-    if len(declared) != 4:
-        raise ShapeError(
-            f"the model's input is {declared}, this canary feeds one 4-D NCHW frame"
-        )
-
-    wanted = [1, *values]
-    shape = []
-    for position, (declared_dim, file_value) in enumerate(zip(declared, wanted)):
-        if isinstance(declared_dim, int) and declared_dim > 0:
-            if declared_dim != file_value:
-                raise ShapeError(
-                    f"the model fixes dimension {position} at {declared_dim}, "
-                    f"{os.path.relpath(shape_file, ROOT)} says {file_value}"
-                )
-            shape.append(declared_dim)
-        else:
-            shape.append(file_value)
-    return shape
+    return _model_shape.resolve(
+        list(session.get_inputs()[0].shape),
+        _model_shape.read_shape_file(shape_file),
+        os.path.relpath(shape_file, ROOT),
+    )
 
 
 def main() -> int:
@@ -152,7 +128,7 @@ def main() -> int:
             return 2
         tensor = data.reshape(shape)
         (output,) = session.run(None, {session.get_inputs()[0].name: tensor})
-    except ShapeError as exc:
+    except _model_shape.ShapeError as exc:
         print(f"canary: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:  # noqa: BLE001 - any runtime error is the finding

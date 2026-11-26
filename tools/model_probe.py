@@ -32,6 +32,7 @@ import json
 import sys
 from pathlib import Path
 
+import _model_shape
 from _ort_common import first_line, make_input, ort, parse_size, session_options
 
 # The ladder from references/onnx-and-tensorrt.md section 4, in pixels square.
@@ -85,15 +86,16 @@ def main():
     parser.add_argument("model", help="path to a .onnx file")
     parser.add_argument(
         "--size",
-        default="64x64",
-        help="frame size for the probe runs (default: 64x64)",
+        default=None,
+        help="frame size for the probe runs (default: the model's own, else the "
+        "`test_shape.txt` beside it, else 64x64)",
     )
     parser.add_argument(
         "--channels",
         type=int,
         default=3,
-        help="channel count when the model leaves that dimension dynamic "
-        "(default: 3)",
+        help="channel count when neither the model nor a `test_shape.txt` beside "
+        "it fixes one (default: 3)",
     )
     parser.add_argument(
         "--no-alignment",
@@ -111,7 +113,6 @@ def main():
         sys.stderr.write("error: --channels wants a positive number\n")
         return 2
 
-    size = parse_size(args.size)
     try:
         session = ort.InferenceSession(
             str(path), sess_options=session_options(), providers=["CPUExecutionProvider"]
@@ -138,8 +139,52 @@ def main():
             "which is what an image plug-in packs\n".format(path.name, len(in_shape))
         )
         return 1
-    channels = in_shape[1] if isinstance(in_shape[1], int) else args.channels
+    # The frame is the one the model and its fixtures agree on, not a constant:
+    # a dimension the model fixes is used as it is, a symbolic one comes from the
+    # `test_shape.txt` beside the model (the file the input and the golden were
+    # generated with), and only what is left over comes from the flags.
+    shape_file = path.with_name("test_shape.txt")
+    file_values = None
+    if shape_file.is_file():
+        try:
+            file_values = _model_shape.read_shape_file(shape_file)
+        except _model_shape.ShapeError as exc:
+            sys.stderr.write("error: {}\n".format(exc))
+            return 2
+
     dynamic_size = not (isinstance(in_shape[2], int) and isinstance(in_shape[3], int))
+    if isinstance(in_shape[1], int):
+        channels = in_shape[1]
+        channels_from = "the model"
+    elif file_values is not None:
+        channels = file_values[0]
+        channels_from = "test_shape.txt"
+    else:
+        channels = args.channels
+        channels_from = "--channels"
+
+    if dynamic_size:
+        if args.size is not None:
+            size = parse_size(args.size)
+            size_from = "--size"
+        elif file_values is not None:
+            size = (file_values[2], file_values[1])
+            size_from = "test_shape.txt"
+        else:
+            size = (64, 64)
+            size_from = "default"
+    else:
+        size = (in_shape[3], in_shape[2])
+        size_from = "the model"
+
+    if file_values is not None:
+        # The same merge the canary uses, so a model and its fixtures that were
+        # regenerated separately fail here with the same words.
+        try:
+            _model_shape.resolve(list(in_shape), file_values, str(shape_file))
+        except _model_shape.ShapeError as exc:
+            sys.stderr.write("error: {}\n".format(exc))
+            return 2
 
     base_shape, base_error = probe_once(session, size, channels)
     if base_shape is None:
@@ -216,7 +261,10 @@ def main():
     ))
     print("input        {}  {}  {}".format(inputs[0].name, inputs[0].type, in_text))
     print("output       {}  {}  {}".format(outputs[0].name, outputs[0].type, out_text))
-    print("channels     {}".format(channels))
+    print("channels     {}  (from {})".format(channels, channels_from))
+    print("frame        {}x{}  (from {})".format(size[0], size[1], size_from))
+    if not dynamic_size and args.size is not None and parse_size(args.size) != size:
+        print("             --size ignored: this model only runs at its own size")
     if factor_x == 1 and factor_y == 1:
         print("size         1x1 - output matches the input")
     else:

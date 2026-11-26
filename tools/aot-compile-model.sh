@@ -72,18 +72,51 @@ else
   exit 1
 fi
 
-# The model has dynamic H and W; the input beside it is 3x48x64 and the exported
-# function takes it whole.
-input="${ROOT}/templates/onnx-inference-ofx/models/test_input.bin"
-golden="${ROOT}/templates/onnx-inference-ofx/models/test_golden.bin"
+# The fixtures sit beside the model, and the frame comes from them, not from a
+# constant: H and W are symbolic in the model, `test_shape.txt` is what the input
+# and the golden were generated with, and the shared resolver spells both.
+model_dir="$(dirname "${MODEL}")"
+input="${model_dir}/test_input.bin"
+golden="${model_dir}/test_golden.bin"
+shape_file="${model_dir}/test_shape.txt"
 if [[ ! -f "${input}" || ! -f "${golden}" ]]; then
   echo "aot: no input/golden beside the model, so the artifact is compiled but not compared"
   exit 0
 fi
+if [[ ! -f "${shape_file}" ]]; then
+  echo "aot: ${shape_file} is missing, so the input spec has nothing to come from" >&2
+  exit 1
+fi
+if ! spec="$(python3 "${ROOT}/tools/_model_shape.py" "${shape_file}")"; then
+  echo "aot: ${shape_file} does not describe a frame" >&2
+  exit 1
+fi
+# A fixture regenerated at another size leaves an input of the wrong length; the
+# runtime would then refuse it with a shape mismatch, which reads like an artifact
+# bug rather than a stale file.
+if ! python3 - "${shape_file}" "${input}" "${ROOT}/tools" <<'CHECK'
+import os, sys
+sys.path.insert(0, sys.argv[3])
+import _model_shape
 
-echo "== run: CPU artifact on the committed input"
+channels, height, width = _model_shape.read_shape_file(sys.argv[1])
+expected = channels * height * width * 4  # float32
+actual = os.path.getsize(sys.argv[2])
+if actual != expected:
+    print(
+        f"{sys.argv[2]}: {actual} bytes, {channels}x{height}x{width} float32 needs {expected}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+CHECK
+then
+  echo "aot: the committed input does not match test_shape.txt" >&2
+  exit 1
+fi
+
+echo "== run: CPU artifact on the committed input (${spec}, from test_shape.txt)"
 iree-run-module --module="${cpu}" --device=local-task \
-  --input="1x3x48x64xf32=@${input}" \
+  --input="${spec}=@${input}" \
   --output="@${OUT}/${name}-out.bin"
 
 python3 - "${OUT}/${name}-out.bin" "${golden}" <<'PY'
