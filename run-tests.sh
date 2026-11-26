@@ -54,6 +54,13 @@ if [[ -z "${documentation_python}" ]]; then
   echo "error: python3 (or python) is required to check the documentation" >&2
   exit 2
 fi
+# The pin is documentation too: one `default:` in the runtime action, and every
+# document that names a version path has to agree with it. CI runs this in
+# docs.yml, and a single command that skipped it let a pin drift locally while
+# the log said the docs were checked.
+echo
+echo "== docs: check-ort-pin =="
+"${documentation_python}" "${ROOT}/tools/check-ort-pin.py"
 "${documentation_python}" "${ROOT}/tools/check-docs.py"
 
 if [[ -z "${OFX_SOURCE_DIR:-}" && -f "${ROOT}/.ofx-ref/include/ofxCore.h" ]]; then
@@ -281,7 +288,7 @@ if [[ "${windows}" == "1" ]]; then
   echo
   echo "=================================================================="
   summary_headline
-  echo "  docs drift check                (tools/check-docs.py)"
+  echo "  docs drift check                (tools/check-docs.py, check-ort-pin.py)"
   echo "  reference build + artifact      (minimal-ofx, dumpbin)"
   echo "  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)"
   if [[ "${gpu_mode}" == "CUDA" ]]; then
@@ -447,7 +454,7 @@ echo "== comparator self-test: the golden comparison must fail on a corrupt refe
 echo
 echo "=================================================================="
 summary_headline
-echo "  docs drift check                (tools/check-docs.py)"
+echo "  docs drift check                (tools/check-docs.py, check-ort-pin.py)"
 echo "  comparator self-test            (testkit/selftest-compare.sh)"
 summary_tool_tests
 echo "  reference build + artifact      (minimal-ofx)"

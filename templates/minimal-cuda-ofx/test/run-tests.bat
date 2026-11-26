@@ -116,7 +116,15 @@ if not defined NVARCH (
   goto :error
 )
 
-nvcc -DOFXPLUGIN_WITH_CUDA=1 !NVARCH! -O2 -std=c++17 "%HERE%\gpu-kernel-test.cu" -o "%BUILD_DIR%\gpu-kernel-test.exe" || goto :error
+rem CUDA 13.0 host_config.h accepts MSVC 2019-2022 only, so a newer Visual Studio
+rem stops nvcc before it compiles a line. The strict attempt stays the default;
+rem if it fails, retry once with the flag that overrides the version check and
+rem say so on the console, so an unsupported-host-compiler build is never silent.
+nvcc -DOFXPLUGIN_WITH_CUDA=1 !NVARCH! -O2 -std=c++17 "%HERE%\gpu-kernel-test.cu" -o "%BUILD_DIR%\gpu-kernel-test.exe"
+if errorlevel 1 (
+  echo note: nvcc rejected this host compiler; retrying with -allow-unsupported-compiler
+  nvcc -DOFXPLUGIN_WITH_CUDA=1 -allow-unsupported-compiler !NVARCH! -O2 -std=c++17 "%HERE%\gpu-kernel-test.cu" -o "%BUILD_DIR%\gpu-kernel-test.exe" || goto :error
+)
 "%BUILD_DIR%\gpu-kernel-test.exe" || goto :error
 
 :contract
