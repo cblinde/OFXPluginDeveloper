@@ -197,6 +197,14 @@ run_tool_self_tests() {
   "${documentation_python}" "${ROOT}/tools/check-workflows.py" --selftest
   "${documentation_python}" "${ROOT}/tools/check-workflows.py"
 
+  # A provider is refused by a host whose CUDA major differs, and the host's
+  # report is `Error 1114` with no file named. The gate reads the major from the
+  # provider's import names, so its fixtures are the 13-against-12 pair a host
+  # rejects and the 12-against-12 pair it accepts.
+  echo
+  echo "== runtime inspection: a CUDA 13 provider must be named against a CUDA 12 host =="
+  "${documentation_python}" "${ROOT}/tools/check-runtime.py" --self-test
+
   # The probe decides which templates and suites a machine may use, so its
   # decision table is shown failing for a missing capability before a "ready"
   # is credited.
@@ -231,6 +239,7 @@ summary_tool_tests() {
   echo "  halo value check                (models/test_conv.onnx)"
   echo "  glibc bound self-test           (tools/check-glibc.sh --selftest)"
   echo "  environment probe self-test     (tools/probe-env.py --self-test)"
+  echo "  runtime inspection self-test    (tools/check-runtime.py --self-test)"
   echo "  resolve pixel checks            (tests/resolve/checks.py)"
   echo "  resolve stale-file test         (tests/resolve/test_stale_file.py)"
   if [[ "${fixtures}" == "ran" ]]; then

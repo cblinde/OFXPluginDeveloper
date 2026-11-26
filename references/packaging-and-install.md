@@ -121,6 +121,26 @@ own `onnxruntime.dll` (**[V]**,
   list help settle it on its own: the host loads its own `onnxruntime.dll`, so
   `tasklist /M` names a runtime whether or not the plug-in ever created a session.
 
+  **The provider's CUDA major is part of the bundle's contract, and it is checkable
+  before a render.** A host refuses a provider whose CUDA major differs, and the
+  refusal is `Error 1114` at load - indistinguishable from a broken plug-in. What
+  pairs, measured:
+
+  | Provider built from | imports | loads in | refused by |
+  |---|---|---|---|
+  | ONNX Runtime 1.20.1 GPU package | cuBLAS/cuBLASLt 12, cuFFT 11, cudart 12, cuDNN 9 | Resolve Studio 21.2.0.5, which ships CUDA 12 | a host on CUDA 13 |
+  | ONNX Runtime 1.32.0 GPU package | cuBLAS/cuBLASLt 13 | a host on CUDA 13 | Resolve Studio 21.2.0.5 (`Error 1114`) |
+
+  Two places say so out loud, so a failed host load is no longer the first report.
+  The configure step prints `CUDA provider bundle: the provider imports cuBLAS N`
+  and warns when the cuBLAS copied beside it is another major - the stale
+  `OFXPLUGIN_CUDA_RUNTIME_DIRS` cache entry that once put a 1.32 provider next to
+  1.20.1's core; and `python3 tools/check-runtime.py <root-or-bundle>
+  --require-cuda-major 12` fails a built bundle with both majors, the version
+  pairing and the error the host raises. Read the major from the **provider**, not
+  from the ONNX Runtime version number: the CUDA target is a property of the
+  package, and a rebuilt provider can move without the version changing.
+
   Neither fact is visible to a fake host, which has nothing loaded and therefore
   always uses the bundle's own DLLs. The reproduction is
   `tools/host_cuda_probe.cpp`; the detail and the measured evidence are

@@ -891,7 +891,7 @@ worth reaching for while debugging rather than through the suite:
 | `python3 tools/probe-env.py` | which compiler, generator, CUDA toolkit and Python this machine has, and whether the MSVC it found is one the CUDA toolkit accepts: the `_MSC_VER` window is read from that toolkit's `crt/host_config.h` (1920..1949 on 13.0, 1910..1949 on 12.x here) and compared with every `…\VC\Tools\MSVC\*` toolset on disk, so a too-new newest toolset prints the older one to pin instead of letting nvcc find out; `--self-test` removes a capability and has to report not-ready |
 | `python3 tools/check-docs.py` | documentation drift - links, anchors, counts, provenance labels, section references, the heading skeleton; ~1 s. It also holds the ONNX Runtime pin: every document that names an `onnxruntime-linux-x64-<version>` path has to agree with the `default:` of the `version` input in `.github/actions/onnx-runtime/action.yml` (the input, not the first default in the file - `package` and `platform` carry defaults too). A file that no longer has that shape - no `inputs:` block, no `version` entry, no default under it, a default that is not a version - is a named failure, not a pass that checked nothing, and plain version mentions are measurements, not failed |
 | `python3 tools/check-workflows.py` | the workflows as files: every `uses:` in `.github/workflows/` and in a composite action names a 40-character commit with a `# vX.Y.Z` comment, and the shape faults a YAML error leaves behind (tab indentation, unbalanced quotes or flow brackets, a key twice in one mapping, a block scalar not indented deeper, a job without `runs-on`). `--selftest` feeds it five broken workflows and one clean one. Not a YAML parser: actionlint in `docs.yml` proves the schema and the shell in `run:` |
-| `python3 tools/check-runtime.py <ort-root>` | `ORT_API_VERSION`, the entry points this repository calls, provider exports and the CUDA imports; `--require-api` and `--require-plugin-provider` gate a root, `--self-test` proves the reading on fixtures it builds |
+| `python3 tools/check-runtime.py <ort-root>` | `ORT_API_VERSION`, the entry points this repository calls, provider exports and the CUDA imports; `--require-api` and `--require-plugin-provider` gate a root, `--require-cuda-major N` gates the one fact a host reports as `Error 1114` - the CUDA major the provider's imports name, read from `cublas64_13.dll` / `libcublas.so.12` rather than from a version table - and `--self-test` proves the reading on fixtures it builds, including a 13-against-12 refusal and a 12-against-12 pass |
 | `python3 tools/check-model-canary.py` | does the shipped model still load on **whatever runtime is installed**, and does it still reproduce the committed golden? Prints the runtime version and the model's opset; unpinned by design, so the weekly `canary` job can ask it of the newest release |
 | `python3 tools/make-testmodels.py --out <dir>` | synthetic 1/3/4-channel and 2x ONNX models, so nothing needs a download |
 | `python3 tools/model_probe.py model.onnx` | shapes, dynamic dims, size factor, and the alignment multiple the model wants. The frame it probes is the model's own where the model fixes it, else the `test_shape.txt` beside it, else `--size` (64x64 only as a last resort) |
@@ -909,9 +909,10 @@ worth reaching for while debugging rather than through the suite:
 Every comparison the harness trusts is shown failing before it is credited with
 passing. Three of them have their own test: `testkit/selftest-compare.sh` corrupts
 a reference, `tools/check-glibc.sh --selftest` lowers the bound until the check
-must refuse, and `tools/probe-env.py --self-test` removes a capability until the
-suite that needs it stops reading ready - that one runs on both routes too,
-because it needs no toolchain. The glibc one runs in `./run-tests.sh` on **both routes** - the
+must refuse, `tools/probe-env.py --self-test` removes a capability until the
+suite that needs it stops reading ready, and `tools/check-runtime.py --self-test`
+feeds a CUDA 13 provider to a CUDA 12 host gate and requires the refusal; the last
+two run on both routes too, because neither needs a toolchain. The glibc one runs in `./run-tests.sh` on **both routes** - the
 POSIX one and the Windows one, because it feeds a **canned** `readelf` and so
 needs neither binutils nor an ELF binary - and as a step in the `docs` workflow,
 where it fails a pull request before the template builds start. What it proves is

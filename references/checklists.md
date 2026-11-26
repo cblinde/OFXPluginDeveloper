@@ -356,7 +356,10 @@ into ten files. In that order, and every step is cheap:
 2. **`python3 tools/check-runtime.py <root>`** - read the API version, the entry
    points this repository uses that the header is missing, and whether the CUDA
    provider exports `CreateEpFactories`. `--require-api N
-   --require-plugin-provider` turns those into a gate with an exit code.
+   --require-plugin-provider` turns those into a gate with an exit code, and
+   `--require-cuda-major N` adds the one fact a host reports as `Error 1114`: the
+   CUDA major the provider's imports name (Resolve 21.2 ships 12, so a 1.32.0
+   provider is refused and a 1.20.1 provider is not).
 3. **Build the CPU configuration first** (`build.sh` / `build.bat` without
    `CPU_ONLY`), then the CUDA one. A header change fails at compile time, which
    is a message; it fails at run time as a wrong number, which is an

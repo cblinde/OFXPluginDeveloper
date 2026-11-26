@@ -436,6 +436,41 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     ofx_pick_cuda_file(_cuda_cufft ${_cufft_patterns})
     ofx_pick_cuda_file(_cuda_cudart ${_cudart_patterns})
 
+    # ---- which CUDA major does this provider want? -------------------------
+    # The host answers this question at load time, with error 1114 and nothing in
+    # its log that names the file. The names of the provider's imports are ASCII
+    # inside the binary (`cublas64_12.dll` / `libcublas.so.12`), so a string scan
+    # answers it here: a host that ships CUDA 12 refuses a provider that imports
+    # cuBLAS 13, and this line is the only place that says so before a render.
+    # Measured 2026-11-26: the 1.20.1 provider imports cuBLAS 12 and Resolve 21.2
+    # loads it; the 1.32.0 provider imports cuBLAS 13 and the same host refuses
+    # the plug-in outright.
+    set(_provider_cuda_major "")
+    if(_cuda_provider)
+      foreach(_cuda_major_pattern "cublas64_[0-9]+\\.dll" "libcublas\\.so\\.[0-9]+")
+        if(NOT _provider_cuda_major)
+          file(STRINGS "${_cuda_provider}" _cuda_major_hit
+               REGEX "${_cuda_major_pattern}" LIMIT_COUNT 1)
+          if(_cuda_major_hit)
+            string(REGEX MATCH "cublas64_[0-9]+|libcublas\\.so\\.[0-9]+"
+                   _cuda_major_token "${_cuda_major_hit}")
+            if(_cuda_major_token)
+              string(REGEX REPLACE ".*[._]" "" _provider_cuda_major "${_cuda_major_token}")
+            endif()
+          endif()
+        endif()
+      endforeach()
+    endif()
+    if(_provider_cuda_major)
+      message(STATUS
+        "CUDA provider bundle: the provider imports cuBLAS ${_provider_cuda_major}. "
+        "A host must ship CUDA ${_provider_cuda_major} or it refuses the plug-in at "
+        "load (error 1114, the DLL initialisation routine failed). Pairs measured "
+        "here: 1.20.1 -> cuBLAS 12, which Resolve 21.2.0.5 ships; 1.32.0 -> cuBLAS 13, "
+        "which it does not. Check a built bundle with "
+        "tools/check-runtime.py <root> --require-cuda-major <host major>.")
+    endif()
+
     if(NOT _cuda_provider)
       message(WARNING
         "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON but no onnxruntime_providers_cuda was "
@@ -477,16 +512,49 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     # The runtime guard in ModelRunner is still what makes the full bundle behave
     # on such a host; this option is the packaging answer, not a substitute.
     if(OFXPLUGIN_CUDA_FROM_HOST)
+      # Named from the provider, not from a hard-coded 12: a 1.32.0 provider in a
+      # provider-only bundle needs cuBLAS 13, and the message used to promise a
+      # CUDA 12 host that the host would then be refused by.
+      if(_provider_cuda_major)
+        set(_host_cuda "cuBLAS/cuBLASLt ${_provider_cuda_major} and the CUDA "
+                       "${_provider_cuda_major} runtime")
+      else()
+        set(_host_cuda "the CUDA stack its imports name")
+      endif()
       message(STATUS
         "CUDA provider bundle: provider only (OFXPLUGIN_CUDA_FROM_HOST=ON). The "
-        "host must supply cuDNN 9, cuBLAS/cuBLASLt 12, cuFFT 11 and the CUDA 12 "
-        "runtime; the bundle ships none of them, so it cannot create a second "
-        "copy of a base name the host has loaded.")
+        "host must supply cuDNN 9, ${_host_cuda} and cuFFT; the bundle ships "
+        "none of them, so it cannot create a second copy of a base name the host "
+        "has loaded.")
       set(_cuda_cudnn_list "")
       set(_cuda_cublas "")
       set(_cuda_cublaslt "")
       set(_cuda_cufft "")
       set(_cuda_cudart "")
+    endif()
+
+    # ---- does the copied cuBLAS match what the provider imports? -----------
+    # Two ways to get a bundle that cannot load: a provider from one ORT package
+    # and cuBLAS from another toolkit directory, or a stale
+    # OFXPLUGIN_CUDA_RUNTIME_DIRS in the cache pointing at the other CUDA major.
+    # Both produce a bundle whose filenames look right; this is the line that
+    # notices, and it costs no extra copy.
+    if(_provider_cuda_major AND _cuda_cublas AND NOT OFXPLUGIN_CUDA_FROM_HOST)
+      string(REGEX MATCH "cublas64_([0-9]+)|libcublas\\.so\\.([0-9]+)"
+             _cuda_copied_match "${_cuda_cublas}")
+      if(_cuda_copied_match)
+        string(REGEX REPLACE ".*[._]" "" _cuda_copied_major "${_cuda_copied_match}")
+        if(NOT _cuda_copied_major STREQUAL _provider_cuda_major)
+          message(WARNING
+            "CUDA provider bundle: the provider imports cuBLAS "
+            "${_provider_cuda_major}, but the cuBLAS copied beside it is "
+            "${_cuda_copied_major} (${_cuda_cublas}). Every configure that "
+            "changes the CUDA major needs a fresh build directory or a corrected "
+            "-DOFXPLUGIN_CUDA_RUNTIME_DIRS: the option is cached and is searched "
+            "first, so the core and the provider can come from different "
+            "packages and the bundle still looks complete.")
+        endif()
+      endif()
     endif()
 
     # Copy under the name each library already has: the provider's import table

@@ -6,6 +6,7 @@ libraries export and import.
     python3 tools/check-runtime.py .validation/ort-gpu-1.32.0
     python3 tools/check-runtime.py <root> --json
     python3 tools/check-runtime.py <root> --require-api 22 --require-plugin-provider
+    python3 tools/check-runtime.py <root-or-bundle> --require-cuda-major 12
     python3 tools/check-runtime.py --self-test
 
 Why a tool and not a paragraph: the two facts that decide whether a code path can
@@ -16,6 +17,12 @@ EP. ONNX Runtime 1.20.1 is `ORT_API_VERSION 20` with one provider export
 (`OrtGetApiBase`); 1.32.0 is 32 with three, including `CreateEpFactories` and
 `ReleaseEpFactory`. A migration written from documentation alone got that wrong
 in this repository once already (see references/improvement-backlog.md row 13).
+
+The third fact is the one a host reports as `Error 1114` and nothing else: which
+CUDA major a provider expects. Its import names carry it (`cublas64_13.dll`,
+`libcublas.so.12`), so `--require-cuda-major` answers it against a host that ships
+12 or 13 - a 1.32.0 provider in front of Resolve 21.2 is refused, a 1.20.1
+provider is not.
 
 No ONNX Runtime install, no numpy, no compiler: it reads the files. PE and ELF
 are parsed in the standard library so the same command works on a Windows zip, a
@@ -64,6 +71,18 @@ API_SYMBOLS = [
 
 # Exports that mark a provider as a plugin EP: the loader looks for exactly these.
 PLUGIN_EXPORTS = ("CreateEpFactories", "ReleaseEpFactory")
+
+# The majors that have to equal the host's. cuBLAS, cuBLASLt and the CUDA runtime
+# move together with the toolkit (12 for CUDA 12, 13 for CUDA 13); cuDNN (9) and
+# cuFFT (11) carry their own numbering and identify no toolkit major, which is why
+# they are reported and never compared.
+CUDA_MAJOR_LABELS = ("cuBLAS", "cuBLASLt", "CUDA runtime")
+
+# Measured pairs, for the message only - the check itself reads the provider, not
+# a version table: 1.20.1's provider imports cuBLAS 12 and a host with CUDA 12
+# loads it; 1.32.0's imports cuBLAS 13 and the same host refuses the plug-in with
+# error 1114 (evidence/2026-11-26-windows/resolve-provider-only.log).
+CUDA_MAJOR_PAIRS = "1.20.1 pairs with CUDA 12, 1.32.0 wants CUDA 13"
 
 # What a DLL or .so name implies about the CUDA stack it wants.
 REDISTRIBUTABLES = {
@@ -268,6 +287,20 @@ def redistributables(names):
     return found
 
 
+def provider_cuda_major(entry):
+    """The CUDA toolkit major a provider's imports name, or None.
+
+    None means "not readable from this provider", not "no CUDA": a provider that
+    imports neither cuBLAS nor the runtime cannot be placed against a host, and a
+    gate that asked for a major has to say so instead of passing it.
+    """
+    majors = set()
+    for label, major in entry.get("redistributables") or []:
+        if label in CUDA_MAJOR_LABELS and major is not None:
+            majors.add(major)
+    return majors.pop() if len(majors) == 1 else None
+
+
 def library_files(root):
     """Core and provider libraries anywhere in the root, by kind."""
     core, providers, others = [], [], []
@@ -335,7 +368,7 @@ def inspect(root):
     return report
 
 
-def blocked(report, require_api, require_plugin):
+def blocked(report, require_api, require_plugin, require_cuda_major=None):
     """The gates that did not pass, as sentences."""
     problems = []
     header = report["header"]
@@ -363,6 +396,32 @@ def blocked(report, require_api, require_plugin):
             elif not entry["plugin"]:
                 problems.append("%s does not export %s"
                                 % (entry["name"], " and ".join(PLUGIN_EXPORTS)))
+    if require_cuda_major is not None:
+        # The question the host answers at load time, answered before a plug-in is
+        # installed into a host that will refuse it (error 1114, DLL init failed).
+        cuda = [e for e in report["providers"] if "cuda" in e["name"].lower()]
+        if not cuda:
+            problems.append("no CUDA provider library, so --require-cuda-major "
+                            "%d cannot be checked" % require_cuda_major)
+        for entry in cuda:
+            if entry.get("error"):
+                continue                    # already named by the plugin gate above
+            major = provider_cuda_major(entry)
+            if major is None:
+                problems.append(
+                    "%s: no cuBLAS or CUDA-runtime import names a toolkit major, so "
+                    "--require-cuda-major %d cannot be checked"
+                    % (entry["name"], require_cuda_major))
+            elif major != require_cuda_major:
+                problems.append(
+                    "%s imports cuBLAS/CUDA runtime %d, but the host ships %d: a host "
+                    "refuses such a provider at load (error 1114, the DLL "
+                    "initialisation routine failed). Build the bundle against an "
+                    "ONNX Runtime whose CUDA provider targets %d (%s), or bundle the "
+                    "CUDA %d runtime as well and accept a second stack in the host's "
+                    "process."
+                    % (entry["name"], major, require_cuda_major, require_cuda_major,
+                       CUDA_MAJOR_PAIRS, major))
     return problems
 
 
@@ -400,6 +459,10 @@ def describe(report):
             lines.append("        imports: %s" % ", ".join(rendered))
         lines.append("        imports the core by name: %s"
                      % ("yes" if entry["imports_core"] else "no"))
+        major = provider_cuda_major(entry)
+        if major is not None:
+            lines.append("        CUDA major: %d (cuBLAS and the CUDA runtime agree; "
+                         "a host ships that major or refuses this provider)" % major)
     if report["other_providers"]:
         lines.append("other providers: %s"
                      % ", ".join(os.path.basename(p) for p in report.get("other_providers") or []))
@@ -593,6 +656,40 @@ def self_test():
                "verdict: every gate asked for passed"
                in quiet([plugin_root, "--require-api", "22"])[1], True)
 
+        # The CUDA major gate: what a host answers at load time, read from the
+        # provider's own import names. 1.32.0 imports cuBLAS 13, 1.20.1 imports 12.
+        for major, folder in ((13, "cuda13"), (12, "cuda12")):
+            write("%s/bin/onnxruntime.dll" % folder, _fixture_pe(["OrtGetApiBase"]))
+            write("%s/bin/onnxruntime_providers_cuda.dll" % folder,
+                  _fixture_pe(["OrtGetApiBase"],
+                              ["onnxruntime.dll",
+                               "cublas64_%d.dll" % major,
+                               "cublasLt64_%d.dll" % major,
+                               "cudart64_%d.dll" % major]))
+        report13 = inspect(os.path.join(base, "cuda13"))
+        expect("the provider's CUDA major is read from its imports",
+               provider_cuda_major(first_provider(report13)), 13)
+        expect("a CUDA 13 provider against a CUDA 13 host passes",
+               blocked(report13, None, False, 13), [])
+        mismatches = blocked(report13, None, False, 12)
+        expect("a CUDA 13 provider names the CUDA 12 host it will be refused by",
+               bool(mismatches) and "cuBLAS/CUDA runtime 13" in mismatches[0]
+               and "ships 12" in mismatches[0], True)
+        expect("the mismatch names the error the host raises",
+               any("1114" in problem for problem in mismatches), True)
+        expect("the mismatch names the versions that pair",
+               any(CUDA_MAJOR_PAIRS in problem for problem in mismatches), True)
+        expect("a CUDA 12 provider against a CUDA 12 host passes",
+               blocked(inspect(os.path.join(base, "cuda12")), None, False, 12), [])
+        expect("the report states the CUDA major it read",
+               any("CUDA major: 13" in line for line in describe(report13)), True)
+        expect("exit status on a CUDA major mismatch",
+               quiet([os.path.join(base, "cuda13"), "--require-cuda-major", "12"])[0],
+               1)
+        expect("exit status when the majors agree",
+               quiet([os.path.join(base, "cuda12"), "--require-cuda-major", "12"])[0],
+               0)
+
         # A 1.20.1 provider: one export, and a header that predates the V2 API.
         legacy_root = os.path.join(base, "legacy")
         write("legacy/bin/onnxruntime.dll", _fixture_pe(["OrtGetApiBase"]))
@@ -699,6 +796,10 @@ def main(argv=None):
     parser.add_argument("--require-plugin-provider", action="store_true",
                         help="fail unless the CUDA provider exports "
                              "CreateEpFactories and ReleaseEpFactory")
+    parser.add_argument("--require-cuda-major", type=int, metavar="N",
+                        help="fail unless the CUDA provider imports cuBLAS and the "
+                             "CUDA runtime of major N, i.e. the major the host ships "
+                             "(Resolve 21.2: 12)")
     parser.add_argument("--self-test", action="store_true",
                         help="build PE and ELF fixtures in a temp dir and "
                              "check this tool's own reading and gates; "
@@ -714,7 +815,8 @@ def main(argv=None):
         sys.stderr.write("error: %s is not a directory\n" % args.root)
         return 2
     report = inspect(args.root)
-    problems = blocked(report, args.require_api, args.require_plugin_provider)
+    problems = blocked(report, args.require_api, args.require_plugin_provider,
+                       args.require_cuda_major)
     report["problems"] = problems
 
     if args.json:
@@ -725,7 +827,8 @@ def main(argv=None):
         for problem in problems:
             print("FAIL: %s" % problem)
         if not problems:
-            if args.require_api is None and not args.require_plugin_provider:
+            if (args.require_api is None and not args.require_plugin_provider
+                    and args.require_cuda_major is None):
                 # A read-only run has nothing to pass: saying "everything is
                 # present" over a header that is missing five entry points would
                 # be the one line a reader remembers.

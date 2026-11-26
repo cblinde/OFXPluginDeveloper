@@ -1053,6 +1053,7 @@ version, and both are answerable from the files alone - no compiler, no GPU:
 | Question | Where the answer lives | Why it is not obvious |
 |---|---|---|
 | Which API version does this header target, and are the calls we make declared? | `#define ORT_API_VERSION` and the declarations in `include/onnxruntime_c_api.h` | a symbol can be present in your *source* and absent from the header you built against; `\since Version N` says when it arrived |
+| Which CUDA major does the provider need, and does the host ship it? | the import names inside the provider binary (`cublas64_13.dll`, `libcublas.so.12`) | the version number does not say it: 1.20.1's provider wants 12, 1.32.0's wants 13, and a host on 12 refuses the second with `Error 1114` and nothing in its log |
 | Can the provider in this package be **registered**, or only appended through the built-in table? | the export table of `onnxruntime_providers_cuda.dll` / `.so` | `RegisterExecutionProviderLibrary` needs `CreateEpFactories`; a provider without it is not unregistrable by policy, it is unregistrable by construction |
 
 `tools/check-runtime.py` answers both. It parses the header and the binary's
@@ -1066,6 +1067,7 @@ legitimate thing to inspect.
 ```bash
 python3 tools/check-runtime.py .validation/ort-gpu-1.32.0
 python3 tools/check-runtime.py <root> --require-api 22 --require-plugin-provider
+python3 tools/check-runtime.py <root-or-bundle> --require-cuda-major 12   # the host's major
 ```
 
 Measured on the two runtimes this repository builds (**[V]**,
