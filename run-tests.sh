@@ -190,6 +190,13 @@ run_tool_self_tests() {
   echo "== glibc bound self-test: the comparison must fail on a bound that is too low =="
   "${ROOT}/tools/check-glibc.sh" --max 2.17 --selftest
 
+  # The workflows are the one part of the tree nothing here compiles: a floating
+  # action tag or an indentation error otherwise surfaces in CI, after the push.
+  echo
+  echo "== workflow pins: a tag-pinned or malformed workflow must be reported =="
+  "${documentation_python}" "${ROOT}/tools/check-workflows.py" --selftest
+  "${documentation_python}" "${ROOT}/tools/check-workflows.py"
+
   # The probe decides which templates and suites a machine may use, so its
   # decision table is shown failing for a missing capability before a "ready"
   # is credited.
