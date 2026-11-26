@@ -51,6 +51,11 @@ SUITES = (
      ("host.resolve", "host.resolve.studio", "host.resolve.scripting", "decode.image")),
 )
 
+# A template needs a configure tool and a compiler, and the two fail for
+# different reasons. Listed once, so the verdict below can name the one that is
+# actually missing instead of blaming "the toolchain" for either.
+COMPILER_TOOLS = ("msvc", "gcc", "g++", "clang", "clang++")
+
 
 def run(command, timeout=25):
     """(ok, output, command) - never raises, and always names what it ran."""
@@ -438,7 +443,7 @@ def capabilities_of(facts, connected):
     cuda = facts["cuda"]
     resolve = facts["resolve"]
     onnx = facts["onnx"]
-    compiler = any(tools.get(name) for name in ("msvc", "gcc", "g++", "clang", "clang++"))
+    compiler = any(tools.get(name) for name in COMPILER_TOOLS)
     scripting = None
     # A connect that never reached a host has answered nothing: both Resolve
     # capabilities stay unprobed. Reading `scripting` as False would report the
@@ -502,6 +507,25 @@ def collect(connect_host):
     return {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "facts": facts, "capabilities": capabilities,
             "suites": evaluate(capabilities), "sources": sources, "unknown": unknown}
+
+
+def verdict_note(facts):
+    """Why no template fits, naming the piece that is missing.
+
+    This used to say "none: no C++ toolchain found" on a machine with g++ 13.3 on
+    PATH and no cmake, which sends a reader looking for a compiler that is
+    already installed. The two prerequisites are checked separately because they
+    are installed separately.
+    """
+    tools = facts["tools"]
+    missing = []
+    if not tools.get("cmake"):
+        missing.append("cmake")
+    if not any(tools.get(name) for name in COMPILER_TOOLS):
+        missing.append("a C++ compiler")
+    if not missing:
+        missing.append("an ONNX Runtime tree (set ONNXRUNTIME_ROOT)")
+    return "none: missing " + " and ".join(missing)
 
 
 def verdict(capabilities):
@@ -592,7 +616,7 @@ def show(report):
         print(f"  [{status_mark(entry['status'])}] {name}{detail}")
     templates = verdict(report["capabilities"])
     print("\ntemplates that fit this machine")
-    print("  " + (", ".join(templates) if templates else "none: no C++ toolchain found"))
+    print("  " + (", ".join(templates) if templates else verdict_note(facts)))
     if report["unknown"]:
         print("\nnot answered here")
         for note in report["unknown"]:
@@ -643,6 +667,16 @@ def selftest():
           "templates/minimal-cuda-ofx/test/gpu-kernel-test.cu": "blocked",
           "templates/onnx-inference-ofx/test/run-tests": "ready",
           "tests/resolve/poc.py --build-project": "ready"})
+
+    case("a missing cmake is named, not blamed on the compiler that is present",
+         verdict_note({"tools": {"cmake": None, "g++": {"version": "canned"}}}),
+         "none: missing cmake")
+    case("a missing compiler is named when cmake is present",
+         verdict_note({"tools": {"cmake": {"version": "canned"}, "g++": None}}),
+         "none: missing a C++ compiler")
+    case("both prerequisites missing are both named",
+         verdict_note({"tools": {"cmake": None, "gcc": None}}),
+         "none: missing cmake and a C++ compiler")
 
     unprobed = dict(all_yes, **{"host.resolve.studio": None})
     case("an unprobed Studio is unknown, not ready",
