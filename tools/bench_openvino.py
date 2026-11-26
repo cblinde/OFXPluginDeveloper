@@ -30,18 +30,28 @@ model, 2 bad usage or a missing file.
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import statistics
 import sys
 import time
 
-import _ort_common  # noqa: F401 - imports numpy and onnxruntime with a clear error
+# One import: it brings numpy and onnxruntime in with a clear error when one is
+# missing, and re-exports both for the code below.
 from _ort_common import make_input, ort, parse_size
 
 
 def percentile(sorted_values, fraction):
     index = min(len(sorted_values) - 1, int(round(fraction * (len(sorted_values) - 1))))
     return sorted_values[index]
+
+
+def os_cpus():
+    """The CPUs this process may actually run on, which is not os.cpu_count()."""
+    try:
+        return os.sched_getaffinity(0)
+    except (AttributeError, OSError):
+        return {0}
 
 
 def machine():
@@ -56,15 +66,6 @@ def machine():
     except OSError:
         pass
     return f"{name}, {platform.system()} {platform.release()}, {len(os_cpus())} CPU(s)"
-
-
-def os_cpus():
-    try:
-        import os
-
-        return os.sched_getaffinity(0)
-    except (AttributeError, OSError):
-        return [0]
 
 
 def time_runs(run, iterations, warmup):

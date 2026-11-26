@@ -29,6 +29,48 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS = os.path.join(ROOT, "templates", "onnx-inference-ofx", "models")
 
 
+class ShapeError(Exception):
+    """The model and `test_shape.txt` disagree about the frame."""
+
+
+def input_shape(session, shape_file):
+    """The session's input shape, with its symbolic dimensions taken from disk.
+
+    The model declares batch and channels as numbers and H and W as symbols
+    (`[1, 3, 'h', 'w']`); `test_shape.txt` holds the `channels height width` the
+    input and the golden beside it were generated with. Both files are committed
+    together, so a number in one that the other contradicts means one of them was
+    regenerated alone - worth failing on, rather than reshaping the input to
+    whatever the model happens to accept.
+    """
+    with open(shape_file, encoding="utf-8") as fh:
+        values = [int(value) for value in fh.read().split()]
+    if len(values) != 3:
+        raise ShapeError(
+            f"{os.path.relpath(shape_file, ROOT)} must hold \"channels height width\", "
+            f"found {values}"
+        )
+    declared = list(session.get_inputs()[0].shape)
+    if len(declared) != 4:
+        raise ShapeError(
+            f"the model's input is {declared}, this canary feeds one 4-D NCHW frame"
+        )
+
+    wanted = [1, *values]
+    shape = []
+    for position, (declared_dim, file_value) in enumerate(zip(declared, wanted)):
+        if isinstance(declared_dim, int) and declared_dim > 0:
+            if declared_dim != file_value:
+                raise ShapeError(
+                    f"the model fixes dimension {position} at {declared_dim}, "
+                    f"{os.path.relpath(shape_file, ROOT)} says {file_value}"
+                )
+            shape.append(declared_dim)
+        else:
+            shape.append(file_value)
+    return shape
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", default=os.path.join(MODELS, "test_conv.onnx"))
@@ -61,9 +103,14 @@ def main() -> int:
         print(message, file=sys.stderr)
         return 2
 
-    for path in (args.model, args.input, args.golden):
+    # The shape file travels with the model it was generated for.
+    shape_file = os.path.join(os.path.dirname(os.path.abspath(args.model)), "test_shape.txt")
+    for path in (args.model, args.input, args.golden, shape_file):
         if not os.path.isfile(path):
-            print(f"canary: {path} is missing", file=sys.stderr)
+            print(
+                f"canary: {os.path.relpath(path, ROOT)} is missing",
+                file=sys.stderr,
+            )
             return 2
 
     # The opset is a property of the file, not of the runtime: read it from the
@@ -91,20 +138,23 @@ def main() -> int:
         session = ort.InferenceSession(
             args.model, sess_options=options, providers=["CPUExecutionProvider"]
         )
-        shape = [1, 3]
-        with open(os.path.join(MODELS, "test_shape.txt"), encoding="utf-8") as fh:
-            _, height, width = (int(v) for v in fh.read().split())
-        shape += [height, width]
+        shape = input_shape(session, shape_file)
+        expected = 1
+        for dim in shape:
+            expected *= dim
         data = np.fromfile(args.input, dtype=np.float32)
-        if data.size != shape[1] * shape[2] * shape[3]:
+        if data.size != expected:
             print(
-                f"canary: {args.input} holds {data.size} floats, expected "
-                f"{shape[1] * shape[2] * shape[3]}",
+                f"canary: {os.path.relpath(args.input, ROOT)} holds {data.size} floats, "
+                f"{shape} needs {expected}",
                 file=sys.stderr,
             )
             return 2
         tensor = data.reshape(shape)
-        (output,) = session.run(None, {"input": tensor})
+        (output,) = session.run(None, {session.get_inputs()[0].name: tensor})
+    except ShapeError as exc:
+        print(f"canary: {exc}", file=sys.stderr)
+        return 2
     except Exception as exc:  # noqa: BLE001 - any runtime error is the finding
         print(f"canary: the runtime refused the model: {exc}", file=sys.stderr)
         return 1

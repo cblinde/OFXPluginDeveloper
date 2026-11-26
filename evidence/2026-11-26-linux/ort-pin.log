@@ -13,3 +13,23 @@ exit=0
 
 # restored, and the check is green again
 check-ort-pin: the pin and every path that names one agree
+
+$ # re-run 2026-11-26 after the pin parsing was scoped to inputs.version
+$ python3 tools/check-ort-pin.py
+pin: 1.32.0 (the version default in .github/actions/onnx-runtime/action.yml)
+documents: 1 release-layout path(s) naming a version, 51 plain mention(s) of 1.32.0 kept as measurements
+check-ort-pin: the pin and every path that names one agree
+exit=0
+
+$ # control: a version-shaped default in another input, above version (would have been read as the pin)
+pin: 1.32.0 (the version default in .github/actions/onnx-runtime/action.yml)
+documents: 1 release-layout path(s) naming a version, 51 plain mention(s) of 1.32.0 kept as measurements
+check-ort-pin: the pin and every path that names one agree
+exit=0
+
+$ # control: the version default moved to 1.33.0
+error: references/onnx-and-tensorrt.md:268: names 1.32.0, the pin is 1.33.0
+check-ort-pin: FAIL - a document and the pin disagree
+pin: 1.33.0 (the version default in .github/actions/onnx-runtime/action.yml)
+documents: 1 release-layout path(s) naming a version, 2 plain mention(s) of 1.33.0 kept as measurements
+exit=1

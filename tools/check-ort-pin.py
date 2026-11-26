@@ -26,18 +26,40 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ACTION = os.path.join(ROOT, ".github", "actions", "onnx-runtime", "action.yml")
 PIN_PATTERN = re.compile(r"onnxruntime-linux-x64-(?:gpu_cuda\d+-)?(\d+\.\d+\.\d+)")
-DEFAULT_PATTERN = re.compile(r"default:\s*\"?(\d+\.\d+\.\d+)\"?")
+VERSION_PATTERN = re.compile(r"(\d+\.\d+\.\d+)")
 
 
 def read_pin():
+    """The `default:` of the `version` input, and of no other input.
+
+    Reading the first `default:` in the file works only while `version` is the
+    first input; `package` and `platform` carry defaults too, and a second
+    version-shaped one above it would be read as the pin without anything
+    failing. So the walk is scoped: inside `inputs:`, track which input the line
+    belongs to and take a default only from `version`.
+    """
     with open(ACTION, encoding="utf-8") as fh:
-        text = fh.read()
-    # The first `default:` in the file is the version input: the action has one
-    # input, and a second default would be a bug worth failing on anyway.
-    match = DEFAULT_PATTERN.search(text)
-    if not match:
-        return None
-    return match.group(1)
+        lines = fh.read().splitlines()
+
+    in_inputs = False
+    current = None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            in_inputs = stripped == "inputs:"
+            current = None
+            continue
+        if not in_inputs:
+            continue
+        if len(line) - len(line.lstrip()) == 2 and stripped.endswith(":"):
+            current = stripped[:-1]
+            continue
+        if current == "version" and stripped.startswith("default:"):
+            match = VERSION_PATTERN.search(stripped)
+            return match.group(1) if match else None
+    return None
 
 
 def documents():
@@ -55,7 +77,10 @@ def documents():
 def main() -> int:
     pin = read_pin()
     if pin is None:
-        print(f"error: no version default in {os.path.relpath(ACTION, ROOT)}", file=sys.stderr)
+        print(
+            f"error: no default under inputs.version in {os.path.relpath(ACTION, ROOT)}",
+            file=sys.stderr,
+        )
         return 1
     print(f"pin: {pin} (the version default in .github/actions/onnx-runtime/action.yml)")
 
