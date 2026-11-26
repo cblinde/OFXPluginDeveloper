@@ -39,6 +39,19 @@
 
 #include "ofxsLog.h"
 
+#include <cstdlib>
+#include <fstream>
+
+#if defined(_WIN32)
+// windows.h defines min/max as macros, which breaks every std::max in this file.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 #include "AiCore.h"
 #include "ModelRunner.h"
 
@@ -57,7 +70,9 @@ const char* const kPluginDescription =
     "label says which one the session got and why not CUDA when it did not. "
     "Reference implementation for tiled, pitch-accurate inference plug-ins.";
 
-const char* const kParamModelPath = "modelPath";
+const char* const kEnvironmentModelPath = "ONNX_MODEL_PATH";
+// The file a bundle can ship beside its binary: <bundle>/Contents/Resources.
+const char* const kResourcesModelName = "model.onnx";
 const char* const kParamTileSize = "tileSize";
 const char* const kParamHalo = "halo";
 // Label, not a setting: the plug-in writes it when the session is created.
@@ -118,27 +133,122 @@ void CopyRect(const OFX::Image* src, OFX::Image* dst, const OfxRectI& window)
     }
 }
 
+// Which directory this module was loaded from, in UTF-8. A bundle that ships
+// data puts it one level up, in Contents/Resources; that is how a model can
+// travel with the plug-in instead of with a project.
+std::string ModuleDirectory()
+{
+#if defined(_WIN32)
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(&ModuleDirectory), &module)) {
+        return {};
+    }
+    std::wstring path(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD written = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
+        if (written == 0) {
+            return {};
+        }
+        if (written < path.size()) {
+            path.resize(written);
+            break;
+        }
+        path.resize(path.size() * 2);
+    }
+    const size_t slash = path.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) {
+        return {};
+    }
+    const std::wstring dir = path.substr(0, slash);
+    const int needed = WideCharToMultiByte(CP_UTF8, 0, dir.c_str(), static_cast<int>(dir.size()),
+                                           nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) {
+        return {};
+    }
+    std::string utf8(static_cast<size_t>(needed), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, dir.c_str(), static_cast<int>(dir.size()), utf8.data(), needed,
+                        nullptr, nullptr);
+    return utf8;
+#else
+    Dl_info info{};
+    if (dladdr(reinterpret_cast<const void*>(&ModuleDirectory), &info) == 0 ||
+        info.dli_fname == nullptr) {
+        return {};
+    }
+    const std::string path(info.dli_fname);
+    const size_t slash = path.find_last_of('/');
+    return slash == std::string::npos ? std::string() : path.substr(0, slash);
+#endif
+}
+
+bool IsRegularFile(const std::string& path)
+{
+    std::ifstream probe(path, std::ios::binary);
+    return probe.good();
+}
+
+// Where the model came from, so the log says which of the two sources answered.
+struct ModelSource
+{
+    std::string path;
+    std::string origin;
+};
+
+// The model path arrives from outside the parameter stack, once per instance: a
+// host applies this plug-in through AddEffect and has no way to set a parameter
+// (`improvement-backlog.md` row 19 measured that), so the value is the
+// environment first, then the copy the bundle ships beside its binary.
+ModelSource ResolveModelPath()
+{
+    if (const char* fromEnvironment = std::getenv(kEnvironmentModelPath)) {
+        if (*fromEnvironment != '\0') {
+            return {fromEnvironment, kEnvironmentModelPath};
+        }
+    }
+    const std::string dir = ModuleDirectory();
+    if (!dir.empty()) {
+        const std::string shipped = dir + "/../Resources/" + kResourcesModelName;
+        if (IsRegularFile(shipped)) {
+            return {shipped, "Contents/Resources"};
+        }
+    }
+    return {};
+}
+
 } // namespace
 
 InferencePlugin::InferencePlugin(OfxImageEffectHandle handle)
     : OFX::ImageEffect(handle)
     , _dstClip(nullptr)
     , _srcClip(nullptr)
-    , _modelPath(nullptr)
+    , _modelPath()
     , _tileSize(nullptr)
     , _halo(nullptr)
     , _provider(nullptr)
 {
     _dstClip = fetchClip(kOfxImageEffectOutputClipName);
     _srcClip = fetchClip(kOfxImageEffectSimpleSourceClipName);
-    _modelPath = fetchStringParam(kParamModelPath);
     _tileSize = fetchIntParam(kParamTileSize);
     _halo = fetchIntParam(kParamHalo);
     _provider = fetchStringParam(kParamProvider);
 
-    if (_dstClip == nullptr || _srcClip == nullptr || _modelPath == nullptr ||
+    if (_dstClip == nullptr || _srcClip == nullptr ||
         _tileSize == nullptr || _halo == nullptr || _provider == nullptr) {
         OFX::throwSuiteStatusException(kOfxStatErrMissingHostFeature);
+    }
+
+    // Read once, at creation: the environment outranks the shipped copy, and an
+    // empty answer is the pass-through case the summary reports.
+    const ModelSource source = ResolveModelPath();
+    _modelPath = source.path;
+    if (_modelPath.empty()) {
+        OFX::Log::print("%s: no model: set %s or ship Contents/Resources/%s", kPluginName,
+                        kEnvironmentModelPath, kResourcesModelName);
+    } else {
+        OFX::Log::print("%s: model %s (from %s)", kPluginName, _modelPath.c_str(),
+                        source.origin.c_str());
     }
 }
 
@@ -262,8 +372,7 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
         return;
     }
 
-    std::string path;
-    _modelPath->getValueAtTime(args.time, path);
+    const std::string& path = _modelPath;
     if (path.empty()) {
         // isIdentity() normally keeps us out of here, but a host may render
         // anyway (identity switched off, a preview pass, a host that ignores
@@ -368,9 +477,7 @@ void InferencePlugin::render(const OFX::RenderArguments& args)
 bool InferencePlugin::isIdentity(const OFX::IsIdentityArguments& args, OFX::Clip*& identityClip,
                                  double& identityTime)
 {
-    std::string path;
-    _modelPath->getValueAtTime(args.time, path);
-    if (path.empty()) {
+    if (_modelPath.empty()) {
         identityClip = _srcClip;
         identityTime = args.time;
         return true;
@@ -444,18 +551,13 @@ void InferencePluginFactory::describeInContext(OFX::ImageEffectDescriptor& desc,
 
     OFX::GroupParamDescriptor* group = desc.defineGroupParam("modelGroup");
     group->setLabels("Model", "Model", "Model");
-    group->setHint("ONNX model file and inference tiling");
+    // Not a parameter: the model path comes from ONNX_MODEL_PATH or from
+    // Contents/Resources/model.onnx beside the binary, read at creation. A host
+    // that applies this plug-in through AddEffect cannot set a parameter, and the
+    // row this replaces was never measurable because of it.
+    group->setHint("Model from $ONNX_MODEL_PATH, else Contents/Resources/model.onnx; "
+                   "then inference tiling");
     page->addChild(*group);
-
-    OFX::StringParamDescriptor* path = desc.defineStringParam(kParamModelPath);
-    path->setLabels("Model (.onnx)", "Model", "Model (.onnx)");
-    path->setScriptName(kParamModelPath);
-    path->setHint("Absolute path to an ONNX model: 1 input, 1 output, NCHW float32, 3 channels. "
-                  "Empty means pass the source through.");
-    path->setDefault("");
-    path->setStringType(OFX::eStringTypeFilePath);
-    path->setParent(*group);
-    page->addChild(*path);
 
     OFX::IntParamDescriptor* tile = desc.defineIntParam(kParamTileSize);
     tile->setLabels("Tile Size", "Tile", "Tile Size");

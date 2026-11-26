@@ -187,8 +187,9 @@ Decisions for this repository, so the next 1.6 question has an answer:
   `apiVersion` 1 and the contract asserts it; moving early would mean building
   against an unreleased tag for features no host can require yet.
 - **No template has a colour parameter**, so there is nothing to declare today.
-  `gain` is a double, `tileSize` and `halo` are ints, `modelPath` and `provider`
-  are strings.
+  `gain` is a double, `tileSize` and `halo` are ints, `provider` is a string, and
+  the ONNX template has no model-path parameter at all: it reads
+  `ONNX_MODEL_PATH`, else `Contents/Resources/model.onnx`, at instance creation.
 - **The rule for the first colour parameter** that is added: if the value takes
   part in image processing (a key colour, a fill), declare `Managed` and expect
   ACES2065-1; if it is a UI colour drawn with the draw suite, declare `SRGB`;

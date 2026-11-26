@@ -302,7 +302,8 @@ each is loaded back through ONNX Runtime's CPU provider at two frame sizes, one
 of them odd in both axes: a model with a hard-coded export size passes the first
 and fails the second. `--no-self-test` writes the files without loading them.
 
-Point `modelPath` at `id_1x_3ch.onnx` and the check stream proves a pass-through:
+Point the plug-in at `id_1x_3ch.onnx` (`ONNX_MODEL_PATH`; the ONNX template takes
+no model-path parameter) and the check stream proves a pass-through:
 with the same file as `--src` and `--golden`, `render matches the golden` is
 exact. `--golden-tolerance T` turns that check into a bound (`render matches the
 golden within T`), for a golden rendered by a different execution provider: a

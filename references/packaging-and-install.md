@@ -110,16 +110,18 @@ own `onnxruntime.dll` (**[V]**,
   (`item.AddFusionComp()`) holds only `MediaIn`/`MediaOut` - `AddTool` refuses the
   plug-in under each identifier tried, and no frame was rendered from it (**[V]**,
   [`resolve-fusion-path.log`](../evidence/2026-11-26-windows/resolve-fusion-path.log)).
-  **A prepared project cannot supply that value either.** A `.drp` exported here is
-  a ZIP whose timeline item carries an empty `<EffectFiltersBA/>` although the live
-  project holds the effect, so `ExportProject` drops applied effects and the file
-  cannot carry `modelPath`; `SaveProject` is not callable in 21.2 to change that
-  order, and the field that would hold the parameters is a hex blob (**[V]**,
-  [`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)).
-  No `.drp` from this host can carry the effect either, so the model path has to
-  arrive without the project - an environment variable or a sidecar beside the
-  bundle ([`improvement-backlog.md`](improvement-backlog.md) row 19) - and until
-  that exists "uses Resolve's own cuDNN" is not claimed here. Neither does a module
+  **A prepared project is not the way either, and now for a different reason.**
+  Exporting before the host has saved the project writes an empty
+  `<EffectFiltersBA/>`; an export taken after the host's own `Start saving
+  project` line carries the effect, its stored name is the file's base name and
+  `LoadProject(<base name>)` reopens it with the effect on the item (**[V]**,
+  [`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)
+  §6). What still stops the frame is the plug-in: Resolve answers `describe failed
+  on plugin com.ofxplugindeveloper.onnxinference, error code 4` and never creates
+  an instance, so the render is the source unchanged whatever the model path says.
+  The model path itself no longer needs the project - `ONNX_MODEL_PATH` or a
+  `Contents/Resources/model.onnx` beside the binary ([`improvement-backlog.md`](improvement-backlog.md)
+  row 19) - and "uses Resolve's own cuDNN" is not claimed here. Neither does a module
   list help settle it on its own: the host loads its own `onnxruntime.dll`, so
   `tasklist /M` names a runtime whether or not the plug-in ever created a session.
 

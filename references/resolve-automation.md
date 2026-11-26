@@ -143,13 +143,17 @@ What follows from that, and what does not:
   (`SaveProject` is not callable in this version). What would hold the
   parameters is a hex blob (`FieldsBlob`), not readable XML (**[V]**,
   [`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)).
-  So an exported project carries no `modelPath` at all, and an equal-length patch
-  of a sentinel inside one has nothing to aim at: the effect is not in the file.
-  A `.drp` that does carry it would have to come from a GUI save, which no run
-  here has produced, and which the export above says this container does not
-  record. What remains is a model path that arrives without the project - an
-  environment variable or a sidecar beside the bundle - and that is what
-  [`improvement-backlog.md`](improvement-backlog.md) row 19 now asks for.
+  Whether the effect is in the file depends on when the export happens: before the
+  host has saved the project the tag is empty, and after the host's own `Start
+  saving project` line the same sequence exports a filled one whose blob spells
+  out `com.ofxplugindeveloper.onnxinference` (**[V]**, §6 of that log).
+  `ImportProject` then answers `True`, the stored name is the file's base name -
+  no `"<name>.Cfg"` - and `LoadProject(<base name>)` reopens it with the effect on
+  the item. The model path no longer needs the container at all: the plug-in reads
+  `ONNX_MODEL_PATH`, else `Contents/Resources/model.onnx`, once at instance
+  creation ([`improvement-backlog.md`](improvement-backlog.md) row 19). What still
+  stops the frame is the host refusing the plug-in - `describe failed … error code
+  4`, never an instance.
 - Loading one is what `poc.py --project` does, and that mode ran for the first
   time on 2026-11-26: four defects fell out of it - an undefined `render_size`, a
   `KeyError` without `--resolve`, a `connect()` that demanded an open project, and

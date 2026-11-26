@@ -118,14 +118,23 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
   OFX_CHECKOUT="$(sed -n 's/^OFX_SOURCE_DIR:PATH=//p' "${ROOT}/build/CMakeCache.txt" 2>/dev/null | head -1 || true)"
   "${ROOT}/../../testkit/build-contract-test.sh" "${TMP}/contract_test" ${OFX_CHECKOUT:+"${OFX_CHECKOUT}"}
   echo "  ${BUNDLE_OFX#"${ROOT}"/}"
+  # The model is not a parameter any more: it arrives through ONNX_MODEL_PATH (or
+  # from Contents/Resources/model.onnx), read once at instance creation. So
+  # identity and pixels are two runs - one with no model in the environment, which
+  # must report identity, and one with it set, which must render.
+  MODEL_ENV="${ROOT}/models/test_conv.onnx"
+  IDENTITY_ARGS=("${BUNDLE_OFX}"
+    --id com.ofxplugindeveloper.onnxinference
+    --param tileSize:int --param halo:int
+    --clip Source --clip Output --identity --size 64x48)
   CONTRACT_ARGS=("${BUNDLE_OFX}"
     --id com.ofxplugindeveloper.onnxinference
-    --param modelPath:string --param tileSize:int --param halo:int
-    --clip Source --clip Output --identity --size 64x48
+    --param tileSize:int --param halo:int
+    --clip Source --clip Output --size 64x48
     --src "${ROOT}/models/test_input.bin" --golden "${ROOT}/models/test_golden.bin"
-    --set "modelPath=${ROOT}/models/test_conv.onnx" --set halo=2
+    --set halo=2
     --roi-expand 2 --roi-context --label-param provider
-    --not-identity-after-set --negative-pitch --byte-dst-rejected
+    --negative-pitch --byte-dst-rejected
     --src-bounds-inset 2 --dst-bounds-inset 2)
   # Which reference, and with which bound, is a property of the reference rather
   # than one tolerance for everything: `--fuzz NAME` reads
@@ -156,7 +165,12 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
 
   for profile in "${HOST_PROFILES[@]}"; do
     echo "  host profile: ${profile} (reference fuzz: ${FUZZ})"
-    "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" \
+    # First without a model in the environment: a host on a machine that never
+    # set ONNX_MODEL_PATH must be told identity, or it renders a pass-through
+    # nobody asked for.
+    env -u ONNX_MODEL_PATH "${TMP}/contract_test" "${IDENTITY_ARGS[@]}" \
+      --host-profile "${profile}" 2>&1 | tee "${TMP}/${profile}-identity.log"
+    ONNX_MODEL_PATH="${MODEL_ENV}" "${TMP}/contract_test" "${CONTRACT_ARGS[@]}" \
       --host-profile "${profile}" --fuzz "${FUZZ}" \
       --concurrency-threads "${THREADS}" | tee "${TMP}/${profile}.log"
 
@@ -187,13 +201,13 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
   # different run than the one the suite reports.
   TILED_ARGS=(
     --id com.ofxplugindeveloper.onnxinference
-    --param modelPath:string --param tileSize:int --param halo:int
+    --param tileSize:int --param halo:int
     --clip Source --clip Output --size 64x48
-    --set "modelPath=${ROOT}/models/test_conv.onnx" --set halo=2 --set tileSize=16
+    --set halo=2 --set tileSize=16
     --set-status-only --concurrency-threads 0 --roi-context-tolerance 0.02
   )
   echo "  tiled render (tileSize=16), tolerance 0.02:"
-  "${TMP}/contract_test" "${BUNDLE_OFX}" "${TILED_ARGS[@]}"
+  ONNX_MODEL_PATH="${MODEL_ENV}" "${TMP}/contract_test" "${BUNDLE_OFX}" "${TILED_ARGS[@]}"
 else
   echo "  FAIL: no .ofx under build/bundle; run ./build.sh first" >&2
   exit 1
@@ -249,15 +263,15 @@ else
   # ONNX Runtime keeps a few MB in process-lifetime arenas: still reachable,
   # which is not a leak. --errors-for-leak-kinds=definite is the line that
   # matters - anything the plug-in itself drops is reported.
+  ONNX_MODEL_PATH="${ROOT}/models/test_conv.onnx" \
   valgrind --error-exitcode=1 --leak-check=full --show-leak-kinds=definite \
     --errors-for-leak-kinds=definite --track-origins=yes \
     "${TMP}/contract_test" "${BUNDLE_OFX}" \
     --id com.ofxplugindeveloper.onnxinference \
-    --param modelPath:string --param tileSize:int --param halo:int \
-    --clip Source --clip Output --identity --size 64x48 \
+    --param tileSize:int --param halo:int \
+    --clip Source --clip Output --size 64x48 \
     --src "${ROOT}/models/test_input.bin" --golden "${ROOT}/models/test_golden.bin" \
-    --set "modelPath=${ROOT}/models/test_conv.onnx" \
-    --not-identity-after-set --byte-dst-rejected --src-bounds-inset 2 \
+    --byte-dst-rejected --src-bounds-inset 2 \
     --dst-bounds-inset 2 --set halo=2 --roi-expand 2 --roi-context \
     > "${TMP}/vg-contract.log" 2>&1 || {
       echo "  FAIL: memcheck reported errors" >&2
@@ -272,6 +286,7 @@ else
   # so it gets its own memcheck run rather than being covered by the whole-frame
   # one. Same bound, not bit-equality: see the tolerance note above.
   echo "  tiled render under the same tool:"
+  ONNX_MODEL_PATH="${ROOT}/models/test_conv.onnx" \
   valgrind --error-exitcode=1 --leak-check=full --show-leak-kinds=definite \
     --errors-for-leak-kinds=definite --track-origins=yes \
     "${TMP}/contract_test" "${BUNDLE_OFX}" "${TILED_ARGS[@]}" \

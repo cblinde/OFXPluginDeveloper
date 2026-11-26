@@ -142,13 +142,21 @@ if not exist "%PLUGIN%" (
 echo   %PLUGIN%
 
 set "LOG=%TEMP%\onnx-contract.log"
+rem The model is not a parameter any more: it arrives through ONNX_MODEL_PATH, read
+rem once at instance creation. So identity and pixels are two runs - one with no
+rem model in the environment, which must report identity, and one with it set,
+rem which must render.
+set "MODEL=%ROOT%\models\test_conv.onnx"
+set "IDENTITY_ARGS=--id com.ofxplugindeveloper.onnxinference"
+set "IDENTITY_ARGS=%IDENTITY_ARGS% --param tileSize:int --param halo:int"
+set "IDENTITY_ARGS=%IDENTITY_ARGS% --clip Source --clip Output --identity --size 64x48"
 set "ARGS=--id com.ofxplugindeveloper.onnxinference"
-set "ARGS=%ARGS% --param modelPath:string --param tileSize:int --param halo:int"
-set "ARGS=%ARGS% --clip Source --clip Output --identity --size 64x48"
+set "ARGS=%ARGS% --param tileSize:int --param halo:int"
+set "ARGS=%ARGS% --clip Source --clip Output --size 64x48"
 set "ARGS=%ARGS% --src "%ROOT%\models\test_input.bin" --golden "%ROOT%\models\test_golden.bin""
-set "ARGS=%ARGS% --set "modelPath=%ROOT%\models\test_conv.onnx" --set halo=2"
+set "ARGS=%ARGS% --set halo=2"
 set "ARGS=%ARGS% --roi-expand 2 --roi-context --label-param provider"
-set "ARGS=%ARGS% --not-identity-after-set --negative-pitch --byte-dst-rejected"
+set "ARGS=%ARGS% --negative-pitch --byte-dst-rejected"
 set "ARGS=%ARGS% --src-bounds-inset 2 --dst-bounds-inset 2"
 rem The tolerance belongs to the reference, not to this script: --fuzz NAME reads
 rem models	est_golden.<NAME>.fuzz, so the CPU reference keeps its exact demand
@@ -170,6 +178,14 @@ if /i "%THREADS%"=="random" set /a THREADS=%RANDOM% %% 4 + 1
 echo   host profiles: nuke, resolve, natron (reference fuzz: %FUZZ%, %THREADS% render threads)
 for %%P in (nuke resolve natron) do (
   echo   host profile: %%P
+  rem No model in the environment: this host must be told identity.
+  set "ONNX_MODEL_PATH="
+  "%HARNESS%" "%PLUGIN%" %IDENTITY_ARGS% --host-profile %%P > "%LOG%-identity" 2>&1
+  if errorlevel 1 (
+    type "%LOG%-identity"
+    goto :contractfailure
+  )
+  set "ONNX_MODEL_PATH=%MODEL%"
   "%HARNESS%" "%PLUGIN%" %ARGS% --host-profile %%P --fuzz %FUZZ% --concurrency-threads %THREADS% > "%LOG%" 2>&1
   if errorlevel 1 (
     type "%LOG%"
@@ -199,11 +215,12 @@ for %%P in (nuke resolve natron) do (
 echo.
 echo == [4/5] host contract with the plug-in's own tiling (tileSize=16) ==
 echo   tolerance 0.02: feathered overlap is exact only at halo ^>= radius
+set "ONNX_MODEL_PATH=%MODEL%"
 "%HARNESS%" "%PLUGIN%" ^
   --id com.ofxplugindeveloper.onnxinference ^
-  --param modelPath:string --param tileSize:int --param halo:int ^
+  --param tileSize:int --param halo:int ^
   --clip Source --clip Output --size 64x48 ^
-  --set "modelPath=%ROOT%\models\test_conv.onnx" --set halo=2 --set tileSize=16 ^
+  --set halo=2 --set tileSize=16 ^
   --set-status-only --concurrency-threads 0 --roi-context-tolerance 0.02 || goto :error
 
 echo.

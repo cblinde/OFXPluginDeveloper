@@ -93,9 +93,13 @@ after which the two runs did not get a scriptable host again, so no render came 
 of this mode yet. It needed four fixes first - an undefined `render_size`, a
 `KeyError: 'resolve'` when `--resolve` was omitted, a `connect()` that waited for a
 project the caller was about to load itself, and a relative path `LoadProject`
-refuses. What a `.drp` cannot do is carry the effect: the export writes an empty
-`<EffectFiltersBA/>`, so a prepared project with `modelPath` in it is a GUI artefact
-([`resolve-project-route.log`](../../evidence/2026-11-26-windows/resolve-project-route.log)).
+refuses. An export taken before the host has saved the project writes an empty
+`<EffectFiltersBA/>`; one taken after it carries the effect, and `ImportProject`
+followed by `LoadProject(<base name>)` reopens that project with the effect on the
+item
+([`resolve-project-route.log`](../../evidence/2026-11-26-windows/resolve-project-route.log)
+§6). `modelPath` is no longer a parameter: the plug-in reads `ONNX_MODEL_PATH`,
+else `Contents/Resources/model.onnx`, at instance creation.
 
 `ExportFrame` - one frame without a render job - has its own measurement.
 `tests/resolve/export_frame.py` builds the same project, renders one frame

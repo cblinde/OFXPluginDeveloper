@@ -94,3 +94,61 @@ What would close row 19 is therefore one of:
     -DREFERENCE_GAIN_DEFAULT / -DGAIN_DEFAULT for the gain templates, and the
     reason the ONNX template's GPU path stays unproven is that its default has no
     such switch.
+
+## 6. the step section 4 left open, run on the same host
+
+Bundle: `.validation/build-provider-only` (OFXPLUGIN_BUNDLE_ONNX_RUNTIME=OFF,
+OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON, OFXPLUGIN_CUDA_FROM_HOST=ON, ONNX Runtime
+1.20.1), installed into `C:\Program Files\Common Files\OFX\Plugins`, with
+`Contents/Resources/model.onnx` beside the binary - the plug-in reads
+`ONNX_MODEL_PATH` first and that file second, once at instance creation.
+
+  pm.CreateProject("row19"); still resolve-source.png, 1920x1080
+  item.AddEffect("ofx", "Open FX/OFX Plugin Developer/ONNX Inference")
+  item.GetEffects("ofx") -> 1, GetInfo().name "ONNX Inference"
+  render before the export -> JobStatus Complete, 100%, 3769 ms,
+       frames-row19/row19-before00108149.png, 235070 bytes
+
+  pm.ExportProject("row19", "…/.validation/drp/row19-import")      -> True
+  file: row19-import.drp, 27219 bytes; its SeqContainer XML carries
+    <EffectFiltersBA>000000020000007b8128b52ffd20…</EffectFiltersBA>
+  whose hex spells out `com.ofxplugindeveloper.onnxinference` and
+  `OfxImageEffectContextFilter`. This export DID carry the applied effect, unlike
+  the one in section 2.
+
+  pm.ImportProject("…/row19-import.drp")                            -> True
+  pm.GetProjectListInCurrentFolder() contains "row19" and "row19-import"
+  pm.LoadProject("row19-import")                                    -> project object
+       GetName() -> "row19-import"; GetCurrentTimeline().GetName() -> "row19";
+       GetItemListInTrack("video", 1) -> 1 item; GetEffects("ofx") -> 1
+  render from the opened project -> Complete, 100%, 3273 ms,
+       frames-row19/row19-after00108149.png, 235070 bytes
+
+No `"<name>.Cfg"` appeared: the stored name is the file's base name and
+`LoadProject` accepts it. The step section 4 called "the one nobody has
+completed" is completed - `ImportProject` followed by `LoadProject(<base name>)`
+opens the imported project, effect included.
+
+What it does not prove is the frame. Both PNGs are identical to the source
+(`mae 0.0`, `max_pixel 0`, 8294400 bytes compared), before and after the round
+trip, because the host never instantiated the plug-in. `ResolveDebug.txt`, same
+session:
+
+  Could not get plugin handle for effect[com.ofxplugindeveloper.onnxinference]
+    with context[OfxImageEffectContextFilter]                      2240 times
+  Create context [OfxImageEffectContextFilter_…] failed for plugin […]
+  Plugin [com.ofxplugindeveloper.onnxinference] is not available!!!!
+  OFX: loading com.ofxplugindeveloper.onnxinference
+  describe failed on plugin com.ofxplugindeveloper.onnxinference, error code 4
+
+Not the model path and not the round trip: the same refusal appears with the
+18-file full bundle (22:28:06) and with the source as it was before
+`ONNX_MODEL_PATH` existed, built from the stashed tree (22:25:49). The fake host
+describes and instantiates the same binaries - 84 contract checks over three host
+profiles - so the difference is the real host. Error code 4 is what the OFX
+Support library returns when a describe throws `HostInadequate` or
+`PropertyUnknownToHost`.
+
+So section 5's conclusion moves: a project exported here CAN carry the effect,
+and the imported project opens by name. What blocks row 19's render is that
+Resolve 21.2.0.5 will not describe this plug-in at all.

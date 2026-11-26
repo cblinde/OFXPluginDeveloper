@@ -50,7 +50,10 @@ private:
 
     OFX::Clip* _dstClip;         // borrowed, never deleted
     OFX::Clip* _srcClip;         // borrowed, never deleted
-    OFX::StringParam* _modelPath;
+    // Resolved once, when the instance is created: ONNX_MODEL_PATH, else the
+    // model.onnx the bundle ships in Contents/Resources. Not a parameter - a host
+    // that applies the effect through AddEffect cannot set one.
+    std::string _modelPath;
     OFX::IntParam* _tileSize;
     OFX::IntParam* _halo;
     // Read-only label: which execution provider the session got, and why not
