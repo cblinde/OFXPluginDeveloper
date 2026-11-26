@@ -112,3 +112,9 @@ $ # the CI step's own assertions on that log
   stage marker: found
   tiled pass: 90 checks, 0 failed
   clean summaries: 2 of 2
+
+$ # wall time per reference memcheck pass, three runs back to back (the number in testing-layers.md section 13)
+  nuke:    1352 ms, exit=0, ERROR SUMMARY: 0 errors from 0 contexts
+  resolve: 1356 ms, exit=0, ERROR SUMMARY: 0 errors from 0 contexts
+  natron:  1353 ms, exit=0, ERROR SUMMARY: 0 errors from 0 contexts
+  total:   4.06 s for the three
