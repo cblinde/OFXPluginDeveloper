@@ -658,11 +658,25 @@ bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
         // Backlog row 13: the registration API, only when asked for. A runtime
         // whose provider has no `CreateEpFactories` cannot be registered at all,
         // which is why the default stays the built-in table.
-        if (const char* switchOn = std::getenv("OFXPLUGIN_CUDA_EP_V2")) {
-            if (*switchOn != '\0') {
-                if (providerSerialised != nullptr) *providerSerialised = false;
-                return AppendCudaProviderV2(options, keys, values, keyCount, reason, applied);
-            }
+        // MSVC marks getenv deprecated (C4996) and this template builds without
+        // warnings, so the Windows branch uses the checked variant instead of a
+        // pragma that would hide the next one too.
+        bool switchOn = false;
+#ifdef _WIN32
+        char* variable = nullptr;
+        size_t variableSize = 0;
+        if (_dupenv_s(&variable, &variableSize, "OFXPLUGIN_CUDA_EP_V2") == 0 &&
+            variable != nullptr) {
+            switchOn = *variable != '\0';
+            std::free(variable);
+        }
+#else
+        const char* variable = std::getenv("OFXPLUGIN_CUDA_EP_V2");
+        switchOn = variable != nullptr && *variable != '\0';
+#endif
+        if (switchOn) {
+            if (providerSerialised != nullptr) *providerSerialised = false;
+            return AppendCudaProviderV2(options, keys, values, keyCount, reason, applied);
         }
 #endif
         if (providerSerialised != nullptr) *providerSerialised = true;

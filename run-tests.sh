@@ -312,6 +312,11 @@ if [[ "${windows}" == "1" ]]; then
   echo "  docs drift check                (tools/check-docs.py, incl. the ONNX Runtime pin)"
   echo "  reference build + artifact      (minimal-ofx, dumpbin)"
   echo "  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)"
+  # The one template this branch cannot touch: its suite is POSIX-only (dlopen,
+  # g++) and there is no .bat runner. Saying so is the point - the summary used
+  # to imply every built template had been tested, and a template that stops
+  # building on Windows would have gone unnoticed behind that sentence.
+  echo "  NOT RUN: minimal-opencl-ofx     (no .bat runner: that suite is POSIX-only)"
   if [[ "${gpu_mode}" == "CUDA" ]]; then
     echo "  GPU kernels                     (as test/run-tests.bat reported above)"
   else

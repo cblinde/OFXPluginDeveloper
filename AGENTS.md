@@ -1,6 +1,6 @@
 # AGENTS.md
 
-A plan library plus three buildable OpenFX plug-ins. This file routes; the
+A plan library plus four buildable OpenFX plug-ins. This file routes; the
 reasoning lives in the documents it points at. Keep it a router.
 
 ## Commands

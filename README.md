@@ -311,7 +311,7 @@ Plugins. Details in `references/debugging-and-symptoms.md` §1.
 
 | | Linux (verified) | Windows |
 | --- | --- | --- |
-| Compiler | GCC 13.3 as nvcc's host compiler | MSVC 2022 or 2026 (x64). CUDA 13 accepts host compiler 19.44 only, which `build.bat` pins; MSVC 19.50 needs `--allow-unsupported-compiler` |
+| Compiler | GCC 13.3 as nvcc's host compiler | MSVC 2022 or 2026 (x64). CUDA 13 accepts `_MSC_VER` up to 1949, so `build.bat`, `test\run-tests.bat` and `CMakeLists.txt` pin the newest `14.4x` toolset on disk (19.44 here) instead of taking the instance's default 19.50 - a Visual Studio generator cannot be pinned that way, which is why a CUDA build uses Ninja |
 | CUDA | 12.9 series (nvcc 12.9.41 verified), or `--bootstrap-cuda` | 13.0 (nvcc 13.0.48 verified), or any series the newest-first scan finds |
 | Bootstrap tooling | `curl`, `tar`, `gzip`, `awk`, binutils (`ar`, `nm`) | not applicable — no bootstrap on Windows |
 | CMake | ≥ 3.21 (verified 3.31.6) | ≥ 3.21 |
