@@ -150,3 +150,38 @@ contract_test: 90 checks, 0 failed
 
 == [5/5] fixtures and artifact ==
 all checks passed
+
+## A provider that is not there, and one whose DllMain fails
+
+Two more states the standalone probe never entered, because it always had the
+1.32.0 provider beside it. Both were run by swapping the provider DLL in the built
+bundle (the 1.32.0 one was copied aside and put back afterwards; the bundle is
+back to 195 MB), with the same switch:
+
+  - bundle without a provider at all (the ai_pipeline_test.exe case):
+      onnx-inference: v2 step: RegisterExecutionProviderLibrary
+      onnx-inference: v2 step: register failed: Error loading
+        "...\build\Release\onnxruntime_providers_cuda.dll" which is missing.
+        (Error 126)
+  - bundle holding the 1.20.1 provider, whose DllMain cannot initialise against
+    the 1.32.0 core - the mismatch Resolve is in, where a provider's imports do
+    not resolve:
+      onnx-inference: v2 step: RegisterExecutionProviderLibrary
+      onnx-inference: v2 step: register failed: Error loading
+        "...\Contents\Win64\onnxruntime_providers_cuda.dll" But no dependency
+        issue could be determined. (Error 1114: "Eine DLL-Initialisierungsroutine
+        ist fehlgeschlagen.")
+
+Both come back as an OrtStatus, the plug-in labels the session
+`CPU (1 thread) - fallback: <that message>` and renders on the CPU. The suite
+then exits 1, because its CUDA gate refuses a CPU fallback - that is the gate
+working, not a plug-in failure.
+
+So the registration step does not fast-fail on a missing library or on a library
+that fails to initialise; the 0xC0000409 the probe could not explain is not in
+any of these three states either.
+
+Note on the code path: the full status text is printed by the V2 stage line
+(`register failed: ...`), because the label's shortened message stops at the path
+and never reaches the reason - that addition is what made the two lines above
+readable at all.

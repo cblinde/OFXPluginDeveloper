@@ -567,6 +567,11 @@ bool AppendCudaProviderV2(Ort::SessionOptions& options, const char* const* keys,
             const std::string message = api.GetErrorMessage(registration);
             api.ReleaseStatus(registration);
             if (message.find("already registered") == std::string::npos) {
+                // The stage line above names the call; this names the cause. The
+                // label keeps a shortened message, and "Error loading <path>..."
+                // truncated at the label's width says nothing about why the
+                // registration failed.
+                V2Stage(("register failed: " + message).c_str());
                 throw std::runtime_error(message);
             }
         }

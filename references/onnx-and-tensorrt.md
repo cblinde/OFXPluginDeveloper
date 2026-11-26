@@ -1118,6 +1118,17 @@ profiles plus 90. No step reaches `0xC0000409`, so the abort is not in the appen
 sequence either; the remaining difference between the two processes is the host
 (§9).
 
+Two more states were tried by swapping the provider DLL in the built bundle, and
+the registration step survives both with a status rather than a fast-fail: with no
+provider beside the `.ofx` it is `Error loading "…" which is missing. (Error 126)`,
+and with the 1.20.1 provider - whose DllMain cannot initialise against a 1.32.0
+core, the mismatch a host with cuBLAS 12 is in - it is `But no dependency issue
+could be determined. (Error 1114: eine DLL-Initialisierungsroutine ist
+fehlgeschlagen)`. The session falls back to the CPU and says so in the label; the
+suite exits 1 only because its CUDA gate refuses a CPU fallback. That is why the
+V2 stage line prints the whole status text: the label's shortened message stops at
+the path and never reaches the reason.
+
 **Two behaviour facts the run produced**, both now part of the path. A second
 registration in the same environment is an *error*, not a no-op: registering per
 session made the second of two identical instances fall back to the CPU, and the
