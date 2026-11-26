@@ -1096,10 +1096,14 @@ that returns 262144 values, and the unregister (**[V]**,
 [`../evidence/2026-11-26-windows/ep-register-probe.log`](../evidence/2026-11-26-windows/ep-register-probe.log)).
 The staged bisect the backlog row asked for is three invocations of the same
 probe: `--stop 2` is registration alone, `--stop 3` adds the device list,
-`--stop 6` adds the append. What is left is a difference between the two
-processes - the plug-in loads its private core as `onnxruntime-ofx.dll` and
-preloads the CUDA groups before registering, the probe does neither - and that is
-what the row now names.
+`--stop 6` adds the append. The two differences the row then named are switches,
+and neither changes the outcome: `--private-core` loads a copy of the core under
+the plug-in's name and resolves the api from that module (both report 1.32.0),
+`--preload` loads cudart 13, cuBLAS 13, cuBLASLt 13, cuFFT 12 and cuDNN 9 before
+the registration, and all four combinations run to `all steps completed`, with
+each stage green on its own (**[V]**, same log). So the trigger is not the api,
+not the rename and not the preload order - it is in the plug-in's own code path,
+which is what the row now asks for.
 
 **The third question is about the model, not the API.** A runtime can keep every
 entry point and still change a fusion, an ordering or a rounding, and the only

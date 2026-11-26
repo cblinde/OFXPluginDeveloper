@@ -16,10 +16,18 @@
 //
 // Usage:
 //     ep_register_probe <model.onnx> <provider.dll> [--stop N]
+//                       [--private-core <onnxruntime.dll copy>] [--preload <dll>]...
 //
 // Every step prints before it runs and the result after it, flushed, so a crash
 // names its own step: registration alone is `--stop 2`, the device list
 // `--stop 3`, the append `--stop 6`.
+//
+// The plug-in differs from this process in two ways, and both are switches so
+// they can be added one at a time: `--private-core` loads a copy of the core
+// under the name the plug-in gives it and resolves the api from that module,
+// `--preload` loads a library (a CUDA group) before the registration and can be
+// repeated. Setup lines print outside the step numbering, so `--stop N` keeps its
+// meaning whichever switches are on.
 //
 // Reads: the model and the provider library. Writes: nothing.
 
@@ -28,6 +36,8 @@
 #  define NOMINMAX
 #endif
 #include <windows.h>
+
+#include <onnxruntime_c_api.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -87,19 +97,61 @@ std::wstring Wide(const std::string& text)
 int main(int argc, char** argv)
 {
     if (argc < 3) {
-        std::printf("usage: ep-register-probe <model.onnx> <provider.dll> [--stop N]\n");
+        std::printf("usage: ep-register-probe <model.onnx> <provider.dll> [--stop N]\n"
+                    "                         [--private-core <onnxruntime.dll copy>]\n"
+                    "                         [--preload <dll>]...\n");
         return 2;
     }
     const std::string model = argv[1];
     const std::string provider = argv[2];
-    for (int index = 3; index + 1 < argc; ++index) {
-        if (std::strcmp(argv[index], "--stop") == 0) {
+    std::string privateCorePath;
+    std::vector<std::string> preloads;
+    for (int index = 3; index < argc; ++index) {
+        if (std::strcmp(argv[index], "--stop") == 0 && index + 1 < argc) {
             stopAfter = std::atoi(argv[index + 1]);
+            ++index;
+        } else if (std::strcmp(argv[index], "--private-core") == 0 && index + 1 < argc) {
+            privateCorePath = argv[++index];
+        } else if (std::strcmp(argv[index], "--preload") == 0 && index + 1 < argc) {
+            preloads.push_back(argv[++index]);
         }
     }
 
-    api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
-    std::printf("OrtApi version %d from %s\n", ORT_API_VERSION, OrtGetApiBase()->GetVersionString());
+    // The plug-in's two differences from this probe, each switchable so they can
+    // be added one at a time: it loads a private copy of the core named
+    // onnxruntime-ofx.dll and resolves the api from *that* module, and it preloads
+    // the CUDA groups before it registers the provider. Setup lines are printed
+    // outside the step numbering, so `--stop 2` still means "registration alone".
+    const OrtApiBase* apiBase = nullptr;
+    if (!privateCorePath.empty()) {
+        HMODULE core = LoadLibraryW(Wide(privateCorePath).c_str());
+        std::printf("setup: private core %s -> %s\n", privateCorePath.c_str(),
+                    core ? "loaded" : "NOT loaded");
+        if (core == nullptr) {
+            std::printf("        GetLastError %lu\n", GetLastError());
+            return 1;
+        }
+        using GetApiBase = const OrtApiBase*(*)(void);
+        const auto entry = reinterpret_cast<GetApiBase>(GetProcAddress(core, "OrtGetApiBase"));
+        if (entry == nullptr) {
+            std::printf("        the copy has no OrtGetApiBase\n");
+            return 1;
+        }
+        apiBase = entry();
+        const std::string linked = OrtGetApiBase()->GetVersionString();
+        std::printf("        private core reports %s, the linked one %s\n",
+                    apiBase->GetVersionString(), linked.c_str());
+    } else {
+        apiBase = OrtGetApiBase();
+    }
+    for (const std::string& dll : preloads) {
+        HMODULE module = LoadLibraryExW(Wide(dll).c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        std::printf("setup: preload %s -> %s\n", dll.c_str(), module ? "ok" : "failed");
+    }
+    std::fflush(stdout);
+
+    api = apiBase->GetApi(ORT_API_VERSION);
+    std::printf("OrtApi version %d from %s\n", ORT_API_VERSION, apiBase->GetVersionString());
     std::printf("provider library: %s\n\n", provider.c_str());
     std::fflush(stdout);
 
