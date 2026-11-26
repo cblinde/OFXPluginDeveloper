@@ -380,6 +380,44 @@ access and leaks **[D]**. It is slow — run it on 256×256, not 4K.
 
 ---
 
+## 6. OpenVINO against the CPU provider, measured here
+
+A published comparison reports OpenVINO running a detection model 1.77 to 3.51
+times faster than ONNX Runtime (**B**). Rule 3 says such a number is reproduced on
+the machine in front of you or not written down, so here is the reproduction, and
+it does not go the same way.
+
+Method (`tools/bench_openvino.py`, `../evidence/2026-11-26-linux/openvino-bench.log`):
+the committed `test_conv.onnx` from the inference template, a generated
+1920x1080 float32 frame, the same thread count for both runtimes, three warm-up
+runs discarded, ten measured, median and p90. One-off costs are reported
+separately, because OpenVINO compiles the graph while ONNX Runtime builds a
+session in milliseconds.
+
+| Threads | ONNX Runtime 1.32.0 CPU | OpenVINO 2026.4.1 CPU | Ratio |
+| --- | --- | --- | --- |
+| 2 (all cores this container has) | **15.80 ms** median, p90 16.20 | **30.77 ms** median, p90 31.08 | **OpenVINO 1.95x slower** |
+| 1 | **21.90 ms** median, p90 22.17 | **25.11 ms** median, p90 25.33 | **OpenVINO 1.15x slower** |
+
+Machine: AMD Ryzen 7 3800X, Linux 7.0.0, **2 CPUs** visible to the process. The
+one-off costs: ONNX Runtime session 2-3 ms, OpenVINO compile 380-465 ms.
+
+What the table says, and what it does not:
+
+- On this machine and this graph the ordering is the opposite of the published
+  claim: ONNX Runtime is faster both with one thread and with two. The published
+  number is not wrong - it is a different CPU, a different model and a different
+  conversion path, and none of that is reproduced here.
+- OpenVINO got **slower** when given the second core (25.1 to 30.8 ms) while
+  ONNX Runtime got faster (21.9 to 15.8 ms). On two vCPUs its thread pool costs
+  more than it buys; that is a property of the setting, not of the engine.
+- This is the pessimistic case for OpenVINO by construction: its CPU plugin is
+  tuned for Intel, and the machine is an AMD. A verdict about "OpenVINO on this
+  class of hardware" would need an Intel box and a real detection network.
+- Not measured: OpenVINO as an **execution provider inside ONNX Runtime**
+  (`onnxruntime-openvino`), which is the shape a plug-in would actually ship,
+  and which is a different question from "OpenVINO's own runtime".
+
 ## Provenance labels
 
 Tags in this document mean exactly what they meant in the document it came from:

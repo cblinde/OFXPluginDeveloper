@@ -1,0 +1,21 @@
+$ python3 tools/bench_openvino.py templates/onnx-inference-ofx/models/test_conv.onnx --size 1920x1080 --iterations 10 --warmup 3 --threads 2
+machine : AMD Ryzen 7 3800X 8-Core Processor, Linux 7.0.0-38-generic, 2 CPU(s)
+model   : templates/onnx-inference-ofx/models/test_conv.onnx
+frame   : 3x1080x1920 float32 (24.9 MB), 10 runs after 3 warm-up
+
+runtime         median       p90       min       max   detail
+ONNX Runtime    16.04ms    16.18ms    15.76ms    16.30ms   session 3 ms (one-off)
+OpenVINO        30.84ms    31.51ms    29.35ms    31.73ms   compile 467 ms (one-off)
+
+OpenVINO / ONNX Runtime on the median frame: 1.92x
+
+$ ... --threads 1
+machine : AMD Ryzen 7 3800X 8-Core Processor, Linux 7.0.0-38-generic, 2 CPU(s)
+model   : templates/onnx-inference-ofx/models/test_conv.onnx
+frame   : 3x1080x1920 float32 (24.9 MB), 10 runs after 3 warm-up
+
+runtime         median       p90       min       max   detail
+ONNX Runtime    22.43ms    23.10ms    22.17ms    26.20ms   session 2 ms (one-off)
+OpenVINO        26.41ms    26.48ms    26.23ms    26.52ms   compile 403 ms (one-off)
+
+OpenVINO / ONNX Runtime on the median frame: 1.18x

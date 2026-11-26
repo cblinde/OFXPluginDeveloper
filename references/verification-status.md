@@ -270,6 +270,7 @@ Every line below came out of that run; the logs are in
 | Reference plug-in | `templates/minimal-ofx/test/run-tests.sh` | build, artifact and contract: 118 checks, 0 failed **[V]** |
 | CUDA template, CPU path | `CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | 144 checks, 0 failed; memcheck skipped, no valgrind **[V]** |
 | Inference template | `ONNXRUNTIME_ROOT=… ./build.sh`, then `test/run-tests.sh` | 168 checks per host profile plus 90 on the tiled pass, 0 failed **[V]** |
+| OpenVINO against the CPU provider | `python3 tools/bench_openvino.py … --size 1920x1080 --threads 2` and `--threads 1` | ONNX Runtime 1.32.0 15.80 / 21.90 ms median, OpenVINO 2026.4.1 30.77 / 25.11 ms, AMD Ryzen 7 3800X with 2 CPUs - OpenVINO slower, so the published 1.77-3.51x claim is not reproduced here (`performance-model.md` §6) **[V]** |
 | OFX 1.5.1 capability properties | inside the contract: both descriptor strings, plus a render with the thumbnail and no-spatial-awareness hints | declared `"true"` in all three templates and the frame is unchanged, 0 failed; the negative-control stubs declare them too, so a control still fails for its own fault ([`v151-properties.log`](../evidence/2026-11-26-linux/v151-properties.log)) **[V]** |
 | Whole gate | `CPU_ONLY=1 ./run-tests.sh` | exit 0; the headline names the one hole, `NOT RUN: GPU kernels (CPU_ONLY)` **[V]** |
 | Negative controls | inside the gate: `testkit/run-negative-controls.sh` | every control's fault was caught (the `1 failed` lines in the log are the controls asserting failure) **[V]** |
