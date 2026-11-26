@@ -91,6 +91,31 @@ All of these run without a GPU and without a host. They live in the template's
 | Static analysis | `./test/run-analysis.sh` | cppcheck and shellcheck report nothing unresolved over the template's sources, `test/` and its scripts; every template has the script and `REQUIRE_ANALYSIS=1` makes a missing tool fatal. |
 | ABI | `nm -D --defined-only <bundle>/*.ofx \| grep ' T '` | Exactly two dynamic exports (see [D2](#d-hosts-and-packaging)). |
 
+### Every cppcheck suppression, and why
+
+`run-analysis.sh` runs cppcheck with `--inline-suppr`, so a suppression in the
+code is a claim this repository makes: "this finding is the API, not a defect".
+A suppression nobody wrote down is indistinguishable from a defect somebody hid,
+which is why every one of them is listed here with the line it sits on and the
+reason it is there. There is no blanket suppression anywhere: the `--suppress=`
+flags in the scripts cover only headers absent from the machine
+(`missingInclude`), never a check.
+
+| Where | Suppression | Why that is the API and not a defect |
+|---|---|---|
+| `templates/onnx-inference-ofx/src/AiCore.cpp:16`, `:22` | `invalidPointerCast` | `RowOf` walks a row through OFX's `void*` plus `kOfxImagePropRowBytes`; the clip is float32 RGBA, which is the format `describe()` advertises, so the byte pointer addresses floats by contract. |
+| `templates/onnx-inference-ofx/src/AiCore.cpp:42` | `constParameterPointer` | cppcheck's false positive: `UnpackRGB` writes RGB through `rgba` via `RowOf`, but the helper it calls takes the pointer as `const`, so the parameter reads as write-only-never. The alpha component is untouched on purpose (packing keeps the host's alpha). |
+| `templates/onnx-inference-ofx/src/Plugin.cpp:88`, `:90` | `invalidPointerCast` | The alpha pass-through addresses one source and one destination row the same way: byte pointer, float32 clip. |
+| `templates/onnx-inference-ofx/src/Plugin.cpp:336`, `:340`, `:360` | `invalidPointerCast` | The render path hands `RunWhole`/`RunTiled` the input plane and `UnpackRGB` the destination the same way - `kOfxImagePropData` is bytes, the clip format is float32, and the tiled branch is the same contract as the whole-frame branch. |
+| `templates/onnx-inference-ofx/test/ai_pipeline_test.cpp:62` | `invalidPointerCast` | `RowPtr` reads the synthetic frame through a signed byte stride, reproducing what a host gives the plug-in; assuming a packed `float*` instead would test a different program. |
+| `templates/onnx-inference-ofx/test/ai_pipeline_test.cpp:106` | `invalidPointerCast` | The bottom-up fixture (negative stride, first image row at the highest address) writes through the same kind of row pointer, so the harness walks the image the way the host laid it out. |
+| `templates/minimal-cuda-ofx/test/kernel_equivalence.cpp:72`, `:75` | `invalidPointerCast` | `asFloat` in the harness: every fixture is byte-addressed with the plug-in's own row stride - 16-byte aligned, or deliberately offset by 4 - so the comparison is between the same two programs, and the offset cases never take the vector path. |
+
+A suppression that stops being needed does not fail the run - cppcheck says
+nothing about an inline suppression that matched nothing - so the list above is
+also the review surface: when the code under one of these lines changes, the row
+is what tells a reviewer whether the reason still holds.
+
 Each gate also prints the reason it skipped if a tool is missing, so a green run
 with no tool installed cannot be mistaken for a green run with it.
 

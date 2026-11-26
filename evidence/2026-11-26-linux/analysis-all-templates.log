@@ -102,3 +102,9 @@ $ # the static-analysis step as linux.yml runs it, word for word
   
   static analysis: clean
   exit=0
+
+$ # re-run after the suppression table went into checklists.md (the scripts changed in comments only)
+  minimal-ofx: static analysis: clean
+  minimal-cuda-ofx: static analysis: clean
+  onnx-inference-ofx: static analysis: clean
+  exit=0

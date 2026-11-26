@@ -15,8 +15,10 @@
 # A missing tool is reported and skipped so this stays usable on a bare machine;
 # set REQUIRE_ANALYSIS=1 to make a missing tool fatal (what CI should do).
 #
-# Intentional suppressions are inline, next to the code, and each one names its
-# reason. They are tabulated in references/checklists.md.
+# Intentional suppressions are inline, next to the code they cover, and the
+# reason for each one is tabulated in references/checklists.md section 2.
+# Nothing else is suppressed: the --suppress flags above cover headers that
+# are not on this machine, never a check.
 
 set -euo pipefail
 
