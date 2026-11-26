@@ -110,8 +110,14 @@ own `onnxruntime.dll` (**[V]**,
   (`item.AddFusionComp()`) holds only `MediaIn`/`MediaOut` - `AddTool` refuses the
   plug-in under each identifier tried, and no frame was rendered from it (**[V]**,
   [`resolve-fusion-path.log`](../evidence/2026-11-26-windows/resolve-fusion-path.log)).
-  A device render in this host needs a project that already carries the parameter
-  value, so "uses Resolve's own cuDNN" is not claimed here. Neither does a module
+  **A prepared project cannot supply that value either.** A `.drp` exported here is
+  a ZIP whose timeline item carries an empty `<EffectFiltersBA/>` although the live
+  project holds the effect, so `ExportProject` drops applied effects and the file
+  cannot carry `modelPath`; `SaveProject` is not callable in 21.2 to change that
+  order, and the field that would hold the parameters is a hex blob (**[V]**,
+  [`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)).
+  A device render in this host needs a project made in the GUI inspector, so "uses
+  Resolve's own cuDNN" is not claimed here. Neither does a module
   list help settle it on its own: the host loads its own `onnxruntime.dll`, so
   `tasklist /M` names a runtime whether or not the plug-in ever created a session.
 

@@ -140,11 +140,19 @@ def validate(args):
     if args.expect_gain is not None and not args.reference:
         problems.append("--expect-gain needs --reference to scale")
 
-    if args.resolve:
-        executable = Path(args.resolve)
+    # `run` reads facts["resolve"] unconditionally. Setting it only when --resolve
+    # was passed made every other run - the --project mode included - die with a
+    # KeyError after the bundle was already installed; RESOLVE_EXE is the
+    # documented fallback, and a missing value is a validation problem people can
+    # read rather than a key that is not there.
+    executable = Path(args.resolve) if args.resolve else (
+        Path(os.environ["RESOLVE_EXE"]) if os.environ.get("RESOLVE_EXE") else None)
+    if executable is not None:
         facts["resolve"] = str(executable)
         if not executable.is_file():
             problems.append(f"no Resolve executable at {executable}")
+    else:
+        problems.append("no Resolve executable: pass --resolve or set RESOLVE_EXE")
 
     return problems, facts
 
@@ -287,8 +295,12 @@ def run(args, report):
         step(report, "launch", "pass", f"pid {process.pid}", time.monotonic() - started)
 
         started = time.monotonic()
+        # --project loads its own project, and a host with no last project answers
+        # nothing while it waits on the project manager; --build-project creates
+        # one and does not care whether one was open.
         resolve = resolve_api.connect(timeout=args.timeout, executable=facts["resolve"],
-                                      process=process)
+                                      process=process,
+                                      require_project=bool(args.build_project))
         step(report, "connect", "pass",
              f"{resolve.GetProductName()} {resolve.GetVersionString()}",
              time.monotonic() - started)
@@ -302,6 +314,7 @@ def run(args, report):
              "; ".join(api_lines) or "the host logged no compute API line",
              time.monotonic() - started)
 
+        render_size = None
         if args.build_project:
             started = time.monotonic()
             project_name = args.timeline_name
@@ -322,7 +335,20 @@ def run(args, report):
         elif args.project:
             started = time.monotonic()
             project = resolve_api.load_project(resolve, args.project)
-            step(report, "load", "pass", Path(args.project).name, time.monotonic() - started)
+            # The size comes from the project, not from a still this run read. When
+            # the host will not state it, `size` stays None and the render uses the
+            # project's own format - the alternative, an undefined name, is what
+            # this branch would have hit the first time it ran at all.
+            try:
+                timeline = project.GetCurrentTimeline()
+                width = int(timeline.GetSetting("timelineFrameWidth"))
+                height = int(timeline.GetSetting("timelineFrameHeight"))
+                render_size = (width, height) if width and height else None
+            except Exception:                       # noqa: BLE001
+                render_size = None
+            step(report, "load", "pass",
+                 f"{Path(args.project).name} {render_size or 'project format'}",
+                 time.monotonic() - started)
 
         started = time.monotonic()
         resolve_api.set_png_output(project, args.out, "poc", mark=1, size=render_size)

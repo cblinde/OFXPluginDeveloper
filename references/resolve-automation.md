@@ -134,11 +134,21 @@ What follows from that, and what does not:
 
 - Varying a parameter means another `.drp`, or a project template plus a scripted
   edit of something the API does expose. Both are acceptable; neither is free.
-- Editing the `.drp` file itself is **not** an option to build on. It is an
-  undocumented container (SQLite or a compressed database depending on version),
-  and a schema change between Resolve versions would corrupt projects silently.
-  If it is ever done, it is a generator that runs once on a known version and
-  whose output is committed and reviewed.
+- Editing the `.drp` file itself is **not** an option to build on, and 2026-11-26
+  measured why it is not even possible: in 21.2 a `.drp` is a ZIP of four XML
+  files, and the timeline item in it carries an **empty** `<EffectFiltersBA/>`
+  although the live project holds the effect - `ExportProject` does not export
+  applied effects at all, in either signature, with or without a save first
+  (`SaveProject` is not callable in this version). What would hold the
+  parameters is a hex blob (`FieldsBlob`), not readable XML (**[V]**,
+  [`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)).
+  So a project that already carries `modelPath` can only be made in the GUI
+  inspector, and a harness can at most load one.
+- Loading one is what `poc.py --project` does, and that mode ran for the first
+  time on 2026-11-26: four defects fell out of it - an undefined `render_size`, a
+  `KeyError` without `--resolve`, a `connect()` that demanded an open project, and
+  a `LoadProject` that refused a relative path. All four are fixed; the load step
+  itself is measured only up to the host's answer.
 - Fusion is the escape hatch worth measuring: `TimelineItem` exposes Fusion comps,
   and Fusion has its own scripting surface. Whether an OFX plug-in applied inside
   Fusion behaves like one applied on the colour page is an open question (§11).

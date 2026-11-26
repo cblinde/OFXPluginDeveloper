@@ -1,0 +1,78 @@
+# Route 2 for backlog row 19: a project that carries modelPath itself.
+#
+# The Fusion route is closed (resolve-fusion-path.log): effect.GetFusionComp()
+# returns None and a comp on the item refuses the OFX node. Route 2 is the other
+# candidate - a .drp that already carries the parameter, loaded with
+# `poc.py --project`, rendered, and compared with the source.
+#
+# Answer: the .drp cannot carry it, and the reason is measured, not assumed.
+
+## 1. what ExportProject writes in Resolve Studio 21.2.0.5
+
+manager.ExportProject(projectName, "/abs/path/modelpath")   -> True
+The result is a ZIP, 27003 bytes:
+
+  project.xml                              18174
+  MediaPool/Master/MpFolder.xml            35847
+  SeqContainer/09a35342-...-d28ca8de.xml    3900
+  Gallery.xml                               8915
+
+## 2. the effect is not in the export
+
+Right before the export, in the same session:
+
+  item.GetEffects("ofx") -> 1 effect, name "ONNX Inference"
+
+In the exported sequence XML the clip carries:
+
+  <EffectFiltersBA/>
+  <ImportExportMetadataBA/>
+
+i.e. an empty effect list. `project.SaveProject` is not callable in this version
+(`TypeError: 'NoneType' object is not callable`), so there is no "save first, then
+export" variant that could write it: the host saves on its own schedule and the
+export still drops the effect.
+
+The fields that would hold the parameters are hex blobs (`FieldsBlob`,
+`EffectFiltersBA`), not readable XML, so hand-writing a value in is not a route
+either - the same conclusion §5 of resolve-automation.md reaches from the
+container side, now with a filename and a size behind it.
+
+## 3. what `poc.py --project` did once it ran
+
+The mode had never run, and running it found four defects, all fixed:
+
+  - `render_size` was only assigned in the --build-project branch, so --project
+    would have died on an undefined name before the first render;
+  - `facts["resolve"]` was set only when --resolve was passed, so any run without
+    it died with `KeyError: 'resolve'` after installing the bundle;
+  - `connect()` demanded an open project, and a host started with -nogui that has
+    no last project sits on the project manager forever - `require_project=False`
+    is the way out (it also stops a second Resolve.exe, which exits at once,
+    counting as a dead host while the first one still answers);
+  - `LoadProject` wants an absolute path: a relative ".validation/drp/saved.drp"
+    that exists is refused ("could not load project"), the same trap
+    SetRenderSettings has with TargetDir.
+
+With those fixed, a run reached: validate, install, launch, connect (35 s),
+gpu ("Compute API set to automatic, defaulting to CUDA"), load -> refused, then
+the absolute-path fix. The runs after that fix did not get a scriptable host
+again in two attempts (300 s and 600 s to the timeout, `-nogui` start), which is
+the known unreliable start, not a result about the .drp.
+
+## 4. conclusion for row 19
+
+Route 2 does not exist on this host: the effect an exported project would have to
+carry is not exported at all, so a .drp made here cannot set modelPath. Producing
+one needs the effect and the parameter typed into the GUI inspector, and even then
+the state lands in a binary blob - which no runner can produce or verify without
+clicking.
+
+What would close row 19 is therefore one of:
+  - a GUI-made .drp on a machine with a display, exported and committed, and a
+    harness that only loads it (the load path is now measured up to LoadProject);
+  - a host whose effect object exposes GetParam/SetParam;
+  - a plug-in default that is not identity - already possible through
+    -DREFERENCE_GAIN_DEFAULT / -DGAIN_DEFAULT for the gain templates, and the
+    reason the ONNX template's GPU path stays unproven is that its default has no
+    such switch.

@@ -74,13 +74,21 @@ def poll_delay(attempt, ceiling=2.0):
     return min(ceiling, 0.1 * (2 ** min(attempt, 6)))
 
 
-def connect(timeout=120, poll=2.0, executable=None, process=None):
-    """Return a Resolve object with a project open, or raise.
+def connect(timeout=120, poll=2.0, executable=None, process=None,
+            require_project=True):
+    """Return a Resolve object, with a project open unless `require_project` is off.
 
     `process` is the host this run started, if any. With it, a host that exits
     before answering fails the call in the next hundred milliseconds instead of
     burning the whole timeout - a start that dies after a second used to look
-    exactly like one that is still loading.
+    exactly like one that is still loading. The check runs *after* the attempt,
+    because a second `Resolve.exe` exits at once while the first one keeps
+    answering: that is an attach, not a failure.
+
+    `require_project=False` is for a caller that loads its own project: a host
+    started with `-nogui` and no last project sits on the project manager, where
+    `GetCurrentProject()` is empty forever and every probe of the scripting API
+    tears the server down instead of attaching.
     """
     api_dir = scripting_api_dir()
     if not api_dir:
@@ -99,10 +107,6 @@ def connect(timeout=120, poll=2.0, executable=None, process=None):
     last_error = None
     attempt = 0
     while time.monotonic() < deadline:
-        if process is not None and process.poll() is not None:
-            raise RuntimeError(
-                f"the host exited (code {process.returncode}) before the scripting "
-                f"API answered; last error: {last_error}")
         try:
             resolve = dvr.scriptapp("Resolve")   # RUN: None until Resolve is up
         except Exception as error:
@@ -110,8 +114,12 @@ def connect(timeout=120, poll=2.0, executable=None, process=None):
             resolve = None
         if resolve:
             manager = resolve.GetProjectManager()          # RUN
-            if manager and manager.GetCurrentProject():    # RUN
+            if manager and (not require_project or manager.GetCurrentProject()):
                 return resolve
+        if process is not None and process.poll() is not None:
+            raise RuntimeError(
+                f"the host exited (code {process.returncode}) and nothing answered "
+                f"the scripting API; last error: {last_error}")
         time.sleep(poll_delay(attempt, poll))
         attempt += 1
     raise TimeoutError(f"no Resolve after {timeout}s (last error: {last_error})")
@@ -136,9 +144,13 @@ def launch(executable, nogui=True, environment=None):
 
 def load_project(resolve, project_path):
     manager = resolve.GetProjectManager()                 # RUN
-    project = manager.LoadProject(str(project_path))      # NOT RUN: no .drp exists here
+    # Absolute: the host resolves a relative path against its own working
+    # directory, not the caller's - the same trap SetRenderSettings has with
+    # TargetDir. Measured 2026-11-26: a relative .drp that exists here is refused.
+    path = Path(project_path).resolve()
+    project = manager.LoadProject(str(path))              # RUN 2026-11-26
     if not project:
-        raise RuntimeError(f"could not load project: {project_path}")
+        raise RuntimeError(f"could not load project: {path}")
     return project
 
 

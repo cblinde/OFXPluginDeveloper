@@ -80,8 +80,16 @@ GPU with a display attached. `RESOLVE_SCRIPT_LIB` can be omitted: it is derived
 from the executable's directory, which is what makes an install on a drive other
 than `C:` work at all.
 
-`--project some.drp` still loads a prepared project instead. It is the mode the
-design assumed and it has **never run**, because no `.drp` has been produced here.
+`--project some.drp` loads a prepared project instead, and the path is now
+measured up to the host's own answer, not past it: on 2026-11-26 a `.drp` was
+exported and loaded, and `LoadProject` refused it until the path was absolute -
+after which the two runs did not get a scriptable host again, so no render came out
+of this mode yet. It needed four fixes first - an undefined `render_size`, a
+`KeyError: 'resolve'` when `--resolve` was omitted, a `connect()` that waited for a
+project the caller was about to load itself, and a relative path `LoadProject`
+refuses. What a `.drp` cannot do is carry the effect: the export writes an empty
+`<EffectFiltersBA/>`, so a prepared project with `modelPath` in it is a GUI artefact
+([`resolve-project-route.log`](../../evidence/2026-11-26-windows/resolve-project-route.log)).
 
 `ExportFrame` - one frame without a render job - has its own measurement.
 `tests/resolve/export_frame.py` builds the same project, renders one frame
