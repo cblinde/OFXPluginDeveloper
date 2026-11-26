@@ -497,6 +497,33 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     set(_cuda_files "${_cuda_provider}" "${_cuda_shared}" ${_cuda_cudnn_list}
                     "${_cuda_cublas}" "${_cuda_cublaslt}" "${_cuda_cufft}"
                     "${_cuda_cudart}")
+    # One entry per file the bundle will hold, decided by its NAME - because that
+    # is what the copy uses as the target. The known way to get two: a caller
+    # directory spelled differently from one the search adds itself (`.../bin` vs
+    # `.../BIN`, which are one directory on Windows), so each glob returns the same
+    # library under a second path string. copy_if_different skipped the repeat, the
+    # count did not: passing `.../LIB;.../BIN` made the same configure report 26
+    # files, 2115 MB for a bundle that holds 16 CUDA files and 1540 MB, and that
+    # number is what a size decision is made on. A plain path de-duplication is
+    # not enough here - the two strings differ.
+    set(_cuda_unique)
+    set(_cuda_names)
+    foreach(_cuda_entry IN LISTS _cuda_files)
+      if(NOT _cuda_entry)
+        continue()
+      endif()
+      get_filename_component(_cuda_entry_name "${_cuda_entry}" NAME)
+      set(_cuda_key "${_cuda_entry_name}")
+      if(WIN32)
+        string(TOLOWER "${_cuda_key}" _cuda_key)
+      endif()
+      list(FIND _cuda_names "${_cuda_key}" _cuda_already)
+      if(_cuda_already EQUAL -1)
+        list(APPEND _cuda_names "${_cuda_key}")
+        list(APPEND _cuda_unique "${_cuda_entry}")
+      endif()
+    endforeach()
+    set(_cuda_files "${_cuda_unique}")
     foreach(_file IN LISTS _cuda_files)
       if(NOT _file)
         continue()
