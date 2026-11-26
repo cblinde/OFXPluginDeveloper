@@ -286,6 +286,14 @@ if [[ "${windows}" == "1" ]]; then
   echo "== test: minimal-cuda-ofx (build, artifact, contract) =="
   cmd //c "$(cygpath -w "${ROOT}/templates/minimal-cuda-ofx/test/run-tests.bat")" Release
 
+  echo
+  echo "== test: minimal-opencl-ofx (build, artifact, contract, OpenCL suite) =="
+  # Exit 2 means "no OpenCL device on this machine", which the runner prints as
+  # NOT A PASS. It is not a build failure, so the run continues and the summary
+  # carries the distinction instead of the exit code deciding it.
+  cmd //c "$(cygpath -w "${ROOT}/templates/minimal-opencl-ofx/test/run-tests.bat")"
+  opencl_win=$?
+
   if [[ "${onnx}" == "1" ]]; then
     echo
     echo "== build + test: onnx-inference-ofx =="
@@ -312,11 +320,18 @@ if [[ "${windows}" == "1" ]]; then
   echo "  docs drift check                (tools/check-docs.py, incl. the ONNX Runtime pin)"
   echo "  reference build + artifact      (minimal-ofx, dumpbin)"
   echo "  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)"
-  # The one template this branch cannot touch: its suite is POSIX-only (dlopen,
-  # g++) and there is no .bat runner. Saying so is the point - the summary used
-  # to imply every built template had been tested, and a template that stops
-  # building on Windows would have gone unnoticed behind that sentence.
-  echo "  NOT RUN: minimal-opencl-ofx     (no .bat runner: that suite is POSIX-only)"
+  # All four templates now have a .bat runner: the OpenCL one loads its module
+  # with LoadLibraryA and the driver's OpenCL.dll where the POSIX script uses
+  # dlopen and libOpenCL.so.1, so the suite that used to be named "POSIX-only"
+  # runs here too - against a real device, or as a named NOT A PASS when the
+  # machine has none.
+  if [[ "${opencl_win:-0}" == "0" ]]; then
+    echo "  OpenCL device suite             (minimal-opencl-ofx, contract_test + opencl_suite)"
+  elif [[ "${opencl_win:-0}" == "2" ]]; then
+    echo "  NOT RUN: OpenCL device suite    (minimal-opencl-ofx: no OpenCL device)"
+  else
+    echo "  FAILED: OpenCL device suite     (minimal-opencl-ofx, exit ${opencl_win})"
+  fi
   if [[ "${gpu_mode}" == "CUDA" ]]; then
     echo "  GPU kernels                     (as test/run-tests.bat reported above)"
   else
@@ -334,6 +349,9 @@ if [[ "${windows}" == "1" ]]; then
   report_skipped_onnx
   report_skipped_gpu
   require_onnx_in_ci
+  # 2 is "no device on this machine", which the summary already names; anything
+  # else non-zero is a failed suite and has to leave the script red.
+  [[ "${opencl_win:-0}" == "0" || "${opencl_win:-0}" == "2" ]] || exit 1
   exit 0
 fi
 

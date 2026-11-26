@@ -1,0 +1,71 @@
+# The OpenCL template's suite on Windows, 2026-11-26.
+#
+# Until this run the template had no Windows path at all: src/ClRuntime.cpp and
+# test/opencl_suite.cpp loaded with dlopen and named libOpenCL.so.1, and
+# run-tests.sh printed "NOT RUN: minimal-opencl-ofx (no .bat runner: that suite is
+# POSIX-only)". Both now have a _WIN32 branch (LoadLibraryA("OpenCL.dll") +
+# GetProcAddress) and the template has build.bat and test/run-tests.bat.
+#
+# Machine: Windows, MSVC 14.50.35717 (VS 18 BuildTools), driver-provided OpenCL.
+# Command: cmd /c templates\minimal-opencl-ofx\test\run-tests.bat
+
+## 1. the artifact
+
+  Z:\...\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
+  dumpbin: ...\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    KERNEL32.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+
+No OpenCL import library and no SDK: the entry points are resolved at run time,
+which is the same shape the Linux build has with dlopen.
+
+## 2. the host protocol, CPU path (kOfxImageEffectPropOpenCLEnabled = 0)
+
+  [3/5] the host protocol, on the CPU path (3 profiles)
+    host profile: nuke / resolve / natron
+  contract_test: 118 checks, 0 failed      (nuke)
+  contract_test: 118 checks, 0 failed      (resolve)
+  contract_test: 118 checks, 0 failed      (natron)
+
+## 3. the device suite
+
+  [1/8] loading ...\OpenCLGain.ofx
+  [2/8] opening an OpenCL device for the host to hand over
+    platform: NVIDIA CUDA
+    device  : NVIDIA GeForce RTX 3060 (OpenCL 3.0 CUDA)
+  [3/8] the CPU path, with the host offering no device
+    ok 13 - no device buffer was written while OpenCL was off
+  [4/8] the same render with the device enabled
+    ok 14 - the host re-opened the device
+    ok 17 - the device frame is the source times two, bit for bit (max delta 0.000000)
+  [7/8] a negative row pitch is refused, not walked backwards
+    ok 36 - the refusal wrote nothing into the device buffer
+  [8/8] the host destroys the instance and unloads the plug-in
+    ok 37 - kOfxActionDestroyInstance answered kOfxStatOK
+    ok 38 - kOfxActionUnload answered kOfxStatOK
+  opencl_suite: 38 checks, 0 failed
+
+## 4. what this run does not cover
+
+  [6/6] valgrind memcheck
+    skipped: no valgrind on Windows. The POSIX script runs both binaries under
+    memcheck; this run does not, and says so instead of implying it did.
+
+- No memcheck on Windows, so definite leaks are not checked here.
+- Device throughput is not measured: the suite checks pixels and refusals, not
+  speed, and an RTX 3060 through the driver's OpenCL is not a measurement of any
+  other device.
+- The suite ran with the driver's ICD registered in the system. A machine without
+  an ICD is the exit-2 branch ("no OpenCL device on this machine: the suite did
+  not run (not a pass)"), which this run did not exercise.
+
+Exit status: 0.

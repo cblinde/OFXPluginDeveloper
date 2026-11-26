@@ -1,8 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "ClRuntime.h"
 
+#if defined(_WIN32)
+// windows.h defines min/max as macros, which breaks std::max in this
+// file; NOMINMAX is the documented way out and costs nothing here.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -74,8 +84,16 @@ struct Api {
 template <typename T>
 bool symbol(void* handle, const char* name, T& out)
 {
+#if defined(_WIN32)
+    // GetProcAddress answers a FARPROC, which is not a void* on a 32-bit build;
+    // going through a pointer-sized integer keeps reinterpret_cast legal on both.
+    const void* const found = reinterpret_cast<const void*>(
+        reinterpret_cast<std::uintptr_t>(::GetProcAddress(static_cast<HMODULE>(handle), name)));
+    if (found == nullptr) return false;
+#else
     const void* const found = dlsym(handle, name);
     if (found == nullptr) return false;
+#endif
     std::memcpy(&out, &found, sizeof(out));
     return true;
 }
@@ -83,12 +101,26 @@ bool symbol(void* handle, const char* name, T& out)
 bool load(Api* api, std::string* why)
 {
     const char* fromEnv = std::getenv("OPENCL_LOADER_LIB");
+#if defined(_WIN32)
+    // The loader is OpenCL.dll in the system directory - the one every other
+    // OpenCL user in the host's process came through - so the base name alone
+    // reproduces the host's own resolution order instead of pinning a path.
+    const char* path = (fromEnv != nullptr && *fromEnv != '\0') ? fromEnv : "OpenCL.dll";
+    api->handle = ::LoadLibraryA(path);
+    if (api->handle == nullptr) {
+        char code[48];
+        std::snprintf(code, sizeof(code), " (error %lu)", ::GetLastError());
+        *why = std::string("LoadLibrary(") + path + "): " + code;
+        return false;
+    }
+#else
     const char* path = (fromEnv != nullptr && *fromEnv != '\0') ? fromEnv : "libOpenCL.so.1";
     api->handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (api->handle == nullptr) {
         *why = std::string("dlopen(") + path + "): " + dlerror();
         return false;
     }
+#endif
     void* h = api->handle;
     const bool resolved =
         symbol(h, "clGetCommandQueueInfo", api->GetCommandQueueInfo) &&
@@ -101,7 +133,13 @@ bool load(Api* api, std::string* why)
         symbol(h, "clReleaseKernel", api->ReleaseKernel) &&
         symbol(h, "clReleaseProgram", api->ReleaseProgram);
     if (!resolved) {
+#if defined(_WIN32)
+        char code[48];
+        std::snprintf(code, sizeof(code), " (error %lu)", ::GetLastError());
+        *why = std::string("the loader has no OpenCL 1.2 entry point") + code;
+#else
         *why = std::string("the loader has no OpenCL 1.2 entry point: ") + dlerror();
+#endif
         return false;
     }
     return true;

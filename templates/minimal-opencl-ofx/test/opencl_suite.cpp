@@ -25,10 +25,20 @@
 // Exit status: 0 all checks passed, 1 a check failed, 2 no OpenCL device (the
 // suite did not run - say so, do not call it a pass).
 
+#if defined(_WIN32)
+// windows.h defines min/max as macros, which breaks std::max in this
+// file; NOMINMAX is the documented way out and costs nothing here.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -41,6 +51,39 @@
 #include "fake_host.h"
 
 namespace {
+
+// Loading the module under test is the one platform-specific step here: POSIX
+// dlopen/dlsym versus LoadLibraryA/GetProcAddress. The OpenCL side is already
+// portable through testkit/cl_host.h, so only these three helpers are guarded.
+void* loadModule(const char* path)
+{
+#if defined(_WIN32)
+    return ::LoadLibraryA(path);
+#else
+    return dlopen(path, RTLD_NOW | RTLD_LOCAL);
+#endif
+}
+
+void* moduleSymbol(void* module, const char* name)
+{
+#if defined(_WIN32)
+    return reinterpret_cast<void*>(
+        reinterpret_cast<std::uintptr_t>(::GetProcAddress(static_cast<HMODULE>(module), name)));
+#else
+    return dlsym(module, name);
+#endif
+}
+
+std::string moduleError(const char* path)
+{
+#if defined(_WIN32)
+    return std::string("LoadLibrary(") + path + ") failed, error " +
+           std::to_string(::GetLastError());
+#else
+    const char* message = dlerror();
+    return message != nullptr ? std::string(message) : std::string("dlopen failed");
+#endif
+}
 
 int gChecks = 0;
 int gFailed = 0;
@@ -141,13 +184,13 @@ int main(int argc, char** argv)
     const char* path = argv[1];
 
     std::printf("[1/8] loading %s\n", path);
-    void* lib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    void* lib = loadModule(path);
     if (lib == nullptr) {
-        std::fprintf(stderr, "FAIL: dlopen: %s\n", dlerror());
+        std::fprintf(stderr, "FAIL: %s\n", moduleError(path).c_str());
         return 1;
     }
-    auto count = reinterpret_cast<int (*)()>(dlsym(lib, "OfxGetNumberOfPlugins"));
-    auto get = reinterpret_cast<OfxPlugin* (*)(int)>(dlsym(lib, "OfxGetPlugin"));
+    auto count = reinterpret_cast<int (*)()>(moduleSymbol(lib, "OfxGetNumberOfPlugins"));
+    auto get = reinterpret_cast<OfxPlugin* (*)(int)>(moduleSymbol(lib, "OfxGetPlugin"));
     if (count == nullptr || get == nullptr) {
         std::fprintf(stderr, "FAIL: the module does not export the two OFX entry points\n");
         return 1;
