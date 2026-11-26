@@ -293,11 +293,11 @@ hosts disagree, and the disagreement is dumped: `openfx-misc`'s
 Nuke 10 as API 1.2 with tiles and temporal access. Three profiles now present
 three shapes:
 
-| `--host-profile` | tiles | multi-resolution | temporal access | background | from |
-|---|---|---|---|---|---|
-| `nuke` (default) | 1 | 1 | 1 | 0 | the dumped Nuke shape: a full host with a UI |
-| `resolve` | 0 | 0 | 0 | 0 | the dumped Resolve Lite 16 shape: no tiles, and the free version has no temporal access either |
-| `natron` | 1 | 1 | 1 | 1 | `NatronRenderer`: a background renderer, `kOfxImageEffectHostPropIsBackground=1`, no UI to talk to |
+| `--host-profile` | API | tiles | multi-resolution | temporal access | background | from |
+|---|---|---|---|---|---|---|
+| `nuke` (default) | 1.2 | 1 | 1 | 1 | 0 | the dumped Nuke 10 shape: a full host with a UI |
+| `resolve` | 1.4 | 0 | 0 | 0 | 0 | the dumped Resolve Lite 16 shape: no tiles, and the free version has no temporal access either |
+| `natron` | 1.5 | 1 | 1 | 1 | 1 | `NatronRenderer`: a background renderer, `kOfxImageEffectHostPropIsBackground=1`, no UI to talk to |
 
 Every suite runs the contract once per profile, because OFX allows one host per
 process - `OfxSetHost` ignores every call after the first, so the second shape is
@@ -305,11 +305,14 @@ a second process, not a second flag. Only the capabilities the plug-in reads
 change; every window, RoI and pixel check is the same in every run, because a
 host with `supportsTiles=0` still renders a window smaller than the frame when
 its own region of definition is smaller. A run prints which shape it presented,
-and the harness asserts that all four properties reached the property set before
-it judges anything else: a profile that half-applied would turn every later
-failure into a plug-in accusation. The API version the fake host reports stays
-1.5 in all three, so a plug-in that branches on the host's API number is not
-covered - the dumps say 1.2 and 1.4.
+and the harness asserts that every property the shape carries reached the
+property set - the four booleans and the API version - before it judges anything
+else: a profile that half-applied would turn every later failure into a plug-in
+accusation. The API version is a shape field for that reason: the dumps give
+Nuke 10 1.2 and Resolve Lite 16 1.4, so a plug-in that branches on the number now
+meets both instead of meeting 1.5 three times. `natron` keeps 1.5 because
+`README-hosts.txt` has no dump for it - a gap in the evidence, stated rather than
+filled with a guess.
 
 **A reference per platform, a tolerance per reference.** A single
 `--golden-tolerance` on the command line is one global decision, so every

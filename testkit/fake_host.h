@@ -67,6 +67,12 @@ enum class HostProfile { Nuke, Resolve, Natron };
 struct HostShape {
   const char* key;      // the --host-profile value
   const char* label;    // kOfxPropLabel
+  // kOfxPropAPIVersion, from the host's own dump where one exists: Resolve Lite
+  // 16 reports 1.4 and Nuke 10 reports 1.2, and a plug-in that branches on the
+  // number has to meet both. Natron's dump is not in README-hosts.txt, so its
+  // profile keeps the level this harness was written against.
+  int apiMajor;
+  int apiMinor;
   bool tiles;           // kOfxImageEffectPropSupportsTiles
   bool multiResolution; // kOfxImageEffectPropSupportsMultiResolution
   bool temporalAccess;  // kOfxImageEffectPropTemporalClipAccess
@@ -96,8 +102,10 @@ public:
   bool hostSupportsTiles() const;
   bool hostSupportsMultiResolution() const;
   // A host property as the plug-in reads it through the property suite. Used to
-  // prove the profile reached the property set instead of being assumed.
-  int hostInteger(const char* property) const;
+  // prove the profile reached the property set instead of being assumed. `index`
+  // addresses a two-component property like kOfxPropAPIVersion, which is why the
+  // API version can be asserted whole rather than only its major.
+  int hostInteger(const char* property, int index = 0) const;
 
   // Calls the plug-in's setHost(). Must happen before load().
   void attach(OfxPlugin* plugin);

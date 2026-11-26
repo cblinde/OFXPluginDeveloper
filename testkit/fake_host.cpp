@@ -39,16 +39,22 @@ namespace testkit {
 //            NatronRenderer runs in, and the only host mode that has actually
 //            rendered a bundle here.
 //
-// The API version the host reports is 1.5 in all three. The dumps disagree (1.2
-// for Nuke 10, 1.4 for Resolve), so a plug-in that branches on the host's API
-// number is not covered by any profile - references/testing-layers.md L3 says
-// so, and `references/improvement-backlog.md` keeps it as an open row.
+// The API version is part of the shape, not a constant: the dumps give Nuke 10
+// 1.2 and Resolve Lite 16 1.4, so a plug-in that branches on the host's API
+// number now meets both. Natron has no dump in README-hosts.txt and keeps 1.5,
+// the level this harness was written against; that is a gap in the evidence, not
+// a claim that Natron reports 1.5.
+//
+// What the rows carry, in order: key, label, apiMajor, apiMinor, tiles,
+// multi-resolution, temporal access, background.
 namespace {
 const HostShape kShapes[] = {
-    {"nuke", "Testkit Fake Host (nuke: tiles, multi-resolution)", true, true, true, false},
-    {"resolve", "Testkit Fake Host (resolve: no tiles, no multi-resolution)", false, false,
-     false, false},
-    {"natron", "Testkit Fake Host (natron: tiles, background renderer)", true, true, true, true},
+    {"nuke", "Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2)", 1, 2, true, true,
+     true, false},
+    {"resolve", "Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4)", 1, 4,
+     false, false, false, false},
+    {"natron", "Testkit Fake Host (natron: tiles, background renderer)", 1, 5, true, true, true,
+     true},
 };
 } // namespace
 
@@ -1089,8 +1095,8 @@ void initHostProps(PropSet* s, HostProfile profile) {
   const HostShape& shape = hostShape(profile);
   setString(s, kOfxPropName, 0, "testkit-fake-host");
   setString(s, kOfxPropLabel, 0, shape.label);
-  setInt(s, kOfxPropAPIVersion, 0, 1);
-  setInt(s, kOfxPropAPIVersion, 1, 5);
+  setInt(s, kOfxPropAPIVersion, 0, shape.apiMajor);
+  setInt(s, kOfxPropAPIVersion, 1, shape.apiMinor);
   setInt(s, kOfxPropVersion, 0, 1);
   setInt(s, kOfxPropVersion, 1, 0);
   setInt(s, kOfxPropVersion, 2, 0);
@@ -1466,6 +1472,11 @@ void FakeHost::setHostProfile(HostProfile profile) {
                  shape.temporalAccess ? 1 : 0);
   setHostInteger(&impl_->hostProps, kOfxImageEffectHostPropIsBackground,
                  shape.background ? 1 : 0);
+  // The API version belongs to the shape too. It was a constant when this
+  // function was written, and the contract caught the omission at once: the
+  // resolve run presented `supportsTiles=0` with Nuke's 1.2.
+  setInt(&impl_->hostProps, kOfxPropAPIVersion, 0, shape.apiMajor);
+  setInt(&impl_->hostProps, kOfxPropAPIVersion, 1, shape.apiMinor);
   setString(&impl_->hostProps, kOfxPropLabel, 0, shape.label);
 }
 
@@ -1477,9 +1488,9 @@ bool FakeHost::hostSupportsMultiResolution() const {
   return hostShape(impl_->profile).multiResolution;
 }
 
-int FakeHost::hostInteger(const char* property) const {
+int FakeHost::hostInteger(const char* property, int index) const {
   int value = 0;
-  getInt(const_cast<PropSet*>(&impl_->hostProps), property, 0, &value);
+  getInt(const_cast<PropSet*>(&impl_->hostProps), property, index, &value);
   return value;
 }
 

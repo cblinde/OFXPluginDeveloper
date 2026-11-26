@@ -988,21 +988,31 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     const int hostMultiRes = host.hostInteger(kOfxImageEffectPropSupportsMultiResolution);
     const int hostTemporal = host.hostInteger(kOfxImageEffectPropTemporalClipAccess);
     const int hostBackground = host.hostInteger(kOfxImageEffectHostPropIsBackground);
+    // The API version is a shape field since the dumps disagreed (1.2 for Nuke,
+    // 1.4 for Resolve): a plug-in that branches on it was covered by no profile
+    // at all while every profile reported 1.5.
+    const int hostApiMajor = host.hostInteger(kOfxPropAPIVersion, 0);
+    const int hostApiMinor = host.hostInteger(kOfxPropAPIVersion, 1);
     const int wantTiles = want.tiles ? 1 : 0;
     const int wantMultiRes = want.multiResolution ? 1 : 0;
     const int wantTemporal = want.temporalAccess ? 1 : 0;
     const int wantBackground = want.background ? 1 : 0;
     if (hostTiles != wantTiles || hostMultiRes != wantMultiRes ||
-        hostTemporal != wantTemporal || hostBackground != wantBackground) {
+        hostTemporal != wantTemporal || hostBackground != wantBackground ||
+        hostApiMajor != want.apiMajor || hostApiMinor != want.apiMinor) {
       // A recorded failure, not just a message: the summary line has to say that
       // something failed, or a log would read "0 failed" for a run that stopped.
       if (!check(std::string("host profile '") + want.key + "' reaches the property set", false,
                  "reports supportsTiles=" + std::to_string(hostTiles) +
                      " supportsMultiResolution=" + std::to_string(hostMultiRes) +
                      " temporalClipAccess=" + std::to_string(hostTemporal) +
-                     " isBackground=" + std::to_string(hostBackground) + ", the run asked for " +
+                     " isBackground=" + std::to_string(hostBackground) +
+                     " apiVersion=" + std::to_string(hostApiMajor) + "." +
+                     std::to_string(hostApiMinor) + ", the run asked for " +
                      std::to_string(wantTiles) + "/" + std::to_string(wantMultiRes) + "/" +
-                     std::to_string(wantTemporal) + "/" + std::to_string(wantBackground))) {
+                     std::to_string(wantTemporal) + "/" + std::to_string(wantBackground) +
+                     " api " + std::to_string(want.apiMajor) + "." +
+                     std::to_string(want.apiMinor))) {
         return failCycle(host);
       }
     }
