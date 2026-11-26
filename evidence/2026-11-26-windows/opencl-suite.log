@@ -68,4 +68,15 @@ which is the same shape the Linux build has with dlopen.
   an ICD is the exit-2 branch ("no OpenCL device on this machine: the suite did
   not run (not a pass)"), which this run did not exercise.
 
+## 5. the same step inside ./run-tests.sh (Windows)
+
+./run-tests.sh on this machine on 2026-11-26: exit 0, and the summary carries the
+new step instead of the old NOT RUN line:
+
+  all suites that ran passed, but one template was not built:
+    OpenCL device suite             (minimal-opencl-ofx, contract_test + opencl_suite)
+
+The headline's one hole is onnx-inference-ofx, whose ONNXRUNTIME_ROOT is unset in
+this session - the pre-existing skip, not a regression from this change.
+
 Exit status: 0.
