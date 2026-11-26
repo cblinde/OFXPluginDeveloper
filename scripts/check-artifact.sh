@@ -87,25 +87,40 @@ fi
 # ---- exports ----------------------------------------------------------------
 # nm -D lists the dynamic symbol table; --defined-only drops the undefined
 # references that would otherwise inflate the count. A host resolves the module
-# through exactly two symbols, so a third defined name means a leaked Support
-# symbol or a visible C++ symbol and fails the build.
+# through exactly two symbols, and both must be strong text definitions: a third
+# `T` means a leaked Support symbol and fails the build.
+#
+# Weak `W` template instantiations are counted separately and do not fail it.
+# They are what `-fvisibility=hidden` alone leaves behind, the templates without
+# a version script ship five or six of them, and counting them as exports made
+# this check reject two correct bundles (2026-11-26) while the build's own count,
+# which greps ' T ', said `2 (expected 2)`. The version script in
+# templates/minimal-ofx/exports.map is what removes them.
 if [ -n "$NM" ]; then
-    exports=$("$NM" -D --defined-only "$OFX" 2>/dev/null | awk '$2 ~ /^[TtWw]$/ {print $3}')
-    count=$(printf '%s\n' "$exports" | grep -c . || true)
+    exports=$("$NM" -D --defined-only "$OFX" 2>/dev/null | awk '$2 ~ /^[TtWw]$/ {print $2, $3}')
+    strong=$(printf '%s\n' "$exports" | awk '$1 == "T" {print $2}')
+    weak=$(printf '%s\n' "$exports" | awk '$1 == "W" {print $2}')
+    count=$(printf '%s\n' "$strong" | grep -c . || true)
 
     missing=""
-    printf '%s\n' "$exports" | grep -qx "OfxGetNumberOfPlugins" || missing="$missing OfxGetNumberOfPlugins"
-    printf '%s\n' "$exports" | grep -qx "OfxGetPlugin" || missing="$missing OfxGetPlugin"
+    printf '%s\n' "$strong" | grep -qx "OfxGetNumberOfPlugins" || missing="$missing OfxGetNumberOfPlugins"
+    printf '%s\n' "$strong" | grep -qx "OfxGetPlugin" || missing="$missing OfxGetPlugin"
     if [ -n "$missing" ]; then
-        echo "FAIL: not exported:$missing"
+        echo "FAIL: not exported as a strong definition:$missing"
         exit 1
     fi
     if [ "$count" != "2" ]; then
-        echo "FAIL: nm reports $count exported names, expected 2"
-        printf '%s\n' "$exports"
+        echo "FAIL: nm reports $count strong text exports, expected 2"
+        printf '%s\n' "$strong"
         exit 1
     fi
-    echo "  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)"
+    weak_count=$(printf '%s\n' "$weak" | grep -c . || true)
+    if [ "$weak_count" = "0" ]; then
+        echo "  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)"
+    else
+        echo "  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin), plus $weak_count weak C++ helper(s)"
+        echo "           a version script (templates/minimal-ofx/exports.map) drops the weak ones"
+    fi
 fi
 
 # ---- dependents --------------------------------------------------------------
