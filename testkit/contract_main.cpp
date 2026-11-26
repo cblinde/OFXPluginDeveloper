@@ -1341,11 +1341,11 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
                    "--set-status-only to check only that the write was accepted)")) {
       return failCycle(host);
     }
-    // The assumption is stated in the failure too. The reference template's gain
-    // multiplies all four channels (it declares no separate alpha gain), so this
-    // check is the one that fails for it under --set gain=..., by design; the
-    // suites pass --set-status-only for that plug-in instead of changing its
-    // maths to suit the harness.
+    // The assumption is stated in the failure too, because it is a decision and
+    // not a detail: a gain is a colour operation, so it scales RGB and copies
+    // alpha (references/colour-and-alpha.md section 2). A plug-in with its own
+    // alpha parameter is the one that may change coverage, and it declares that
+    // parameter rather than folding it into the gain.
     if (!check("alpha is unchanged", alphaPreserved,
                "--set gain=... is read as an RGB-only scale; a plug-in whose gain "
                "also multiplies alpha (templates/minimal-ofx does) is expected "

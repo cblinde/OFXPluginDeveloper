@@ -98,11 +98,30 @@ Delta compare(const std::vector<float>& got, const std::vector<float>& want, int
     return d;
 }
 
+// The frame a gain must produce: RGB scaled, alpha carried over. Written once so
+// every stage states the same rule; scaling alpha here would hide exactly the bug
+// the alpha checks below look for.
 std::vector<float> scale(const std::vector<float>& src, float gain)
 {
     std::vector<float> out(src.size());
-    for (size_t i = 0; i < src.size(); ++i) out[i] = src[i] * gain;
+    for (size_t i = 0; i + 3 < src.size(); i += 4) {
+        out[i + 0] = src[i + 0] * gain;
+        out[i + 1] = src[i + 1] * gain;
+        out[i + 2] = src[i + 2] * gain;
+        out[i + 3] = src[i + 3];
+    }
     return out;
+}
+
+/// True when every alpha in `got` equals the one in `src`: the gain must not touch
+/// coverage, and comparing against a scaled reference would not say so on its own.
+bool alphaUnchanged(const std::vector<float>& got, const std::vector<float>& src)
+{
+    if (got.size() != src.size()) return false;
+    for (size_t i = 3; i < got.size(); i += 4) {
+        if (got[i] != src[i]) return false;
+    }
+    return true;
 }
 
 bool sameBits(const std::vector<float>& a, const std::vector<float>& b)
@@ -189,6 +208,7 @@ int main(int argc, char** argv)
     check(fullDelta.inside == 0.0,
           "the device frame is the source times two, bit for bit (max delta " +
               std::to_string(fullDelta.inside) + ")");
+    check(alphaUnchanged(device, src), "alpha is untouched by the gain (Buffers handover)");
 
     std::printf("[5/8] a render window smaller than the frame\n");
     check(host.setParam("gain", "3.0"), "the host set gain to 3.0");
@@ -218,6 +238,7 @@ int main(int argc, char** argv)
         check(imageDelta.inside == 0.0,
               "the image frame is the source times two, bit for bit (max delta " +
                   std::to_string(imageDelta.inside) + ")");
+        check(alphaUnchanged(imageFrame, src), "alpha is untouched by the gain (Images handover)");
 
         // A window that is not the whole image: the image kernel addresses with
         // coordinates, so a wrong offset would land on the wrong pixels rather
@@ -230,6 +251,8 @@ int main(int argc, char** argv)
         const Delta imageIn = compare(imagePartial, scale(src, 3.0f), kWidth, kHeight, imageWindow);
         const Delta imageOut = compare(imagePartial, scale(src, 2.0f), kWidth, kHeight, imageWindow);
         check(imageIn.inside == 0.0, "inside the image window the frame is the source times three");
+        check(alphaUnchanged(imagePartial, src),
+              "alpha is untouched inside and outside the image window");
         check(imageOut.outside == 0.0,
               "outside the image window the previous frame is untouched");
 

@@ -47,7 +47,8 @@ it was built for.
 - Blur, glow, defocus, transform: only correct on **premultiplied** data. If
   you get unpremultiplied input, divide by alpha, process, multiply back.
 - Colour-only operations (gain, lift/gamma/gain, matrix, LUT): safe on either,
-  *provided* you do not touch alpha.
+  *provided* you do not touch alpha. This is settled for the gain in §2: it scales
+  R, G and B and copies A, and an alpha scale has to be its own parameter.
 - Never write non-zero RGB where alpha is zero unless the host asked for
   premultiplied output — it produces halos on the next composite.
 
@@ -74,9 +75,9 @@ stated assumption, but not with an unstated one.
 
 | Depth | Bytes/pixel | What the value is | What the template does |
 | --- | --- | --- | --- |
-| RGBA32F | 16 | 0..1 nominal, >1 and negative legal | multiplies, no clamp, no transform |
-| RGBA16F | 8 | linear half float, same range as 32F | to float, multiply, one round-to-nearest-even back |
-| RGBA8 | 4 | **encoding undefined by OFX** | multiplies the stored code value, rounds to nearest even, clamps to 0..255 |
+| RGBA32F | 16 | 0..1 nominal, >1 and negative legal | multiplies R, G, B (no clamp, no transform), copies alpha |
+| RGBA16F | 8 | linear half float, same range as 32F | RGB to float, multiply, one round-to-nearest-even back; alpha copied as half |
+| RGBA8 | 4 | **encoding undefined by OFX** | multiplies the stored R, G, B code value, rounds to nearest even, clamps to 0..255; alpha copied as a byte |
 
 **8-bit: multiply the stored value, never linearise.** OFX does not say whether a
 byte image is sRGB, Rec.709 or something a project invented, and a plug-in cannot
@@ -109,12 +110,35 @@ rounding `__hmul2` applies. The harness compares the kernel against a float
 reference with **no tolerance** and gets bit equality; against a true float result
 the error is at most one half-precision ulp.
 
-**Alpha is multiplied too, and that is a choice.** A colour-only gain should leave
-alpha alone (§1), and this template does not: all four channels are scaled, which
-keeps premultiplied data premultiplied (RGB and alpha scale together) but darkens
-coverage on an unpremultiplied clip. The reference plug-in does the same, so the
-two paths agree; a production gain should expose that as a choice rather than
-inherit it. What the depth kernels have in common is that none of them touches
+**A gain does not scale alpha. Decided, and now true of all three templates.** The
+arithmetic settles it once the composite is written out. On premultiplied data the
+stored colour is a·C; a gain of k that scales the stored RGB produces k·a·C, and the
+un-premultiplied colour that a viewer sees is (k·a·C)/a = k·C with the coverage
+still a. Scale alpha by the same k and that ratio becomes k·a·C / k·a = C: the colour
+is untouched and only the coverage moves. That is an opacity control wearing a
+gain's name - it darkens the result over any background and changes what the next
+composite does, which is precisely what §1 tells a colour operation not to touch.
+So `gain` multiplies R, G and B and copies A.
+
+Where an alpha scale is genuinely wanted it has to be visible, so it gets its own
+parameter rather than riding along: the CUDA template declares `gainAlpha` (default
+1.0, i.e. off) next to `gain`, and its kernels take one factor per channel because
+the fourth factor has a separate source. The reference plug-in and the OpenCL
+kernels do not offer one, and their `gain` hint says "Multiplies R, G and B; alpha
+is left alone".
+
+The harness already stated this assumption independently of the plug-ins: `--set
+gain=...` is read as "scale RGB, leave alpha" (`testkit/README.md`, "The
+`--set` flag"), and the `alpha is unchanged` check fails loudly when a plug-in
+disagrees. Until 2026-11-26 the reference template and both OpenCL kernels failed
+it - all four channels were multiplied, and the OpenCL suite's own reference frame
+had the bug baked into it, so the two mistakes agreed with each other. Both now
+pass, the OpenCL suite asserts alpha per handover (Buffers, Images, image window)
+instead of trusting a scaled reference frame, and the CUDA suite's
+`--set gain=2.0` run covers the third path
+([`alpha-gain.log`](../evidence/2026-11-26-linux/alpha-gain.log)).
+
+What the depth kernels have in common is that none of them touches
 `kOfxImageEffectPropPreMultiplication` - the host's declaration stays the truth.
 
 **What is measured, and what is not.** The table's arithmetic and addressing are

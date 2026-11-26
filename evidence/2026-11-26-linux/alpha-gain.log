@@ -1,0 +1,102 @@
+# A colour gain does not scale alpha
+
+Date: 2026-11-26
+Host: Linux x86-64, AMD Ryzen 7 3800X, no GPU and no libcuda
+Compiler: g++ (CPU paths), PoCL 5.0 for the OpenCL kernels, nvcc 12.8.93 for the
+CUDA build (compile only - nothing was launched on a device)
+Status: **[V]** on the CPU/OpenCL paths, **[U]** for anything on a device.
+
+## The decision and the arithmetic behind it
+
+A gain is a colour operation, so it multiplies R, G and B and copies A.
+
+On premultiplied data the host's stored colour is a·C. Scaling the stored RGB by k
+gives k·a·C, and the un-premultiplied colour a viewer computes is
+
+    (k·a·C) / a = k·C          with coverage still a
+
+Scale alpha by the same k as well and the ratio collapses:
+
+    (k·a·C) / (k·a) = C        coverage now k·a
+
+so the colour is untouched and only the coverage moved. That is an opacity
+control wearing a gain's name: it darkens the composite over any background and
+changes what the next composite does, which is exactly what a colour-only
+operation must not touch. Where an alpha scale is wanted it gets its own
+parameter - the CUDA template's `gainAlpha` (default 1.0, i.e. off).
+
+## Before: the reference plug-in failed the check that names the rule
+
+The shared harness has asserted this for a while: `--set gain=...` means "scale
+RGB, leave alpha", and it checks it.
+
+    $ contract_test ReferenceGain.ofx --id com.ofxplugindeveloper.referencegain \
+        --param gain:double --clip Source --clip Output \
+        --set gain=2.0 --not-identity-after-set
+    FAIL alpha is unchanged: --set gain=... is read as an RGB-only scale; a plug-in
+      whose gain also multiplies alpha (templates/minimal-ofx does) is expected to
+      fail here - run it with --set-status-only
+    contract_test: 33 checks, 1 failed
+
+The reference template scaled all four channels. The OpenCL template did the same,
+and worse: its suite's expected frame was built with `scale(src, gain)`, which
+multiplied alpha too, so the test and the bug agreed with each other and 35 checks
+stayed green.
+
+## After
+
+### Reference plug-in (`templates/minimal-ofx`)
+
+CPU loop: `for (c < kComponents - 1)` and `dstRow[3] = srcRow[3]`; the parameter
+hint now reads "Multiplies R, G and B; alpha is left alone".
+
+    $ CPU_ONLY=1 RUN_VALGRIND=0 ./templates/minimal-ofx/test/run-tests.sh
+    contract_test: 118 checks, 0 failed      (three host profiles)
+
+    $ contract_test ReferenceGain.ofx ... --set gain=2.0 --not-identity-after-set
+    ok 33 - alpha is unchanged
+    ok 87 - alpha is unchanged
+    contract_test: 108 checks, 0 failed
+
+### OpenCL template (`templates/minimal-opencl-ofx`)
+
+Buffer kernel: `pixel.xyz *= gain;` (alpha comes through the `vload4` untouched).
+Image kernel: `pixel.xyz *= gain.xyz;`. CPU fallback: RGB loop plus a copied alpha.
+The host's image gains are `{gain, gain, gain, 1.0f}`. The suite's `scale()` now
+keeps alpha and three explicit `alpha is untouched` checks were added - one per
+handover.
+
+    $ RUN_VALGRIND=0 ./templates/minimal-opencl-ofx/test/run-tests.sh
+    ok 18 - alpha is untouched by the gain (Buffers handover)
+    ok 27 - alpha is untouched by the gain (Images handover)
+    ok 31 - alpha is untouched inside and outside the image window
+    opencl_suite: 38 checks, 0 failed
+    contract_test: 118 checks, 0 failed      (three host profiles)
+
+One bug found on the way, and it is the reason the check is worth having: the image
+kernel takes its gain as a `float4`, so `pixel.xyz *= gain` is `float3 *= float4`.
+PoCL printed `1 error generated.`, the image render returned an error and the suite
+went to 8 failed. With `gain.xyz` it compiles and all three alpha checks pass. A
+reference frame that still scaled alpha would have hidden exactly this class of
+mistake - the buffer path was already correct and the image path was not.
+
+### CUDA template (`templates/minimal-cuda-ofx`)
+
+Its kernels have taken one factor per channel since the 16F/8-bit work, because
+`gainAlpha` is a real parameter with default 1.0 - the parameter choice, not a
+hidden side effect. Nothing to change; the run proves the default leaves alpha:
+
+    $ RUN_VALGRIND=0 ./templates/minimal-cuda-ofx/test/run-tests.sh   (nvcc on PATH)
+    ok 37 - alpha is unchanged
+    ok 118 - alpha is unchanged
+    contract_test: 162 checks, 0 failed      (three host profiles, all depths)
+
+## What this does not cover
+
+- Any device: the CUDA launchers were compiled (see `cuda-nvcc-compile.log`) but
+  never launched, and PoCL is a CPU OpenCL device. Kernel arithmetic on hardware
+  and all throughput stay **[U]**.
+- A host that hands over unpremultiplied data with alpha < 1: the rule above is
+  derived from the premultiplied case and holds for straight alpha as well (there
+  the stored colour is C and alpha is independent), but no host here delivered
+  such a frame.

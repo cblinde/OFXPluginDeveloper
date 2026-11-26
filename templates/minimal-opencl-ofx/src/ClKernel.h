@@ -3,7 +3,8 @@
 // The kernel, as source, compiled by the driver at render time.
 //
 // It is the same arithmetic as the CPU path in Plugin.cpp - one multiply per
-// channel - so the two paths can be compared pixel for pixel. A plug-in that
+// colour channel, alpha copied - so the two paths can be compared pixel for
+// pixel. A plug-in that
 // only ships the GPU path has nothing to compare it against.
 //
 // Addressing is the part that differs from a textbook kernel: the host hands
@@ -36,7 +37,11 @@ __kernel void gain_rgba32f(__global const float* src,
     }
     const int index = (offsetY + y) * pitchComponents + (offsetX + x) * 4;
     float4 pixel = vload4(0, src + index);
-    pixel *= gain;
+    // RGB only, and alpha is carried over untouched: a gain is a colour
+    // operation, so it must not change coverage (see the note on the CPU path in
+    // Plugin.cpp and references/colour-and-alpha.md section 2). The destination
+    // is a separate buffer, so alpha still has to be written.
+    pixel.xyz *= gain;
     vstore4(pixel, 0, dst + index);
 }
 )CLC";
@@ -66,7 +71,11 @@ __kernel void gain_rgba32f_image(__read_only image2d_t src,
         return;
     }
     const int2 p = (int2)(offsetX + x, offsetY + y);
-    write_imagef(dst, p, read_imagef(src, nearestClamp, p) * gain);
+    float4 pixel = read_imagef(src, nearestClamp, p);
+    // `gain` is a float4 here (the host hands over one factor per channel), so
+    // RGB takes its three and alpha is passed through unscaled.
+    pixel.xyz *= gain.xyz;
+    write_imagef(dst, p, pixel);
 }
 )CLC";
 

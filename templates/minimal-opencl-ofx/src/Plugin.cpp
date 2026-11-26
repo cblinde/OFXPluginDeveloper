@@ -85,9 +85,13 @@ public:
             }
             for (int x = window.x1; x < window.x2;
                  ++x, dstRow += kComponents, srcRow += kComponents) {
-                for (int c = 0; c < kComponents; ++c) {
+                // RGB only; alpha is copied. A gain is a colour operation, and
+                // scaling alpha too would change coverage instead of colour -
+                // references/colour-and-alpha.md section 2.
+                for (int c = 0; c < kComponents - 1; ++c) {
                     dstRow[c] = srcRow[c] * _gain;
                 }
+                dstRow[kComponents - 1] = srcRow[kComponents - 1];
             }
         }
     }
@@ -230,7 +234,7 @@ private:
             if (!_opencl.prepare(args.pOpenCLCmdQ, /*images=*/true, &why)) {
                 throwError(why);
             }
-            const float gains[4] = {gain, gain, gain, gain};
+            const float gains[4] = {gain, gain, gain, 1.0f};
             if (!_opencl.enqueueGainImages(args.pOpenCLCmdQ, srcImage, dstImage,
                                            window.x2 - window.x1, window.y2 - window.y1,
                                            window.x1 - sb.x1, window.y1 - sb.y1, gains, &why)) {
@@ -348,7 +352,7 @@ public:
         OFX::DoubleParamDescriptor* gain = desc.defineDoubleParam(kParamGain);
         gain->setLabels("Gain", "Gain", "Gain");
         gain->setScriptName(kParamGain);
-        gain->setHint("Multiplies every channel");
+        gain->setHint("Multiplies R, G and B; alpha is left alone");
         gain->setDefault(kDefaultGain);
         gain->setRange(0.0, 8.0);
         gain->setDisplayRange(0.0, 4.0);
