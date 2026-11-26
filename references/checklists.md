@@ -54,7 +54,7 @@ What it reports, with the command that produced each fact in `sources`:
 | device | `nvidia-smi --query-gpu=name,driver_version,memory.total,compute_cap`; the `compute_cap` field is dropped and retried when the driver is too old for it |
 | Resolve | `RESOLVE_EXE`, `PATH`, then the default install location on **each** drive: on the machine this was measured on the registry had no Blackmagic key and `PATH` had no entry |
 | Resolve SDK | `RESOLVE_SCRIPT_API`, else the documented `%PROGRAMDATA%` (or `/opt/resolve/Developer/Scripting`) location |
-| Studio / scripting | only with `--connect`: `scriptapp`, then `GetProductName`, `GetVersionString`, `IsStudio` |
+| Studio / scripting | only with `--connect`: `scriptapp`, then `GetProductName`, `GetVersionString`, `IsStudio`; a product name without `Studio` is unknown, not free |
 | OFX | the platform's scan directories, with a bundle count per directory |
 | ONNX Runtime | `ONNXRUNTIME_ROOT`, then `include/onnxruntime_cxx_api.h`, `ORT_API_VERSION` and the libraries beside it |
 

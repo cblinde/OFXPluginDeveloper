@@ -22,6 +22,7 @@ Usage:
     python3 tools/probe-env.py                  # human summary
     python3 tools/probe-env.py --json           # the same, as a machine contract
     python3 tools/probe-env.py --connect        # also ask a running Resolve who it is
+                                               # (IsStudio(), else the product name)
     python3 tools/probe-env.py --need compile.cuda,run.cuda   # exit 1 unless both
 
 Exit codes: 0 report written, 1 a `--need` capability is not satisfied, 2 usage.
@@ -330,6 +331,28 @@ def probe_resolve(sources):
             "scripting": None}
 
 
+def studio_from_product(product):
+    """True when the product name carries the edition, else None - never False.
+
+    `IsStudio()` is absent from older APIs (§15.3 of
+    `references/resolve-automation.md`), and the product name is the edition's
+    other witness: the measured host answered `DaVinci Resolve Studio`. Only the
+    presence of that word decides anything.
+
+    A name without it decides nothing: what the free version calls itself is not
+    recorded anywhere in this repository, so `DaVinci Resolve` could be the free
+    build, a trial, or a Studio build that labels itself differently. Reading it as
+    "free" would turn an unknown into a blocked suite - the one failure this probe
+    exists to prevent - so the answer stays None and the caller reports why.
+    """
+    name = (product or "").strip().lower()
+    if not name:
+        return None
+    if "studio" in name:
+        return True
+    return None
+
+
 def connect(resolve):
     """Ask a running host who it is. Does not start one: that costs 18 s and a GPU."""
     if not resolve["sdk"]:
@@ -355,12 +378,16 @@ def connect(resolve):
                 "reason": "scriptapp returned None: the host is not running, it is "
                           "the free version (no listener), or External scripting "
                           "is None"}
-    answer = {"connected": True, "product": application.GetProductName(),
+    product = application.GetProductName()
+    answer = {"connected": True, "product": product,
               "version": application.GetVersionString()}
     try:
         answer["studio"] = bool(application.IsStudio())
+        answer["studio_source"] = "IsStudio()"
     except Exception:
-        answer["studio"] = None          # older API without IsStudio
+        # Older API without IsStudio: the product name carries the edition.
+        answer["studio"] = studio_from_product(product)
+        answer["studio_source"] = "GetProductName()"
     return answer
 
 
@@ -464,7 +491,8 @@ def collect(connect_host):
         if reason:
             detail = str(reason)
         elif connected is not None and connected.get("connected"):
-            detail = "the host answered but its API has no IsStudio()"
+            detail = ("the host answered, but neither IsStudio() nor its product "
+                      "name named the edition")
         else:
             detail = ("pass --connect while Resolve runs (a free install has no "
                       "listener, so it cannot answer)")
@@ -538,6 +566,11 @@ def show(report):
         attempt = resolve.get("connect") or {}
         if attempt and not attempt.get("connected"):
             answer = "unknown - " + str(attempt.get("reason"))
+        elif attempt and attempt.get("studio") is not None:
+            answer += f" (from {attempt.get('studio_source')})"
+        elif attempt:
+            answer = ("unknown - the host answered, but neither IsStudio() nor "
+                      "its product name named the edition")
         print(f"  resolve studio  {answer}")
     ofx = facts["ofx"]["directories"]
     print("  ofx             " + (", ".join(
@@ -655,6 +688,16 @@ def selftest():
          {name: canned({"connected": True, "studio": True})[name]
           for name in ("host.resolve.studio", "host.resolve.scripting")},
          {"host.resolve.studio": True, "host.resolve.scripting": True})
+    case("only a product name that carries the edition decides it",
+         [studio_from_product("DaVinci Resolve Studio"),
+          studio_from_product("DaVinci Resolve"),
+          studio_from_product(None),
+          studio_from_product("some other host")],
+         [True, None, None, None])
+    case("a host that names no edition stays unprobed, not blocked",
+         {name: canned({"connected": True, "studio": None, "product": ""})[name]
+          for name in ("host.resolve.studio", "host.resolve.scripting")},
+         {"host.resolve.studio": None, "host.resolve.scripting": True})
 
     failed = 0
     for index, (name, got, want) in enumerate(cases, 1):
