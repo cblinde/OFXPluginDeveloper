@@ -1,0 +1,104 @@
+# The build's launcher check, one probe per depth
+
+Date: 2026-11-26
+Host: Linux x86-64, AMD Ryzen 7 3800X, no GPU and no libcuda
+Toolchain: nvcc 12.8.93 from `.validation/cuda-toolchain` (NVIDIA's Ubuntu 24.04
+packages, unpacked without root), CMake from `.venv/bin`
+Status: **[V]** for the check itself (four builds, one per branch), **[U]** for
+anything the launchers would do on a device - they are still never launched.
+
+## What was wrong
+
+`build.sh` counted one name and called any hit "present":
+
+    launcher_syms="$(nm "$ofx_file" | grep -c 'LaunchGainRGBA32F' || true)"
+    if [[ "${launcher_syms:-0}" -gt 0 ]]; then
+      echo "  CUDA launcher: present (${launcher_syms} symbol(s))"
+    else
+      echo "  CUDA launcher: ABSENT (CPU-only build)"
+    fi
+
+The descriptor declares three depths, so a module can lose the 16F or the 8-bit
+launcher and still answer this check with "present". Proof: the doctored module in
+the first control below - which has no 8-bit launcher at all - prints
+`2 symbol(s)` for that count (the definition and its relocation entry).
+
+## What replaces it
+
+One word-boundary probe per name, all three required of a build that used a
+toolkit, and the output says which ones were found:
+
+    launchers=(LaunchGainRGBA32F LaunchGainRGBA16F LaunchGainRGBA8)
+    for launcher in "${launchers[@]}"; do
+      hits="$(printf '%s\n' "$symbols" \
+        | grep -c -E "(^|[^[:alnum:]_])${launcher}([^[:alnum:]_]|$)" || true)"
+      ...
+
+The word boundary matters: a symbol that merely starts with a launcher name
+(`LaunchGainRGBA8Alt`) must not satisfy the probe for `LaunchGainRGBA8`. The
+`grep -c` (not `-q`) keeps the existing SIGPIPE note true - `-q` exits early, `nm`
+dies of SIGPIPE and `pipefail` turns a match into a failure.
+
+## Branches, each run
+
+### 1. Complete CUDA build (expected: pass, all three named)
+
+    $ ./templates/minimal-cuda-ofx/build.sh
+    ...
+    Bundle: .../MinimalCudaGain.ofx.bundle
+      .../Contents/Linux-x86-64/MinimalCudaGain.ofx
+      exported dynamic symbols: 2 (expected 2)
+      CUDA launchers: all 3 present (32F, 16F, 8-bit)
+        found: LaunchGainRGBA32F LaunchGainRGBA16F LaunchGainRGBA8
+    exit 0
+
+### 2. Negative control: the 8-bit launcher renamed away (expected: fail)
+
+A copy of the template in `/tmp/launcher-control`, with `LaunchGainRGBA8` renamed
+to `LaunchGainRGBA8Alt` in `Kernel.cu`, `Kernel.cuh` and `Plugin.cpp` (one
+occurrence each), built against the already-fetched openfx checkout
+(`OFX_SOURCE_DIR`) so nothing was downloaded:
+
+    $ nm <doctored>.ofx | grep -c LaunchGainRGBA32F
+    2                                    # the old check: "present"
+
+    $ ./build.sh
+      exported dynamic symbols: 2 (expected 2)
+      CUDA launchers: INCOMPLETE - 2 of 3
+        found:   LaunchGainRGBA32F LaunchGainRGBA16F
+        missing: LaunchGainRGBA8
+    error: the module is missing a launcher for a depth its descriptor declares: LaunchGainRGBA8
+    exit 1
+
+This control is also the word-boundary test: `LaunchGainRGBA8Alt` is in the symbol
+table, and the probe still reports `LaunchGainRGBA8` as missing.
+
+### 3. Negative control: no launcher at all, toolkit present (expected: fail)
+
+`/tmp/launcher-control2`, every `LaunchGain…` renamed to `GainLaunch…`, same
+toolkit on `PATH`:
+
+    $ ./build.sh
+      exported dynamic symbols: 2 (expected 2)
+      CUDA launchers: none found, although a toolkit was used
+    error: CUDA toolkit .../cuda-12.8 was used, but the module has no launcher - the device object did not link in
+    exit 1
+
+This is the branch that used to say "ABSENT (CPU-only build)" for what may be a
+broken CUDA build; the message now distinguishes the two cases.
+
+### 4. `CPU_ONLY=1`, no toolkit (expected: pass, says why)
+
+    $ CPU_ONLY=1 ./templates/minimal-cuda-ofx/build.sh
+      exported dynamic symbols: 2 (expected 2)
+      CUDA launchers: none found (CPU-only build)
+    exit 0
+
+## What this does not cover
+
+- The check reads the symbol table. It does not prove a launcher calls the right
+  kernel or runs on a device: no GPU in this cell, so that stays **[U]**
+  (`cuda-nvcc-compile.log` covers compilation, `CUDA launcher` here covers
+  presence).
+- The Windows path (`build.bat` -> `testkit/check-ofx-artifact.bat --cuda`) was
+  not changed and not run here.

@@ -270,14 +270,43 @@ if [[ -n "$ofx_file" ]]; then
   else
   exported="$(nm -D --defined-only "$ofx_file" 2>/dev/null | grep -c ' T ' || true)"
   echo "  exported dynamic symbols: ${exported} (expected 2)"
+  # One probe per launcher, not a count on one name. The descriptor declares three
+  # depths, so a module that lost the 16F or 8-bit launcher is broken even though
+  # LaunchGainRGBA32F is still there - the count this replaced said "present" in
+  # exactly that case. The names are the ones in Kernel.cuh.
+  #
   # Note: no `grep -q` here. With `set -o pipefail`, grep -q exits early, nm dies
-  # of SIGPIPE, and the pipeline reports failure even on a match - which made
-  # this check report "ABSENT" for a binary that clearly had the launcher.
-  launcher_syms="$(nm "$ofx_file" 2>/dev/null | grep -c 'LaunchGainRGBA32F' || true)"
-  if [[ "${launcher_syms:-0}" -gt 0 ]]; then
-    echo "  CUDA launcher: present (${launcher_syms} symbol(s))"
+  # of SIGPIPE, and the pipeline reports failure even on a match - which made the
+  # old check report "ABSENT" for a binary that clearly had the launcher. The
+  # word-boundary pattern is why a symbol that merely starts with a launcher name
+  # (`LaunchGainRGBA8Alt`) does not pass for it.
+  symbols="$(nm "$ofx_file" 2>/dev/null || true)"
+  launchers=(LaunchGainRGBA32F LaunchGainRGBA16F LaunchGainRGBA8)
+  found=()
+  missing=()
+  for launcher in "${launchers[@]}"; do
+    hits="$(printf '%s\n' "$symbols" \
+      | grep -c -E "(^|[^[:alnum:]_])${launcher}([^[:alnum:]_]|$)" || true)"
+    if [[ "${hits:-0}" -gt 0 ]]; then
+      found+=("$launcher")
+    else
+      missing+=("$launcher")
+    fi
+  done
+  if [[ ${#found[@]} -eq ${#launchers[@]} ]]; then
+    echo "  CUDA launchers: all ${#launchers[@]} present (32F, 16F, 8-bit)"
+    echo "    found: ${found[*]}"
+  elif [[ ${#found[@]} -eq 0 ]]; then
+    if [[ -n "${cuda_home:-}" ]]; then
+      echo "  CUDA launchers: none found, although a toolkit was used"
+      die "CUDA toolkit ${cuda_home} was used, but the module has no launcher - the device object did not link in"
+    fi
+    echo "  CUDA launchers: none found (CPU-only build)"
   else
-    echo "  CUDA launcher: ABSENT (CPU-only build)"
+    echo "  CUDA launchers: INCOMPLETE - ${#found[@]} of ${#launchers[@]}"
+    echo "    found:   ${found[*]}"
+    echo "    missing: ${missing[*]}"
+    die "the module is missing a launcher for a depth its descriptor declares: ${missing[*]}"
   fi
   fi
 fi

@@ -81,7 +81,8 @@ inline bool IsHalf2Addressable(const void* src, const void* dst,
 // compiled by nvcc (C++ host compiler) while Plugin.cpp may be compiled by a
 // different host compiler; C linkage removes any dependence on both sides
 // agreeing about name mangling, and it keeps the symbol greppable in the built
-// module (`nm <bundle>.ofx | grep LaunchGainRGBA32F`).
+// module (`nm <bundle>.ofx | grep LaunchGainRGBA`, which `build.sh` runs per
+// launcher and requires all three of).
 
 /// Multiply-premultiplied RGBA32F by a per-channel gain.
 ///

@@ -228,8 +228,8 @@ cache variables, so either layer can be driven directly.
 | `CMAKE_BUILD_TYPE`, `CMAKE_CUDA_ARCHITECTURES`, `CMAKE_CUDA_VISIBILITY_PRESET` | CMake | set by the scripts | Standard CMake variables; use these when invoking CMake without the wrapper scripts. |
 
 The build ends by printing what it produced: the bundle path, the `.ofx` path,
-the exported dynamic symbol count (must be 2) and whether the CUDA launcher is in
-the binary.
+the exported dynamic symbol count (must be 2) and which CUDA launchers are in the
+binary - one per depth, all three required of a CUDA build.
 
 > **Note on the bootstrap.** The `nvidia-cuda-nvcc-cu12` pip wheel is *not*
 > enough — it ships `ptxas` and NVVM but no `nvcc`/`cudafe++`/`nvlink`, so it
@@ -264,7 +264,7 @@ Cheap checks that catch the common failures:
 ```bash
 O=build/bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx
 nm -D --defined-only "$O" | grep ' T '      # exactly 2: OfxGetNumberOfPlugins, OfxGetPlugin
-nm "$O" | grep LaunchGainRGBA32F            # CUDA launcher present (if built with CUDA)
+nm "$O" | grep -E 'LaunchGainRGBA(32F|16F|8)'  # all three depth launchers (CUDA build)
 readelf -d "$O" | grep NEEDED               # libcudart.so.12 when CUDA is on
 readelf -S "$O" | grep nv_fatbin            # device code is embedded
 ```
