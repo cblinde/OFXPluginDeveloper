@@ -132,8 +132,9 @@ projects:
 
 What follows from that, and what does not:
 
-- Varying a parameter means another `.drp`, or a project template plus a scripted
-  edit of something the API does expose. Both are acceptable; neither is free.
+- Varying a parameter means a value the host will read without a setter: a
+  project file, or a source outside the parameter entirely. The project file is
+  the one that does not work - measured below.
 - Editing the `.drp` file itself is **not** an option to build on, and 2026-11-26
   measured why it is not even possible: in 21.2 a `.drp` is a ZIP of four XML
   files, and the timeline item in it carries an **empty** `<EffectFiltersBA/>`
@@ -142,8 +143,13 @@ What follows from that, and what does not:
   (`SaveProject` is not callable in this version). What would hold the
   parameters is a hex blob (`FieldsBlob`), not readable XML (**[V]**,
   [`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)).
-  So a project that already carries `modelPath` can only be made in the GUI
-  inspector, and a harness can at most load one.
+  So an exported project carries no `modelPath` at all, and an equal-length patch
+  of a sentinel inside one has nothing to aim at: the effect is not in the file.
+  A `.drp` that does carry it would have to come from a GUI save, which no run
+  here has produced, and which the export above says this container does not
+  record. What remains is a model path that arrives without the project - an
+  environment variable or a sidecar beside the bundle - and that is what
+  [`improvement-backlog.md`](improvement-backlog.md) row 19 now asks for.
 - Loading one is what `poc.py --project` does, and that mode ran for the first
   time on 2026-11-26: four defects fell out of it - an undefined `render_size`, a
   `KeyError` without `--resolve`, a `connect()` that demanded an open project, and
@@ -155,7 +161,9 @@ What follows from that, and what does not:
   the one step in this chain nobody has completed.
 - The consequence for a prepared project: it is a GUI artefact twice over - the
   value has to be typed in the inspector, and the file that carries it has to be
-  imported rather than loaded.
+  imported rather than loaded - and the first half is the one that has no file:
+  an export from this host carries no effect at all, so no project here holds a
+  typed-in value to import.
 - Fusion is the escape hatch worth measuring: `TimelineItem` exposes Fusion comps,
   and Fusion has its own scripting surface. Whether an OFX plug-in applied inside
   Fusion behaves like one applied on the colour page is an open question (§11).
@@ -499,6 +507,12 @@ No code. One `.drp` per case, saved by hand on a known Resolve version, with the
 plug-in applied, the parameters set and the render range defined. The harness
 loads them and never edits them: the `.drp` container is undocumented and its
 schema moves between versions.
+
+This table is a plan, not a measurement: the "applied" and "parameters set" halves
+are exactly what no export from this host has carried (§5 measured an empty
+`<EffectFiltersBA/>`), and `improvement-backlog.md` row 19 now carries the delivery
+route that would make such a file workable - a model path from the environment or
+from a sidecar beside the bundle rather than from the parameter.
 
 | Project | Test | Purpose |
 |---|---|---|
@@ -1174,8 +1188,9 @@ From the SDK `CHANGELOG.md`, not from memory:
 | `Resolve.IsStudio` | absent from `CHANGELOG.md` altogether; present in 21.2's `.pyi` | the release it appeared in is unknown - §15.3 has the test that needs no such call |
 
 So §14 needs **≥ 21.1.2** and was measured on 21.2.0.5. On 21.1.1 and older the
-whole "list, apply, render" route is unavailable - which is the argument for
-keeping the `.drp` fallback documented as a route rather than as a leftover.
+whole "list, apply, render" route is unavailable, and on such a host a project
+file is the only way to an applied effect - which is why the `.drp` container stays
+documented as a route with its measured limits rather than as a leftover.
 
 ### 15.3 Studio or free, without `IsStudio`
 

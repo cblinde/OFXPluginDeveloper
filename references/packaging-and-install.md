@@ -116,8 +116,10 @@ own `onnxruntime.dll` (**[V]**,
   cannot carry `modelPath`; `SaveProject` is not callable in 21.2 to change that
   order, and the field that would hold the parameters is a hex blob (**[V]**,
   [`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)).
-  A device render in this host needs a project made in the GUI inspector, so "uses
-  Resolve's own cuDNN" is not claimed here. Neither does a module
+  No `.drp` from this host can carry the effect either, so the model path has to
+  arrive without the project - an environment variable or a sidecar beside the
+  bundle ([`improvement-backlog.md`](improvement-backlog.md) row 19) - and until
+  that exists "uses Resolve's own cuDNN" is not claimed here. Neither does a module
   list help settle it on its own: the host loads its own `onnxruntime.dll`, so
   `tasklist /M` names a runtime whether or not the plug-in ever created a session.
 
