@@ -813,9 +813,10 @@ crash"**.
 
 Four workflows, one half each, once per push: `docs.yml` checks the documents,
 their coverage against `4290e68`, the tool self-tests and the shell syntax,
-`linux.yml` runs the template suites of all four (the OpenCL device half is
-reported NOT RUN on a runner without one), the sanitizers over the three whose
-scripts carry `SANITIZE`, and the glibc stage of every bundle,
+`linux.yml` runs the template suites of all four (its runners install PoCL, and
+a runner that still has no OpenCL device fails the run by name rather than
+leaving the step green), the sanitizers over the three whose scripts carry
+`SANITIZE`, and the glibc stage of every bundle,
 `windows.yml` builds all four templates with MSVC and runs the contract, ONNX CPU
 and negative-control steps, and `canary.yml` asks the newest ONNX Runtime release
 once a week whether the shipped model still loads. The `templates` job that ran
@@ -854,10 +855,16 @@ Reproduce all of it from a clean checkout; nothing needs a GPU or a host.
 ```bash
 # Everything, every template: reference build, unit, image, artifact, fake host, memcheck
 ONNXRUNTIME_ROOT=/path/to/ort ./run-tests.sh
-# Without ONNXRUNTIME_ROOT the inference template is skipped: the reference and
-# CUDA suites still build and run, the summary prints a NOT VERIFIED block, and
-# any CI run (CI/GITHUB_ACTIONS/TF_BUILD/BUILDKITE set) fails unless
+# Without ONNXRUNTIME_ROOT the inference template is skipped: the reference,
+# CUDA and OpenCL suites still build and run, the summary prints a NOT VERIFIED
+# block, and any CI run (CI/GITHUB_ACTIONS/TF_BUILD/BUILDKITE set) fails unless
 # ALLOW_SKIPPED_TEMPLATES=1 accepts the hole.
+#
+# The OpenCL template needs a device. Without one its suite exits 2, the summary
+# prints `NOT A PASS: templates/minimal-opencl-ofx`, and a CI run fails by name
+# even with everything else green - same escape as above. On Linux,
+# `apt install pocl-opencl-icd` provides a CPU device; linux.yml installs it so
+# its runners do not have to take that escape.
 ./run-tests.sh
 
 # Or one template at a time:
@@ -953,7 +960,13 @@ authoring machine; with memcheck enabled (the default when valgrind is on
 when no toolkit is installed. In that mode - and on a machine without `nvcc`,
 which lands in the same mode - the summary prints `NOT RUN: GPU kernels` next to
 a `NOT VERIFIED` block instead of a line claiming kernels ran, so a CPU-only run
-cannot be read as one that exercised the device.
+cannot be read as one that exercised the device. The OpenCL template gets the
+same treatment with a red run instead of a note: no device on the machine means
+the suite exited 2, so the summary prints `NOT A PASS:
+templates/minimal-opencl-ofx` and a CI run stops there (`ALLOW_SKIPPED_TEMPLATES=1`
+accepts the hole explicitly). `windows.yml` does not call this script; it runs
+`run-tests.bat` and turns its exit 2 into a `::notice` naming the missing device,
+which is the same statement in the form a hosted Windows runner can carry.
 
 **Where the inference template's ONNX Runtime tree comes from.** `ONNXRUNTIME_ROOT`
 must contain `include/onnxruntime_cxx_api.h` and `lib/libonnxruntime.so`. The pip

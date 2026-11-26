@@ -9,8 +9,10 @@ name: linux
 #                      template targets fails here (2.17 for the reference, CUDA
 #                      and OpenCL plug-ins, 2.32 for the inference bundle -
 #                      references/cmake-and-linking.md §5). The OpenCL template
-#                      builds and runs its CPU path on every push and reports its
-#                      device suite as NOT RUN when the runner has no device.
+#                      runs its suite against a PoCL CPU device, because a run
+#                      that never had a device is not a pass: `run-tests.sh`
+#                      fails CI by name when that suite found nothing to render
+#                      on, unless ALLOW_SKIPPED_TEMPLATES=1 says so out loud.
 #   thread-sanitizer   the three templates whose scripts carry SANITIZE, under
 #                      TSan, with ASLR off for the process tree - see the comment
 #                      on that step.
@@ -94,6 +96,20 @@ jobs:
         # onnxruntime are absent, and a stage that is skipped on every run is a
         # stage nobody notices breaking. This keeps it running.
         run: python3 -m pip install --quiet --disable-pip-version-check onnx onnxruntime numpy
+
+      - name: An OpenCL device for that suite
+        # Nobody hands a GitHub runner a GPU, so the OpenCL template's suite would
+        # exit 2 (no device) on every push and the gate would owe the reader a
+        # paragraph instead of a result. PoCL is the CPU implementation this
+        # repository already measured against (references/cmake-and-linking.md
+        # §5) and names in its own skip message; the ICD package pulls the kernel
+        # headers in through Depends:. If the install fails, the suite reports its
+        # no-device exit and `run-tests.sh` fails the run by name - this step does
+        # not turn the hole into a pass.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends pocl-opencl-icd clinfo
+          clinfo -l
 
       - name: Template suites (the whole gate)
         shell: bash

@@ -165,10 +165,11 @@ report_skipped_opencl() {
   [[ "${opencl:-ran}" == "no-device" ]] || return 0
   echo
   echo "------------------------------------------------------------------"
-  echo "NOT VERIFIED: templates/minimal-opencl-ofx"
+  echo "NOT A PASS: templates/minimal-opencl-ofx - NOT VERIFIED"
   echo "  No OpenCL platform or device: the plug-in was built and its artifact"
   echo "  checked, and the suite exited 2 without rendering anything through a"
-  echo "  queue. The counts above do not cover its device path."
+  echo "  queue. The counts above do not cover its device path, so this run is not"
+  echo "  evidence that the device path works."
   echo "  Close it with: apt install pocl-opencl-icd libpocl2-common"
   echo "------------------------------------------------------------------"
 }
@@ -279,6 +280,24 @@ require_onnx_in_ci() {
   exit 1
 }
 
+# The same rule for the fourth template: on a CI machine a missing device is a
+# suite that did not run, not a machine that did its best. The block above says
+# what is missing; this makes the step red, because a green tick over a device
+# path nobody exercised is the reading that block exists to prevent.
+require_opencl_in_ci() {
+  [[ "${opencl:-ran}" == "no-device" ]] || return 0
+  in_ci || return 0
+  if [[ "${ALLOW_SKIPPED_TEMPLATES:-0}" == "1" ]]; then
+    echo "warning: CI without an OpenCL device, accepted by ALLOW_SKIPPED_TEMPLATES=1" >&2
+    return 0
+  fi
+  echo "error: NOT A PASS - this is a CI run without an OpenCL device, so the" >&2
+  echo "       minimal-opencl-ofx suite rendered nothing through a queue. A job" >&2
+  echo "       that ran it on a CPU device (pocl-opencl-icd) is the only pass." >&2
+  echo "       Install one, or set ALLOW_SKIPPED_TEMPLATES=1 to accept the hole." >&2
+  exit 1
+}
+
 # ---------------------------------------------------------------------------
 # Platform
 # ---------------------------------------------------------------------------
@@ -371,7 +390,11 @@ if [[ "${windows}" == "1" ]]; then
   echo "=================================================================="
   report_skipped_onnx
   report_skipped_gpu
+  if [[ "${opencl_win:-0}" == "2" ]]; then
+    opencl="no-device"
+  fi
   require_onnx_in_ci
+  require_opencl_in_ci
   # 2 is "no device on this machine", which the summary already names; anything
   # else non-zero is a failed suite and has to leave the script red.
   [[ "${opencl_win:-0}" == "0" || "${opencl_win:-0}" == "2" ]] || exit 1
@@ -571,3 +594,4 @@ report_skipped_onnx
 report_skipped_gpu
 report_skipped_opencl
 require_onnx_in_ci
+require_opencl_in_ci
