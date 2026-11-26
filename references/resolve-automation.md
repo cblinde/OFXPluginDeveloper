@@ -864,7 +864,9 @@ process = subprocess.Popen([exe, "-nogui"], cwd=str(Path(exe).parent))
 - Poll, do not sleep a fixed amount: cold start varies with the project library.
   `resolve_api.connect()` backs off from 0.1 s to 2 s against a deadline and reports
   the last error it saw; pass `process=` and it also fails within seconds when the
-  host it started has already exited, instead of waiting out the deadline.
+  host it started has already exited - **4.19 s** against a 60 s deadline for a
+  process that exits at once, where the same call burned whole 420 s windows on
+  2026-11-26 for a GUI start that never reached a project.
 - `-nogui` ran here in an interactive desktop session with a display attached to
   the GPU. Whether it works from a service session, a scheduled task with no
   desktop, or a machine without a display is **not** measured.
