@@ -77,6 +77,15 @@ jobs:
         # filter: that is the file a future edit is most likely to narrow to
         # "docs only", because every other step here needs the machine a filter
         # would skip.
+        #
+        # It is moreover the same pair `run-tests.sh` runs in its tool self-test
+        # stage later in this very job, so the pair appears twice in the job -
+        # deliberately, and for the position rather than the coverage. Here it
+        # fails seconds after checkout, before the ONNX Runtime download and
+        # before the gate that takes minutes: a pin that lost its commit, a `run:`
+        # that stopped parsing or a workflow whose YAML broke is then the first
+        # line of the log, not a stage inside a suite that has already spent its
+        # download.
         run: |
           python3 tools/check-workflows.py --selftest
           python3 tools/check-workflows.py
