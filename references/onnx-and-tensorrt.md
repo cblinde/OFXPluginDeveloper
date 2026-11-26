@@ -495,9 +495,14 @@ make the choice visible — and the consequence is packaging, not a second build
   copies and the label reads `bundled CUDA`
   ([`../evidence/2026-11-25-windows/onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log)).
 - **Budget the size.** The provider imports `cufft64_*` even for a model with no
-  FFT in it; with cuDNN 9 + cuBLAS 12 + cuFFT a bundle was 2.4–2.7 GB, of which
-  the provider alone was 643 MB (**B**). That is a product decision — one
-  download for everyone, no separate GPU build.
+  FFT in it, and the CUDA generation behind the bundle sets the number, not the
+  plug-in: 16 files with ONNX Runtime 1.20.1 and cuDNN 9 + cuBLAS 12 + cuFFT
+  measured 2686 MB, and the same 16 files against 1.32.0 and CUDA 13 measure
+  1540 MB (**[V]**, both pairs side by side in
+  [`packaging-and-install.md`](packaging-and-install.md) §2). The 2.4–2.7 GB
+  budget this paragraph used to quote is the older pair, whose provider alone was
+  643 MB (**B**). That is a product decision — one download for everyone, no
+  separate GPU build.
 - **The copy is a switch, not a script.** `templates/onnx-inference-ofx` ships
   `-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` (off by default) plus
   `-DOFXPLUGIN_CUDA_RUNTIME_DIRS=<dir>`: it copies the provider, the shared

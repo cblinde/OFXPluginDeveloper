@@ -107,6 +107,22 @@ name them one by one. A bundle built this way therefore carries **two licences
 with different owners** - ONNX Runtime's MIT and NVIDIA's EULA - and the build
 copies **no licence text with either**.
 
+Two runtime pairs have been measured on this machine, and they differ by more
+than a factor of one and a half: the same 16 files, a different CUDA generation
+behind them. Both numbers are true of their pair, so quote the pair:
+
+| Runtime beside the `.ofx` | Files | Size | Where |
+|---|---|---|---|
+| ONNX Runtime 1.20.1, cuDNN 9 + cuBLAS 12 + cuFFT | 16 | 2686 MB | [`testing-layers.md`](testing-layers.md) §13, [`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log) **[V]** |
+| ONNX Runtime 1.32.0, cuDNN 9 + cuBLAS 13 + cuFFT 12 + cudart 13 | 16 | 1540 MB | [`testing-layers.md`](testing-layers.md) §13, [`onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log), re-measured 2026-11-26 **[V]** |
+
+What grows between them is NVIDIA's, not this repository's: in the 1.32.0 bundle
+cuDNN's ten components are 575 MB, cuBLASLt 458 MB and cuFFT 271 MB, while ONNX
+Runtime's own provider is 187 MB and its shared provider 0.02 MB. The 2.4-2.7 GB
+budget in [`onnx-and-tensorrt.md`](onnx-and-tensorrt.md) §4 is the CUDA 12 pair
+with a **[B]** provider figure; a bundle built against CUDA 13 is 1.5 GB, and a
+reader who takes 2686 MB for the current build over-reserves by 1.1 GB.
+
 What NVIDIA's terms actually grant (**[B]**, the two agreements, not a lawyer's
 reading):
 
