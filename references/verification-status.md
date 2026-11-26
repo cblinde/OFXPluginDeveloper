@@ -269,7 +269,8 @@ Every line below came out of that run; the logs are in
 | Whole gate | `CPU_ONLY=1 ./run-tests.sh` | exit 0; the headline names the one hole, `NOT RUN: GPU kernels (CPU_ONLY)` **[V]** |
 | Negative controls | inside the gate: `testkit/run-negative-controls.sh` | every control's fault was caught (the `1 failed` lines in the log are the controls asserting failure) **[V]** |
 | ASan + UBSan | `SANITIZE=address,undefined CPU_ONLY=1 …/run-tests.sh` | 136 checks × 3, 0 failed, no sanitizer report **[V]** |
-| TSan | `SANITIZE=thread`, started under `setarch -R` | 136 checks × 3, no race reported; without ASLR off TSan aborts at its shadow layout **[V]** |
+| TSan | `SANITIZE=thread`, started under `setarch -R`, all three templates | 110 × 3, 136 × 3 and 160 × 3 + 82 checks, 0 failed, no race reported; without ASLR off TSan aborts at its shadow layout **[V]** |
+| ASan + UBSan, all three templates | `SANITIZE=address,undefined` over the reference, CUDA and inference suites | the same check counts, 0 failed, no sanitizer report **[V]** |
 | Static analysis | `templates/minimal-cuda-ofx/test/run-analysis.sh` | shellcheck 0.11.0 clean over 11 scripts; cppcheck not runnable in this image **[V]** for shellcheck |
 | POSIX artifact check | `scripts/check-artifact.sh <ofx>` ×3 | two strong exports in each bundle; 5 and 6 weak C++ helpers reported, not counted **[V]** |
 | glibc bound, real bundles | `tools/check-glibc.sh --max 2.17 <bundle>` ×3 | reference 2.14, CUDA 2.14, inference 2.32 with its bundled runtime at 2.28 **[V]** |

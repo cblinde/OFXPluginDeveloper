@@ -3,14 +3,21 @@ name: linux
 # What this workflow adds to docs.yml: the same Linux runs that produced
 # evidence/2026-11-26-linux/, executed on every push instead of by hand.
 #
-#   suites            CPU_ONLY=1, ONNX Runtime from NuGet, the whole gate. The
-#                     gate includes the per-bundle glibc stage, so a bundle that
-#                     needs a newer glibc than its template targets fails here
-#                     (2.17 for the reference and CUDA plug-ins, 2.32 for the
-#                     inference bundle - references/cmake-and-linking.md §5).
-#   thread-sanitizer  the CUDA template's host suite under TSan, with ASLR off
-#                     for the process tree - see the comment on that step for
-#                     why, and evidence/2026-11-26-linux/report.txt §F5.
+#   suites             CPU_ONLY=1, ONNX Runtime from NuGet, the whole gate. The
+#                      gate includes the per-bundle glibc stage, so a bundle that
+#                      needs a newer glibc than its template targets fails here
+#                      (2.17 for the reference and CUDA plug-ins, 2.32 for the
+#                      inference bundle - references/cmake-and-linking.md §5).
+#   thread-sanitizer   all three templates' host suites under TSan, with ASLR off
+#                      for the process tree - see the comment on that step.
+#   address-undefined  the same three under ASan+UBSan, which needs no ASLR
+#                      change and finds the leaks TSan does not look for.
+#
+# The sanitizer jobs instrument the harnesses; the plug-in images are ordinary
+# builds, because that is what `run-tests.sh` does when SANITIZE is set. What
+# they cover is the host contract - two load/unload cycles, several live
+# instances and concurrent renders per profile - which is where per-instance
+# state lives.
 #
 # No runner has a GPU, so nothing here claims a kernel ran. GPU work stays on a
 # machine with a device; what this workflow covers is everything that does not
@@ -78,7 +85,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ThreadSanitizer over the CUDA host suite
+      - name: ONNX Runtime
+        uses: ./.github/actions/onnx-runtime
+
+      - name: ThreadSanitizer, all three templates
         # Why ASLR has to be off, in one place:
         #
         # TSan reserves a large fixed shadow-memory region and maps the
@@ -93,24 +103,82 @@ jobs:
         # abort was reproduced here on 2026-11-26, evidence/2026-11-26-linux/report.txt
         # §F5). `setarch -R` sets ADDR_NO_RANDOMIZE for the whole process tree, so
         # every child - the build, the harness, the dlopen'd plug-in - runs with
-        # randomisation off. Without it this job fails for the wrong reason; with
-        # it, the suite runs 136 checks in each of the three host profiles.
+        # randomisation off. Without it this job fails for the wrong reason.
         #
-        # The grep afterwards refuses a run that "succeeded" without the
-        # sanitizer actually being on.
+        # Each template is its own run and its own log, so a failure names the
+        # template instead of the job. The grep refuses a run that "succeeded"
+        # without the sanitizer actually being on: all three suites print the
+        # sanitizer in their header.
         shell: bash
         run: |
-          set -o pipefail
-          setarch "$(uname -m)" -R env \
+          set -euo pipefail
+          tsan_one() {
+            name="$1"
+            shift
+            echo "== ${name}"
+            setarch "$(uname -m)" -R env "$@" 2>&1 | tee "tsan-${name}.log"
+            grep -q 'sanitizer: thread' "tsan-${name}.log"
+          }
+          tsan_one minimal-ofx \
             CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
-            ./templates/minimal-cuda-ofx/test/run-tests.sh 2>&1 | tee tsan.log
-          grep -q 'sanitizer: thread' tsan.log
-          grep -q 'contract_test: 136 checks, 0 failed' tsan.log
+            ./templates/minimal-ofx/test/run-tests.sh
+          tsan_one minimal-cuda-ofx \
+            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
+            ./templates/minimal-cuda-ofx/test/run-tests.sh
+          # The inference contract stages drive the bundle built by build.sh; the
+          # sanitized pipeline target gets its own tree inside the suite.
+          ( cd templates/onnx-inference-ofx && ./build.sh )
+          tsan_one onnx-inference-ofx \
+            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
+            ./templates/onnx-inference-ofx/test/run-tests.sh
 
-      - name: Upload the log
+      - name: Upload the logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: linux-tsan-log
-          path: tsan.log
+          name: linux-tsan-logs
+          path: tsan-*.log
+          if-no-files-found: warn
+
+  address-undefined:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ONNX Runtime
+        uses: ./.github/actions/onnx-runtime
+
+      - name: AddressSanitizer and UndefinedBehaviorSanitizer, all three templates
+        # No setarch here: ASan takes its shadow mapping from the process's own
+        # address space and does not collide with high-entropy ASLR the way TSan's
+        # fixed layout does. The suites set ASAN_OPTIONS and UBSAN_OPTIONS
+        # themselves (leak detection on, UBSan stops at the first error), so this
+        # step only has to prove the sanitizer was really in the build.
+        shell: bash
+        run: |
+          set -euo pipefail
+          asan_one() {
+            name="$1"
+            shift
+            echo "== ${name}"
+            env "$@" 2>&1 | tee "asan-${name}.log"
+            grep -q 'sanitizer: address,undefined' "asan-${name}.log"
+          }
+          asan_one minimal-ofx \
+            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
+            ./templates/minimal-ofx/test/run-tests.sh
+          asan_one minimal-cuda-ofx \
+            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
+            ./templates/minimal-cuda-ofx/test/run-tests.sh
+          ( cd templates/onnx-inference-ofx && ./build.sh )
+          asan_one onnx-inference-ofx \
+            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
+            ./templates/onnx-inference-ofx/test/run-tests.sh
+
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-asan-logs
+          path: asan-*.log
           if-no-files-found: warn

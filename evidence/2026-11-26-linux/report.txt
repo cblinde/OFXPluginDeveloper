@@ -48,13 +48,13 @@ cmake missing.
 | T4 | inference template | `ONNXRUNTIME_ROOT=.validation/ort-1.32.0 templates/onnx-inference-ofx/build.sh` then `test/run-tests.sh` | build (2 exported symbols, ORT bundled), **160 checks × 3 host profiles + 82 tiled, 0 failed** |
 | T5 | whole gate | `CPU_ONLY=1 RUN_VALGRIND=0 ./run-tests.sh` | **exit 0**; headline names the one hole: `NOT RUN: GPU kernels (CPU_ONLY)` |
 | T6 | negative controls | inside T5: `testkit/run-negative-controls.sh` | every control caught its fault (the `28/24/20 checks, 1 failed` lines in the log are the controls asserting failure) |
-| T7 | ASan + UBSan | `SANITIZE=address,undefined CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | **136 checks × 3, 0 failed**, no sanitizer report |
+| T7 | ASan + UBSan | `SANITIZE=address,undefined`, each template in its own run | all three clean: 110 × 3, 136 × 3, 160 × 3 + 82 checks, 0 failed, no report |
 | T8 | static analysis | `templates/minimal-cuda-ofx/test/run-analysis.sh` | shellcheck 0.11.0 over 11 scripts, no findings; **cppcheck not runnable** |
 | T9 | glibc bound, real bundles | `tools/check-glibc.sh --max 2.17 <bundle>` ×3 | reference **2.14 ok**, CUDA **2.14 ok**, inference **FAIL: 2.32 (plug-in) / 2.28 (bundled ORT)** |
 | T10 | ORT inspection | `python3 tools/check-runtime.py .validation/ort-1.32.0` | `ORT_API_VERSION 32`, every entry point this repository uses is declared, no provider in a CPU package |
 | T11 | provider label | T4 contract output | `label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."` |
 
-| T12 | ThreadSanitizer | `SANITIZE=thread` … under `setarch $(uname -m) -R` | **136 checks × 3, 0 failed**, no race reported |
+| T12 | ThreadSanitizer | `SANITIZE=thread` … under `setarch $(uname -m) -R`, each template in its own run | all three clean: 110 × 3, 136 × 3, 160 × 3 + 82 checks, 0 failed, no race reported |
 | T13 | POSIX artifact check | `scripts/check-artifact.sh <ofx>` ×3 | two strong exports in each; 5 (CUDA) and 6 (inference) weak helpers named, not counted as failures |
 
 T11 is the first run that **observed** the label form rather than inferring it

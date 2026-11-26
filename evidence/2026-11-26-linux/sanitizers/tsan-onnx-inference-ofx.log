@@ -1,0 +1,715 @@
+== [1/5] inference pipeline (cmake target ai_pipeline_test, sanitizer: thread) ==
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Dropping cached ONNXRUNTIME_INCLUDE_DIR: it is not under ONNXRUNTIME_ROOT
+-- Dropping cached ONNXRUNTIME_LIBRARY: it is not under ONNXRUNTIME_ROOT
+-- ONNX Runtime include: /workspace/chats/178f73e54dd5ef590a75a324/.validation/ort-1.32.0/include
+-- ONNX Runtime library: /workspace/chats/178f73e54dd5ef590a75a324/.validation/ort-1.32.0/lib/libonnxruntime.so
+-- Licence texts in Contents/Resources: none found beside the runtime. Add ONNX Runtime's LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before shipping (packaging-and-install.md section 2).
+-- OFX plugin : OnnxInference
+-- Bundle     : /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/build-sanitize/bundle/OnnxInference.ofx.bundle
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/build-sanitize
+[ 25%] Building CXX object CMakeFiles/ai_pipeline_test.dir/src/ModelRunner.cpp.o
+[ 50%] Building CXX object CMakeFiles/ai_pipeline_test.dir/test/ai_pipeline_test.cpp.o
+[ 75%] Building CXX object CMakeFiles/ai_pipeline_test.dir/src/AiCore.cpp.o
+[100%] Linking CXX executable ai_pipeline_test
+Staging libonnxruntime.so.1 next to ai_pipeline_test
+[100%] Built target ai_pipeline_test
+model : /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_conv.onnx  (c=3 h=48 w=64)
+  model channel count matches the fixture                  ok
+[1/4] PackRGB / UnpackRGB round-trip
+  tight rows, origin (0,0) : pack 64x48                    ok  (0)
+  tight rows, origin (0,0) : pack 1x1                      ok  (0)
+  tight rows, origin (0,0) : pack 32x16                    ok  (0)
+  tight rows, origin (0,0) : pack 3x5                      ok  (0)
+  tight rows, origin (0,0) : RGB written                   ok
+  tight rows, origin (0,0) : alpha untouched               ok
+  padded rows (+3 px), origin (2,1) : pack 1x1             ok  (0)
+  padded rows (+3 px), origin (2,1) : pack 32x16           ok  (0)
+  padded rows (+3 px), origin (2,1) : pack 3x5             ok  (0)
+  padded rows (+3 px), origin (2,1) : RGB written          ok
+  padded rows (+3 px), origin (2,1) : alpha untouched      ok
+  negative row stride : pack 64x48                         ok  (0)
+  negative row stride : pack 1x1                           ok  (0)
+  negative row stride : pack 32x16                         ok  (0)
+  negative row stride : pack 3x5                           ok  (0)
+  negative row stride : RGB written                        ok
+  negative row stride : alpha untouched                    ok
+[2/4] whole-frame inference vs Python golden
+  max |c++ - python| over the frame                        ok  (0)
+[3/4] tiled inference vs whole-frame inference
+  tile=5 halo=1 matches whole                              ok  (0)
+  tile=13 halo=1 matches whole                             ok  (0)
+  tile=17 halo=1 matches whole                             ok  (0)
+  tile=256 halo=1 matches whole                            ok  (0)
+  odd 1x1 tiled matches whole                              ok  (0)
+  odd 7x5 tiled matches whole                              ok  (0)
+  odd 64x3 tiled matches whole                             ok  (0)
+  odd 3x48 tiled matches whole                             ok  (0)
+  tile=13 halo=-1 is clamped to halo=0                     ok  (0)
+  tile=13 halo=-7 is clamped to halo=0                     ok  (0)
+[4/4] negative controls: wrong blending, negative halo, bad rect
+  tile=13 halo=0 disagrees with whole (expected)           ok  (0.263276)
+  Add rejects a core rect outside its data rect            ok
+
+PASS: inference pipeline behaves as specified
+
+== [2/5] host contract (dlopen + fake host) ==
+  build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx
+  host profile: nuke (reference fuzz: cpu)
+[stage] render
+[stage] compare golden
+[stage] concurrency
+[stage] byte destination
+[stage] roi region
+[stage] roi context
+[stage] unload
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - read source fixture /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_input.bin
+ok 15 - kOfxActionLoad
+ok 16 - kOfxActionDescribe
+ok 17 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 18 - descriptor lists the requested context
+ok 19 - descriptor sets a legal render thread safety
+ok 20 - param 'modelPath' declared
+ok 21 - param 'modelPath' type
+ok 22 - param 'tileSize' declared
+ok 23 - param 'tileSize' type
+ok 24 - param 'halo' declared
+ok 25 - param 'halo' type
+ok 26 - clip 'Source' declared
+ok 27 - clip 'Output' declared
+ok 28 - kOfxActionCreateInstance
+ok 29 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 30 - identity clip is the source clip
+ok 31 - set param 'modelPath'
+ok 32 - set param 'halo'
+ok 33 - isIdentity is false once a setting changes the output
+ok 34 - kOfxImageEffectActionRender
+ok 35 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+  reference: /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin (generic: no /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden-linux.bin beside it)
+  tolerance: 0 (exact)
+ok 36 - read golden /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin
+ok 37 - destination is readable
+ok 38 - render matches the golden
+ok 39 - a second instance can be created
+ok 40 - two instances are live at the same time
+ok 41 - baseline modelPath on instance 0
+ok 42 - baseline halo on instance 0
+ok 43 - baseline modelPath on instance 1
+ok 44 - baseline halo on instance 1
+ok 45 - render instance 0 while instance 1 is alive
+ok 46 - render instance 1 with its own settings
+ok 47 - two instances with identical settings produce identical pixels
+ok 48 - instance for parallel worker 2
+ok 49 - baseline modelPath on instance 2
+ok 50 - baseline halo on instance 2
+ok 51 - instance for parallel worker 3
+ok 52 - baseline modelPath on instance 3
+ok 53 - baseline halo on instance 3
+ok 54 - concurrent renders produced every record
+ok 55 - every concurrent render returned kOfxStatOK
+ok 56 - every concurrent render produced a readable destination
+ok 57 - concurrent renders with identical settings are identical
+ok 58 - destroy instance 3
+ok 59 - destroy instance 2
+ok 60 - destroy instance 1
+ok 61 - render rejects a byte image
+ok 62 - getRegionsOfInterest answers for the source clip
+ok 63 - source RoI is the requested region grown by its halo
+ok 64 - getRegionsOfInterest answers at the source bounds
+ok 65 - source RoI is clamped to the source bounds
+ok 66 - roi context: whole-frame render
+ok 67 - roi context: destination is readable
+ok 68 - roi context: render of an inset window
+ok 69 - roi context: the inset window matches the whole frame bit for bit
+ok 70 - roi context: render of the same window without a context region
+ok 71 - roi context: without a context region the same window differs
+ok 72 - baseline render before the rejected window
+ok 73 - render rejects a window outside the source bounds
+ok 74 - destination is unchanged after the rejected render
+ok 75 - baseline render inside the destination bounds
+ok 76 - render rejects a window outside the destination bounds
+ok 77 - destination is unchanged after the rejected render
+ok 78 - kOfxActionDestroyInstance
+ok 79 - kOfxActionUnload
+ok 80 - unload cycle completed
+ok 81 - dlopen(/workspace/chats/178f73e54[stage] render
+[stage] compare golden
+[stage] concurrency
+[stage] byte destination
+[stage] roi region
+[stage] roi context
+[stage] unload
+dd5ef590a75a324/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx)
+ok 82 - OfxGetNumberOfPlugins is exported
+ok 83 - OfxGetPlugin is exported
+ok 84 - OfxGetNumberOfPlugins() >= 1
+ok 85 - OfxGetPlugin(0) returns a plug-in
+ok 86 - pluginApi
+ok 87 - apiVersion
+ok 88 - pluginIdentifier is non-empty
+ok 89 - pluginIdentifier
+ok 90 - pluginIdentifier stable across loads
+ok 91 - pluginVersion
+ok 92 - setHost is non-null
+ok 93 - mainEntry is non-null
+ok 94 - read source fixture /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_input.bin
+ok 95 - kOfxActionLoad
+ok 96 - kOfxActionDescribe
+ok 97 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 98 - descriptor lists the requested context
+ok 99 - descriptor sets a legal render thread safety
+ok 100 - param 'modelPath' declared
+ok 101 - param 'modelPath' type
+ok 102 - param 'tileSize' declared
+ok 103 - param 'tileSize' type
+ok 104 - param 'halo' declared
+ok 105 - param 'halo' type
+ok 106 - clip 'Source' declared
+ok 107 - clip 'Output' declared
+ok 108 - kOfxActionCreateInstance
+ok 109 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 110 - identity clip is the source clip
+ok 111 - set param 'modelPath'
+ok 112 - set param 'halo'
+ok 113 - isIdentity is false once a setting changes the output
+ok 114 - kOfxImageEffectActionRender
+ok 115 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+  reference: /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin (generic: no /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden-linux.bin beside it)
+  tolerance: 0 (exact)
+ok 116 - read golden /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin
+ok 117 - destination is readable
+ok 118 - render matches the golden
+ok 119 - a second instance can be created
+ok 120 - two instances are live at the same time
+ok 121 - baseline modelPath on instance 0
+ok 122 - baseline halo on instance 0
+ok 123 - baseline modelPath on instance 1
+ok 124 - baseline halo on instance 1
+ok 125 - render instance 0 while instance 1 is alive
+ok 126 - render instance 1 with its own settings
+ok 127 - two instances with identical settings produce identical pixels
+ok 128 - instance for parallel worker 2
+ok 129 - baseline modelPath on instance 2
+ok 130 - baseline halo on instance 2
+ok 131 - instance for parallel worker 3
+ok 132 - baseline modelPath on instance 3
+ok 133 - baseline halo on instance 3
+ok 134 - concurrent renders produced every record
+ok 135 - every concurrent render returned kOfxStatOK
+ok 136 - every concurrent render produced a readable destination
+ok 137 - concurrent renders with identical settings are identical
+ok 138 - destroy instance 3
+ok 139 - destroy instance 2
+ok 140 - destroy instance 1
+ok 141 - render rejects a byte image
+ok 142 - getRegionsOfInterest answers for the source clip
+ok 143 - source RoI is the requested region grown by its halo
+ok 144 - getRegionsOfInterest answers at the source bounds
+ok 145 - source RoI is clamped to the source bounds
+ok 146 - roi context: whole-frame render
+ok 147 - roi context: destination is readable
+ok 148 - roi context: render of an inset window
+ok 149 - roi context: the inset window matches the whole frame bit for bit
+ok 150 - roi context: render of the same window without a context region
+ok 151 - roi context: without a context region the same window differs
+ok 152 - baseline render before the rejected window
+ok 153 - render rejects a window outside the source bounds
+ok 154 - destination is unchanged after the rejected render
+ok 155 - baseline render inside the destination bounds
+ok 156 - render rejects a window outside the destination bounds
+ok 157 - destination is unchanged after the rejected render
+ok 158 - kOfxActionDestroyInstance
+ok 159 - kOfxActionUnload
+ok 160 - unload cycle completed
+contract_test: 160 checks, 0 failed
+  host profile: resolve (reference fuzz: cpu)
+[stage] render
+[stage] compare golden
+[stage] concurrency
+[stage] byte destination
+[stage] roi region
+[stage] roi context
+[stage] unload
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - read source fixture /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_input.bin
+ok 15 - kOfxActionLoad
+ok 16 - kOfxActionDescribe
+ok 17 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 18 - descriptor lists the requested context
+ok 19 - descriptor sets a legal render thread safety
+ok 20 - param 'modelPath' declared
+ok 21 - param 'modelPath' type
+ok 22 - param 'tileSize' declared
+ok 23 - param 'tileSize' type
+ok 24 - param 'halo' declared
+ok 25 - param 'halo' type
+ok 26 - clip 'Source' declared
+ok 27 - clip 'Output' declared
+ok 28 - kOfxActionCreateInstance
+ok 29 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 30 - identity clip is the source clip
+ok 31 - set param 'modelPath'
+ok 32 - set param 'halo'
+ok 33 - isIdentity is false once a setting changes the output
+ok 34 - kOfxImageEffectActionRender
+ok 35 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+  reference: /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin (generic: no /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden-linux.bin beside it)
+  tolerance: 0 (exact)
+ok 36 - read golden /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin
+ok 37 - destination is readable
+ok 38 - render matches the golden
+ok 39 - a second instance can be created
+ok 40 - two instances are live at the same time
+ok 41 - baseline modelPath on instance 0
+ok 42 - baseline halo on instance 0
+ok 43 - baseline modelPath on instance 1
+ok 44 - baseline halo on instance 1
+ok 45 - render instance 0 while instance 1 is alive
+ok 46 - render instance 1 with its own settings
+ok 47 - two instances with identical settings produce identical pixels
+ok 48 - instance for parallel worker 2
+ok 49 - baseline modelPath on instance 2
+ok 50 - baseline halo on instance 2
+ok 51 - instance for parallel worker 3
+ok 52 - baseline modelPath on instance 3
+ok 53 - baseline halo on instance 3
+ok 54 - concurrent renders produced every record
+ok 55 - every concurrent render returned kOfxStatOK
+ok 56 - every concurrent render produced a readable destination
+ok 57 - concurrent renders with identical settings are identical
+ok 58 - destroy instance 3
+ok 59 - destroy instance 2
+ok 60 - destroy instance 1
+ok 61 - render rejects a byte image
+ok 62 - getRegionsOfInterest answers for the source clip
+ok 63 - source RoI is the requested region grown by its halo
+ok 64 - getRegionsOfInterest answers at the source bounds
+ok 65 - source RoI is clamped to the source bounds
+ok 66 - roi context: whole-frame render
+ok 67 - roi context: destination is readable
+ok 68 - roi context: render of an inset window
+ok 69 - roi context: the inset window matches the whole frame bit for bit
+ok 70 - roi context: render of the same window without a context region
+ok 71 - roi context: without a context region the same window differs
+ok 72 - baseline render before the rejected window
+ok 73 - render rejects a window outside the source bounds
+ok 74 - destination is unchanged after the rejected render
+ok 75 - baseline render inside the destination bounds
+ok 76 - render rejects a window outside the destination bounds
+ok 77 - destination is unchanged after the rejected render
+ok 78 - kOfxActionDestroyInstance
+ok 79 - kOfxActionUnload
+ok 80 - unload cycle completed
+ok 81 - dlopen(/workspace/cha[stage] render
+[stage] compare golden
+[stage] concurrency
+[stage] byte destination
+[stage] roi region
+[stage] roi context
+[stage] unload
+ts/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx)
+ok 82 - OfxGetNumberOfPlugins is exported
+ok 83 - OfxGetPlugin is exported
+ok 84 - OfxGetNumberOfPlugins() >= 1
+ok 85 - OfxGetPlugin(0) returns a plug-in
+ok 86 - pluginApi
+ok 87 - apiVersion
+ok 88 - pluginIdentifier is non-empty
+ok 89 - pluginIdentifier
+ok 90 - pluginIdentifier stable across loads
+ok 91 - pluginVersion
+ok 92 - setHost is non-null
+ok 93 - mainEntry is non-null
+ok 94 - read source fixture /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_input.bin
+ok 95 - kOfxActionLoad
+ok 96 - kOfxActionDescribe
+ok 97 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 98 - descriptor lists the requested context
+ok 99 - descriptor sets a legal render thread safety
+ok 100 - param 'modelPath' declared
+ok 101 - param 'modelPath' type
+ok 102 - param 'tileSize' declared
+ok 103 - param 'tileSize' type
+ok 104 - param 'halo' declared
+ok 105 - param 'halo' type
+ok 106 - clip 'Source' declared
+ok 107 - clip 'Output' declared
+ok 108 - kOfxActionCreateInstance
+ok 109 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 110 - identity clip is the source clip
+ok 111 - set param 'modelPath'
+ok 112 - set param 'halo'
+ok 113 - isIdentity is false once a setting changes the output
+ok 114 - kOfxImageEffectActionRender
+ok 115 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+  reference: /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin (generic: no /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden-linux.bin beside it)
+  tolerance: 0 (exact)
+ok 116 - read golden /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin
+ok 117 - destination is readable
+ok 118 - render matches the golden
+ok 119 - a second instance can be created
+ok 120 - two instances are live at the same time
+ok 121 - baseline modelPath on instance 0
+ok 122 - baseline halo on instance 0
+ok 123 - baseline modelPath on instance 1
+ok 124 - baseline halo on instance 1
+ok 125 - render instance 0 while instance 1 is alive
+ok 126 - render instance 1 with its own settings
+ok 127 - two instances with identical settings produce identical pixels
+ok 128 - instance for parallel worker 2
+ok 129 - baseline modelPath on instance 2
+ok 130 - baseline halo on instance 2
+ok 131 - instance for parallel worker 3
+ok 132 - baseline modelPath on instance 3
+ok 133 - baseline halo on instance 3
+ok 134 - concurrent renders produced every record
+ok 135 - every concurrent render returned kOfxStatOK
+ok 136 - every concurrent render produced a readable destination
+ok 137 - concurrent renders with identical settings are identical
+ok 138 - destroy instance 3
+ok 139 - destroy instance 2
+ok 140 - destroy instance 1
+ok 141 - render rejects a byte image
+ok 142 - getRegionsOfInterest answers for the source clip
+ok 143 - source RoI is the requested region grown by its halo
+ok 144 - getRegionsOfInterest answers at the source bounds
+ok 145 - source RoI is clamped to the source bounds
+ok 146 - roi context: whole-frame render
+ok 147 - roi context: destination is readable
+ok 148 - roi context: render of an inset window
+ok 149 - roi context: the inset window matches the whole frame bit for bit
+ok 150 - roi context: render of the same window without a context region
+ok 151 - roi context: without a context region the same window differs
+ok 152 - baseline render before the rejected window
+ok 153 - render rejects a window outside the source bounds
+ok 154 - destination is unchanged after the rejected render
+ok 155 - baseline render inside the destination bounds
+ok 156 - render rejects a window outside the destination bounds
+ok 157 - destination is unchanged after the rejected render
+ok 158 - kOfxActionDestroyInstance
+ok 159 - kOfxActionUnload
+ok 160 - unload cycle completed
+contract_test: 160 checks, 0 failed
+  host profile: natron (reference fuzz: cpu)
+[stage] render
+[stage] compare golden
+[stage] concurrency
+[stage] byte destination
+[stage] roi region
+[stage] roi context
+[stage] unload
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - read source fixture /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_input.bin
+ok 15 - kOfxActionLoad
+ok 16 - kOfxActionDescribe
+ok 17 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 18 - descriptor lists the requested context
+ok 19 - descriptor sets a legal render thread safety
+ok 20 - param 'modelPath' declared
+ok 21 - param 'modelPath' type
+ok 22 - param 'tileSize' declared
+ok 23 - param 'tileSize' type
+ok 24 - param 'halo' declared
+ok 25 - param 'halo' type
+ok 26 - clip 'Source' declared
+ok 27 - clip 'Output' declared
+ok 28 - kOfxActionCreateInstance
+ok 29 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 30 - identity clip is the source clip
+ok 31 - set param 'modelPath'
+ok 32 - set param 'halo'
+ok 33 - isIdentity is false once a setting changes the output
+ok 34 - kOfxImageEffectActionRender
+ok 35 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+  reference: /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin (generic: no /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden-linux.bin beside it)
+  tolerance: 0 (exact)
+ok 36 - read golden /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin
+ok 37 - destination is readable
+ok 38 - render matches the golden
+ok 39 - a second instance can be created
+ok 40 - two instances are live at the same time
+ok 41 - baseline modelPath on instance 0
+ok 42 - baseline halo on instance 0
+ok 43 - baseline modelPath on instance 1
+ok 44 - baseline halo on instance 1
+ok 45 - render instance 0 while instance 1 is alive
+ok 46 - render instance 1 with its own settings
+ok 47 - two instances with identical settings produce identical pixels
+ok 48 - instance for parallel worker 2
+ok 49 - baseline modelPath on instance 2
+ok 50 - baseline halo on instance 2
+ok 51 - instance for parallel worker 3
+ok 52 - baseline modelPath on instance 3
+ok 53 - baseline halo on instance 3
+ok 54 - concurrent renders produced every record
+ok 55 - every concurrent render returned kOfxStatOK
+ok 56 - every concurrent render produced a readable destination
+ok 57 - concurrent renders with identical settings are identical
+ok 58 - destroy instance 3
+ok 59 - destroy instance 2
+ok 60 - destroy instance 1
+ok 61 - render rejects a byte image
+ok 62 - getRegionsOfInterest answers for the source clip
+ok 63 - source RoI is the requested region grown by its halo
+ok 64 - getRegionsOfInterest answers at the source bounds
+ok 65 - source RoI is clamped to the source bounds
+ok 66 - roi context: whole-frame render
+ok 67 - roi context: destination is readable
+ok 68 - roi context: render of an inset window
+ok 69 - roi context: the inset window matches the whole frame bit for bit
+ok 70 - roi context: render of the same window without a context region
+ok 71 - roi context: without a context region the same window differs
+ok 72 - baseline render before the rejected window
+ok 73 - render rejects a window outside the source bounds
+ok 74 - destination is unchanged after the rejected render
+ok 75 - baseline render inside the destination bounds
+ok 76 - render rejects a window outside the destination bounds
+ok 77 - destination is unchanged after the rejected render
+ok 78 - kOfxActionDestroyInstance
+ok 79 - kOfxActionUnload
+ok 80 - unload cycle completed
+ok 81 - dlopen(/workspace/chats/178f73e54dd[stage] render
+[stage] compare golden
+[stage] concurrency
+[stage] byte destination
+[stage] roi region
+[stage] roi context
+[stage] unload
+5ef590a75a324/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx)
+ok 82 - OfxGetNumberOfPlugins is exported
+ok 83 - OfxGetPlugin is exported
+ok 84 - OfxGetNumberOfPlugins() >= 1
+ok 85 - OfxGetPlugin(0) returns a plug-in
+ok 86 - pluginApi
+ok 87 - apiVersion
+ok 88 - pluginIdentifier is non-empty
+ok 89 - pluginIdentifier
+ok 90 - pluginIdentifier stable across loads
+ok 91 - pluginVersion
+ok 92 - setHost is non-null
+ok 93 - mainEntry is non-null
+ok 94 - read source fixture /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_input.bin
+ok 95 - kOfxActionLoad
+ok 96 - kOfxActionDescribe
+ok 97 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 98 - descriptor lists the requested context
+ok 99 - descriptor sets a legal render thread safety
+ok 100 - param 'modelPath' declared
+ok 101 - param 'modelPath' type
+ok 102 - param 'tileSize' declared
+ok 103 - param 'tileSize' type
+ok 104 - param 'halo' declared
+ok 105 - param 'halo' type
+ok 106 - clip 'Source' declared
+ok 107 - clip 'Output' declared
+ok 108 - kOfxActionCreateInstance
+ok 109 - kOfxImageEffectActionIsIdentity at neutral settings
+ok 110 - identity clip is the source clip
+ok 111 - set param 'modelPath'
+ok 112 - set param 'halo'
+ok 113 - isIdentity is false once a setting changes the output
+ok 114 - kOfxImageEffectActionRender
+ok 115 - label parameter 'provider' = "CPU (1 thread) - fallback: CUDA execution provider is not enabled in this build."
+  reference: /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin (generic: no /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden-linux.bin beside it)
+  tolerance: 0 (exact)
+ok 116 - read golden /workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/models/test_golden.bin
+ok 117 - destination is readable
+ok 118 - render matches the golden
+ok 119 - a second instance can be created
+ok 120 - two instances are live at the same time
+ok 121 - baseline modelPath on instance 0
+ok 122 - baseline halo on instance 0
+ok 123 - baseline modelPath on instance 1
+ok 124 - baseline halo on instance 1
+ok 125 - render instance 0 while instance 1 is alive
+ok 126 - render instance 1 with its own settings
+ok 127 - two instances with identical settings produce identical pixels
+ok 128 - instance for parallel worker 2
+ok 129 - baseline modelPath on instance 2
+ok 130 - baseline halo on instance 2
+ok 131 - instance for parallel worker 3
+ok 132 - baseline modelPath on instance 3
+ok 133 - baseline halo on instance 3
+ok 134 - concurrent renders produced every record
+ok 135 - every concurrent render returned kOfxStatOK
+ok 136 - every concurrent render produced a readable destination
+ok 137 - concurrent renders with identical settings are identical
+ok 138 - destroy instance 3
+ok 139 - destroy instance 2
+ok 140 - destroy instance 1
+ok 141 - render rejects a byte image
+ok 142 - getRegionsOfInterest answers for the source clip
+ok 143 - source RoI is the requested region grown by its halo
+ok 144 - getRegionsOfInterest answers at the source bounds
+ok 145 - source RoI is clamped to the source bounds
+ok 146 - roi context: whole-frame render
+ok 147 - roi context: destination is readable
+ok 148 - roi context: render of an inset window
+ok 149 - roi context: the inset window matches the whole frame bit for bit
+ok 150 - roi context: render of the same window without a context region
+ok 151 - roi context: without a context region the same window differs
+ok 152 - baseline render before the rejected window
+ok 153 - render rejects a window outside the source bounds
+ok 154 - destination is unchanged after the rejected render
+ok 155 - baseline render inside the destination bounds
+ok 156 - render rejects a window outside the destination bounds
+ok 157 - destination is unchanged after the rejected render
+ok 158 - kOfxActionDestroyInstance
+ok 159 - kOfxActionUnload
+ok 160 - unload cycle completed
+contract_test: 160 checks, 0 failed
+  tiled render (tileSize=16), tolerance 0.02:
+[stage] render
+[stage] roi context
+[stage] unload
+[stage] render
+[stage] roi context
+[stage] unload
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'modelPath' declared
+ok 20 - param 'modelPath' type
+ok 21 - param 'tileSize' declared
+ok 22 - param 'tileSize' type
+ok 23 - param 'halo' declared
+ok 24 - param 'halo' type
+ok 25 - clip 'Source' declared
+ok 26 - clip 'Output' declared
+ok 27 - kOfxActionCreateInstance
+ok 28 - set param 'modelPath'
+ok 29 - set param 'halo'
+ok 30 - set param 'tileSize'
+ok 31 - kOfxImageEffectActionRender
+ok 32 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 33 - roi context: whole-frame render
+ok 34 - roi context: destination is readable
+ok 35 - roi context: render of an inset window
+ok 36 - roi context: the inset window stays within the tolerance of the whole frame
+ok 37 - roi context: render of the same window without a context region
+ok 38 - roi context: without a context region the same window leaves the tolerance
+ok 39 - kOfxActionDestroyInstance
+ok 40 - kOfxActionUnload
+ok 41 - unload cycle completed
+ok 42 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx)
+ok 43 - OfxGetNumberOfPlugins is exported
+ok 44 - OfxGetPlugin is exported
+ok 45 - OfxGetNumberOfPlugins() >= 1
+ok 46 - OfxGetPlugin(0) returns a plug-in
+ok 47 - pluginApi
+ok 48 - apiVersion
+ok 49 - pluginIdentifier is non-empty
+ok 50 - pluginIdentifier
+ok 51 - pluginIdentifier stable across loads
+ok 52 - pluginVersion
+ok 53 - setHost is non-null
+ok 54 - mainEntry is non-null
+ok 55 - kOfxActionLoad
+ok 56 - kOfxActionDescribe
+ok 57 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 58 - descriptor lists the requested context
+ok 59 - descriptor sets a legal render thread safety
+ok 60 - param 'modelPath' declared
+ok 61 - param 'modelPath' type
+ok 62 - param 'tileSize' declared
+ok 63 - param 'tileSize' type
+ok 64 - param 'halo' declared
+ok 65 - param 'halo' type
+ok 66 - clip 'Source' declared
+ok 67 - clip 'Output' declared
+ok 68 - kOfxActionCreateInstance
+ok 69 - set param 'modelPath'
+ok 70 - set param 'halo'
+ok 71 - set param 'tileSize'
+ok 72 - kOfxImageEffectActionRender
+ok 73 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 74 - roi context: whole-frame render
+ok 75 - roi context: destination is readable
+ok 76 - roi context: render of an inset window
+ok 77 - roi context: the inset window stays within the tolerance of the whole frame
+ok 78 - roi context: render of the same window without a context region
+ok 79 - roi context: without a context region the same window leaves the tolerance
+ok 80 - kOfxActionDestroyInstance
+ok 81 - kOfxActionUnload
+ok 82 - unload cycle completed
+contract_test: 82 checks, 0 failed
+
+== [3/5] model fixtures ==
+  test_conv.onnx: 611 bytes
+  test_input.bin: 36864 bytes
+  test_golden.bin: 36864 bytes
+  test_shape.txt: 8 bytes
+
+== [4/5] bundle hygiene ==
+  build/bundle/OnnxInference.ofx.bundle/Contents/Linux-x86-64/OnnxInference.ofx
+  exported dynamic symbols: 2 (expect 2)
+  NEEDED libonnxruntime:    1 (expect 1)
+  RUNPATH $ORIGIN:          1 (expect 1)
+
+== [5/5] valgrind memcheck (contract harness) ==
+  skipped: a -fsanitize build does not run under memcheck
+
+all checks passed

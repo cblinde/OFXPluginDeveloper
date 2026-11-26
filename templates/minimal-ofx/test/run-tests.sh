@@ -23,7 +23,10 @@ OFX_FILE="$(find "${TPL}/build/bundle" -name '*.ofx' -type f | head -1)"
 OFX_DIR="${OFX_SOURCE_DIR:-${ROOT}/.ofx-ref}"
 HARNESS="${TPL}/build/contract_test"
 
-echo "[2/3] compiling the shared contract harness"
+# The sanitizer is named in the log, like the other two suites do: a run whose
+# header says "none" must not be mistaken for an instrumented one, and the CI
+# job greps this line to prove the build it credits was built that way.
+echo "[2/3] compiling the shared contract harness (sanitizer: ${SANITIZE:-none})"
 SANITIZE="${SANITIZE:-}" "${ROOT}/testkit/build-contract-test.sh" "${HARNESS}" "${OFX_DIR}"
 
 # One process holds one host - OfxSetHost ignores every call after the first -

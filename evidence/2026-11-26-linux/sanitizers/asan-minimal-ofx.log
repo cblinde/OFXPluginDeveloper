@@ -1,0 +1,385 @@
+[1/3] building the reference plug-in (and verifying the artifact)
+[1/4] OpenFX headers: /workspace/chats/178f73e54dd5ef590a75a324/.ofx-ref
+[2/4] configuring (Release)
+[3/4] compiling
+[100%] Built target ReferenceGain
+[4/4] verifying /workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx
+/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, BuildID[sha1]=776201fa9622edde25b0fd8f73507c558d39101d, not stripped
+  exports        : OfxGetNumberOfPlugins OfxGetPlugin 
+  dynamic symbols: 2 defined in total
+  undefined OFX  : none (all host access goes through fetchSuite at runtime)
+  RPATH/RUNPATH  : none
+  dlopen         : OfxGetNumberOfPlugins() = 1
+  pluginApi      : OfxImageEffectPluginAPI (v1)
+  identifier     : com.ofxplugindeveloper.referencegain
+  version        : 1.0
+  setHost        : present
+  mainEntry      : present
+
+OK: /workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx
+    bundle: /workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle
+[2/3] compiling the shared contract harness (sanitizer: address,undefined)
+[3/3] running the host protocol against /workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx
+  host profile: nuke
+[stage] render
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+[stage] render
+[stage] concurrency
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - a second instance can be created
+ok 26 - two instances are live at the same time
+ok 27 - instance 0 accepts its own gain
+ok 28 - instance 1 accepts a different gain
+ok 29 - render instance 0 while instance 1 is alive
+ok 30 - render instance 1 with its own settings
+ok 31 - instance 0 used its own value, not its neighbour's
+ok 32 - instance 1 used its own value, not its neighbour's
+ok 33 - instance for parallel worker 2
+ok 34 - instance for parallel worker 3
+ok 35 - set gain on the instance of parallel worker 0
+ok 36 - set gain on the instance of parallel worker 1
+ok 37 - set gain on the instance of parallel worker 2
+ok 38 - set gain on the instance of parallel worker 3
+ok 39 - concurrent renders produced every record
+ok 40 - every concurrent render returned kOfxStatOK
+ok 41 - every concurrent render produced a readable destination
+ok 42 - concurrent instances kept their own parameter values
+ok 43 - destroy instance 3
+ok 44 - destroy instance 2
+ok 45 - destroy instance 1
+ok 46 - render rejects a byte image
+ok 47 - baseline render before the rejected window
+ok 48 - render rejects a window outside the source bounds
+ok 49 - destination is unchanged after the rejected render
+ok 50 - baseline render inside the destination bounds
+ok 51 - render rejects a window outside the destination bounds
+ok 52 - destination is unchanged after the rejected render
+ok 53 - kOfxActionDestroyInstance
+ok 54 - kOfxActionUnload
+ok 55 - unload cycle completed
+ok 56 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx)
+ok 57 - OfxGetNumberOfPlugins is exported
+ok 58 - OfxGetPlugin is exported
+ok 59 - OfxGetNumberOfPlugins() >= 1
+ok 60 - OfxGetPlugin(0) returns a plug-in
+ok 61 - pluginApi
+ok 62 - apiVersion
+ok 63 - pluginIdentifier is non-empty
+ok 64 - pluginIdentifier
+ok 65 - pluginIdentifier stable across loads
+ok 66 - pluginVersion
+ok 67 - setHost is non-null
+ok 68 - mainEntry is non-null
+ok 69 - kOfxActionLoad
+ok 70 - kOfxActionDescribe
+ok 71 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 72 - descriptor lists the requested context
+ok 73 - descriptor sets a legal render thread safety
+ok 74 - param 'gain' declared
+ok 75 - param 'gain' type
+ok 76 - clip 'Source' declared
+ok 77 - clip 'Output' declared
+ok 78 - kOfxActionCreateInstance
+ok 79 - kOfxImageEffectActionRender
+ok 80 - a second instance can be created
+ok 81 - two instances are live at the same time
+ok 82 - instance 0 accepts its own gain
+ok 83 - instance 1 accepts a different gain
+ok 84 - render instance 0 while instance 1 is alive
+ok 85 - render instance 1 with its own settings
+ok 86 - instance 0 used its own value, not its neighbour's
+ok 87 - instance 1 used its own value, not its neighbour's
+ok 88 - instance for parallel worker 2
+ok 89 - instance for parallel worker 3
+ok 90 - set gain on the instance of parallel worker 0
+ok 91 - set gain on the instance of parallel worker 1
+ok 92 - set gain on the instance of parallel worker 2
+ok 93 - set gain on the instan[stage] byte destination
+[stage] unload
+ce of parallel worker 3
+ok 94 - concurrent renders produced every record
+ok 95 - every concurrent render returned kOfxStatOK
+ok 96 - every concurrent render produced a readable destination
+ok 97 - concurrent instances kept their own parameter values
+ok 98 - destroy instance 3
+ok 99 - destroy instance 2
+ok 100 - destroy instance 1
+ok 101 - render rejects a byte image
+ok 102 - baseline render before the rejected window
+ok 103 - render rejects a window outside the source bounds
+ok 104 - destination is unchanged after the rejected render
+ok 105 - baseline render inside the destination bounds
+ok 106 - render rejects a window outside the destination bounds
+ok 107 - destination is unchanged after the rejected render
+ok 108 - kOfxActionDestroyInstance
+ok 109 - kOfxActionUnload
+ok 110 - unload cycle completed
+contract_test: 110 checks, 0 failed
+  host profile: resolve
+[stage] render
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+[stage] render
+[stage] concurrency
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - a second instance can be created
+ok 26 - two instances are live at the same time
+ok 27 - instance 0 accepts its own gain
+ok 28 - instance 1 accepts a different gain
+ok 29 - render instance 0 while instance 1 is alive
+ok 30 - render instance 1 with its own settings
+ok 31 - instance 0 used its own value, not its neighbour's
+ok 32 - instance 1 used its own value, not its neighbour's
+ok 33 - instance for parallel worker 2
+ok 34 - instance for parallel worker 3
+ok 35 - set gain on the instance of parallel worker 0
+ok 36 - set gain on the instance of parallel worker 1
+ok 37 - set gain on the instance of parallel worker 2
+ok 38 - set gain on the instance of parallel worker 3
+ok 39 - concurrent renders produced every record
+ok 40 - every concurrent render returned kOfxStatOK
+ok 41 - every concurrent render produced a readable destination
+ok 42 - concurrent instances kept their own parameter values
+ok 43 - destroy instance 3
+ok 44 - destroy instance 2
+ok 45 - destroy instance 1
+ok 46 - render rejects a byte image
+ok 47 - baseline render before the rejected window
+ok 48 - render rejects a window outside the source bounds
+ok 49 - destination is unchanged after the rejected render
+ok 50 - baseline render inside the destination bounds
+ok 51 - render rejects a window outside the destination bounds
+ok 52 - destination is unchanged after the rejected render
+ok 53 - kOfxActionDestroyInstance
+ok 54 - kOfxActionUnload
+ok 55 - unload cycle completed
+ok 56 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx)
+ok 57 - OfxGetNumberOfPlugins is exported
+ok 58 - OfxGetPlugin is exported
+ok 59 - OfxGetNumberOfPlugins() >= 1
+ok 60 - OfxGetPlugin(0) returns a plug-in
+ok 61 - pluginApi
+ok 62 - apiVersion
+ok 63 - pluginIdentifier is non-empty
+ok 64 - pluginIdentifier
+ok 65 - pluginIdentifier stable across loads
+ok 66 - pluginVersion
+ok 67 - setHost is non-null
+ok 68 - mainEntry is non-null
+ok 69 - kOfxActionLoad
+ok 70 - kOfxActionDescribe
+ok 71 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 72 - descriptor lists the requested context
+ok 73 - descriptor sets a legal render thread safety
+ok 74 - param 'gain' declared
+ok 75 - param 'gain' type
+ok 76 - clip 'Source' declared
+ok 77 - clip 'Output' declared
+ok 78 - kOfxActionCreateInstance
+ok 79 - kOfxImageEffectActionRender
+ok 80 - a second instance can be created
+ok 81 - two instances are live at the same time
+ok 82 - instance 0 accepts its own gain
+ok 83 - instance 1 accepts a different gain
+ok 84 - render instance 0 while instance 1 is alive
+ok 85 - render instance 1 with its own settings
+ok 86 - instance 0 used its own value, not its neighbour's
+ok 87 - instance 1 used its own value, not its neighbour's
+ok 88 - instance for parallel worker 2
+ok 89 - instance for parallel worker 3
+ok 90 - set gain on the instance of parallel worker 0
+ok 91 - set gain on the instance of parallel worker 1
+ok 92 - set gain on the instance of parallel worker 2
+ok 93 - set gain o[stage] byte destination
+[stage] unload
+n the instance of parallel worker 3
+ok 94 - concurrent renders produced every record
+ok 95 - every concurrent render returned kOfxStatOK
+ok 96 - every concurrent render produced a readable destination
+ok 97 - concurrent instances kept their own parameter values
+ok 98 - destroy instance 3
+ok 99 - destroy instance 2
+ok 100 - destroy instance 1
+ok 101 - render rejects a byte image
+ok 102 - baseline render before the rejected window
+ok 103 - render rejects a window outside the source bounds
+ok 104 - destination is unchanged after the rejected render
+ok 105 - baseline render inside the destination bounds
+ok 106 - render rejects a window outside the destination bounds
+ok 107 - destination is unchanged after the rejected render
+ok 108 - kOfxActionDestroyInstance
+ok 109 - kOfxActionUnload
+ok 110 - unload cycle completed
+contract_test: 110 checks, 0 failed
+  host profile: natron
+[stage] render
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+[stage] render
+[stage] concurrency
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+ok 1 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - a second instance can be created
+ok 26 - two instances are live at the same time
+ok 27 - instance 0 accepts its own gain
+ok 28 - instance 1 accepts a different gain
+ok 29 - render instance 0 while instance 1 is alive
+ok 30 - render instance 1 with its own settings
+ok 31 - instance 0 used its own value, not its neighbour's
+ok 32 - instance 1 used its own value, not its neighbour's
+ok 33 - instance for parallel worker 2
+ok 34 - instance for parallel worker 3
+ok 35 - set gain on the instance of parallel worker 0
+ok 36 - set gain on the instance of parallel worker 1
+ok 37 - set gain on the instance of parallel worker 2
+ok 38 - set gain on the instance of parallel worker 3
+ok 39 - concurrent renders produced every record
+ok 40 - every concurrent render returned kOfxStatOK
+ok 41 - every concurrent render produced a readable destination
+ok 42 - concurrent instances kept their own parameter values
+ok 43 - destroy instance 3
+ok 44 - destroy instance 2
+ok 45 - destroy instance 1
+ok 46 - render rejects a byte image
+ok 47 - baseline render before the rejected window
+ok 48 - render rejects a window outside the source bounds
+ok 49 - destination is unchanged after the rejected render
+ok 50 - baseline render inside the destination bounds
+ok 51 - render rejects a window outside the destination bounds
+ok 52 - destination is unchanged after the rejected render
+ok 53 - kOfxActionDestroyInstance
+ok 54 - kOfxActionUnload
+ok 55 - unload cycle completed
+ok 56 - dlopen(/workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle/Contents/Linux-x86-64/ReferenceGain.ofx)
+ok 57 - OfxGetNumberOfPlugins is exported
+ok 58 - OfxGetPlugin is exported
+ok 59 - OfxGetNumberOfPlugins() >= 1
+ok 60 - OfxGetPlugin(0) returns a plug-in
+ok 61 - pluginApi
+ok 62 - apiVersion
+ok 63 - pluginIdentifier is non-empty
+ok 64 - pluginIdentifier
+ok 65 - pluginIdentifier stable across loads
+ok 66 - pluginVersion
+ok 67 - setHost is non-null
+ok 68 - mainEntry is non-null
+ok 69 - kOfxActionLoad
+ok 70 - kOfxActionDescribe
+ok 71 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 72 - descriptor lists the requested context
+ok 73 - descriptor sets a legal render thread safety
+ok 74 - param 'gain' declared
+ok 75 - param 'gain' type
+ok 76 - clip 'Source' declared
+ok 77 - clip 'Output' declared
+ok 78 - kOfxActionCreateInstance
+ok 79 - kOfxImageEffectActionRender
+ok 80 - a second instance can be created
+ok 81 - two instances are live at the same time
+ok 82 - instance 0 accepts its own gain
+ok 83 - instance 1 accepts a different gain
+ok 84 - render instance 0 while instance 1 is alive
+ok 85 - render instance 1 with its own settings
+ok 86 - instance 0 used its own value, not its neighbour's
+ok 87 - instance 1 used its own value, not its neighbour's
+ok 88 - instance for parallel worker 2
+ok 89 - instance for parallel worker 3
+ok 90 - set gain on the instance of parallel worker 0
+ok 91 - set gain on the instance of parallel worker 1
+ok 92 - set gain on the instance of parallel worker 2
+ok 93 - set gain on the instance[stage] byte destination
+[stage] unload
+ of parallel worker 3
+ok 94 - concurrent renders produced every record
+ok 95 - every concurrent render returned kOfxStatOK
+ok 96 - every concurrent render produced a readable destination
+ok 97 - concurrent instances kept their own parameter values
+ok 98 - destroy instance 3
+ok 99 - destroy instance 2
+ok 100 - destroy instance 1
+ok 101 - render rejects a byte image
+ok 102 - baseline render before the rejected window
+ok 103 - render rejects a window outside the source bounds
+ok 104 - destination is unchanged after the rejected render
+ok 105 - baseline render inside the destination bounds
+ok 106 - render rejects a window outside the destination bounds
+ok 107 - destination is unchanged after the rejected render
+ok 108 - kOfxActionDestroyInstance
+ok 109 - kOfxActionUnload
+ok 110 - unload cycle completed
+contract_test: 110 checks, 0 failed
