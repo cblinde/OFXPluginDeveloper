@@ -3,13 +3,17 @@ name: linux
 # What this workflow adds to docs.yml: the same Linux runs that produced
 # evidence/2026-11-26-linux/, executed on every push instead of by hand.
 #
-#   suites             CPU_ONLY=1, ONNX Runtime from NuGet, the whole gate. The
-#                      gate includes the per-bundle glibc stage, so a bundle that
-#                      needs a newer glibc than its template targets fails here
-#                      (2.17 for the reference and CUDA plug-ins, 2.32 for the
-#                      inference bundle - references/cmake-and-linking.md §5).
-#   thread-sanitizer   all three templates' host suites under TSan, with ASLR off
-#                      for the process tree - see the comment on that step.
+#   suites             CPU_ONLY=1, ONNX Runtime from NuGet, the whole gate, all
+#                      four templates. The gate includes the per-bundle glibc
+#                      stage, so a bundle that needs a newer glibc than its
+#                      template targets fails here (2.17 for the reference, CUDA
+#                      and OpenCL plug-ins, 2.32 for the inference bundle -
+#                      references/cmake-and-linking.md §5). The OpenCL template
+#                      builds and runs its CPU path on every push and reports its
+#                      device suite as NOT RUN when the runner has no device.
+#   thread-sanitizer   the three templates whose scripts carry SANITIZE, under
+#                      TSan, with ASLR off for the process tree - see the comment
+#                      on that step.
 #   address-undefined  the same three under ASan+UBSan, which needs no ASLR
 #                      change and finds the leaks TSan does not look for.
 #
@@ -23,11 +27,14 @@ name: linux
 # machine with a device; what this workflow covers is everything that does not
 # need one.
 #
-# not built here: templates/minimal-opencl-ofx
-# Its suite opens a real device and no Linux runner has one, so the sanitizer and
-# analysis jobs name the other three. The gate that does cover all four is
-# `run-tests.sh`, which the suites job runs; windows.yml builds this template and
-# accepts its no-device exit code (2) as a notice rather than a pass.
+# The sanitizer jobs cover three templates, and that is a property of the
+# templates rather than of the runner: `minimal-opencl-ofx`'s scripts take no
+# SANITIZE variable - its suite compiles its own binary from a fixed command line
+# - so instrumenting it would produce a non-instrumented build and the
+# `sanitizer: ...` grep on its log would fail for the wrong reason. Everything
+# that does not need the sanitizer covers it: the suites job builds and tests it
+# through `run-tests.sh` (device half NOT RUN without a device), and the analysis
+# and memcheck steps name it explicitly.
 
 on:
   push:
@@ -103,9 +110,14 @@ jobs:
         run: |
           set -euo pipefail
           grep -q '^== glibc bound: every built bundle' run-tests.log
-          for bundle in minimal-ofx minimal-cuda-ofx onnx-inference-ofx; do
+          for bundle in minimal-ofx minimal-cuda-ofx minimal-opencl-ofx onnx-inference-ofx; do
             grep -q -- "^-- ${bundle}: glibc <= " run-tests.log
           done
+          # The OpenCL template's test stage has to exist whether or not this
+          # runner has a device: one summary line says the suite ran, the other
+          # says it did not, and losing both would mean the stage vanished.
+          grep -qE '^== test: minimal-opencl-ofx' run-tests.log
+          grep -qE '^  (OpenCL device path|NOT RUN: OpenCL device path)' run-tests.log
 
       - name: Upload the log
         if: always()
@@ -123,7 +135,7 @@ jobs:
       - name: ONNX Runtime
         uses: ./.github/actions/onnx-runtime
 
-      - name: ThreadSanitizer, all three templates
+      - name: ThreadSanitizer, the three templates that carry SANITIZE
         # Why ASLR has to be off, in one place:
         #
         # TSan reserves a large fixed shadow-memory region and maps the
@@ -183,7 +195,7 @@ jobs:
       - name: ONNX Runtime
         uses: ./.github/actions/onnx-runtime
 
-      - name: AddressSanitizer and UndefinedBehaviorSanitizer, all three templates
+      - name: AddressSanitizer and UndefinedBehaviorSanitizer, the same three
         # No setarch here: ASan takes its shadow mapping from the process's own
         # address space and does not collide with high-entropy ASLR the way TSan's
         # fixed layout does. The suites set ASAN_OPTIONS and UBSAN_OPTIONS
@@ -224,7 +236,7 @@ jobs:
     # this repository's own container has neither root nor sudo. A runner has both,
     # so this job turns two skipped lines into results - and each step proves the
     # tool actually ran, because an analysis that silently skipped looks clean.
-    # memcheck runs over all three suites; the reference one is the template a
+    # memcheck runs over all four suites; the reference one is the template a
     # reader copies, so a leak there would be copied too.
     runs-on: ubuntu-latest
     steps:
@@ -257,22 +269,23 @@ jobs:
           valgrind --error-exitcode=1 --leak-check=full /bin/true
           cppcheck --version
 
-      - name: cppcheck and shellcheck, all three templates
+      - name: cppcheck and shellcheck, all four templates
         # REQUIRE_ANALYSIS=1 turns a missing tool into a failure instead of a skip,
-        # and the grep refuses a run that never printed its summary - the three
+        # and the grep refuses a run that never printed its summary - the four
         # templates had their own analysis entry points so that a finding names the
-        # template it is in.
+        # template it is in. Static analysis needs no device, so the OpenCL one is
+        # in this loop like the others.
         shell: bash
         run: |
           set -euo pipefail
-          for template in minimal-ofx minimal-cuda-ofx onnx-inference-ofx; do
+          for template in minimal-ofx minimal-cuda-ofx minimal-opencl-ofx onnx-inference-ofx; do
             echo "== ${template}"
             REQUIRE_ANALYSIS=1 "./templates/${template}/test/run-analysis.sh" 2>&1 \
               | tee "analysis-${template}.log"
             grep -qF 'static analysis: clean' "analysis-${template}.log"
           done
 
-      - name: memcheck, all three suites
+      - name: memcheck, all four suites
         # The greps refuse a run whose valgrind stage disappeared or whose passes
         # stopped happening: the suites print the stage number, and a stage that
         # stops existing would otherwise just shorten the log. The reference suite
@@ -293,6 +306,23 @@ jobs:
           grep -qF '== [5/5] valgrind memcheck' memcheck-inference.log
           grep -qF 'contract_test: 90 checks, 0 failed' memcheck-inference.log
           test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-inference.log)" = 2
+          # The fourth suite: its no-device exit code (2) is the suite's word for
+          # "this machine has nothing to run it on". The contract half still goes
+          # through memcheck without a device, so that pass is credited and the
+          # device half is reported as NOT RUN instead of failing the job.
+          opencl_status=0
+          RUN_VALGRIND=1 ./templates/minimal-opencl-ofx/test/run-tests.sh \
+            > memcheck-opencl.log 2>&1 || opencl_status=$?
+          cat memcheck-opencl.log
+          grep -qF '== [6/6] valgrind memcheck' memcheck-opencl.log
+          grep -qF 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-opencl.log
+          if [[ "${opencl_status}" == 2 ]]; then
+            echo "NOT RUN: minimal-opencl-ofx - the OpenCL suite needs a device"
+          else
+            [[ "${opencl_status}" == 0 ]] || exit "${opencl_status}"
+            grep -qE 'opencl_suite: [0-9]+ checks, 0 failed' memcheck-opencl.log
+            test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-opencl.log)" = 2
+          fi
 
       - name: Upload the logs
         if: always()

@@ -243,8 +243,8 @@ cost seconds and they are the only defence against some classes of bug.
 | Capability guard | every `setSupportsCudaRender(true)` inside `#ifdef` | advertising what you did not build |
 
 `test/run-analysis.sh` runs cppcheck and shellcheck over its own template — the
-sources and the scripts, not the repository. All three templates have one, and
-`static-analysis` in `linux.yml` runs all three. A
+sources and the scripts, not the repository. All four templates have one, and
+`static-analysis` in `linux.yml` runs all four. A
 missing tool is reported as skipped rather than clean: the run ends
 `static analysis: incomplete - N tool(s) ran, M skipped`, and
 `REQUIRE_ANALYSIS=1` turns that into a failure. The gate list as a whole is
@@ -813,7 +813,9 @@ crash"**.
 
 Four workflows, one half each, once per push: `docs.yml` checks the documents,
 their coverage against `4290e68`, the tool self-tests and the shell syntax,
-`linux.yml` runs the template suites, the sanitizers and the glibc stage,
+`linux.yml` runs the template suites of all four (the OpenCL device half is
+reported NOT RUN on a runner without one), the sanitizers over the three whose
+scripts carry `SANITIZE`, and the glibc stage of every bundle,
 `windows.yml` builds all four templates with MSVC and runs the contract, ONNX CPU
 and negative-control steps, and `canary.yml` asks the newest ONNX Runtime release
 once a week whether the shipped model still loads. The `templates` job that ran
