@@ -53,6 +53,7 @@ close that gap, and `verify-bundle.bat` runs both:
 ```bat
 .\testkit\verify-bundle.bat <build-dir-or-bundle> --plugin-id <id> [--natron <dir>] [--gain 0.5]
 .\testkit\verify-bundle.bat <build> --plugin-id <id> --tier1-only      (CI without Natron)
+.\testkit\verify-bundle.bat <build> --plugin-id <id> --effect "Reference Gain" --resolve   (Resolve, closed)
 ```
 
 | Tier | What runs | What it settles |
@@ -60,6 +61,16 @@ close that gap, and `verify-bundle.bat` runs both:
 | 0 | layout assertion | `Contents\Win64\<Name>.ofx` with `<Name>` equal to the bundle stem, before anything executes |
 | 1 | `testkit/official-host` — the OpenFX project's own `HostSupport` library and headless `cacheDemo`, built unmodified | the plug-in loads, enumerates and describes under a host that is not ours: id, contexts, render safety, supported depths |
 | 2 | `testkit/tier2-natron.py` — `NatronRenderer`, one 256×256 frame, PNG in and out | a real host instantiates the effect and renders it, and the pixels come out right (gain applied once, in linear space, alpha untouched) |
+| 3 | `tests/resolve/poc.py --build-project` — DaVinci Resolve Studio, one generated 1920×1080 still, project and timeline built through the scripting API | the GUI product this most likely ships into loads the bundle, applies the effect and renders a frame; the host's own compute-API line goes into the report, so an Auto session and an explicit CUDA session are told apart rather than assumed |
+
+Tier 3 is opt-in (`--resolve`), because it needs an installed host, an interpreter
+with the `DaVinciResolveScript` module on its path, and the host **closed**: Resolve
+holds scripting port 15000, and a run would otherwise measure an open session and
+quit it. The tier refuses to start when `Resolve.exe` is running, finds the
+installer under `Program Files\Blackmagic Design\DaVinci Resolve` on any fixed
+drive (the registry holds only a `Version`), and generates its still with ffmpeg so
+a clean checkout can run it. `--effect <name>` is the OFX menu name, not the bundle
+name - `Reference Gain`, not `ReferenceGain`.
 
 The contract harness in this directory stays: it is the layer that can drive
 single actions, odd pitches and rejected parameters far more precisely than any

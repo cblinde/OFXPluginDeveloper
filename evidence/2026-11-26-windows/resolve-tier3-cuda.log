@@ -1,0 +1,34 @@
+# Resolve Studio 21.2.0.5, tier 3 of verify-bundle.bat, GPU processing mode CUDA, 2026-11-26.
+#
+# Same command, after Preferences -> System -> Memory and GPU -> GPU processing mode
+# was set to CUDA and the host restarted (the setting applies at start-up). The host
+# logs only "Selected compute API: CUDA" - no automatic line - which is how the two
+# sessions are told apart in this repository.
+#
+# The switch wrote one line into
+# %APPDATA%\Blackmagic Design\DaVinci Resolve\Preferences\config.dat:
+#     Local.GPU.Mode = CUDA
+# The file held no such key before the switch and was restored by removing it
+# afterwards (3964 bytes, then 3986, then 3964 again), so this run left the machine
+# in the mode it found.
+
+== tier 0: bundle layout ==
+== tier 1: official OpenFX host (HostSupport + cacheDemo) ==
+== tier 2: headless render through NatronRenderer ==
+== tier 3: one still frame through Resolve Studio ==
+resolve proof of concept (run)
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\ReferenceGain.ofx.bundle
+  launch    pass     pid 3700
+  connect   pass     DaVinci Resolve Studio 21.2.0.5
+  gpu       pass     2026-11-26 18:21:26,338 | Selected compute API: CUDA
+  build     pass     poc: Reference Gain on resolve-source.png
+  render    pass     poc00108000.png
+  check     pass     1920x1080 via ffmpeg
+  quit      pass     API quit, then the recorded PID
+report: Z:\Tools-DEV\OFXPluginDeveloper_Local\tests\resolve\reports\poc-2026-11-26T17-21-25+00-00.json
+all executed tiers passed
+EXIT=0
+
+report excerpt: result pass, gpu.compute_api_automatic False, gpu.lines ["2026-11-26 18:21:26,338 | Selected compute API: CUDA"]
+effect: Reference Gain on poc; image 1920x1080 via ffmpeg, 9 step(s)

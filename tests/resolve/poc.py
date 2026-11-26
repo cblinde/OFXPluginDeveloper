@@ -178,6 +178,52 @@ def step(report, name, status, detail="", seconds=None):
     return entry
 
 
+def host_log_path():
+    """Resolve's own log, where it states which compute API it picked."""
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return None
+    path = (Path(appdata) / "Blackmagic Design/DaVinci Resolve/Support/logs"
+            / "davinci_resolve.log")
+    return path if path.is_file() else None
+
+
+def host_log_size():
+    path = host_log_path()
+    try:
+        return path.stat().st_size if path else 0
+    except OSError:
+        return 0
+
+
+def compute_api_lines(offset):
+    """The host's own statement of the compute API, from what it wrote since `offset`.
+
+    "Compute API set to automatic, defaulting to CUDA" is what an Auto session
+    says; an explicit choice logs "Selected compute API: CUDA" without that line.
+    The distinction is the point of running two sessions, and no scripting call
+    exposes it, so it is read from the log instead of assumed - a report claiming
+    "Auto" without this line would be a guess, and the offset keeps a previous
+    session's line from answering for this one.
+    """
+    path = host_log_path()
+    if path is None:
+        return []
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(offset)
+            text = handle.read().decode("utf-8", "replace")
+    except OSError:
+        return []
+    lines = []
+    for line in text.splitlines():
+        if "Main.GPUConfig" not in line or "ompute API" not in line:
+            continue
+        message = line.split("|", 3)[-1].strip() if "|" in line else line.strip()
+        lines.append(message)
+    return lines
+
+
 def run(args, report):
     started = time.monotonic()
     problems, facts = validate(args)
@@ -220,6 +266,7 @@ def run(args, report):
                 declared_path.unlink()
             environment = dict(os.environ,
                                MCOFX_PATH_LOG=str(declared_path.resolve()))
+        log_mark = host_log_size()
         process = resolve_api.launch(facts["resolve"], nogui=True,
                                      environment=environment)
         step(report, "launch", "pass", f"pid {process.pid}", time.monotonic() - started)
@@ -228,6 +275,15 @@ def run(args, report):
         resolve = resolve_api.connect(timeout=args.timeout, executable=facts["resolve"])
         step(report, "connect", "pass",
              f"{resolve.GetProductName()} {resolve.GetVersionString()}",
+             time.monotonic() - started)
+
+        started = time.monotonic()
+        api_lines = compute_api_lines(log_mark)
+        report["gpu"] = {"compute_api_automatic": any("automatic" in line
+                                                      for line in api_lines),
+                         "lines": api_lines}
+        step(report, "gpu", "pass" if api_lines else "unknown",
+             "; ".join(api_lines) or "the host logged no compute API line",
              time.monotonic() - started)
 
         if args.build_project:

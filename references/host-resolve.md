@@ -65,6 +65,25 @@ CUDA or Metal. The default is Auto. Consequences:
   you are advertising a path that cannot run.
 - Users switch modes to troubleshoot; your plugin must survive both.
 
+**Measured in both modes, 2026-11-26.** `testkit/verify-bundle.bat <build> --plugin-id
+com.ofxplugindeveloper.referencegain --effect "Reference Gain" --resolve` ran tier 3
+twice on Studio 21.2.0.5 - once with this switch on Auto, once on CUDA - and the
+host's own log line is what separates them: Auto writes `Compute API set to
+automatic, defaulting to CUDA.` and then `Selected compute API: CUDA`, the explicit
+setting writes only the second line. Both sessions applied Reference Gain to one
+generated 1920x1080 still, rendered `poc00108000.png` and decoded it (**[V]**,
+[`resolve-tier3-auto.log`](../evidence/2026-11-26-windows/resolve-tier3-auto.log),
+[`resolve-tier3-cuda.log`](../evidence/2026-11-26-windows/resolve-tier3-cuda.log)).
+Two things follow for anything that tries to test this switch: the mode is stated
+only in that log line, so a run has to quote it rather than assume it; and it is a
+setting, not a command-line flag. Switching to CUDA wrote
+`Local.GPU.Mode = CUDA` into
+`%APPDATA%\Blackmagic Design\DaVinci Resolve\Preferences\config.dat`, a file that
+held no such key while the switch was on Auto - 3964 bytes before the switch, 3986
+with the key, and 3964 again once the key was removed, which is how the machine was
+left. Whether the GUI writes an explicit `Auto` for a user who switches back was
+not observed, so Auto is "the key is absent" only for the state this run started in.
+
 **Resolve owns its CUDA stack, and it loads it at startup.** Listed from outside
 while Resolve Studio 21.2.0.5 ran (2026-11-26), the process holds twelve
 CUDA-related modules: `cudart64_12`, the legacy `cudart64_110`, `cublas64_12`,
