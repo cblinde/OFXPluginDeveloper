@@ -15,7 +15,11 @@ What it checks, and why each one exists:
    indistinguishable from prose to a reader and to an agent.
 2. Cross-references of the form `` `FILE.md` §12 `` (and `§3.5`, checked
    against a heading that starts with that number). These are not links, so no
-   renderer catches them; they rot silently when sections are renumbered.
+   renderer catches them; they rot silently when sections are renumbered. A
+   quoted fragment after the number (`§4, "Models that only accept certain
+   sizes"`) is resolved against that section's text as well: three rows of
+   `pattern-index.md` named headings that live in another document, and the
+   number alone had looked fine.
 3. Count drift. The number of templates, testing layers and AI repositories is
    derived from the tree at run time and compared with the prose that counts
    them. This is what caught "both templates" after a third template landed.
@@ -157,6 +161,30 @@ def headings(text):
 
 def section_numbers(text):
     return {int(m.group(1)) for m in re.finditer(r"^## (\d+)\.", text, re.M)}
+
+
+def section_title(text, number):
+    match = re.search(r"^## %d\.[ \t]*(.*)$" % number, text, re.M)
+    return match.group(1).strip() if match else ""
+
+
+def section_bodies(text):
+    """Section number -> its whole text, from the `## N.` heading to the next one.
+
+    A reference that names what it expects usually quotes a `####` heading or a
+    bold lede rather than the numbered title - "the halo is measured, not
+    guessed" is a paragraph, not a section - so the comparison is against the
+    section's text. What it refuses is a fragment the named section does not
+    contain anywhere, which is what a re-pointed reference looks like when the
+    number still exists.
+    """
+    out = {}
+    marks = list(re.finditer(r"^## (\d+)\.", text, re.M))
+    tops = [m.start() for m in re.finditer(r"^## ", text, re.M)] + [len(text)]
+    for mark in marks:
+        end = next(start for start in tops if start > mark.start())
+        out[int(mark.group(1))] = text[mark.start():end]
+    return out
 
 
 def mask_code(line):
@@ -403,9 +431,15 @@ def check_section_refs(root, files, texts, report):
         # form put `)` between the name and the §, so an optional-backtick
         # pattern skipped every reference written that way - the whole class
         # went unchecked.
+        # A quoted fragment after the number is the reference saying what it
+        # expects to find there: `x.md` §7 "the halo is measured, not guessed".
+        # Only an adjacent quote counts - a quote a few words later is prose
+        # quoting the document, not a claim about which section it is.
         for match in re.finditer(
-                r"([A-Za-z0-9_./-]+\.md)[`'\")\\]]*[ \t]*§[ \t]*(\d+(?:\.\d+)*)", text):
+                r"([A-Za-z0-9_./-]+\.md)[`'\")\\]]*[ \t]*§[ \t]*(\d+(?:\.\d+)*)"
+                r"(?:[ \t]*,?[ \t]*[\"“]([^\"”\n]{3,90})[\"”])?", text):
             target, dotted = match.group(1), match.group(2)
+            named = match.group(3)
             parts = dotted.split(".")
             number = int(parts[0])
             line = text.count("\n", 0, match.start()) + 1
@@ -428,6 +462,16 @@ def check_section_refs(root, files, texts, report):
                 if not any(re.match(rf"^\s*{prefix}(?![\d.])", title)
                            for title in headings(texts[relative]).values()):
                     report.error(path, line, f"{target} has no §{dotted} heading")
+            if named:
+                # The number exists and may still point at the wrong section:
+                # what the reference says it will find there is the only part of
+                # it a renumbering cannot fake.
+                body = section_bodies(texts[relative]).get(number, "")
+                if " ".join(named.split()).lower() not in " ".join(body.split()).lower():
+                    report.error(
+                        path, line,
+                        f"{target} §{number} does not contain \"{named}\"; that "
+                        f"section is \"{section_title(texts[relative], number)}\"")
 
 
 def check_counts(root, files, texts, report):
@@ -724,11 +768,14 @@ CODE_SKIP_DIRS = {".git", ".validation", ".ofx-ref", "build", "build-sanitize",
 # another dress: `[`references/x.md`](references/x.md) §5`. The old pattern
 # required the marker adjacent to the name, so that spelling - the one a comment
 # picks when it wants the reference clickable - was never checked at all.
+# A quoted fragment right after the number is the comment saying what it
+# expects to find: the same rule as in the documents (rule 2).
 SECTION_REF = re.compile(
     r"([A-Za-z0-9_][A-Za-z0-9_.-]*\.md)`?"
     r"(?:\]\([^)\n]*\))?[ \t]*"
     r"(?:\n[ \t]*(?:#|//|\*)[ \t]*)?"
-    r"(?:section|§)[ \t]*(\d+)")
+    r"(?:section|§)[ \t]*(\d+)"
+    r"(?:[ \t]*,?[ \t]*[\"“]([^\"”\n]{3,90})[\"”])?")
 
 
 def code_files(root):
@@ -750,11 +797,13 @@ def check_code_section_refs(root, files, texts, report):
     onnx-and-tensorrt.md, which had sections 1 to 6.
     """
     sections = {}
+    bodies = {}
     for path in files:
         numbers = set()
         for match in re.finditer(r"^#{2,3}\s+(\d+)", texts[path], re.MULTILINE):
             numbers.add(int(match.group(1)))
         sections[path] = numbers
+        bodies[path] = section_bodies(texts[path])
     for path in code_files(root):
         try:
             text = read(os.path.join(root, path))
@@ -771,6 +820,16 @@ def check_code_section_refs(root, files, texts, report):
                 report.error(path, line_number,
                              f"says {name} section {number}, but that document has "
                              f"sections {sorted(sections[target]) or 'none'}")
+                continue
+            named = match.group(3)
+            if named:
+                body = bodies[target].get(number, "")
+                if " ".join(named.split()).lower() not in " ".join(body.split()).lower():
+                    line_number = text.count("\n", 0, match.start()) + 1
+                    report.error(
+                        path, line_number,
+                        f"says {name} section {number} contains \"{named}\"; that "
+                        f"section is \"{section_title(texts[target], number)}\"")
 
 
 def check_agents(root, report):
