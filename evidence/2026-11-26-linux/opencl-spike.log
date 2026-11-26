@@ -1,0 +1,81 @@
+$ # backlog row 34, the small half: reach a real OpenCL device through the loader a
+$ # host would own, with no vendor SDK and no GPU, and run a kernel through it.
+$ uname -sr
+Linux 7.0.0-38-generic
+
+# Packages, all unpacked with dpkg -x into .validation/cl (no root here), noble:
+  pocl-opencl-icd 5.0-2.1build3, libpocl2t64 5.0-2.1build3, libpocl2-common 5.0-2.1build3,
+  ocl-icd-libopencl1 2.3.2-1build1, libllvm16t64 1:16.0.6, libclang-cpp16t64 1:16.0.6
+
+$ mv .validation/cl/usr/share/pocl/include /tmp/pocl-include  # reproduce the first run
+  OPENCL_LOADER_LIB=.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1 \
+  OCL_ICD_VENDORS=.validation/cl/etc/OpenCL/vendors ./tools/opencl-spike.sh
+  exit=1
+  == building the spike ==
+  g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+  
+  == running it ==
+    OPENCL_LOADER_LIB=/workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1
+    OCL_ICD_VENDORS=/workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/etc/OpenCL/vendors
+  1 error generated.
+  opencl spike: FAIL: clBuildProgram (buffer): build log:
+  error: <built-in>:1:10: '/workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/usr/lib/x86_64-linux-gnu/../../share/pocl/include/pocl_types.h' file not found
+  Device cpu-haswell-AMD Ryzen 7 3800X 8-Core Processor failed to build the program
+  
+  opencl spike: loader /workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1
+    platform: Portable Computing Language
+    device:   cpu-haswell-AMD Ryzen 7 3800X 8-Core Processor (OpenCL 3.0 PoCL HSTR: cpu-x86_64-pc-linux-gnu-haswell)
+    images:   supported
+
+# The kernel compiler was there (Compiler Available: Yes in opencl-pocl.log) but its
+# headers were not: Ubuntu ships share/pocl/include (pocl_types.h, _kernel.h,
+# opencl-c.h) in libpocl2-common, and the earlier dpkg -x set had unpacked the
+# bitcode from libpocl2t64 but not that package. Fixed by unpacking it too, which
+# is what apt does by Depends:
+$ dpkg -x /tmp/pocl-common.deb .validation/cl
+
+  OPENCL_LOADER_LIB=.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1 \
+  OCL_ICD_VENDORS=.validation/cl/etc/OpenCL/vendors ./tools/opencl-spike.sh
+  exit=0
+  == building the spike ==
+  g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+  
+  == running it ==
+    OPENCL_LOADER_LIB=/workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1
+    OCL_ICD_VENDORS=/workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/etc/OpenCL/vendors
+  opencl spike: loader /workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1
+    platform: Portable Computing Language
+    device:   cpu-haswell-AMD Ryzen 7 3800X 8-Core Processor (OpenCL 3.0 PoCL HSTR: cpu-x86_64-pc-linux-gnu-haswell)
+    images:   supported
+    buffer path: 1024 floats, scale by 3.0, 0 wrong
+    image path: 32x24 RGBA float image, 3072 components, 0 wrong
+  opencl spike: 2 of 2 paths ok
+
+$ # control: an empty ICD directory - the loader must find no platform
+$ OCL_ICD_VENDORS=/tmp/no-icd ./tools/opencl-spike.sh
+  exit=1
+  == building the spike ==
+  g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+  
+  == running it ==
+    OPENCL_LOADER_LIB=/workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1
+    OCL_ICD_VENDORS=/tmp/no-icd
+  opencl spike: FAIL at clGetPlatformIDs: OpenCL error -1001
+  opencl spike: loader /workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1
+
+$ # control: a loader path that does not exist
+$ OPENCL_LOADER_LIB=/nonexistent/libOpenCL.so.1 ./tools/opencl-spike.sh
+  exit=2
+  == building the spike ==
+  g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+  
+  == running it ==
+    OPENCL_LOADER_LIB=/nonexistent/libOpenCL.so.1
+    OCL_ICD_VENDORS=/workspace/chats/178f73e54dd5ef590a75a324/.validation/cl/etc/OpenCL/vendors
+  opencl spike: FAIL: cannot load /nonexistent/libOpenCL.so.1: /nonexistent/libOpenCL.so.1: cannot open shared object file: No such file or directory
+  opencl spike: loader /nonexistent/libOpenCL.so.1
+
+# What this does not prove: no OFX host, so the context and queue are ones the
+# spike made itself rather than the host's (kOfxImageEffectPropOpenCLCommandQueue);
+# no GPU, so the timings would say nothing even if it printed any; and the tree
+# under .validation/cl is dpkg -x output, not an installed system.

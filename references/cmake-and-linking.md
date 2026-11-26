@@ -451,6 +451,38 @@ and refuses the plug-in; below 2.28 it loads neither.
 
 ## 6. Toolchain notes that cause real failures
 
+### OpenCL without a vendor SDK
+
+The OpenCL path an OFX plug-in needs is smaller than the CUDA one: the host
+creates the context and the command queue and hands them over in
+`kOfxImageEffectPropOpenCLCommandQueue`, and the images arrive as
+`kOfxImageEffectPropOpenCLImage` - so a plug-in does not link a vendor SDK and
+does not create a context of its own. What it does need is a loader
+(`libOpenCL.so.1`) and a vendor ICD at run time.
+
+Two consequences for a build, both measured on this machine:
+
+- **The headers are the plug-in's problem, the loader is not.** `CL/cl.h` is not
+  installed here and the template cannot assume it is on the build machine; a
+  shim with the entry points the plug-in calls (the way `test/shim/cuda_runtime.h`
+  stands in for the CUDA runtime) is what makes the source compile anywhere. The
+  runtime side is a real `libOpenCL.so.1`: `tools/opencl-spike.cpp` opens one with
+  `dlopen`/`dlsym`, and the types it declares are the OpenCL 1.2 ABI rather than a
+  private invention ([`opencl-spike.log`](../evidence/2026-11-26-linux/opencl-spike.log)).
+- **A CPU device is enough to test the code path, not the performance.** PoCL 5.0
+  gives an OpenCL 3.0 device on the CPU with image support, so a kernel can be
+  built and its numbers read back here; anything about throughput needs a GPU and
+  is not measured.
+
+The one packaging trap that cost a run: Ubuntu puts PoCL's kernel headers
+(`pocl_types.h`, `_kernel.h`, `opencl-c.h`) in `libpocl2-common`, not in
+`libpocl2t64`. A tree unpacked by hand from `libpocl2t64` alone has the bitcode
+and the compiler, and `clBuildProgram` still fails with
+`.../share/pocl/include/pocl_types.h' file not found`. `apt install
+pocl-opencl-icd` pulls the common package through `Depends:`; a `dpkg -x`
+install has to name it.
+
+
 ### `nvcc` flags
 
 | Flag | Why |
