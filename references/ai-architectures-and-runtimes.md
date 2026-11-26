@@ -201,7 +201,11 @@ per-target artifact, a compiler in the build, no provider to fall back to when a
 layer is unsupported, and - the part this spike did **not** reach - the IREE
 runtime C API linked into the `.ofx`, which is what decides whether the artifact
 is usable from a host at all. Until that is done, the shipped path stays ONNX
-Runtime, and this stays a measured option rather than a promise.
+Runtime, and this stays a measured option rather than a promise. One thing that
+does not help: Mesa's software Vulkan driver. IREE's Vulkan HAL creates an
+instance against lavapipe 24.0.5 - the loader finds one physical device - and then
+enumerates none (`--dump_devices=vulkan` prints an empty list), so the artifact
+still needs a real device. That was measured, not assumed.
 
 ---
 

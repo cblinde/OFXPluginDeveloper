@@ -1,0 +1,62 @@
+$ # valgrind + cppcheck, run here for the first time (row 25)
+$ uname -sr; ldd --version | head -1
+Linux 7.0.0-38-generic
+ldd (Ubuntu GLIBC 2.39-0ubuntu8.12) 2.39
+
+# This container is an unprivileged Ubuntu 24.04 with no sudo (no_new_privs),
+# so the packages were fetched from archive.ubuntu.com and unpacked with
+# dpkg -x. Two compiled-in paths then had to point into the unpacked tree:
+#   cppcheck  FILESDIR  /usr/lib/x86_64-linux-gnu/cppcheck  (reads std.cfg from it)
+#   valgrind            /usr/lib/debug                     (reads libc6-dbg from it)
+# Both were replaced byte-for-byte with a writable path of the same length,
+# which is what a real `apt-get install` does by putting the files there.
+$ dpkg-deb -f *.deb Package Version | paste - -
+Package: valgrind	Version: 1:3.22.0-0ubuntu3
+Package: cppcheck	Version: 2.13.0-2ubuntu3
+Package: libc6-dbg	Version: 2.39-0ubuntu8.12
+Package: libtinyxml2-10	Version: 10.0.0+dfsg-2
+
+== valgrind 3.27.1 (unpacked first, from the pool head) ==
+valgrind-3.27.1
+
+valgrind: m_debuginfo/image.c:619 (set_CEnt): Assertion '!sr_isError(sr)' failed.
+exit=0
+
+== valgrind 3.22.0 (what ubuntu-24.04 ships, i.e. what a runner installs) ==
+valgrind-3.22.0
+==6943== For lists of detected and suppressed errors, rerun with: -s
+==6943== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+== cppcheck 2.13.0 ==
+Cppcheck 2.13.0
+
+$ REQUIRE_ANALYSIS=1 templates/minimal-cuda-ofx/test/run-analysis.sh
+  == cppcheck ==
+  Cppcheck 2.13.0
+  
+  == shellcheck ==
+  version: 0.11.0
+  
+  static analysis: clean
+  exit=0
+
+$ CPU_ONLY=1 RUN_VALGRIND=1 ./templates/minimal-cuda-ofx/test/run-tests.sh
+  exit=0
+  == [2/5] PTX check skipped: nvcc not on PATH ==
+  contract_test: 144 checks, 0 failed
+  contract_test: 144 checks, 0 failed
+  contract_test: 144 checks, 0 failed
+  == [5/5] valgrind memcheck ==
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+      ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+$ CPU_ONLY=1 RUN_VALGRIND=1 ./templates/onnx-inference-ofx/test/run-tests.sh
+  exit=0
+  contract_test: 168 checks, 0 failed
+  contract_test: 168 checks, 0 failed
+  contract_test: 168 checks, 0 failed
+  ok 36 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+  ok 81 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+  contract_test: 90 checks, 0 failed
+  == [5/5] valgrind memcheck (contract harness) ==
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

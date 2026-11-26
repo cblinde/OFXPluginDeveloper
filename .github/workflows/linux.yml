@@ -194,3 +194,65 @@ jobs:
           name: linux-asan-logs
           path: asan-*.log
           if-no-files-found: warn
+
+  static-analysis:
+    # The two checks that were "skipped, not clean" everywhere they ran by hand:
+    # memcheck wants libc6-dbg, cppcheck wants its cfg where the package puts it, and
+    # this repository's own container has neither root nor sudo. A runner has both,
+    # so this job turns two skipped lines into results - and each step proves the
+    # tool actually ran, because an analysis that silently skipped looks clean.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: ONNX Runtime
+        uses: ./.github/actions/onnx-runtime
+
+      - name: valgrind, cppcheck and the debug symbols
+        # `apt-get install valgrind` does not pull libc6-dbg, and memcheck without it
+        # aborts before the first check - "a function redirection which is mandatory
+        # ... cannot be set up", the memcmp redirection in ld-linux. cppcheck's cfg
+        # ships in the package; the Debian build looks for it under
+        # /usr/lib/x86_64-linux-gnu/cppcheck, a directory apt creates and dpkg -x does
+        # not. Both facts are measured in evidence/2026-11-26-linux/valgrind-cppcheck.log.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            valgrind libc6-dbg cppcheck shellcheck
+
+      - name: The tools really work
+        # memcheck on /bin/true rather than a version comparison: the failure this
+        # guards against (missing debuginfo) is what it hits first, and valgrind
+        # 3.27.1 - on the pool head, not on 24.04 - crashes in its debuginfo stage on
+        # this glibc, so "a valgrind is installed" says nothing.
+        shell: bash
+        run: |
+          set -euo pipefail
+          valgrind --version
+          valgrind --error-exitcode=1 --leak-check=full /bin/true
+          cppcheck --version
+
+      - name: cppcheck and shellcheck
+        # REQUIRE_ANALYSIS=1 turns a missing tool into a failure instead of a skip.
+        run: REQUIRE_ANALYSIS=1 ./templates/minimal-cuda-ofx/test/run-analysis.sh
+
+      - name: memcheck, both harnesses
+        # The greps refuse a run whose valgrind stage disappeared: the suites print
+        # the stage number, and a stage that stops existing would otherwise just
+        # shorten the log.
+        shell: bash
+        run: |
+          set -o pipefail
+          CPU_ONLY=1 RUN_VALGRIND=1 ./templates/minimal-cuda-ofx/test/run-tests.sh 2>&1 | tee memcheck-cuda.log
+          grep -qF '== [5/5] valgrind memcheck' memcheck-cuda.log
+          ( cd templates/onnx-inference-ofx && ./build.sh )
+          CPU_ONLY=1 RUN_VALGRIND=1 ./templates/onnx-inference-ofx/test/run-tests.sh 2>&1 | tee memcheck-inference.log
+          grep -qF '== [5/5] valgrind memcheck' memcheck-inference.log
+
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: linux-analysis-logs
+          path: memcheck-*.log
+          if-no-files-found: warn
