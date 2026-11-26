@@ -1,0 +1,126 @@
+# The windows workflow, checked locally before its first run, 2026-11-26.
+#
+# Why: .github/workflows/windows.yml had never been parsed by anything, and its
+# two actions were pinned by tag while every other workflow here pins a commit.
+# The first CI run should be about the repository, not about the YAML.
+#
+# Machine: Windows 11, MSVC 14.50 (VS 18 BuildTools), Python 3.10.6 in .venv
+# (a runner uses 3.12 from actions/setup-python), no GPU involvement in this
+# job by design. ONNX Runtime root: .validation/ort-1.32.0 (CPU, win-x64, the
+# same 1.32.0 the composite action defaults to).
+#
+# 1. actionlint 1.7.12 (release zip from the project's GitHub release page),
+#    run over every workflow; exit 0, no output:
+
+actionlint exit: 0
+(no findings)
+
+# 2. The pin check. actionlint does not look at this: a tag-pinned action is
+#    valid YAML and runs. .validation/check-pins.py parses all four workflows
+#    with PyYAML and requires every remote `uses:` to be a 40-hex commit with a
+#    version comment; it also parses the composite action, which actionlint
+#    rejects as "not a workflow" (it reads the file kind, not the content).
+#
+#    clean run:
+
+canary.yml               parsed
+docs.yml                 parsed
+linux.yml                parsed
+windows.yml              parsed
+
+every remote action in 4 workflows and in the composite action is pinned to a commit
+
+#    planted: actions/setup-python put back on the tag it had before, nothing else
+
+canary.yml               parsed
+docs.yml                 parsed
+linux.yml                parsed
+windows.yml              parsed
+
+FAIL windows.yml:44: actions/setup-python is not pinned to a commit ('v5')
+
+# 3. The job's own steps, run in order with the workflow's command lines. This is
+#    an extract: every "== step" marker, every exit code, every suite summary and
+#    the negative controls' expected failure. The full transcript is 2,812 lines
+#    (2094 "ok" assertion lines, which is what a suite that passes prints) and was
+#    left in .validation/, not committed.
+
+== reference build
+REF_BUILD=0
+== reference suite
+== [1/3] build skipped (nobuild)
+== [2/3] artifact (exports, dependents) ==
+== [3/3] host contract (LoadLibraryExW + fake host) ==
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+all Windows checks passed
+REF_TESTS=0
+== cuda build
+[0/2] Re-checking globbed directories...
+CUDA_BUILD=0
+== cuda suite
+== [0/3] build skipped (nobuild) ==
+== [1/3] artifact (exports, dependents, device code) ==
+== [2/3] GPU harness (real device code, not emulated) ==
+== the minimal-cuda-ofx kernels on real hardware ==
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+[3/6] concurrent launches from host threads
+[4/6] zero-copy on host-mapped memory
+[5/6] both kernels launched directly (bypassing the launcher)
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
+PASS: hardware matches the CPU reference bit for bit
+== [3/3] host contract (LoadLibraryExW + fake host) ==
+contract_test: 144 checks, 0 failed
+contract_test: 144 checks, 0 failed
+contract_test: 144 checks, 0 failed
+all Windows checks passed
+CUDA_TESTS=0
+== onnx test.bat Release (ONNXRUNTIME_ROOT=/z/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0)
+== [1/5] build (Release) ==
+== [2/5] inference pipeline (ai_pipeline_test) ==
+[1/4] PackRGB / UnpackRGB round-trip
+[2/4] whole-frame inference vs Python golden
+[3/4] tiled inference vs whole-frame inference
+[4/4] negative controls: wrong blending, negative halo, bad rect
+PASS: inference pipeline behaves as specified
+== [3/5] host contract (LoadLibraryExW + fake host), exact golden ==
+contract_test: 168 checks, 0 failed
+contract_test: 168 checks, 0 failed
+contract_test: 168 checks, 0 failed
+== [4/5] host contract with the plug-in's own tiling (tileSize=16) ==
+contract_test: 90 checks, 0 failed
+== [5/5] fixtures and artifact ==
+ONNX_TESTS=0
+== negative controls
+== [0/4] MSVC environment ==
+== [1/4] contract harness ==
+== [2/4] control plug-ins (cl /LD) ==
+== [3/4] varying source fixture ==
+== [4/4] fifteen controls ==
+FAIL kOfxActionDescribe: kOfxStatReplyDefault
+contract_test: 15 checks, 1 failed
+FAIL param 'gain' type: OfxParamTypeInteger (expected OfxParamTypeDouble)
+contract_test: 20 checks, 1 failed
+FAIL roi context: the inset window matches the whole frame bit for bit: max deviation 0.201604 at pixel (60,3) channel 1: 0.475372 vs 0.273769, which the exact check does not allow
+contract_test: 32 checks, 1 failed
+contract_test: 74 checks, 0 failed
+contract_test: 72 checks, 0 failed
+FAIL roi context: the inset window stays within the tolerance of the whole frame: max deviation 0.375716 at pixel (31,31) channel 2: 0.920962 vs 0.545246 (tolerance 0.020000)
+contract_test: 32 checks, 1 failed
+contract_test: 74 checks, 0 failed
+FAIL label parameter 'provider' = "CPU (declared, never written)": the plug-in never wrote it; what is shown is the declared default, which is not evidence that anything ran
+contract_test: 28 checks, 1 failed
+contract_test: 64 checks, 0 failed
+contract_test: 72 checks, 0 failed
+FAIL label parameter 'mediaId' follows the clip property: = "take1" (expected "take2")
+contract_test: 32 checks, 1 failed
+contract_test: 72 checks, 0 failed
+contract_test: 72 checks, 0 failed
+FAIL overlay mark at (24,8): the mark is at the mirrored row: the rasteriser assumed the pointer's first row is the frame's top
+contract_test: 32 checks, 1 failed
+FAIL overlay mark at (24,8): the mark is at the mirrored row: the rasteriser assumed the pointer's first row is the frame's top
+contract_test: 32 checks, 1 failed
+negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp
+CONTROLS=0
