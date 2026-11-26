@@ -87,10 +87,9 @@ ok 153 - the RGBA8 frame is the source times the gain at that depth
 #     0..255 code values (byte), at 64x48, 162 checks per host profile.
 # [V] the depth is taken from the image, not from a parameter: the same run
 #     renders RGBA32F, RGBA16F and RGBA8 frames without re-creating the instance.
-# [U] the two new launchers (LaunchGainRGBA16F, LaunchGainRGBA8) were never
-#     compiled: this cell has no nvcc, so nothing in Kernel.cu was built or run.
-#     Their kernels are covered - 162 half shapes and 164 byte cases through
-#     test/shim, evidence byte-and-half-kernels.log - and the launchers add
-#     device selection, the grid and the alignment refusal, which only a CUDA
-#     build can compile.
+# [U] at the time of this run there was no CUDA compiler on the cell, so the
+#     launchers below were source only. That gap is closed separately: nvcc
+#     12.8.93 was unpacked from NVIDIA's repository and now compiles both new
+#     kernels, all three launchers and the whole bundle - see
+#     cuda-nvcc-compile.log. Executing them is still [U]: no GPU here.
 # [U] every GPU number at either depth: no device ran this.

@@ -190,9 +190,12 @@ failed** for `ReferenceGain`, **162 checks, 0 failed** for `MinimalCudaGain`,
 in the tiled-context run (`tileSize=16`, `--roi-context-tolerance 0.02`). Each of
 those runs happens once per host profile (§5), and the counts are identical:
 the profile changes what the plug-in is told about the host, not what the harness
-asks it to do. Three profiles, so the totals are **354** (118 × 3), **432**
-(144 × 3) and **504 + 90** (168 × 3). The 144 belong to a `CPU_ONLY=1`
-build, whose launcher symbol and cubin are absent by construction (the build
+asks it to do. Three profiles, so the totals are **354** (118 × 3), **486**
+(162 × 3) and **504 + 90** (168 × 3). The 162 belong to the CUDA template's
+contract, which now also renders RGBA16F and RGBA8; with `nvcc` on `PATH` the
+same suite runs against a CUDA-enabled bundle and still passes 162 × 3, because
+the harness enables no device and the plug-in takes its CPU path. On a
+`CPU_ONLY=1` build, whose launcher symbol and cubin are absent by construction (the build
 prints `CUDA launcher: ABSENT (CPU-only build)`, the suite prints `PTX check
 skipped: nvcc not on PATH`): not one of those checks was computed by a CUDA
 kernel, so they verify the host protocol and

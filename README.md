@@ -284,7 +284,7 @@ It compiles the real `Kernel.cu` with a shim, checks the alignment predicate,
 compares both kernels over 3,240 emulated grid launches **[V]**, compares the hoisted CPU
 loop against the per-pixel form, runs both kernels concurrently from six threads
 on disjoint buffers, and — when `nvcc` is on `PATH` — asserts the PTX instruction
-counts. Exit status is non-zero on any mismatch.
+counts of all four kernels (vec4/scalar, 16F, 8-bit). Exit status is non-zero on any mismatch.
 
 The same suite runs under the checkers that need no GPU:
 

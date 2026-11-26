@@ -195,12 +195,16 @@ The template ships two **RGBA32F** kernels with the same arithmetic: a vectorize
 fast path and a scalar fallback for the buffers that cannot legally be vectorized,
 plus one kernel each at 16F and 8-bit with their own launchers (§3.6, §3.7). Both
 call `ScalePixel`, so they cannot drift apart. Measured with the real toolchain
-on this repo's `Kernel.cu` (`nvcc -arch=sm_89 -ptx`, nvcc 12.9.41) **[M]**:
+on this repo's `Kernel.cu` (`nvcc -arch=sm_89 -ptx`, nvcc 12.9.41 for the two 32F
+rows and nvcc 12.8.93 for the 16F and 8-bit rows, which were added later - both
+releases are on the record, [`cuda-nvcc-compile.log`](../evidence/2026-11-26-linux/cuda-nvcc-compile.log)) **[M]**:
 
 | Kernel | Per-pixel global memory instructions | Registers / spills |
 | --- | --- | --- |
 | `GainKernelRGBA32FVec4` (shipped fast path) | **1 `ld.global.nc.v4.f32` + 1 `st.global.v4.f32`** | 14 registers, 0 spills, 0 stack |
 | `GainKernelRGBA32FScalar` (alignment fallback) | 4 `ld.global.nc.f32` + 4 `st.global.f32` | 14 registers, 0 spills, 0 stack |
+| `GainKernelRGBA16FHalf4` | 2 `ld.global.nc.u32` + 2 `st.global.u32` + 8 `cvt.f32.f16` | 18 registers, 0 spills, 0 stack |
+| `GainKernelRGBA8` | 4 `ld.global.nc.u8` + 4 `st.global.u8` + 4 `cvt.rni.s32.f32` | 16 registers, 0 spills, 0 stack |
 
 Same register count, same arithmetic, four times fewer memory instructions on
 the fast path. The compiler cannot prove that a `const float*` base plus `4*x` is

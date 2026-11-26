@@ -1,0 +1,87 @@
+$ # do the two new kernel bodies survive a real CUDA compiler?
+$ command -v clang clang++ nvcc
+  # nothing: no clang either, so `clang -x cuda` was not an option here, and the
+  # Windows machine is not reachable from this cell (no shell there).
+# There is no root (no_new_privs), so the toolkit came from NVIDIA's Ubuntu 24.04
+# repository and was unpacked with dpkg -x, the way valgrind and cppcheck were
+# (see valgrind-cppcheck.log for that note in full):
+#   cuda-nvcc-12-8 12.8.93-1        cuda-nvvm-12-8 12.8.93-1
+#   cuda-crt-12-8 12.8.93-1         cuda-cudart-12-8 12.8.90-1
+#   cuda-cudart-dev-12-8 12.8.90-1  cuda-cccl-12-8 12.8.90-1
+#   cuda-driver-dev-12-8 12.8.90-1
+$ nvcc --version
+Cuda compilation tools, release 12.8, V12.8.93
+
+$ nvcc -std=c++17 -arch=sm_89 -DOFXPLUGIN_WITH_CUDA=1 --ptx -o /tmp/kernel.ptx src/Kernel.cu
+  exit=0, 4 entries in the PTX:
+  .entry ...GainKernelRGBA32FVec4PKfPfiixx6float4
+  .entry ...GainKernelRGBA32FScalarPKfPfiixx6float4
+  .entry ...GainKernelRGBA16FHalf4PK6__halfPS0_iixx7__half2S4_
+  .entry ...GainKernelRGBA8EPKhPhiixx6float4
+
+$ # the instruction mix the kernels promise, counted in their PTX entries
+  GainKernelRGBA16FHalf4: 2 ld.global.nc.u32, 2 st.global.u32, 8 cvt.f32.f16, 4 mul.f32
+  GainKernelRGBA8:        4 ld.global.nc.u8,  4 st.global.u8,  4 cvt.rn.f32.u16,
+                          4 mul.f32, 4 cvt.rni.s32.f32, 4 min.s32, 4 max.s32
+  # cvt.rni is round-to-nearest-even-or-integer, the byte rule; min/max is the clamp.
+
+$ nvcc -std=c++17 -arch=sm_89 -DOFXPLUGIN_WITH_CUDA=1 -c -o /tmp/kernel.o src/Kernel.cu
+  exit=0
+$ nm /tmp/kernel.o | grep -E 'LaunchGain|WaitFor|StatusMessage'
+  T LaunchGainRGBA16F
+  T LaunchGainRGBA32F
+  T LaunchGainRGBA8
+  T StatusMessage
+  T WaitForDefaultStream
+
+$ nvcc -std=c++17 -arch=sm_89 -DOFXPLUGIN_WITH_CUDA=1 -cubin -Xptxas -v -o /tmp/kernel.cubin src/Kernel.cu
+  GainKernelRGBA8      : 0 bytes stack frame, 0 bytes spill stores/loads, 16 registers
+  GainKernelRGBA16FHalf4: 0 bytes stack frame, 0 bytes spill stores/loads, 18 registers
+  GainKernelRGBA32FScalar: 14 registers
+  GainKernelRGBA32FVec4  : 14 registers
+
+$ # and the plug-in as a whole, with the CUDA path enabled
+$ ./templates/minimal-cuda-ofx/build.sh
+  [ 90%] Building CUDA object CMakeFiles/MinimalCudaGain.dir/src/Kernel.cu.o
+  [100%] Linking CXX shared module bundle/MinimalCudaGain.ofx.bundle/Contents/Linux-x86-64/MinimalCudaGain.ofx
+  exported dynamic symbols: 2 (expected 2)
+  CUDA launcher: present (2 symbol(s))     # the 32F symbols in the old grep
+  nv_fatbin sections:       1 (0 in a CPU-only build)
+$ nm <bundle> | grep LaunchGain
+  t LaunchGainRGBA32F / LaunchGainRGBA16F / LaunchGainRGBA8   (+ .cold each)
+$ nm -D <bundle> | grep -E 'OfxGet|LaunchGain'
+  000000000001b770 T OfxGetNumberOfPlugins
+  000000000001b7a0 T OfxGetPlugin
+  # three launchers linked, and still exactly two exported symbols.
+
+$ RUN_VALGRIND=0 ./templates/minimal-cuda-ofx/test/run-tests.sh
+  == [2/5] PTX instruction counts (nvcc, -arch=sm_89) ==
+    vec4  : 1 ld.global.nc.v4.f32 + 1 st.global.v4.f32   (expect 1 + 1)
+    scalar: 4 ld.global.nc.f32    + 4 st.global.f32     (expect 4 + 4)
+    16F   : 2 ld.global.nc.u32    + 2 st.global.u32      + 8 cvt.f32.f16   (expect 2 + 2 + 8)
+    8-bit : 4 ld.global.nc.u8     + 4 st.global.u8       + 4 cvt.rni.s32.f32 (expect 4 + 4 + 4)
+  == [3/5] bundle hygiene ==
+    nv_fatbin sections:       1 (0 in a CPU-only build)
+  contract_test: 162 checks, 0 failed      (nuke / resolve / natron)
+  PASS: all cases match
+  all checks passed
+
+# What this proves, and what it does not:
+#
+# [V] both new kernel bodies compile with nvcc 12.8.93 for sm_89 - the real
+#     compiler, not test/shim - and appear as entries in the PTX.
+# [V] the instruction mix that defines each kernel is what the compiler emits:
+#     two 32-bit half2 accesses and eight half<->float conversions for 16F; four
+#     byte loads/stores, four multiplies, four cvt.rni (round to nearest even) and
+#     the min/max clamp for 8-bit. The suite now asserts all four kernels, so a
+#     change that stops the compiler trusting the half2 indexing fails there.
+# [V] ptxas allocates them with no spills: 18 registers for 16F, 16 for 8-bit.
+# [V] the three launchers compile, link into the bundle together with one
+#     nv_fatbin section, and the module still exports exactly the two registry
+#     symbols - the version script is not bypassed by the new C entry points.
+# [V] the contract harness passes on that CUDA-enabled bundle (162 checks per
+#     host profile): the host enables no CUDA, so the plug-in takes its CPU path,
+#     which is what those checks were always about.
+# [U] nothing ran on a device: this cell has no GPU and no libcuda, so the
+#     launchers were compiled and linked but never executed, and no throughput
+#     number exists for either depth.

@@ -98,12 +98,36 @@ if command -v nvcc >/dev/null 2>&1; then
   sl=$(printf '%s\n' "${SCA}" | grep -c 'ld\.global\.nc\.f32' || true)
   ss=$(printf '%s\n' "${SCA}" | grep -c 'st\.global\.f32' || true)
 
+  # The other two depths have one path each, and their contract is what the
+  # kernels promise: half is two 32-bit half2 accesses per pixel, and byte is four
+  # byte loads, four byte stores and the round-to-nearest-even quantisation the
+  # byte semantics are defined by (cvt.rni.s32.f32, then min/max for the clamp).
+  HALF="$(entry GainKernelRGBA16FHalf4)"
+  BYTE="$(entry GainKernelRGBA8)"
+
+  hl=$(printf '%s\n' "${HALF}" | grep -c 'ld\.global\.nc\.u32' || true)
+  hs=$(printf '%s\n' "${HALF}" | grep -c 'st\.global\.u32' || true)
+  hc=$(printf '%s\n' "${HALF}" | grep -c 'cvt\.f32\.f16' || true)
+  bl=$(printf '%s\n' "${BYTE}" | grep -c 'ld\.global\.nc\.u8' || true)
+  bs=$(printf '%s\n' "${BYTE}" | grep -c 'st\.global\.u8' || true)
+  br=$(printf '%s\n' "${BYTE}" | grep -c 'cvt\.rni\.s32\.f32' || true)
+
   printf '  vec4  : %s ld.global.nc.v4.f32 + %s st.global.v4.f32   (expect 1 + 1)\n' "${vl}" "${vs}"
   printf '  scalar: %s ld.global.nc.f32    + %s st.global.f32     (expect 4 + 4)\n' "${sl}" "${ss}"
+  printf '  16F   : %s ld.global.nc.u32    + %s st.global.u32      + %s cvt.f32.f16   (expect 2 + 2 + 8)\n' "${hl}" "${hs}" "${hc}"
+  printf '  8-bit : %s ld.global.nc.u8     + %s st.global.u8       + %s cvt.rni.s32.f32 (expect 4 + 4 + 4)\n' "${bl}" "${bs}" "${br}"
 
   if [[ "${vl}" != "1" || "${vs}" != "1" || "${sl}" != "4" || "${ss}" != "4" ]]; then
     echo "  FAIL: memory instructions do not match the vectorized/scalar contract" >&2
     echo "  (if vec4 shows 4 scalar loads, the compiler no longer trusts the float4 indexing)" >&2
+    exit 1
+  fi
+  if [[ "${hl}" != "2" || "${hs}" != "2" || "${hc}" != "8" ]]; then
+    echo "  FAIL: the 16F kernel is no longer two half2 loads, two stores and eight conversions" >&2
+    exit 1
+  fi
+  if [[ "${bl}" != "4" || "${bs}" != "4" || "${br}" != "4" ]]; then
+    echo "  FAIL: the 8-bit kernel is no longer four byte loads/stores and four round-to-even steps" >&2
     exit 1
   fi
 else
