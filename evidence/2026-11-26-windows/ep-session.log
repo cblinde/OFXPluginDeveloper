@@ -1,0 +1,94 @@
+# Backlog rows 1, 2, 3, 4 and 7 in one GPU session, Windows.
+#
+# Machine: RTX 3060 12 GB, Windows 11, Resolve closed, no other CUDA process.
+# Runtime: Microsoft.ML.OnnxRuntime 1.32.0 with the GPU package provider (CUDA 13),
+#   the same package templates/onnx-inference-ofx bundles - not the .venv, whose
+#   onnxruntime 1.23.2 has no CUDA provider.
+# Harness: .validation/ep-session.cpp, built with MSVC 14.50 (VS 18 BuildTools):
+#   cl /std:c++17 /EHsc /O2 /I<ort>/include ep-session.cpp /link /LIBPATH:<ort>/lib onnxruntime.lib
+# Device memory: cuMemGetInfo_v2 through nvcuda.dll, process-wide delta from before
+#   the session was created. First session in a process carries the CUDA context and
+#   cuDNN init (~32 ms, ~1 GB) and is reported as such where it happens.
+# Models: .validation/big_conv.onnx (Conv 3->64 k3, Relu, Conv 64->64 k3, Relu, opset 17),
+#   .validation/big_conv7.onnx (the same with 7x7 kernels) and .validation/wide_conv.onnx
+#   (Conv 3->128 k3, Relu, Conv 128->128 k3, Relu, opset 17, seed 20261126).
+#
+# Row 1: repeatability.
+shape 1920x1080, tf32=0, ws=0, HEURISTIC, default arena
+cpu reference: 132710400 values, 8 threads
+max |d| run1 vs run2 (same session)   0.000e+00
+max |d| run1 vs run3 (second session) 0.000e+00
+max |d| run1 vs cpu                   5.364e-07
+max |d| run3 vs cpu                   5.364e-07
+
+# Row 2: the 64-channel shape from section 5, reproduced, then a 128-channel model.
+shape 1920x1080, 132710400 values, cpu reference 8 threads
+tf32         after run MB max |d| vs cpu
+1                  3124.0      4.472e-04
+0                  3122.0      5.364e-07
+shape 640x480, 19660800 values, cpu reference 8 threads
+tf32         after run MB max |d| vs cpu
+1                   536.0      3.950e-04
+0                   534.0      4.172e-07
+shape 1920x1080, 265420800 values, cpu reference 8 threads
+tf32         after run MB max |d| vs cpu
+1                  4148.0      6.853e-04
+0                  3122.0      7.749e-07
+shape 640x480, 39321600 values, cpu reference 8 threads
+tf32         after run MB max |d| vs cpu
+1                  1048.0      6.884e-04
+0                   534.0      7.749e-07
+
+# Row 3: session creation, HEURISTIC against EXHAUSTIVE, three attempts each.
+shape 1920x1080, creation time per session, no warm-up of the measured one
+HEURISTIC   attempt 1: create    33.75 ms, first run   454.37 ms (132710400 values)
+HEURISTIC   attempt 2: create     2.28 ms, first run   326.10 ms (132710400 values)
+HEURISTIC   attempt 3: create     2.24 ms, first run   326.88 ms (132710400 values)
+EXHAUSTIVE  attempt 1: create     2.67 ms, first run   298.02 ms (132710400 values)
+EXHAUSTIVE  attempt 2: create     3.78 ms, first run   326.40 ms (132710400 values)
+EXHAUSTIVE  attempt 3: create     2.45 ms, first run   327.60 ms (132710400 values)
+shape 640x480, creation time per session, no warm-up of the measured one
+HEURISTIC   attempt 1: create    33.18 ms, first run   209.77 ms (19660800 values)
+HEURISTIC   attempt 2: create     2.61 ms, first run    54.50 ms (19660800 values)
+HEURISTIC   attempt 3: create     2.65 ms, first run    52.98 ms (19660800 values)
+EXHAUSTIVE  attempt 1: create     3.01 ms, first run    67.20 ms (19660800 values)
+EXHAUSTIVE  attempt 2: create     3.96 ms, first run    51.18 ms (19660800 values)
+EXHAUSTIVE  attempt 3: create     2.10 ms, first run    47.39 ms (19660800 values)
+
+# Row 3, second half: cuDNN API log at level 2, one process per mode, 640x480.
+#   HEURISTIC: log 5116 bytes, cudnnBackendFinalize 1, cudnnFindConvolutionForwardAlgorithm 0, cudnnGetConvolutionForwardAlgorithm 0
+#   EXHAUSTIVE: log 8205 bytes, cudnnBackendFinalize 10, cudnnFindConvolutionForwardAlgorithm 0, cudnnGetConvolutionForwardAlgorithm 0
+
+# Row 4: cudnn_conv_use_max_workspace, 7x7 kernels and 3x3 kernels at 1080p.
+shape 1920x1080, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              16.0         1082.0         1066.0
+0              14.0         1078.0         1064.0
+shape 1920x1080, cudnn_conv_use_max_workspace 1 against 0
+ws       session MB   after run MB  peak delta MB
+1              12.0         3126.0         3114.0
+0              10.0         3122.0         3112.0
+
+# Row 7: arena keys, two shapes in one session, both orders.
+2026-11-26 16:52:05.7942837 [E:onnxruntime:, sequential_executor.cc:677 onnxruntime::ExecuteKernel] Non-zero status code returned while running Conv node. Name:'' Status Message: N:\_work\1\s\onnxruntime\core\framework\bfc_arena.cc:360 onnxruntime::BFCArena::AllocateRawInternal Available memory of 222494976 is smaller than requested bytes of 530841600
+
+two shapes in one session: 640x480 then 1920x1080
+arena                              after 1st MB after 2nd MB      peak MB
+default (SIZE_MAX, kNextPowerOfTwo)        538.0       3098.0       3098.0
+limit=4GB, kSameAsRequested               328.0       2360.0       2360.0
+limit=4GB, kNextPowerOfTwo                534.0       3094.0       3094.0
+limit=1GB, kSameAsRequested        failed: Non-zero status code returned while running Conv node. Name:'' Status Message: N:\_work\1\s\onnxruntime\core\framework\bfc_arena.cc:360 onnxruntime::BFCArena::AllocateRawInternal Available memory of 222494976 is smaller than requested bytes of 530841600
+
+2026-11-26 16:52:08.0273899 [E:onnxruntime:, sequential_executor.cc:677 onnxruntime::ExecuteKernel] Non-zero status code returned while running Conv node. Name:'' Status Message: N:\_work\1\s\onnxruntime\core\framework\bfc_arena.cc:360 onnxruntime::BFCArena::AllocateRawInternal Available memory of 505272576 is smaller than requested bytes of 530841600
+
+two shapes in one session: 1920x1080 then 640x480
+arena                              after 1st MB after 2nd MB      peak MB
+default (SIZE_MAX, kNextPowerOfTwo)       3126.0       3126.0       3126.0
+limit=4GB, kSameAsRequested              2086.0       2086.0       2086.0
+limit=4GB, kNextPowerOfTwo               3122.0       3122.0       3122.0
+limit=1GB, kSameAsRequested        failed: Non-zero status code returned while running Conv node. Name:'' Status Message: N:\_work\1\s\onnxruntime\core\framework\bfc_arena.cc:360 onnxruntime::BFCArena::AllocateRawInternal Available memory of 505272576 is smaller than requested bytes of 530841600
+
+
+# Row 3/4 note: cuDNN plan cache on this machine before and after the runs.
+#   %LOCALAPPDATA%/NVIDIA contains DXCache, GLCache, OptixCache and warp; no ComputeCache,
+#   before the runs or after them.

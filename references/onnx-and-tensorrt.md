@@ -736,7 +736,7 @@ Four settings decide whether a frame is reproducible on the device:
 | Setting | Default | What it costs | Where it lives |
 |---|---|---|---|
 | `use_tf32` | `1` | `4.5e-4` from the CPU session instead of `5.4e-7` on a 1080p conv - measured, §5 below | key/value option only |
-| `cudnn_conv_algo_search` | `EXHAUSTIVE` | benchmarks every algorithm against the real tensors before the first tile; the result is cached on disk, so the cost is paid once per machine and plan | struct field or key/value - the template sets `HEURISTIC` |
+| `cudnn_conv_algo_search` | `EXHAUSTIVE` | enumerates engine configurations through cuDNN's backend API before the first tile - ten finalised plans against `HEURISTIC`'s one on this machine, milliseconds either way; no on-disk plan cache was found to explain the rest | struct field or key/value - the template sets `HEURISTIC` |
 | `gpu_mem_limit`, `arena_extend_strategy` | `SIZE_MAX`, `kNextPowerOfTwo` | the arena never returns memory and doubles as it grows, so an instance left open holds the peak of every shape it has seen | struct field or `OrtArenaCfg` |
 | `cudnn_conv_use_max_workspace` | `1` | permission for the plan to reserve up to a second copy of the activation budget; what it actually reserves depends on the plan cuDNN picks | key/value option only |
 
@@ -796,18 +796,33 @@ honest result.** On both graphs the device memory after a run was the same with
 and without it - 3122 MB versus 3124 MB at 1080p, 536 MB at 640×480 - because
 the flag is a *permission*, not an allocation: it says the plan may not assume a
 large scratch buffer, and the plan cuDNN picks under `HEURISTIC` for these shapes
-fits the small one either way. What the setting buys is a bound on the worst
-case, not a saving on this model; a model whose chosen plan wants the large
-workspace is where the difference would appear, and no such model was measured
-here.
+fits the small one either way. A second model with 7×7 kernels at the same shape
+moved the same 4 MB - 1082 MB with the permission, 1078 MB without it - so kernel
+size is not what decides it either (**[V]**,
+[`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log)).
+What the setting buys is a bound on the worst case, not a saving on either model;
+the model whose chosen plan wants the large workspace is still unfound, and that
+search is what the backlog keeps.
 
-**`HEURISTIC` versus `EXHAUSTIVE` could not be separated on this machine either:**
-both created the session in 2.8-3.2 ms, because cuDNN keeps its chosen plans in
-an on-disk cache (`ComputeCache`), so the benchmark that `EXHAUSTIVE` runs is paid
-on the first session ever, not on every one. The "minutes at 1080p" figure stays
-external evidence (**[B]**, §7). In a host the first session is the one a user
-waits for, which is argument enough to keep it off - but it is an argument from
-the cached-plan behaviour, not from a stopwatch reading here.
+**`HEURISTIC` versus `EXHAUSTIVE` still does not separate in wall-clock time, and
+the reason is not a cache.** Three session creations per setting, in one process,
+without warming the measured session: 2.24-2.28 ms under `HEURISTIC` against
+2.45-3.78 ms under `EXHAUSTIVE` at 1920×1080, and the same range at 640×480
+(**[V]**, [`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log)).
+The earlier explanation - that cuDNN's on-disk `ComputeCache` already held the
+plans - does not survive inspection: `%LOCALAPPDATA%\NVIDIA` holds `DXCache`,
+`GLCache`, `OptixCache` and `warp`, and no `ComputeCache`, before the runs and
+after them. What cuDNN's own API log shows instead is a difference in *what is
+finalised*, not in how long it takes: at the same log level `EXHAUSTIVE` calls
+`cudnnBackendFinalize` ten times per session where `HEURISTIC` calls it once, and
+neither mode calls `cudnnFindConvolutionForwardAlgorithmEx` or
+`cudnnGetConvolutionForwardAlgorithm` at all - the convolution runs through
+`cudnnBackendExecute`, so the option table's "benchmarks every algorithm against
+the real tensors" describes an API this provider path never reaches. Ten engine
+plans cost milliseconds at these shapes; the "minutes at 1080p" figure stays
+external evidence (**[B]**, §7). The session a user waits for is the first one in
+a process, and here it costs 32-34 ms whatever the search setting - context
+creation and cuDNN init, not the search.
 
 ### Determinism: what the `1e-7` measures, and what it does not
 
@@ -819,12 +834,13 @@ numbers, and none of them is in the graph:
    to disable it"* (**[B]**) - so the flag is the 1.18 addition, not the
    behaviour: 1.17 and earlier ran every accelerated convolution and matmul with
    a 10-bit mantissa and no way to say otherwise.
-2. **`cudnn_conv_algo_search` defaults to `EXHAUSTIVE`**, which benchmarks
-   `cudnnFindConvolutionForwardAlgorithmEx` against the real tensors and picks
-   the fastest (**[B]**, same table). Fastest is a measurement of this machine
-   with this driver; another machine, another cuDNN build or a colder on-disk
-   `ComputeCache` can select another algorithm, and an algorithm is an
-   accumulation order.
+2. **`cudnn_conv_algo_search` defaults to `EXHAUSTIVE`**, which finalises more
+   engine plans per convolution than `HEURISTIC` does (**[V]**: ten against one
+   in cuDNN's own log). A plan is a measurement of this machine with this
+   driver; another machine or another cuDNN build can select another one, and a
+   plan is an accumulation order. The option table's wording still names
+   `cudnnFindConvolutionForwardAlgorithmEx`, which this provider path does not
+   call (**[V]**, the same log).
 3. **`cudnn_conv_use_max_workspace` is `1`**, so the plan may assume a large
    scratch buffer - which changes which algorithms are candidates at all.
 
@@ -847,12 +863,19 @@ different plan on a different machine turns "same result" into "same result on
 this machine" (**[I]**, from the documented behaviour of the search, with no
 second-GPU run to confirm it).
 
-What was **not** measured, and belongs next to any claim built on this: the same
-session run twice and diffed - so run-to-run repeatability is asserted nowhere
-in this repository; a second GPU or a second driver version; and any model larger
-than 64 channels at 1920x1080. A golden comparison for a bigger model should
-budget `1e-4`-scale deviation, or pin `use_tf32=0` and accept the slower
-convolutions - those are the two honest options, not a tighter tolerance.
+Two of those gaps are closed, and both closed in the shape's favour. **The same
+session run twice, and a second session of the same graph, are bit-identical:**
+`max |d| = 0.000e+00` either way at 1920×1080, with `5.364e-07` against the CPU in
+both (**[V]**, [`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log))
+- so what a host compares is this shape's tolerance, not run-to-run noise.
+**A model with twice the channels does not inherit the `1e-7` for free:** at 128
+channels the deviation is `7.749e-07` with `use_tf32=0` and `6.853e-04` with the
+default, against `5.364e-07` and `4.472e-04` at 64 channels, and `7.749e-07` and
+`6.884e-04` at 640×480 (**[V]**, the same log). The floor stays at `1e-7` when
+TF32 is off and moves to `~7e-4` when it is on, so a golden comparison for a
+bigger model still budgets `1e-4` - and the budget comes from TF32, not from the
+channel count. Still not measured: a second GPU, a second driver version, a
+tiled host, and any model whose chosen plan wants the large workspace.
 
 **Should the template set these explicitly? It does, and it should** - five keys
 through the V2 API (§4), because a struct cannot express `use_tf32` at all.
@@ -860,21 +883,28 @@ One correction to the question as usually put: `cudnn_conv_algo_search` is set
 to **`HEURISTIC`**, not to its `EXHAUSTIVE` default. The reason is the first
 session, not the steady state: `EXHAUSTIVE` benchmarks every candidate against
 the real tensors, and in a host the first session is what a user waits for.
-Here both settings created the session in 2.8-3.2 ms because cuDNN had already
-cached its plans, so the argument rests on the uncached first run (**[B]**) and
-not on a stopwatch reading in this repository. `HEURISTIC` is also the more
+Here both settings created the session in 2.2-3.8 ms and the first session in a
+process cost 32-34 ms whatever the setting, so the argument rests on what
+`EXHAUSTIVE` enumerates (ten finalised plans against one, **[V]**) and on the
+scale a production graph reaches (**[B]**), not on a stopwatch difference in this
+repository. `HEURISTIC` is also the more
 repeatable of the two - a function of shape and filter rather than a timing race
 (**[I]**). What explicit options buy is a session whose arithmetic is stated;
 what they do not buy is bit-identical frames across machines, which neither
 cuDNN nor this repository has ever demonstrated.
 
-The arena is also the host-facing half of this. A plug-in that keeps a session
-per instance, never sets `gpu_mem_limit` and lets the arena grow on the
-power-of-two curve holds roughly twice the peak it needs, once per instance
-(**[I]** - the curve is documented, the multiplier is arithmetic).
-`arena_extend_strategy=1` (`kSameAsRequested`) and a stated `gpu_mem_limit` are
-the two knobs; §3's device-pointer path changes where the bytes come from, not
-how much the arena keeps.
+The arena is also the host-facing half of this, and it is measured rather than
+argued. Two shapes in one session, 640×480 then 1920×1080: the default arena
+holds 3098 MB after both; `arena_extend_strategy=kSameAsRequested` with a 4 GB
+limit holds 2360 MB, a quarter less; the same limit with `kNextPowerOfTwo` holds
+3094 MB, so the strategy is what saves and the limit is not. The other order,
+1920×1080 then 640×480, gives 3126 MB against 2086 MB and 3122 MB (**[V]**,
+[`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log)).
+A 1 GB limit does not degrade quietly: the run fails with `Available memory of
+222494976 is smaller than requested bytes of 530841600`, so a stated bound is one
+the user will see rather than a reservation the arena honours. §3's
+device-pointer path changes where the bytes come from, not how much the arena
+keeps.
 
 ## 6. "CUDA" in the label does not mean the GPU ran every node
 
