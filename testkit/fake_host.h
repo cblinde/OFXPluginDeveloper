@@ -44,6 +44,12 @@ struct Impl; // defined in fake_host.cpp
 // independently to build that layout at all.
 enum class ImageOrigin { Bottom, Top };
 
+// Which of the two OpenCL handovers ofxGPURender.h defines the host presents.
+// Buffers put a cl_mem in kOfxImagePropData and keep rowBytes; Images put a
+// cl_mem image2d_t in kOfxImageEffectPropOpenCLImage and have no row stride at
+// all. A host may support either, so the harness has to be able to be both.
+enum class OpenCLHandover { Buffers, Images };
+
 // The host shape a run presents. Real hosts disagree about this, and the
 // disagreement is in the dumps: `openfx-misc`'s `README-hosts.txt` records
 // Resolve Lite 16 as API 1.4 with `supportsTiles=0` (and no multi-resolution),
@@ -223,6 +229,14 @@ public:
   // what makes openclDestinationWritten() answerable.
   bool setOpenCL(bool on);
   bool openclEnabled() const;
+  // Which handover the next render uses. Must be set before the images are
+  // rebuilt, which this does; switching while a device is open is legal.
+  void setOpenCLHandover(OpenCLHandover handover);
+  OpenCLHandover openclHandover() const;
+  // True when the device can carry image2d_t (CL_DEVICE_IMAGE_SUPPORT and the
+  // image entry points). When false, an Images run cannot be made at all and the
+  // suite has to say so instead of failing.
+  bool openclImageSupport() const;
   // True when the last OpenCL render left the destination cl_mem carrying
   // anything but the seed pattern, i.e. the plug-in wrote through the device.
   // A plug-in that quietly fell back to a host pointer it was not given fails

@@ -80,12 +80,12 @@ templates/minimal-cuda-ofx/
   build.sh  build.bat                toolkit discovery, bootstrap, build + artifact check
 templates/minimal-opencl-ofx/
   CMakeLists.txt                     bundle build; links the dynamic loader, never libOpenCL
-  src/Plugin.cpp                     RGBA gain: OpenCL Buffers path + CPU fallback
+  src/Plugin.cpp                     RGBA gain: OpenCL Buffers and Images paths + CPU fallback
   src/ClRuntime.h  src/ClRuntime.cpp  dlopen'd OpenCL 1.2 entry points, program per queue
-  src/ClKernel.h                     the kernel, as source, built by the host's driver
+  src/ClKernel.h                     both kernels as source: buffer and image2d_t, built by the host's driver
   exports.map                        version script: exactly two dynamic symbols
   build.sh                           fetch headers, build, inspect the artifact
-  test/opencl_suite.cpp              real context + queue + cl_mem from the fake host
+  test/opencl_suite.cpp              real context, queue, cl_mem buffers and image2d images from the fake host
   test/run-tests.sh                  build, contract x 3 profiles, then the OpenCL suite
   test/run-analysis.sh               cppcheck + shellcheck over sources and scripts
 templates/onnx-inference-ofx/

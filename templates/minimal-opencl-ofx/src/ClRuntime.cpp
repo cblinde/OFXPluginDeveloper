@@ -43,6 +43,10 @@ typedef struct _cl_program* cl_program;
 typedef struct _cl_kernel* cl_kernel;
 typedef struct _cl_event* cl_event;
 
+struct cl_float4 {
+    float x, y, z, w;
+};
+
 constexpr cl_int CL_SUCCESS = 0;
 constexpr cl_uint CL_QUEUE_CONTEXT = 0x1090;
 constexpr cl_uint CL_QUEUE_DEVICE = 0x1091;
@@ -111,37 +115,88 @@ std::size_t roundUp(std::size_t value, std::size_t multiple)
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Impl: the loader table plus the state of the program built for one queue
+// Impl: the loader table plus the two programs a render may need
 // ---------------------------------------------------------------------------
 
 struct Runtime::Impl {
+    struct Program {
+        cl_program program = nullptr;
+        cl_kernel kernel = nullptr;
+        bool built = false;
+
+        void drop()
+        {
+            if (kernel) api->ReleaseKernel(kernel);
+            if (program) api->ReleaseProgram(program);
+            kernel = nullptr;
+            program = nullptr;
+            built = false;
+        }
+
+        const Api* api = nullptr;
+    };
+
     Api api;
     bool loaded = false;
     std::string loadError;
 
-    void* preparedQueue = nullptr; // identity only, never dereferenced
+    void* queue = nullptr; // identity only, never dereferenced
     cl_context context = nullptr;
     cl_device_id device = nullptr;
-    cl_program program = nullptr;
-    cl_kernel kernel = nullptr;
+    Program buffers;
+    Program images;
+
+    Impl() { buffers.api = &api; images.api = &api; }
 
     ~Impl()
     {
-        if (kernel) api.ReleaseKernel(kernel);
-        if (program) api.ReleaseProgram(program);
+        buffers.drop();
+        images.drop();
         // The context, device and queue belong to the host; this plug-in never
         // retained them and never releases them.
     }
 
-    void dropProgram()
+    void dropAll()
     {
-        if (kernel) api.ReleaseKernel(kernel);
-        if (program) api.ReleaseProgram(program);
-        kernel = nullptr;
-        program = nullptr;
+        buffers.drop();
+        images.drop();
         context = nullptr;
         device = nullptr;
-        preparedQueue = nullptr;
+        queue = nullptr;
+    }
+
+    bool build(Program& target, const char* source, const char* name, std::string* why)
+    {
+        cl_int err = CL_SUCCESS;
+        cl_program program = api.CreateProgramWithSource(context, 1, &source, nullptr, &err);
+        if (program == nullptr || err != CL_SUCCESS) {
+            *why = std::string("clCreateProgramWithSource failed (") + name + ", err " +
+                   std::to_string(err) + ")";
+            return false;
+        }
+        if (api.BuildProgram(program, 1, &device, "", nullptr, nullptr) != CL_SUCCESS) {
+            std::size_t size = 0;
+            api.GetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &size);
+            std::vector<char> log(size + 1, '\0');
+            if (size > 0) {
+                api.GetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, size, log.data(),
+                                        nullptr);
+            }
+            *why = std::string("clBuildProgram failed (") + name + "):\n" + log.data();
+            api.ReleaseProgram(program);
+            return false;
+        }
+        cl_kernel kernel = api.CreateKernel(program, name, &err);
+        if (kernel == nullptr || err != CL_SUCCESS) {
+            *why = std::string("clCreateKernel failed (") + name + ", err " +
+                   std::to_string(err) + ")";
+            api.ReleaseProgram(program);
+            return false;
+        }
+        target.program = program;
+        target.kernel = kernel;
+        target.built = true;
+        return true;
     }
 };
 
@@ -155,7 +210,7 @@ Runtime::~Runtime()
     delete impl_;
 }
 
-bool Runtime::prepare(void* queue, std::string* why)
+bool Runtime::prepare(void* queue, bool images, std::string* why)
 {
     if (queue == nullptr) {
         *why = "the host did not hand over a command queue";
@@ -168,73 +223,51 @@ bool Runtime::prepare(void* queue, std::string* why)
             return false;
         }
     }
-    if (impl_->preparedQueue == queue && impl_->kernel != nullptr) return true;
-
     Impl* impl = impl_;
-    Api& api = impl->api;
-    impl->dropProgram();
+    if (impl->queue != queue) {
+        impl->dropAll();
+        impl->queue = queue;
+    }
+    if ((images ? impl->images.built : impl->buffers.built)) return true;
 
-    cl_int err = CL_SUCCESS;
-    cl_context context = nullptr;
-    if (api.GetCommandQueueInfo(reinterpret_cast<cl_command_queue>(queue), CL_QUEUE_CONTEXT,
-                                sizeof(context), &context, nullptr) != CL_SUCCESS ||
-        context == nullptr) {
-        *why = "clGetCommandQueueInfo(CL_QUEUE_CONTEXT) failed";
-        return false;
-    }
-    cl_device_id device = nullptr;
-    if (api.GetCommandQueueInfo(reinterpret_cast<cl_command_queue>(queue), CL_QUEUE_DEVICE,
-                                sizeof(device), &device, nullptr) != CL_SUCCESS ||
-        device == nullptr) {
-        *why = "clGetCommandQueueInfo(CL_QUEUE_DEVICE) failed";
-        return false;
-    }
-
-    const char* source = kGainKernelSource;
-    cl_program program = api.CreateProgramWithSource(context, 1, &source, nullptr, &err);
-    if (program == nullptr || err != CL_SUCCESS) {
-        *why = "clCreateProgramWithSource failed (" + std::to_string(err) + ")";
-        return false;
-    }
-    if (api.BuildProgram(program, 1, &device, "", nullptr, nullptr) != CL_SUCCESS) {
-        std::size_t size = 0;
-        api.GetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &size);
-        std::vector<char> log(size + 1, '\0');
-        if (size > 0) {
-            api.GetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, size, log.data(),
-                                    nullptr);
+    if (impl->context == nullptr) {
+        cl_context context = nullptr;
+        if (impl->api.GetCommandQueueInfo(reinterpret_cast<cl_command_queue>(queue),
+                                          CL_QUEUE_CONTEXT, sizeof(context), &context,
+                                          nullptr) != CL_SUCCESS ||
+            context == nullptr) {
+            *why = "clGetCommandQueueInfo(CL_QUEUE_CONTEXT) failed";
+            return false;
         }
-        *why = std::string("clBuildProgram failed:\n") + log.data();
-        api.ReleaseProgram(program);
-        return false;
-    }
-    cl_kernel kernel = api.CreateKernel(program, kGainKernelName, &err);
-    if (kernel == nullptr || err != CL_SUCCESS) {
-        *why = "clCreateKernel failed (" + std::to_string(err) + ")";
-        api.ReleaseProgram(program);
-        return false;
+        cl_device_id device = nullptr;
+        if (impl->api.GetCommandQueueInfo(reinterpret_cast<cl_command_queue>(queue),
+                                          CL_QUEUE_DEVICE, sizeof(device), &device,
+                                          nullptr) != CL_SUCCESS ||
+            device == nullptr) {
+            *why = "clGetCommandQueueInfo(CL_QUEUE_DEVICE) failed";
+            return false;
+        }
+        impl->context = context;
+        impl->device = device;
     }
 
-    impl->context = context;
-    impl->device = device;
-    impl->program = program;
-    impl->kernel = kernel;
-    impl->preparedQueue = queue;
-    return true;
+    return images ? impl->build(impl->images, kGainImageKernelSource, kGainImageKernelName, why)
+                  : impl->build(impl->buffers, kGainKernelSource, kGainKernelName, why);
 }
 
 bool Runtime::enqueueGain(void* queue, void* srcBuffer, void* dstBuffer, int width, int height,
                           int offsetX, int offsetY, int pitchComponents, float gain,
-                          std::string* why)
+                          std::string* why) const
 {
-    if (impl_->kernel == nullptr || impl_->preparedQueue != queue) {
-        *why = "enqueueGain called before prepare() succeeded for this queue";
+    Impl* impl = impl_;
+    if (impl->queue != queue || !impl->buffers.built) {
+        *why = "enqueueGain called before prepare(queue, false) succeeded for this queue";
         return false;
     }
     cl_mem src = reinterpret_cast<cl_mem>(srcBuffer);
     cl_mem dst = reinterpret_cast<cl_mem>(dstBuffer);
-    Api& api = impl_->api;
-    cl_kernel kernel = impl_->kernel;
+    Api& api = impl->api;
+    cl_kernel kernel = impl->buffers.kernel;
 
     const int args[4] = {width, height, offsetX, offsetY};
     if (api.SetKernelArg(kernel, 0, sizeof(cl_mem), &src) != CL_SUCCESS ||
@@ -262,6 +295,42 @@ bool Runtime::enqueueGain(void* queue, void* srcBuffer, void* dstBuffer, int wid
     // Deliberately no clFinish: ofxGPURender.h says the plug-in should enqueue
     // onto the host's queue and not wait for it, and the host's own readback is
     // what turns the result into pixels.
+    return true;
+}
+
+bool Runtime::enqueueGainImages(void* queue, void* srcImage, void* dstImage, int width, int height,
+                                int offsetX, int offsetY, const float gain[4],
+                                std::string* why) const
+{
+    Impl* impl = impl_;
+    if (impl->queue != queue || !impl->images.built) {
+        *why = "enqueueGainImages called before prepare(queue, true) succeeded for this queue";
+        return false;
+    }
+    cl_mem src = reinterpret_cast<cl_mem>(srcImage);
+    cl_mem dst = reinterpret_cast<cl_mem>(dstImage);
+    Api& api = impl->api;
+    cl_kernel kernel = impl->images.kernel;
+
+    const int args[4] = {width, height, offsetX, offsetY};
+    if (api.SetKernelArg(kernel, 0, sizeof(cl_mem), &src) != CL_SUCCESS ||
+        api.SetKernelArg(kernel, 1, sizeof(cl_mem), &dst) != CL_SUCCESS ||
+        api.SetKernelArg(kernel, 2, sizeof(int), &args[0]) != CL_SUCCESS ||
+        api.SetKernelArg(kernel, 3, sizeof(int), &args[1]) != CL_SUCCESS ||
+        api.SetKernelArg(kernel, 4, sizeof(int), &args[2]) != CL_SUCCESS ||
+        api.SetKernelArg(kernel, 5, sizeof(int), &args[3]) != CL_SUCCESS ||
+        api.SetKernelArg(kernel, 6, sizeof(cl_float4), gain) != CL_SUCCESS) {
+        *why = "clSetKernelArg failed (image kernel)";
+        return false;
+    }
+
+    const std::size_t global[2] = {roundUp(static_cast<std::size_t>(width), 16),
+                                   static_cast<std::size_t>(height)};
+    if (api.EnqueueNDRangeKernel(reinterpret_cast<cl_command_queue>(queue), kernel, 2, nullptr,
+                                 global, nullptr, 0, nullptr, nullptr) != CL_SUCCESS) {
+        *why = "clEnqueueNDRangeKernel failed (image kernel)";
+        return false;
+    }
     return true;
 }
 

@@ -41,4 +41,33 @@ __kernel void gain_rgba32f(__global const float* src,
 }
 )CLC";
 
+inline constexpr const char* kGainImageKernelName = "gain_rgba32f_image";
+
+// The Images handover: two image2d_t, no pitch and no row padding, addressed
+// with image coordinates. The sampler is a compile-time constant so the plug-in
+// does not create or release one - nearest-neighbour and clamp-to-edge, because
+// the kernel never reads outside the window it was given.
+inline constexpr const char* kGainImageKernelSource = R"CLC(
+__constant sampler_t nearestClamp = CLK_NORMALIZED_COORDS_FALSE |
+                                    CLK_ADDRESS_CLAMP_TO_EDGE |
+                                    CLK_FILTER_NEAREST;
+
+__kernel void gain_rgba32f_image(__read_only image2d_t src,
+                                 __write_only image2d_t dst,
+                                 const int width,
+                                 const int height,
+                                 const int offsetX,
+                                 const int offsetY,
+                                 const float4 gain)
+{
+    const int x = get_global_id(0);
+    const int y = get_global_id(1);
+    if (x >= width || y >= height) {
+        return;
+    }
+    const int2 p = (int2)(offsetX + x, offsetY + y);
+    write_imagef(dst, p, read_imagef(src, nearestClamp, p) * gain);
+}
+)CLC";
+
 } // namespace ocl

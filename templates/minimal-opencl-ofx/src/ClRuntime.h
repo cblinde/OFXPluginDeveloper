@@ -34,10 +34,14 @@ public:
 
     /// Compiles the gain kernel for the context and device behind `queue`.
     ///
-    /// Safe to call from every render: it returns true without rebuilding when
-    /// the queue has not changed. On failure `why` says which call failed and,
-    /// for a compile error, carries the driver's build log.
-    bool prepare(void* queue, std::string* why);
+    /// `images` selects which of the two kernels this render needs: the buffer
+    /// kernel of the OpenCL Buffers handover or the image2d_t kernel of the
+    /// Images handover. Safe to call from every render - it returns true without
+    /// rebuilding when the queue and the mode have not changed, and it keeps the
+    /// other mode's program so a host that switches back does not pay for a
+    /// second compile. On failure `why` says which call failed and, for a
+    /// compile error, carries the driver's build log.
+    bool prepare(void* queue, bool images, std::string* why);
 
     /// Enqueues the gain over `width` x `height` pixels of the render window.
     ///
@@ -49,9 +53,19 @@ public:
     /// window somewhere else, which is what the template's suite checks. Does not
     /// wait: ofxGPURender.h tells the plug-in not to finish the host's queue, and
     /// the host's readback is what makes the result observable.
+    // const: enqueuing changes the kernel's arguments, not this object's state.
     bool enqueueGain(void* queue, void* srcBuffer, void* dstBuffer, int width, int height,
                      int offsetX, int offsetY, int pitchComponents, float gain,
-                     std::string* why);
+                     std::string* why) const;
+
+    /// Enqueues the gain over the Images handover: `srcImage` and `dstImage` are
+    /// cl_mem image2d_t taken from kOfxImageEffectPropOpenCLImage. An image has
+    /// no row stride, so the addressing is pure coordinates - the offsets are
+    /// the window origin inside the image, and the engine cannot be told to step
+    /// a pointer even by mistake.
+    bool enqueueGainImages(void* queue, void* srcImage, void* dstImage, int width, int height,
+                           int offsetX, int offsetY, const float gain[4],
+                           std::string* why) const;
 
 private:
     struct Impl;

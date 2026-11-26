@@ -476,8 +476,14 @@ contradiction is not a typo you can read through:
 The Support library's two setters are the tie-breaker a plug-in can act on, and
 they agree with the second paragraph. What is unambiguous either way is the data
 property: buffers come through `kOfxImagePropData`, images through
-`kOfxImageEffectPropOpenCLImage`. The template implements Buffers, hands over and
-reads back `cl_mem` buffers, and says so in its suite rather than guessing.
+`kOfxImageEffectPropOpenCLImage`. `templates/minimal-opencl-ofx` implements both
+and advertises both, and at render time decides by the presence of
+`kOfxImageEffectPropOpenCLImage` - the header's own rule for a plug-in that
+supports both handovers. Buffers mode addresses a `cl_mem` through `rowBytes`;
+Images mode addresses an `image2d_t` by coordinates and never sees a pitch, which
+is why the rowBytes validation lives inside the Buffers branch. Its suite renders
+the same frame through both handovers and gets the same pixels
+([`opencl-images.log`](../evidence/2026-11-26-linux/opencl-images.log)).
 
 Four more things that cost a run here:
 

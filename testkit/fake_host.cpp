@@ -132,6 +132,9 @@ struct ImageObj {
   // the size of the allocation it carries. Null when the host has no device or
   // when setOpenCL(false) released it.
   testkit::cl::cl_mem clBuffer = nullptr;
+  // The images handover: a 2D image owned by the host, handed over in
+  // kOfxImageEffectPropOpenCLImage. Mutually exclusive with clBuffer.
+  testkit::cl::cl_mem clImage = nullptr;
   long long allocBytes = 0;
 };
 
@@ -195,6 +198,7 @@ struct Impl {
   // is recomputed by every OpenCL render.
   cl::DeviceInfo clInfo;
   bool clOn = false;
+  OpenCLHandover handover = OpenCLHandover::Buffers;
   cl::cl_context clContext = nullptr;
   cl::cl_command_queue clQueue = nullptr;
   bool clDstWritten = false;
@@ -210,6 +214,8 @@ struct Impl {
     if (!img) return;
     if (img->clBuffer && clInfo.api.ReleaseMemObject) clInfo.api.ReleaseMemObject(img->clBuffer);
     img->clBuffer = nullptr;
+    if (img->clImage && clInfo.api.ReleaseMemObject) clInfo.api.ReleaseMemObject(img->clImage);
+    img->clImage = nullptr;
     delete img;
     img = nullptr;
   }
@@ -726,6 +732,43 @@ ClipObj* clipOf(OfxImageClipHandle c) {
 // The destination is seeded with a byte pattern the plug-in would have to
 // overwrite: a gain of 0 leaves 0x7f000000-ish floats, so "the buffer still
 // holds the seed" means nobody wrote through the device.
+/// Creates the image2d_t the Images handover needs and fills it from the host's
+/// own copy: the source with the frame's row pitch, the destination with the
+/// seed pattern so a write is observable. There is no pitch in an image, which
+/// is exactly the difference this handover tests - the plug-in cannot step a
+/// pointer here, it has to use image coordinates.
+void attachClImage(ImageObj* img, bool seed)
+{
+  if (img->clImage) {
+    g->clInfo.api.ReleaseMemObject(img->clImage);
+    img->clImage = nullptr;
+  }
+  if (!g->clOn || g->handover != OpenCLHandover::Images || !g->clInfo.imageSupport) return;
+  if (img->isByte || img->w <= 0 || img->h <= 0) return;
+
+  cl::cl_image_format format{cl::CL_RGBA, cl::CL_FLOAT};
+  cl::cl_int err = cl::CL_SUCCESS;
+  img->clImage = g->clInfo.api.CreateImage2D(g->clContext, cl::CL_MEM_READ_WRITE, &format,
+                                             static_cast<std::size_t>(img->w),
+                                             static_cast<std::size_t>(img->h), 0, nullptr, &err);
+  if (err != cl::CL_SUCCESS || img->clImage == nullptr) {
+    img->clImage = nullptr;
+    return;
+  }
+  const std::size_t origin[3] = {0, 0, 0};
+  const std::size_t region[3] = {static_cast<std::size_t>(img->w),
+                                 static_cast<std::size_t>(img->h), 1};
+  if (seed) {
+    std::vector<unsigned char> pattern(static_cast<std::size_t>(img->w) * img->h * 16, 0x7f);
+    g->clInfo.api.EnqueueWriteImage(g->clQueue, img->clImage, cl::CL_TRUE, origin, region, 0, 0,
+                                    pattern.data(), 0, nullptr, nullptr);
+  } else {
+    g->clInfo.api.EnqueueWriteImage(g->clQueue, img->clImage, cl::CL_TRUE, origin, region,
+                                    static_cast<std::size_t>(img->rowBytes), 0, img->data, 0,
+                                    nullptr, nullptr);
+  }
+}
+
 void attachClBuffer(ImageObj* img, bool seed)
 {
   if (img->clBuffer) {
@@ -733,6 +776,10 @@ void attachClBuffer(ImageObj* img, bool seed)
     img->clBuffer = nullptr;
   }
   if (!g->clOn || img->isByte || img->allocBytes <= 0) return;
+  if (g->handover == OpenCLHandover::Images) {
+    attachClImage(img, seed);
+    return;
+  }
   cl::cl_int err = cl::CL_SUCCESS;
   img->clBuffer = g->clInfo.api.CreateBuffer(
       g->clContext, cl::CL_MEM_READ_WRITE | cl::CL_MEM_COPY_HOST_PTR,
@@ -902,6 +949,14 @@ void publishImageProps(ImageObj* img, ClipObj* clip) {
     setPointer(&img->props, kOfxImagePropData, 0, reinterpret_cast<void*>(img->clBuffer));
   } else {
     setPointer(&img->props, kOfxImagePropData, 0, data);
+  }
+  // The Images handover: a cl_mem image2d_t in its own property, while
+  // kOfxImagePropData keeps pointing at the host's copy (ofxGPURender.h asks for
+  // the image property to be the one that decides, which is what the plug-in
+  // reads). kOfxImagePropRowBytes stays published and is not used by an image.
+  if (img->clImage != nullptr) {
+    setPointer(&img->props, kOfxImageEffectPropOpenCLImage, 0,
+               reinterpret_cast<void*>(img->clImage));
   }
   setInt(&img->props, kOfxImagePropRowBytes, 0, static_cast<int>(img->rowBytes));
   setInt(&img->props, kOfxImagePropBounds, 0, img->originX + inset);
@@ -1455,9 +1510,39 @@ OfxStatus FakeHost::render(double time, const OfxRectI& window) {
 
 void FakeHost::readBackOpenCL() {
   ImageObj* dst = impl_->dstImage;
-  if (!dst || !dst->clBuffer) return;
+  if (!dst) return;
   cl::Api& api = impl_->clInfo.api;
   api.Finish(impl_->clQueue);
+
+  if (dst->clImage != nullptr) {
+    // An image has no pitch: the readback is a tight w*h*16 block, and what
+    // counts as a write is any pixel that is not the seed pattern - there is no
+    // row padding to scribble into, so the whole image is the check.
+    const std::size_t width = static_cast<std::size_t>(dst->w);
+    const std::size_t height = static_cast<std::size_t>(dst->h);
+    std::vector<unsigned char> tight(width * height * 16, 0);
+    const std::size_t origin[3] = {0, 0, 0};
+    const std::size_t region[3] = {width, height, 1};
+    if (api.EnqueueReadImage(impl_->clQueue, dst->clImage, cl::CL_TRUE, origin, region, 0, 0,
+                             tight.data(), 0, nullptr, nullptr) != cl::CL_SUCCESS) {
+      return;
+    }
+    impl_->clDstWritten = false;
+    for (unsigned char byte : tight) {
+      if (byte != 0x7f) {
+        impl_->clDstWritten = true;
+        break;
+      }
+    }
+    char* base = static_cast<char*>(dst->data);
+    for (std::size_t y = 0; y < height; ++y) {
+      std::memcpy(base + static_cast<long long>(y) * dst->rowBytes,
+                  tight.data() + y * width * 16, width * 16);
+    }
+    return;
+  }
+
+  if (!dst->clBuffer) return;
   std::vector<unsigned char> read(static_cast<std::size_t>(dst->allocBytes), 0);
   if (api.EnqueueReadBuffer(impl_->clQueue, dst->clBuffer, cl::CL_TRUE, 0, read.size(),
                             read.data(), 0, nullptr, nullptr) != cl::CL_SUCCESS) {
@@ -1583,11 +1668,28 @@ bool FakeHost::setOpenCL(bool on) {
   impl_->clContext = context;
   impl_->clQueue = queue;
   impl_->clOn = true;
+  // Both capabilities go on the host property set before describe, because the
+  // Support library only lets a descriptor claim a handover the host advertises
+  // (ofxsImageEffect.cpp:669-683). A host that offers both is the only shape in
+  // which a plug-in can be asked to choose, and that is what the suite needs.
+  setString(&impl_->hostProps, kOfxImageEffectPropOpenCLRenderSupported, 0, "true");
+  setString(&impl_->hostProps, kOfxImageEffectPropOpenCLSupported, 0, "true");
   invalidateImages();
   return true;
 }
 
 bool FakeHost::openclEnabled() const { return impl_->clOn; }
+
+void FakeHost::setOpenCLHandover(OpenCLHandover handover) {
+  impl_->handover = handover;
+  // The images are rebuilt for the new handover: a stale cl_mem from the other
+  // mode would be published under a property the plug-in is not reading.
+  invalidateImages();
+}
+
+OpenCLHandover FakeHost::openclHandover() const { return impl_->handover; }
+
+bool FakeHost::openclImageSupport() const { return impl_->clInfo.imageSupport; }
 
 bool FakeHost::openclDestinationWritten() const { return impl_->clDstWritten; }
 

@@ -199,6 +199,8 @@ private:
         // ofxImageEffect.h's kOfxImagePropRowBytes note says negative rowBytes is
         // for CPU images only, "not CUDA/Metal/OpenCL Buffers". A host that sends
         // one anyway gets a refusal instead of a kernel that walks backwards.
+        // Row pitch belongs to the Buffers handover: an OpenCL image has none,
+        // and the Images branch above never gets here.
         const int srcRowBytes = src.getRowBytes();
         const int dstRowBytes = dst.getRowBytes();
         if (srcRowBytes <= 0 || dstRowBytes <= 0 || srcRowBytes != dstRowBytes ||
@@ -206,25 +208,50 @@ private:
             OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
         }
 
-        // In this mode kOfxImagePropData is the cl_mem, not a pointer to pixels.
+        const OfxRectI& window = args.renderWindow;
+        const OfxRectI& sb = src.getBounds();
+        const OfxRectI& db = dst.getBounds();
+        if (sb.x1 != db.x1 || sb.y1 != db.y1) {
+            OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
+        }
+
+        // Which handover is this? ofxGPURender.h: "if a plug-in supports both, it
+        // must use kOfxImageEffectPropOpenCLImage to determine if Images or
+        // Buffers are being used for a given render action". The property is
+        // absent in Buffers mode, so its presence is the answer - and a host that
+        // sets it on one image and not the other is broken, not half-broken.
+        void* srcImage = src.getPropertySet().propGetPointer(kOfxImageEffectPropOpenCLImage, 0);
+        void* dstImage = dst.getPropertySet().propGetPointer(kOfxImageEffectPropOpenCLImage, 0);
+        std::string why;
+        if (srcImage != nullptr || dstImage != nullptr) {
+            if (srcImage == nullptr || dstImage == nullptr) {
+                OFX::throwSuiteStatusException(kOfxStatErrValue);
+            }
+            if (!_opencl.prepare(args.pOpenCLCmdQ, /*images=*/true, &why)) {
+                throwError(why);
+            }
+            const float gains[4] = {gain, gain, gain, gain};
+            if (!_opencl.enqueueGainImages(args.pOpenCLCmdQ, srcImage, dstImage,
+                                           window.x2 - window.x1, window.y2 - window.y1,
+                                           window.x1 - sb.x1, window.y1 - sb.y1, gains, &why)) {
+                throwError(why);
+            }
+            return;
+        }
+
+        // Buffers mode: kOfxImagePropData is the cl_mem, not a pointer to pixels.
         void* srcBuffer = src.getPropertySet().propGetPointer(kOfxImagePropData, 0);
         void* dstBuffer = dst.getPropertySet().propGetPointer(kOfxImagePropData, 0);
         if (srcBuffer == nullptr || dstBuffer == nullptr) {
             OFX::throwSuiteStatusException(kOfxStatErrBadHandle);
         }
 
-        std::string why;
-        if (!_opencl.prepare(args.pOpenCLCmdQ, &why)) {
+        if (!_opencl.prepare(args.pOpenCLCmdQ, /*images=*/false, &why)) {
             throwError(why);
         }
-        const OfxRectI& window = args.renderWindow;
-        const OfxRectI& sb = src.getBounds();
-        const OfxRectI& db = dst.getBounds();
         // Both images start their buffer at their own bounds origin, so the two
-        // pitch/origin pairs are passed separately rather than assumed equal.
-        if (sb.x1 != db.x1 || sb.y1 != db.y1) {
-            OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
-        }
+        // pitch/origin pairs are passed separately rather than assumed equal;
+        // that is already checked above, before the handover is chosen.
         // The cl_mem covers the allocation from the bounds origin; the window
         // may start inside it. A kernel handed only width and height writes the
         // corner of the frame instead of the window, which is silent until a
@@ -290,7 +317,12 @@ public:
         // setSupportsOpenCLBuffersRender() writes the property only when the host
         // advertises it (ofxsImageEffect.cpp:669-675), so a host that has no
         // OpenCL sees a plug-in with no OpenCL claim rather than a broken one.
+        // Both handovers of ofxGPURender.h: Buffers (cl_mem in kOfxImagePropData,
+        // written through the buffer kernel) and Images (image2d_t in
+        // kOfxImageEffectPropOpenCLImage, written through the image kernel). A
+        // host that offers only one gets the one it offers.
         desc.setSupportsOpenCLBuffersRender(true);
+        desc.setSupportsOpenCLImagesRender(true);
         desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
         desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
     }

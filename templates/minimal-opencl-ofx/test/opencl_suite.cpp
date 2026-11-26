@@ -121,7 +121,7 @@ int main(int argc, char** argv)
     }
     const char* path = argv[1];
 
-    std::printf("[1/6] loading %s\n", path);
+    std::printf("[1/7] loading %s\n", path);
     void* lib = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (lib == nullptr) {
         std::fprintf(stderr, "FAIL: dlopen: %s\n", dlerror());
@@ -140,7 +140,7 @@ int main(int argc, char** argv)
           "the module identifies itself as com.ofxplugindeveloper.openclgain");
 
     testkit::FakeHost host;
-    std::printf("[2/6] opening an OpenCL device for the host to hand over\n");
+    std::printf("[2/7] opening an OpenCL device for the host to hand over\n");
     if (!host.setOpenCL(true)) {
         std::fprintf(stderr,
                      "no OpenCL device: nothing to test (set OPENCL_LOADER_LIB / OCL_ICD_VENDORS)\n");
@@ -154,6 +154,8 @@ int main(int argc, char** argv)
     check(host.describe() == kOfxStatOK, "describe answered kOfxStatOK");
     check(host.descriptorString(kOfxImageEffectPropOpenCLRenderSupported) == "true",
           "the descriptor advertises OpenCL Buffers render");
+    check(host.descriptorString(kOfxImageEffectPropOpenCLSupported) == "true",
+          "the descriptor advertises OpenCL Images render");
     check(host.descriptorString(kOfxImageEffectPropCPURenderSupported) == "true",
           "the descriptor keeps the CPU path advertised");
 
@@ -170,14 +172,14 @@ int main(int argc, char** argv)
     host.setSourcePixels(src, kWidth, kHeight);
     const OfxRectI full{0, 0, kWidth, kHeight};
 
-    std::printf("[3/6] the CPU path, with the host offering no device\n");
+    std::printf("[3/7] the CPU path, with the host offering no device\n");
     host.setOpenCL(false);
     check(host.render(0.0, full) == kOfxStatOK, "render answered kOfxStatOK without OpenCL");
     const std::vector<float> cpu = host.destination();
     check(sameBits(cpu, scale(src, 2.0f)), "the CPU frame is the source times two, bit for bit");
     check(!host.openclDestinationWritten(), "no device buffer was written while OpenCL was off");
 
-    std::printf("[4/6] the same render with the device enabled\n");
+    std::printf("[4/7] the same render with the device enabled\n");
     check(host.setOpenCL(true), "the host re-opened the device");
     check(host.render(0.0, full) == kOfxStatOK, "render answered kOfxStatOK with OpenCL enabled");
     check(host.openclDestinationWritten(),
@@ -188,7 +190,7 @@ int main(int argc, char** argv)
           "the device frame is the source times two, bit for bit (max delta " +
               std::to_string(fullDelta.inside) + ")");
 
-    std::printf("[5/6] a render window smaller than the frame\n");
+    std::printf("[5/7] a render window smaller than the frame\n");
     check(host.setParam("gain", "3.0"), "the host set gain to 3.0");
     const OfxRectI window{5, 7, 29, 31};
     check(host.render(0.0, window) == kOfxStatOK, "render answered kOfxStatOK for the window");
@@ -199,7 +201,48 @@ int main(int argc, char** argv)
     check(outWindow.outside == 0.0,
           "outside the window the previous frame is untouched (the kernel wrote no padding)");
 
-    std::printf("[6/6] a negative row pitch is refused, not walked backwards\n");
+    std::printf("[6/7] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage\n");
+    if (!host.openclImageSupport()) {
+        std::printf("  NOT RUN: the device reports no image support (nothing to test)\n");
+    } else {
+        // The same frame through the other half of ofxGPURender.h: no cl_mem
+        // buffer, no rowBytes - a 2D image and coordinates. The plug-in has to
+        // notice from the property alone, which is what the header asks for.
+        host.setOpenCLHandover(testkit::OpenCLHandover::Images);
+        check(host.setParam("gain", "2.0"), "the host set gain to 2.0 for the Images pass");
+        check(host.render(0.0, full) == kOfxStatOK, "render answered kOfxStatOK over image2d_t");
+        check(host.openclDestinationWritten(),
+              "the plug-in wrote through the image it was handed");
+        const std::vector<float> imageFrame = host.destination();
+        const Delta imageDelta = compare(imageFrame, scale(src, 2.0f), kWidth, kHeight, full);
+        check(imageDelta.inside == 0.0,
+              "the image frame is the source times two, bit for bit (max delta " +
+                  std::to_string(imageDelta.inside) + ")");
+
+        // A window that is not the whole image: the image kernel addresses with
+        // coordinates, so a wrong offset would land on the wrong pixels rather
+        // than smash a pointer.
+        check(host.setParam("gain", "3.0"), "the host set gain to 3.0 for the image window");
+        const OfxRectI imageWindow{11, 3, 45, 41};
+        check(host.render(0.0, imageWindow) == kOfxStatOK,
+              "render answered kOfxStatOK for an image window");
+        const std::vector<float> imagePartial = host.destination();
+        const Delta imageIn = compare(imagePartial, scale(src, 3.0f), kWidth, kHeight, imageWindow);
+        const Delta imageOut = compare(imagePartial, scale(src, 2.0f), kWidth, kHeight, imageWindow);
+        check(imageIn.inside == 0.0, "inside the image window the frame is the source times three");
+        check(imageOut.outside == 0.0,
+              "outside the image window the previous frame is untouched");
+
+        // Back to buffers: the two programs have to coexist for a host that
+        // offers both and changes its mind.
+        host.setOpenCLHandover(testkit::OpenCLHandover::Buffers);
+        check(host.setParam("gain", "2.0"), "the host set gain back to 2.0");
+        check(host.render(0.0, full) == kOfxStatOK &&
+                  host.openclDestinationWritten(),
+              "the buffers handover still renders after the image one");
+    }
+
+    std::printf("[7/7] a negative row pitch is refused, not walked backwards\n");
     host.setNegativePitch(true);
     host.setParam("gain", "2.0");
     const OfxStatus refused = host.render(0.0, full);
