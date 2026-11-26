@@ -60,7 +60,25 @@ the absolute-path fix. The runs after that fix did not get a scriptable host
 again in two attempts (300 s and 600 s to the timeout, `-nogui` start), which is
 the known unreliable start, not a result about the .drp.
 
-## 4. conclusion for row 19
+## 4. bringing the archive back: import yes, load no
+
+`poc.py --project` calls `ProjectManager.LoadProject(path)`. On the exported file
+that answers **None** - twice, once with a relative and once with an absolute
+path. The other door exists:
+
+  LoadProject(abs)   -> None
+  ImportProject(abs) -> True
+  project name inside the archive: drp-roundtrip.Cfg
+  GetCurrentProject() right after the import -> "Untitled Project", no timeline
+
+So an exported project comes back only through ImportProject, and that leaves an
+imported project that still has to be opened by its stored name ("<name>.Cfg",
+with the extension). The attempt to load it by name did not finish: the two runs
+after the absolute-path fix did not get a scriptable host again (300 s and 600 s
+to the timeout, `-nogui` start), so "ImportProject then LoadProject(\"drp-roundtrip\")"
+is written down as the next step, not as a result.
+
+## 5. conclusion for row 19
 
 Route 2 does not exist on this host: the effect an exported project would have to
 carry is not exported at all, so a .drp made here cannot set modelPath. Producing

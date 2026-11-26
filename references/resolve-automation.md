@@ -147,8 +147,15 @@ What follows from that, and what does not:
 - Loading one is what `poc.py --project` does, and that mode ran for the first
   time on 2026-11-26: four defects fell out of it - an undefined `render_size`, a
   `KeyError` without `--resolve`, a `connect()` that demanded an open project, and
-  a `LoadProject` that refused a relative path. All four are fixed; the load step
-  itself is measured only up to the host's answer.
+  a `LoadProject` that refused a relative path. All four are fixed, and the path
+  question turned out to be the smaller half: `LoadProject(path)` answers **None**
+  even for an absolute path (`***[V]***`), the archive comes back only through
+  `ImportProject(path)`, which answers `True` and leaves a project whose stored
+  name is `"<name>.Cfg"` - still to be opened by that name. Opening it by name is
+  the one step in this chain nobody has completed.
+- The consequence for a prepared project: it is a GUI artefact twice over - the
+  value has to be typed in the inspector, and the file that carries it has to be
+  imported rather than loaded.
 - Fusion is the escape hatch worth measuring: `TimelineItem` exposes Fusion comps,
   and Fusion has its own scripting surface. Whether an OFX plug-in applied inside
   Fusion behaves like one applied on the colour page is an open question (§11).

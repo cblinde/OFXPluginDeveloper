@@ -16,7 +16,9 @@ Three modes, and the difference matters:
   one still image imported, a timeline, the OFX effect applied through
   `AddEffect`, then one PNG frame. This is the mode that needs no `.drp`.
 * `--project some.drp` loads a prepared project instead, and needs the plug-in to
-  be applied in it already - which needs a hand-made `.drp` nobody has produced.
+  be applied in it already. A project exported here cannot carry the effect, so
+  that file is a GUI artefact; see references/resolve-automation.md §5 for what
+  the export and the two loading calls were measured to do.
 
 A started Resolve is not a pass, and a `Complete` render job is not a pass: the
 pass condition is a decoded file whose size and pixels survive `checks.py`.

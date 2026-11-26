@@ -1,9 +1,17 @@
 """The part of the proof of concept that needs a running Resolve.
 
 Every call marked `# RUN` answered DaVinci Resolve Studio 21.2.0.5 on Windows on
-2026-11-25; every call marked `# NOT RUN` has still never been executed, and the
-one that matters is `load_project`, because a prepared `.drp` has never existed
-here. The run behind those markers is `evidence/2026-11-25-windows/resolve-poc.log`.
+2026-11-25; every call marked `# NOT RUN` has still never been executed. The run
+behind those markers is `evidence/2026-11-25-windows/resolve-poc.log`.
+
+`load_project` did get its run on 2026-11-26 and answered worse than expected:
+`LoadProject` refuses a `.drp` by path - relative and absolute alike - while
+`ImportProject` takes the file and leaves a project named `<name>.Cfg` behind
+([`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)).
+The import-then-open-by-name sequence is written down there and in
+`references/resolve-automation.md` §5, not implemented here yet: it was never run
+end to end, and a fallback that has never answered is the thing this file exists
+to avoid.
 
 The split is deliberate: `decode.py` and `checks.py` run anywhere, `poc.py`
 orchestrates both, and this file is the only place that can be wrong in a way no
@@ -148,9 +156,16 @@ def load_project(resolve, project_path):
     # directory, not the caller's - the same trap SetRenderSettings has with
     # TargetDir. Measured 2026-11-26: a relative .drp that exists here is refused.
     path = Path(project_path).resolve()
-    project = manager.LoadProject(str(path))              # RUN 2026-11-26
+    # RUN 2026-11-26: None, both relative and absolute, for a .drp this host
+    # exported itself. ImportProject(path) answered True for the same file and
+    # left a project named "<name>.Cfg" to be opened; that second call is the
+    # missing half, so this one keeps its honest failure instead of guessing.
+    project = manager.LoadProject(str(path))
     if not project:
-        raise RuntimeError(f"could not load project: {path}")
+        raise RuntimeError(
+            f"could not load project: {path} (LoadProject refuses a .drp by path "
+            f"on 21.2.0.5; ImportProject takes the file, see "
+            f"references/resolve-automation.md section 5)")
     return project
 
 
