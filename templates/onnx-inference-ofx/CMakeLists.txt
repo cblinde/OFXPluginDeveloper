@@ -71,11 +71,26 @@ if(ONNXRUNTIME_ROOT)
   # and a root typed with a trailing separator would never match its children.
   file(TO_CMAKE_PATH "${ONNXRUNTIME_ROOT}" _ort_root)
   string(REGEX REPLACE "/+$" "" _ort_root "${_ort_root}")
+  # Windows paths are case-insensitive and CMake's comparisons are not: .../ORT
+  # and .../ort name one directory, and comparing them as strings dropped a
+  # cached answer that was still right and paid for a second search (measured:
+  # CMAKE_FIND_DEBUG_MODE printed the find_path/find_library run for a root whose
+  # only difference was letter case). Linux and macOS stay case-sensitive here,
+  # because there those two spellings are two directories.
+  if(WIN32)
+    string(TOLOWER "${_ort_root}" _ort_root)
+  endif()
   foreach(_ort_cached ONNXRUNTIME_INCLUDE_DIR ONNXRUNTIME_LIBRARY ONNXRUNTIME_DLL)
     if(DEFINED ${_ort_cached})
       file(TO_CMAKE_PATH "${${_ort_cached}}" _ort_value)
+      if(WIN32)
+        string(TOLOWER "${_ort_value}" _ort_value)
+      endif()
       string(FIND "${_ort_value}" "${_ort_root}/" _ort_at)
       if(NOT _ort_at EQUAL 0 AND NOT "${_ort_value}" STREQUAL "${_ort_root}")
+        # Said out loud: a cached answer that disappears without a line here is
+        # the kind of configure-time surprise that costs an hour.
+        message(STATUS "Dropping cached ${_ort_cached}: it is not under ONNXRUNTIME_ROOT")
         unset(${_ort_cached} CACHE)
         unset(${_ort_cached})
       endif()
