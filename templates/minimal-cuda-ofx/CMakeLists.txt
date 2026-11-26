@@ -212,6 +212,15 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>"
   RUNTIME_OUTPUT_DIRECTORY "$<1:${_ofx_bundle_arch_dir}>")
 
+# A default that is not a passthrough, for the same reason as the CPU template
+# (references/resolve-automation.md §14.10): a host may skip render() entirely
+# when the effect reports identity, and the Resolve scripting API cannot set an
+# OFX parameter afterwards. The harness therefore builds the value in:
+#   cmake -S . -B build -DGAIN_DEFAULT=2.0
+set(GAIN_DEFAULT "1.0" CACHE STRING
+    "Default gain for the CUDA plug-in (1.0 = passthrough)")
+target_compile_definitions(${PLUGIN_TARGET} PRIVATE GAIN_DEFAULT=${GAIN_DEFAULT})
+
 # Bundle scaffolding (Resources/ is optional but hosts that read icons want it)
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
 
@@ -290,5 +299,6 @@ add_custom_target(install-bundle
   COMMENT "Installing ${PLUGIN_BUNDLE} into ${OFX_INSTALL_DIR}"
   DEPENDS ${PLUGIN_TARGET})
 
+message(STATUS "Default gain: ${GAIN_DEFAULT}")
 message(STATUS "OFX plugin : ${PLUGIN_TARGET} (CUDA ${OFXPLUGIN_ENABLE_CUDA})")
 message(STATUS "Bundle     : ${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}")

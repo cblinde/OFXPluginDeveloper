@@ -209,7 +209,19 @@ def run(args, report):
         step(report, "install", "pass", str(installed), time.monotonic() - started)
 
         started = time.monotonic()
-        process = resolve_api.launch(facts["resolve"], nogui=True)
+        # The declaration file is the harness's own channel: the host passes its
+        # environment to the plug-in, and nothing else can. Cleared first, so a
+        # line from a previous run cannot answer this one.
+        environment = None
+        if args.path_log:
+            declared_path = Path(args.path_log)
+            declared_path.parent.mkdir(parents=True, exist_ok=True)
+            if declared_path.exists():
+                declared_path.unlink()
+            environment = dict(os.environ,
+                               MCOFX_PATH_LOG=str(declared_path.resolve()))
+        process = resolve_api.launch(facts["resolve"], nogui=True,
+                                     environment=environment)
         step(report, "launch", "pass", f"pid {process.pid}", time.monotonic() - started)
 
         started = time.monotonic()
@@ -283,6 +295,13 @@ def run(args, report):
             detail += (f", x{args.expect_gain:g} mae {stats.get('mae')} "
                        f"max {stats.get('max_pixel')}")
         step(report, "check", "pass", detail, time.monotonic() - started)
+        if args.path_log and Path(args.path_log).is_file():
+            declared = [line.strip() for line
+                        in Path(args.path_log).read_text(encoding="utf-8").splitlines()
+                        if line.strip()]
+            report["declared_paths"] = declared
+            step(report, "path", "pass" if declared else "unknown",
+                 "; ".join(declared) or "the plug-in declared no pixel path")
     except Exception as error:
         step(report, "error", "fail", f"{type(error).__name__}: {error}")
         report["result"] = "fail"
@@ -340,6 +359,10 @@ def main(argv=None):
                         help="the reference times this gain, not the reference itself; "
                              "for a bundle built with -DREFERENCE_GAIN_DEFAULT")
     parser.add_argument("--expect", help="WxH the render must have")
+    parser.add_argument("--path-log",
+                        help="a file the plug-in declares its pixel path in, through "
+                             "$MCOFX_PATH_LOG; Resolve's log does not carry what a "
+                             "plug-in logs")
     parser.add_argument("--timeout", type=int, default=600, help="startup and render time-out, seconds")
     parser.add_argument("--kill-render-after", type=float, metavar="SECONDS",
                         help="kill the host once the job has been rendering this "

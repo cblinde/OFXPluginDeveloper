@@ -83,6 +83,14 @@ than `C:` work at all.
 `--project some.drp` still loads a prepared project instead. It is the mode the
 design assumed and it has **never run**, because no `.drp` has been produced here.
 
+`ExportFrame` - one frame without a render job - has its own measurement.
+`tests/resolve/export_frame.py` builds the same project, renders one frame
+through a job and then exports that frame twice, as a file and as base64 in
+the answer. Both forms answered `1920x1080` in 172 ms, the size of the job's
+own PNG, and all three frames were identical to the byte
+([`resolve-export-frame.log`](../../evidence/2026-11-26-windows/resolve-export-frame.log),
+`../../references/resolve-automation.md` §15.6).
+
 ## What the two runs prove
 
 **Run 1, default gain.** The rendered frame was pixel-identical to the source
@@ -125,9 +133,21 @@ reference itself, so a frame that skipped the render is off by
 frame is caught by the gain check` - because a check that has never failed is a
 check nobody has tested.
 
-What neither run proves: the **GPU** path (this plug-in has none, and the CUDA
-template has never rendered in Resolve), **tiling or multi-resolution** (Resolve's
-profile asks for neither), and **parameter round-trips** (no accessor in the API).
+What neither run proves: **tiling or multi-resolution** (Resolve's profile asks
+for neither), **parameter round-trips** (no accessor in the API), and the CUDA
+template's stream handling - the GPU half is covered by run 3.
+
+**Run 3, the CUDA template (2026-11-26).** The same recipe with
+`templates/minimal-cuda-ofx`, built as `GAIN_DEFAULT=2.0 CUDA_ARCHS=86
+templates/minimal-cuda-ofx/build.bat Release`, rendered `1920x1080` and checked
+against the source times two: `mae 0.0`, `max 0`, `x2`. The CUDA template has a
+CPU fallback that produces identical pixels, so the frame alone would not say
+which path ran. `--path-log` answers that: it sets `$MCOFX_PATH_LOG` for the host
+it launches (Resolve does not log what a plug-in prints through
+`OFX::Log::print`), the plug-in appends one line per render to that file, and all
+eight renders declared `CUDA` - seven full frames and one `208x117` window.
+Log: [`resolve-poc-cuda-gain.log`](../../evidence/2026-11-26-windows/resolve-poc-cuda-gain.log),
+script: `../../references/resolve-automation.md` §14.13.
 
 ## The failure path
 

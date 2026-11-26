@@ -41,10 +41,10 @@ A `.venv/` in the root wins over `PATH`; recipe: `references/testing-layers.md` 
 ---
 ## Hard rules
 
-1. **Never claim a host render is verified beyond what ran.** `NatronRenderer` has
-   rendered this template headless and Resolve Studio 21.2 ran `tests/resolve/poc.py`
-   twice on 2026-11-25 (both **[V]**): identity at gain 1.0, and source ×2 to the byte
-   at gain 2.0 - so `render()` ran. No GPU, no tiled host, no third host.
+1. **Never claim a host render is verified beyond what ran.** `NatronRenderer` and
+   Resolve Studio 21.2 ran `tests/resolve/poc.py` three times (all **[V]**): identity,
+   source ×2, and the CUDA template at `-DGAIN_DEFAULT=2.0` declaring CUDA for
+   every render. No tiled host, no second GPU, no third host.
 2. **Claim nothing a compiler, `nm` or a test did not prove.** `[V]` means the
    command ran in this repository; `[I]` means inferred; `[B]` means external
    evidence. Labels are defined in `references/cmake-and-linking.md`.

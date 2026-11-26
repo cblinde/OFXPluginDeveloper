@@ -15,6 +15,8 @@ rem   CUDA_HOME        toolkit to use; else discovered via CUDA_PATH / PATH
 rem   OFX_SOURCE_DIR   point at an existing openfx checkout (offline builds,
 rem                    or Support\Developer\OpenFX shipped with Resolve)
 rem   CUDA_ARCHS       e.g. 86;89  (default: 75;80;86;89;90[;100;120])
+rem   GAIN_DEFAULT     default gain baked in (default 1.0); set 2.0 so a host
+rem                    cannot skip render()
 rem   CPU_ONLY=1       build without CUDA to prove the fallback path
 rem   CMAKE_GENERATOR  force a generator (default: newest VS with the C++ toolset,
 rem                    or Ninja when that VS has no NVIDIA CUDA customisations)
@@ -138,6 +140,10 @@ if defined CUDA_FOUND set "EXTRA=%EXTRA% "-DCMAKE_CUDA_COMPILER=%CUDA_FOUND%\bin
 if not defined CUDA_FOUND set "EXTRA=%EXTRA% -DOFXPLUGIN_ENABLE_CUDA=OFF"
 if defined OFX_SOURCE_DIR set "EXTRA=%EXTRA% "-DOFX_SOURCE_DIR=%OFX_SOURCE_DIR%""
 if defined CUDA_ARCHS set "EXTRA=%EXTRA% -DCMAKE_CUDA_ARCHITECTURES=%CUDA_ARCHS%"
+rem Always passed, with 1.0 as the fallback: a cached -DGAIN_DEFAULT=2.0 would
+rem otherwise survive every later build, and the contract suite asserts identity at
+rem neutral settings - which a build tree configured for a host proof then fails.
+if defined GAIN_DEFAULT (set "EXTRA=%EXTRA% -DGAIN_DEFAULT=%GAIN_DEFAULT%") else (set "EXTRA=%EXTRA% -DGAIN_DEFAULT=1.0")
 
 rem ---- pick a toolchain that can actually compile a .cu ----------------------
 rem A Visual Studio generator compiles CUDA only through NVIDIA's MSBuild build

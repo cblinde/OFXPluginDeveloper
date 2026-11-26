@@ -62,6 +62,13 @@ OpenFX `OFX_Release_1.5.1`):
   47 s and leaves no process behind (`resolve-poc-kill.log`). Nuke and SCRATCH
   have run nothing, and every host-specific claim in
   `references/host-resolve.md` remains graded B/C.
+- **A GPU kernel ran inside Resolve (2026-11-26).** The CUDA template, rebuilt with
+  `-DGAIN_DEFAULT=2.0`, produced a 1920×1080 PNG that is the source times two over
+  8,294,400 bytes (`mae 0.0`, `max 0`), and its declaration names the CUDA path for
+  all eight render invocations - so the host enabled CUDA render and the kernel,
+  not the CPU fallback, made the frame (`resolve-poc-cuda-gain.log`). The host
+  passes no stream information, the plug-in declares no tiling, and one frame says
+  nothing about throughput; multi-GPU and multi-stream ordering stay unverified.
 - **The 1.5.1 render hints are documented, not exercised.** No host here sets
   `kOfxImageEffectPropNoSpatialAwareness` or `kOfxImageEffectPropThumbnailRender`,
   and the templates do not yet read them; the rules in `roi-tiling-and-render-hints.md` follow from the header

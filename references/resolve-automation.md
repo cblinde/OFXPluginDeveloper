@@ -185,6 +185,23 @@ test should expose the same in a log file or a parameter the framework can read
 back. A comparison of CPU and GPU output is then a comparison of two *declared*
 paths, and the declaration has to come from the plug-in, not from the harness.
 
+**Measured 2026-11-26.** The declaration exists and works. `OFX::Log::print` does
+not reach Resolve's log - the host log names the bundle at load time and nothing
+the plug-in printed - so the CUDA template appends one line per render to the file
+named by `$MCOFX_PATH_LOG`, and `tests/resolve/poc.py --path-log <file>` sets that
+variable for the host it launches. In the Resolve run all eight render invocations
+declared `CUDA`, so the frame that matched the reference times two was produced by
+the kernel, not by the fallback
+(`../evidence/2026-11-26-windows/resolve-poc-cuda-gain.log`).
+
+### What the declaration can and cannot say
+
+It records the path and the render window, nothing else: no separate line for "the
+host supplied a stream", no timing, no device index. The branch that writes `CUDA`
+refuses to run unless the host set `kOfxImageEffectPropCudaEnabled`, so a CPU
+render cannot write it; but "CUDA path" means "this plug-in's CUDA code ran", not
+"the frame never touched a host-side CPU copy on the way out".
+
 ## 9. The milestone: one frame, end to end
 
 Build → install → launch → connect → open a prepared project → render one frame
@@ -1048,6 +1065,52 @@ that a killed run cannot clean up after itself:
   pass. It now accepts a file that is new *or changed*, and `test_stale_file.py`
   keeps the stale case failing (case 2) while the overwrite case passes (case 3).
 
+### 14.13 The CUDA template inside the host: a kernel, not the fallback
+
+The CPU template proved that `render()` runs in Resolve (§14.10). The CUDA
+template needs one step more, because it has two paths that produce the *same*
+pixels: the CPU loop is the fallback for a host that does not enable CUDA render,
+so a matching frame alone says nothing about which one ran. 2026-11-26, same
+machine and same project recipe as §14.6:
+
+```bash
+GAIN_DEFAULT=2.0 CUDA_ARCHS=86 templates/minimal-cuda-ofx/build.bat Release
+python tests/resolve/poc.py --build-project --effect "Minimal CUDA Gain" \
+    --bundle templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle \
+    --source build/resolve/source.png --reference build/resolve/source.png \
+    --expect-gain 2 --expect 1920x1080 \
+    --path-log build/resolve/frames-cuda-gain/path.log ...
+```
+
+```
+  connect   pass     DaVinci Resolve Studio 21.2.0.5             27.9 s
+  build     pass     poc: Minimal CUDA Gain on source.png          1.9 s
+  render    pass     poc00108000.png                               7.1 s
+  check     pass     1920x1080 via ffmpeg, x2 mae 0.0 max 0        3.0 s
+  path      pass     CUDA 1920x1080; ... CUDA 208x117; ...
+  quit      pass     API quit, then the recorded PID              17.0 s
+```
+
+- `GAIN_DEFAULT` is the CUDA template's half of §14.10's lever, for the same
+  reason: at 1.0 `isIdentity()` is true and the host may skip `render()`. The
+  build reports `Default gain: 2.0`, `CUDA architectures: 86`, one cubin and two
+  exports.
+- The frame is the source times two **to the byte** over 8,294,400 bytes, so the
+  plug-in's arithmetic ran inside the host and survived its 8-bit PNG conversion.
+- The **declaration** is what makes it a GPU result. In all eight render
+  invocations - seven at 1920×1080 and one small `208x117` window the host asked
+  for on its own - the plug-in wrote `CUDA`. `processImagesCuda` refuses to run
+  unless the host set `kOfxImageEffectPropCudaEnabled`, so a CPU render cannot
+  write that line.
+- What it still does not show: whether the host handed the plug-in a CUDA stream
+  (the line records path and window only, §8), a render window larger than one
+  image or a tiled one (this plug-in declares neither), a second GPU, or any
+  throughput number - the 7.1 s of `render` cover hot-start host overhead and one
+  frame.
+
+Log: `../evidence/2026-11-26-windows/resolve-poc-cuda-gain.log`; report
+`tests/resolve/reports/poc-2026-11-26T14-49-40+00-00.json`.
+
 ## 15. The API surface a plug-in developer needs
 
 §14 is the run; this is the map behind it - which calls exist, since when, what
@@ -1096,6 +1159,12 @@ name carries the edition, and that test works on versions whose `.pyi` has no
 `IsStudio`. It is what `tools/probe-env.py --connect` falls back to. `IsStudio()`
 itself has never been answered by a host in this repository - it is `[I]`.
 
+What the name does **not** decide: nothing here records what the free version
+calls itself, so a product name without the word `Studio` answers `null`, not
+`false` - the Resolve suite then reads `unknown` with that reason instead of
+`blocked`, which would claim the machine cannot run it. Only a name that carries
+the edition is evidence of the edition.
+
 ### 15.4 The objects a plug-in developer touches
 
 `[V]` means a run in `tests/resolve/` called it and the log is in `evidence/`;
@@ -1115,7 +1184,7 @@ itself has never been answered by a host in this repository - it is `[I]`.
 | `Timeline` | `GetItemListInTrack("video", 1)` | `[V]` | |
 | `TimelineItem` | `AddEffect("ofx", id)` | `[V]` | answers an `Effect` or `None`; the id is the host's, not the bundle identifier |
 | `TimelineItem` | `GetEffects("ofx")`, `DeleteEffects([effect])` | `[I]` | the removal path, unexercised here |
-| `TimelineItem` | `ExportFrame(offset, options)` | `[I]` | §15.6 |
+| `TimelineItem` | `ExportFrame(offset, options)` | `[V]` | one frame as a file or as base64 in 172 ms; the answer's size matches the PNG (§15.6) |
 | `Effect` | `GetInfo()`, `GetIsEnabled`, `SetIsEnabled`, `GetIndex`, `SetIndex` | `[I]` | `GetInfo()` is `{category, id, name}` - no parameter list |
 
 ### 15.5 What the API cannot do
@@ -1124,38 +1193,56 @@ itself has never been answered by a host in this repository - it is `[I]`.
 |---|---|
 | set or read an OFX parameter | nothing. `Effect` has six methods (§14.10), there is no `SetParameter` in 21.2's `.pyi`, and `FusionComp` is declared as `class FusionComp: ...` - a bare stub without methods, so the Fusion route does not exist either. The lever that does work is the **default**: rebuild with `-DREFERENCE_GAIN_DEFAULT=2.0` and the host cannot skip `render()` (§14.10) |
 | read a frame's pixels | no. Pixels leave only as a file or an encoded string, through a render job or `ExportFrame` |
-| learn which backend the plug-in took | no. Not in the API; the plug-in's own log or the timing is the evidence (§8) |
+| learn which backend the plug-in took | no. Not in the API, and Resolve logs nothing a plug-in prints through `OFX::Log::print`; the plug-in has to declare it, which the CUDA template does through `$MCOFX_PATH_LOG` (§8, §14.13) |
 | learn the OFX identifier from the host | no. `GetEffectsList` answers the host's id; the bundle's own id is in its `OFX` support XML |
 | set a parameter with a click instead | no. The scripting API has no UI automation |
 
-### 15.6 The cheaper frame: `ExportFrame`, documented but not measured here
+### 15.6 The cheaper frame: `ExportFrame`, measured on 21.2
 
 `TimelineItem.ExportFrame(frameOffset, exportFrameOptions)` renders one frame
 without a render job, a `TargetDir` or a job id - which is exactly where §14.7's
-two traps live. From 21.2's `.pyi`:
+two traps live. Both documented forms ran on 2026-11-26 against the project
+`poc.py --build-project` makes: `tests/resolve/export_frame.py` installed the
+bundle, built the project, rendered one frame through a job, then exported that
+same frame twice. **[V]**
 
-```python
-result = item.ExportFrame(0, {"outputType": "file", "filePath": str(png)})
-# result: {"success": bool, "error": str, "width": int, "height": int}
+| Form | The answer | What it produced | Time |
+|---|---|---|---|
+| `{"outputType": "file", "filePath": <png>}` | `{"success": True, "width": 1920, "height": 1080}` | a 136,433-byte PNG on disk | 172 ms |
+| `{"outputType": "encodedString", "encodedImageFormat": "png"}` | the same three keys plus `data`, 181,912 base64 characters | 136,433 bytes, `\x89PNG` magic, decodes with ffmpeg | 172 ms |
 
-# or with no file at all: outputType "encodedString" + encodedImageFormat "png"
-# answers "data" as base64 image bytes, so the validation loop needs no temp file.
-```
+What the numbers settle:
 
-Options: `outputType` (`"file"` or `"encodedString"`), `encodedImageFormat`
-(`"jpg"` or `"png"`), `filePath` (the format comes from the extension),
-`maxDimension`, `quality` (JPEG, 1-100), `roiX`, `roiY`, `roiWidth`, `roiHeight`
-(fractions of the frame, 21.2).
+- **No `error` key on success.** The `.pyi` declares it optional and the host
+  leaves it out, so a caller must not read `result["error"]` after a pass.
+- **`width`/`height` are the exported frame's size.** Both forms said
+  `1920x1080`, both PNGs decoded to `1920x1080`, and the render job's
+  `poc00108000.png` was `1920x1080` as well: the answer agrees with the bytes.
+- **`data` is base64 of a PNG.** 181,912 characters is exactly the base64 length
+  of 136,433 bytes, `base64.b64decode(..., validate=True)` accepted it, and the
+  decoded file starts with `\x89PNG`. The two PNGs even share their md5, so the
+  "no temp file" form is the same file the `file` form writes.
+- **The pixels are the render job's.** `file vs job`, `encoded vs job` and
+  `encoded vs file` all read `mae 0.0`, `max 0` over 8,294,400 bytes, so a
+  validation loop can swap the job for `ExportFrame` without changing what it
+  measures.
+- **It is cheaper here.** 172 ms per export against 1.19 s of wall time for the
+  job, whose own `TimeTakenToRenderInMs` was 738.
 
-**None of this has been run in this repository.** `tests/resolve/poc.py` renders
-through a job and the evidence log is that route, so treat §15.6 as `[I]` and
-measure it before a skill relies on it - if it holds, the base64 form removes the
-temp-file step from every future validation loop.
+Log: `../evidence/2026-11-26-windows/resolve-export-frame.log`; the JSON report
+is `tests/resolve/reports/export-frame-<timestamp>.json`.
+
+Not exercised: `maxDimension`, `quality` and the `roi*` options, JPEG output, and
+any frame other than frame 0 of a one-clip timeline. The export renders inside
+the host, so what comes back is the host's 8-bit PNG conversion, not the
+plug-in's own buffer.
 
 ### 15.7 Where to look next
 
 - `tests/resolve/resolve_api.py` - the calls as functions, each docstring carrying
   what the measurement taught.
+- `tests/resolve/export_frame.py` - the `ExportFrame` measurement, with its
+  report and the numbers §15.6 quotes.
 - §14 above - the run itself, with the numbers and the traps.
 - `tests/resolve/README.md` - how to repeat it, and what it does not prove.
 - `references/host-resolve.md` - what the **plug-in** may assume about the host,

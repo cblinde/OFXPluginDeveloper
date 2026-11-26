@@ -1,0 +1,12 @@
+resolve proof of concept (run)
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\MinimalCudaGain.ofx.bundle
+  launch    pass     pid 6904
+  connect   pass     DaVinci Resolve Studio 21.2.0.5
+  build     pass     poc: Minimal CUDA Gain on source.png
+  render    pass     poc00108000.png
+  check     pass     1920x1080 via ffmpeg, x2 mae 0.0 max 0
+  path      pass     CUDA 1920x1080; CUDA 1920x1080; CUDA 208x117; CUDA 1920x1080; CUDA 1920x1080; CUDA 1920x1080; CUDA 1920x1080; CUDA 1920x1080
+  quit      pass     API quit, then the recorded PID
+report: Z:\Tools-DEV\OFXPluginDeveloper_Local\tests\resolve\reports\poc-2026-11-26T14-49-40+00-00.json
+EXIT=0

@@ -12,6 +12,8 @@
 #include "Plugin.h"
 
 #include <cstdint>
+#include <cstdlib>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -29,6 +31,16 @@ namespace {
 constexpr int kVersionMajor = 1;
 constexpr int kVersionMinor = 0;
 
+// A default of 1.0 makes isIdentity() true, and a host is then entitled to skip
+// `render()` - so a host-side proof of the pixel path cannot use it. The
+// Resolve scripting API cannot set an OFX parameter (references/resolve-
+// automation.md §15.5), so the harness builds the value in instead:
+//   cmake -S . -B build -DGAIN_DEFAULT=2.0
+#ifndef GAIN_DEFAULT
+#define GAIN_DEFAULT 1.0
+#endif
+constexpr double kDefaultGain = GAIN_DEFAULT;
+
 const char* const kPluginIdentifier = "com.ofxplugindeveloper.minimalcudagain";
 const char* const kPluginName = "Minimal CUDA Gain";
 const char* const kPluginGrouping = "OFX Plugin Developer";
@@ -38,6 +50,27 @@ const char* const kPluginDescription =
 
 const char* const kParamGain = "gain";
 const char* const kParamGainAlpha = "gainAlpha";
+
+/// Records which pixel path a render took, for a harness that cannot ask the host.
+///
+/// Pixels cannot tell the two paths apart - the CPU loop and the kernel apply the
+/// same four multiplies, which is the point of having both - and Resolve writes
+/// its own OFX lines to its log but not what a plug-in passes to
+/// OFX::Log::print (measured 2026-11-26: the host log names the bundle at load
+/// time and nothing the plug-in printed). So when MCOFX_PATH_LOG names a file,
+/// each render appends one line to it. Unset, which is the normal case, nothing
+/// is written and no file is created.
+void recordPath(const char* path, int width, int height)
+{
+    const char* target = std::getenv("MCOFX_PATH_LOG");
+    if (target == nullptr || *target == '\0') {
+        return;
+    }
+    std::ofstream log(target, std::ios::app);
+    if (log) {
+        log << path << ' ' << width << 'x' << height << '\n';
+    }
+}
 
 /// RGBA32F only: 4 floats per pixel. Kept as a named constant because every
 /// pointer offset in this file is expressed in terms of it.
@@ -116,6 +149,15 @@ void GainProcessor::processImagesCuda()
         OFX::throwSuiteStatusException(kOfxStatGPURenderFailed);
     }
 
+    // One line per render, so the host's log says which path produced the frame.
+    // Pixels alone cannot: the CPU loop and the kernel apply the same multiplies,
+    // which is the point of having both. This is the declaration §8 of
+    // references/resolve-automation.md asks for, and the only proof a test can
+    // read back when it cannot see the host's GPU preference.
+    OFX::Log::print("Minimal CUDA Gain: CUDA path, %dx%d, stream %s", width, height,
+                    _pCudaStream == nullptr ? "not supplied by the host" : "supplied by the host");
+    recordPath("CUDA", width, height);
+
     // The OFX contract is asymmetric and this branch is the whole contract:
     //   * host supplied kOfxImageEffectPropCudaStream -> return immediately,
     //     the host will order its own work against that stream;
@@ -136,6 +178,12 @@ void GainProcessor::processImagesCuda()
 
 void GainProcessor::multiThreadProcessImages(OfxRectI window)
 {
+    // The CPU half of the same declaration: a run whose declaration file has
+    // neither line rendered pixels somewhere this code does not know about. No
+    // OFX::Log::print here - a tiled or multithreaded host would call this once
+    // per window, and the file is the channel the harness can read.
+    recordPath("CPU", window.x2 - window.x1, window.y2 - window.y1);
+
     for (int y = window.y1; y < window.y2; ++y) {
         if (_effect.abort()) {
             break;
@@ -353,7 +401,7 @@ void GainPluginFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX:
     gainParam->setLabels("Gain", "Gain", "Gain");
     gainParam->setScriptName(kParamGain);
     gainParam->setHint("Multiplies R, G and B");
-    gainParam->setDefault(1.0);
+    gainParam->setDefault(kDefaultGain);
     gainParam->setRange(0.0, 8.0);
     gainParam->setDisplayRange(0.0, 4.0);
     gainParam->setIncrement(0.01);

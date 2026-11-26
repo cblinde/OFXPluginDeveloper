@@ -92,15 +92,20 @@ def connect(timeout=120, poll=2.0, executable=None):
     raise TimeoutError(f"no Resolve after {timeout}s (last error: {last_error})")
 
 
-def launch(executable, nogui=True):
-    """Start Resolve and return the process; readiness is `connect`'s job."""
+def launch(executable, nogui=True, environment=None):
+    """Start Resolve and return the process; readiness is `connect`'s job.
+
+    `environment` is the host's environment, for the variables a plug-in reads
+    from inside the host: a process this harness starts is the only place where
+    setting one is possible. None means "inherit", which is the default.
+    """
     executable = Path(executable)
     if not executable.exists():
         raise NotRun(f"no Resolve executable at {executable}")
     arguments = [str(executable)]
     if nogui:
         arguments.append("-nogui")   # RUN: 18.2 s to a live scriptapp on Windows
-    process = subprocess.Popen(arguments, cwd=str(executable.parent))
+    process = subprocess.Popen(arguments, cwd=str(executable.parent), env=environment)
     return process
 
 

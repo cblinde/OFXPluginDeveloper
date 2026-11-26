@@ -1,0 +1,15 @@
+ExportFrame measurement
+  validate     pass     1 .ofx, decoders ['ffmpeg'], source 1920x1080
+  install      pass     C:\Program Files\Common Files\OFX\Plugins\ReferenceGain.ofx.bundle
+  launch       pass     pid 15216
+  connect      pass     DaVinci Resolve Studio 21.2.0.5
+  build        pass     poc: effect 'Open FX/OFX Plugin Developer/Reference Gain' on source.png (1 on the item)
+  render       pass     poc00108000.png 1920x1080
+  export-file  pass     1920x1080, answer (1920, 1080), 172 ms, 136433 bytes
+  export-str   pass     1920x1080, answer (1920, 1080), 172 ms, 136433 bytes of base64
+  file vs job  same  mae 0.0 max 0
+  encoded vs job same  mae 0.0 max 0
+  encoded vs file same  mae 0.0 max 0
+  the answer and the bytes agree
+report: Z:\Tools-DEV\OFXPluginDeveloper_Local\tests\resolve\reports\export-frame-2026-11-26T14-39-07+00-00.json
+EXIT=0

@@ -14,6 +14,8 @@
 #                          can point at Support/Developer/OpenFX inside Resolve
 #   CUDA_HOME              toolkit to use; else discovered
 #   CUDA_ARCHS             e.g. "86;89" (default 75;80;86;89;90[;100;120])
+#   GAIN_DEFAULT           default gain baked into the plug-in (default 1.0);
+#                          set 2.0 so a host cannot skip render()
 #   OFX_CUDA_TOOLKIT_DIR   where --bootstrap-cuda installs (default
 #                          ${XDG_CACHE_HOME:-$HOME/.cache}/ofx-cuda-toolkit)
 #   CUDA_VER               toolkit series to bootstrap (default 12.9)
@@ -237,6 +239,10 @@ fi
 if [[ -n "${CUDA_ARCHS:-}" ]]; then
   cmake_args+=("-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHS}")
 fi
+# Always passed, with 1.0 as the fallback: a cached -DGAIN_DEFAULT=2.0 would
+# otherwise survive every later build, and the contract suite asserts identity at
+# neutral settings, which a tree configured for a host proof then fails.
+cmake_args+=("-DGAIN_DEFAULT=${GAIN_DEFAULT:-1.0}")
 
 cmake "${cmake_args[@]}"
 cmake --build "${build_dir}" --config "${config}" --parallel
