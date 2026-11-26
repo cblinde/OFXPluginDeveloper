@@ -12,6 +12,7 @@
 #   templates/minimal-ofx/test/run-tests.sh        (build + artifact + contract)
 #   templates/minimal-cuda-ofx/test/run-tests.sh
 #   templates/onnx-inference-ofx/test/run-tests.sh
+#   templates/minimal-opencl-ofx/test/run-tests.sh  (needs an OpenCL device)
 #
 # Environment:
 #   OFX_SOURCE_DIR     openfx checkout (default: ./.ofx-ref when present,
@@ -84,6 +85,7 @@ fi
 # template simply never ran. Three rules follow: the summary says what did NOT
 # run, a CI run fails unless the hole is accepted explicitly, and the skip is
 # never counted as a suite that passed.
+opencl="ran"
 onnx=1
 if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
   onnx=0
@@ -141,6 +143,19 @@ report_skipped_onnx() {
   echo "  tested: not its build, not its host contract, not its ai_pipeline test."
   echo "  The counts above do not cover it."
   echo "  Close it with: ONNXRUNTIME_ROOT=/path/to/onnxruntime ./run-tests.sh"
+  echo "------------------------------------------------------------------"
+}
+
+# The OpenCL template's suite, when the machine had no device to hand over.
+report_skipped_opencl() {
+  [[ "${opencl:-ran}" == "no-device" ]] || return 0
+  echo
+  echo "------------------------------------------------------------------"
+  echo "NOT VERIFIED: templates/minimal-opencl-ofx"
+  echo "  No OpenCL platform or device: the plug-in was built and its artifact"
+  echo "  checked, and the suite exited 2 without rendering anything through a"
+  echo "  queue. The counts above do not cover its device path."
+  echo "  Close it with: apt install pocl-opencl-icd libpocl2-common"
   echo "------------------------------------------------------------------"
 }
 
@@ -339,6 +354,22 @@ echo
 echo "== test: minimal-cuda-ofx =="
 "${ROOT}/templates/minimal-cuda-ofx/test/run-tests.sh"
 
+# The OpenCL template asks the machine for a device, and a machine without one
+# has not failed - it has not run the suite. Exit 2 is the suite's word for that,
+# so it becomes a named hole below instead of a red run.
+echo
+echo "== test: minimal-opencl-ofx (build, artifact, OpenCL suite) =="
+opencl="ran"
+set +e
+"${ROOT}/templates/minimal-opencl-ofx/test/run-tests.sh"
+status=$?
+set -e
+if [[ "${status}" == "2" ]]; then
+  opencl="no-device"
+elif [[ "${status}" != "0" ]]; then
+  exit "${status}"
+fi
+
 echo
 if [[ "${onnx}" == "1" ]]; then
   echo "== test: onnx-inference-ofx =="
@@ -387,6 +418,8 @@ glibc_gate "minimal-ofx" "${glibc_max_minimal}" \
   "${ROOT}"/templates/minimal-ofx/build/bundle/*.ofx.bundle
 glibc_gate "minimal-cuda-ofx" "${glibc_max_cuda}" \
   "${ROOT}"/templates/minimal-cuda-ofx/build/bundle/*.ofx.bundle
+glibc_gate "minimal-opencl-ofx" "${glibc_max_minimal}" \
+  "${ROOT}"/templates/minimal-opencl-ofx/build/bundle/*.ofx.bundle
 if [[ "${onnx}" == "1" ]]; then
   glibc_gate "onnx-inference-ofx" "${glibc_max_onnx}" \
     "${ROOT}"/templates/onnx-inference-ofx/build/bundle/*.ofx.bundle
@@ -423,6 +456,7 @@ artifact_check() {
 }
 artifact_check minimal-ofx
 artifact_check minimal-cuda-ofx
+artifact_check minimal-opencl-ofx
 if [[ "${onnx}" == "1" ]]; then
   artifact_check onnx-inference-ofx
 else
@@ -459,7 +493,12 @@ summary_tool_tests
 echo "  reference build + artifact      (minimal-ofx)"
 echo "  unit/equivalence  (cuda)        image/golden      (cuda, inference)"
 echo "  artifact + fake host (all)      memory            (all)"
-echo "  glibc bound per bundle          (2.17 / 2.17 / 2.32, cmake-and-linking.md §5)"
+if [[ "${opencl}" == "ran" ]]; then
+  echo "  OpenCL device path (PoCL)       render through a real context and queue"
+else
+  echo "  NOT RUN: OpenCL device path     (no OpenCL device on this machine)"
+fi
+echo "  glibc bound per bundle          (2.17 x3 / 2.32, cmake-and-linking.md §5)"
 echo "  artifact check per bundle       (exports, dependents, device code)"
 if [[ "${gpu_mode}" == "CUDA" ]]; then
   echo "  GPU kernels                     (minimal-cuda-ofx, on the device)"
@@ -477,4 +516,5 @@ fi
 echo "=================================================================="
 report_skipped_onnx
 report_skipped_gpu
+report_skipped_opencl
 require_onnx_in_ci

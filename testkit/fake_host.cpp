@@ -6,6 +6,8 @@
 
 #include "fake_host.h"
 
+#include "cl_host.h"
+
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -126,6 +128,11 @@ struct ImageObj {
   std::vector<unsigned char> bytes;
   const float* floatData = nullptr; // typed view of data, for read-back
   long long pitchFloats = 0;
+  // OpenCL Buffers mode: the cl_mem handed over instead of a host pointer, and
+  // the size of the allocation it carries. Null when the host has no device or
+  // when setOpenCL(false) released it.
+  testkit::cl::cl_mem clBuffer = nullptr;
+  long long allocBytes = 0;
 };
 
 // One effect instance. Parameters live here, not in Impl: two live instances
@@ -184,17 +191,37 @@ struct Impl {
   ImageObj* srcImage = nullptr;
   ImageObj* dstImage = nullptr;
 
+  // OpenCL device, opened by setOpenCL(); see FakeHost::setOpenCL. `clDstWritten`
+  // is recomputed by every OpenCL render.
+  cl::DeviceInfo clInfo;
+  bool clOn = false;
+  cl::cl_context clContext = nullptr;
+  cl::cl_command_queue clQueue = nullptr;
+  bool clDstWritten = false;
+
   std::vector<std::string> messages;
 
   Impl();
   void reset();
 
+  // Deletes an image and the cl_mem it carried. Every path that throws an image
+  // away goes through here, so a device buffer cannot outlive its host copy.
+  void releaseImage(ImageObj*& img) {
+    if (!img) return;
+    if (img->clBuffer && clInfo.api.ReleaseMemObject) clInfo.api.ReleaseMemObject(img->clBuffer);
+    img->clBuffer = nullptr;
+    delete img;
+    img = nullptr;
+  }
+
   ~Impl() {
     for (EffectObj* e : instances) delete e;
     for (ClipObj* c : clips) delete c;
     for (ParamObj* p : params) delete p;
-    delete srcImage;
-    delete dstImage;
+    releaseImage(srcImage);
+    releaseImage(dstImage);
+    if (clQueue) clInfo.api.ReleaseCommandQueue(clQueue);
+    if (clContext) clInfo.api.ReleaseContext(clContext);
   }
 };
 
@@ -689,6 +716,37 @@ ClipObj* clipOf(OfxImageClipHandle c) {
   return (s->ownerKind == kClip) ? static_cast<ClipObj*>(s->owner) : nullptr;
 }
 
+// Carries `img`'s allocation on a cl_mem the plug-in will be handed.
+//
+// COPY_HOST_PTR, not USE_HOST_PTR: the harness keeps reading its own vector for
+// every pixel check, and a device mapping the same memory would make a plug-in's
+// write visible without a readback - which is exactly the evidence
+// openclDestinationWritten() needs to be separate.
+//
+// The destination is seeded with a byte pattern the plug-in would have to
+// overwrite: a gain of 0 leaves 0x7f000000-ish floats, so "the buffer still
+// holds the seed" means nobody wrote through the device.
+void attachClBuffer(ImageObj* img, bool seed)
+{
+  if (img->clBuffer) {
+    g->clInfo.api.ReleaseMemObject(img->clBuffer);
+    img->clBuffer = nullptr;
+  }
+  if (!g->clOn || img->isByte || img->allocBytes <= 0) return;
+  cl::cl_int err = cl::CL_SUCCESS;
+  img->clBuffer = g->clInfo.api.CreateBuffer(
+      g->clContext, cl::CL_MEM_READ_WRITE | cl::CL_MEM_COPY_HOST_PTR,
+      static_cast<std::size_t>(img->allocBytes), img->floats.data(), &err);
+  if (err != cl::CL_SUCCESS) {
+    img->clBuffer = nullptr;
+    return;
+  }
+  if (!seed) return;
+  std::vector<unsigned char> pattern(static_cast<std::size_t>(img->allocBytes), 0x7f);
+  g->clInfo.api.EnqueueWriteBuffer(g->clQueue, img->clBuffer, cl::CL_TRUE, 0,
+                                   pattern.size(), pattern.data(), 0, nullptr, nullptr);
+}
+
 // Fills `img` from the frame's pixels inside `rect` (frame coordinates) and
 // publishes exactly that rect as the bounds. The full frame is the ordinary
 // case; the render window is what a host that ignores the declared region
@@ -734,6 +792,8 @@ void buildSourceImage(ImageObj* img, const OfxRectI& rect) {
   const int dataRow = negative ? (img->h - 1) : 0;
   img->data = base + static_cast<size_t>(dataRow) * pitchPixels * 4;
   img->rowBytes = negative ? -bytesPerRow : bytesPerRow;
+  img->allocBytes = static_cast<long long>(img->floats.size()) * 4;
+  attachClBuffer(img, /*seed=*/false);
 }
 
 void buildDstImage(ImageObj* img) {
@@ -779,6 +839,9 @@ void buildDstImage(ImageObj* img) {
         base + static_cast<long long>(readRow + inset) * bytesPerRow);
     img->pitchFloats = static_cast<long long>(pitchPixels) * 4 * (reversed ? -1 : 1);
   }
+  img->allocBytes = img->isByte ? static_cast<long long>(img->bytes.size())
+                                : static_cast<long long>(img->floats.size()) * 4;
+  attachClBuffer(img, /*seed=*/true);
 }
 
 ImageObj* imageFor(ClipObj* clip) {
@@ -831,7 +894,15 @@ void publishImageProps(ImageObj* img, ClipObj* clip) {
   char* data = static_cast<char*>(img->data) +
                static_cast<long long>(inset) * img->rowBytes +
                static_cast<long long>(inset) * (img->isByte ? 4 : 16);
-  setPointer(&img->props, kOfxImagePropData, 0, data);
+  // In OpenCL Buffers mode kOfxImagePropData carries a cl_mem, not a pointer to
+  // floats: ofxGPURender.h says "when OpenCL Buffers are being used ... the clip
+  // image property kOfxImagePropData will be set and non-null". The host's own
+  // copy of the frame stays private to the harness; the plug-in never sees it.
+  if (img->clBuffer != nullptr) {
+    setPointer(&img->props, kOfxImagePropData, 0, reinterpret_cast<void*>(img->clBuffer));
+  } else {
+    setPointer(&img->props, kOfxImagePropData, 0, data);
+  }
   setInt(&img->props, kOfxImagePropRowBytes, 0, static_cast<int>(img->rowBytes));
   setInt(&img->props, kOfxImagePropBounds, 0, img->originX + inset);
   setInt(&img->props, kOfxImagePropBounds, 1, img->originY + inset);
@@ -1367,11 +1438,43 @@ OfxStatus FakeHost::isIdentity(double time, const OfxRectI& window, std::string*
 OfxStatus FakeHost::render(double time, const OfxRectI& window) {
   PropSet inArgs;
   PropSet outArgs;
-  setInt(&inArgs, kOfxImageEffectPropOpenCLEnabled, 0, 0);
+  setInt(&inArgs, kOfxImageEffectPropOpenCLEnabled, 0, impl_->clOn ? 1 : 0);
   setInt(&inArgs, kOfxImageEffectPropCudaEnabled, 0, 0);
   setInt(&inArgs, kOfxImageEffectPropMetalEnabled, 0, 0);
+  if (impl_->clOn) {
+    // The queue is the host's, and the plug-in is told not to wait on it; the
+    // harness finishes the queue itself before it looks at the pixels.
+    setPointer(&inArgs, kOfxImageEffectPropOpenCLCommandQueue, 0, impl_->clQueue);
+  }
+  impl_->clDstWritten = false;
   fillTimeArgs(&inArgs, time, window);
-  return mainEntry(kOfxImageEffectActionRender, &outArgs, &inArgs);
+  const OfxStatus st = mainEntry(kOfxImageEffectActionRender, &outArgs, &inArgs);
+  if (impl_->clOn) readBackOpenCL();
+  return st;
+}
+
+void FakeHost::readBackOpenCL() {
+  ImageObj* dst = impl_->dstImage;
+  if (!dst || !dst->clBuffer) return;
+  cl::Api& api = impl_->clInfo.api;
+  api.Finish(impl_->clQueue);
+  std::vector<unsigned char> read(static_cast<std::size_t>(dst->allocBytes), 0);
+  if (api.EnqueueReadBuffer(impl_->clQueue, dst->clBuffer, cl::CL_TRUE, 0, read.size(),
+                            read.data(), 0, nullptr, nullptr) != cl::CL_SUCCESS) {
+    return;
+  }
+  // Anything but the seed pattern is the plug-in's write. The whole allocation
+  // is compared, not the window: a kernel that also scribbled over the row
+  // padding changed the buffer too, and that is a finding, not a pass.
+  bool untouched = true;
+  for (unsigned char byte : read) {
+    if (byte != 0x7f) {
+      untouched = false;
+      break;
+    }
+  }
+  impl_->clDstWritten = !untouched;
+  std::memcpy(dst->floats.data(), read.data(), read.size());
 }
 
 OfxStatus FakeHost::renderThumbnail(double time, const OfxRectI& window) {
@@ -1443,11 +1546,67 @@ void FakeHost::fillTimeArgs(void* inArgsPtr, double time, const OfxRectI& window
 }
 
 void FakeHost::invalidateImages() {
-  delete impl_->srcImage;
-  delete impl_->dstImage;
-  impl_->srcImage = nullptr;
-  impl_->dstImage = nullptr;
+  impl_->releaseImage(impl_->srcImage);
+  impl_->releaseImage(impl_->dstImage);
 }
+
+bool FakeHost::setOpenCL(bool on) {
+  if (!on) {
+    impl_->clOn = false;
+    invalidateImages();
+    if (impl_->clQueue) impl_->clInfo.api.ReleaseCommandQueue(impl_->clQueue);
+    if (impl_->clContext) impl_->clInfo.api.ReleaseContext(impl_->clContext);
+    impl_->clQueue = nullptr;
+    impl_->clContext = nullptr;
+    return true;
+  }
+  if (impl_->clOn) return true;
+
+  cl::DeviceInfo info = cl::openDevice();
+  if (!info.ok) {
+    std::fprintf(stderr, "testkit: no OpenCL device: %s\n", info.error.c_str());
+    return false;
+  }
+  cl::cl_int err = cl::CL_SUCCESS;
+  cl::cl_context context = info.api.CreateContext(nullptr, 1, &info.device, nullptr, nullptr, &err);
+  if (context == nullptr || err != cl::CL_SUCCESS) {
+    std::fprintf(stderr, "testkit: clCreateContext failed (%d)\n", err);
+    return false;
+  }
+  cl::cl_command_queue queue = info.api.CreateCommandQueue(context, info.device, 0, &err);
+  if (queue == nullptr || err != cl::CL_SUCCESS) {
+    std::fprintf(stderr, "testkit: clCreateCommandQueue failed (%d)\n", err);
+    info.api.ReleaseContext(context);
+    return false;
+  }
+  impl_->clInfo = info;
+  impl_->clContext = context;
+  impl_->clQueue = queue;
+  impl_->clOn = true;
+  invalidateImages();
+  return true;
+}
+
+bool FakeHost::openclEnabled() const { return impl_->clOn; }
+
+bool FakeHost::openclDestinationWritten() const { return impl_->clDstWritten; }
+
+std::string FakeHost::openclPlatformName() const { return impl_->clInfo.platformName; }
+
+std::string FakeHost::openclDeviceName() const {
+  return impl_->clInfo.ok ? impl_->clInfo.deviceName + " (" + impl_->clInfo.deviceVersion + ")"
+                          : std::string();
+}
+
+void FakeHost::setSourcePixels(const std::vector<float>& rgba, int width, int height) {
+  impl_->imgW = width;
+  impl_->imgH = height;
+  impl_->srcRGBA = rgba;
+  impl_->srcRGBA.resize(static_cast<size_t>(width) * height * 4, 0.0f);
+  invalidateImages();
+}
+
+std::vector<float> FakeHost::sourcePixels() const { return impl_->srcRGBA; }
 
 std::map<std::string, std::string> FakeHost::declaredParams() const {
   std::map<std::string, std::string> out;

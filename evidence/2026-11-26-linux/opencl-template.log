@@ -1,0 +1,88 @@
+$ # backlog row 34, the template half: a real OpenCL context and command queue,
+$ # owned by the fake host, handed to a real .ofx that renders through them.
+$ uname -sr; g++ --version | head -1; cmake --version | head -1
+Linux 7.0.0-38-generic
+g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+cmake version 4.4.5
+
+$ OPENCL_LOADER_LIB=.validation/cl/usr/lib/x86_64-linux-gnu/libOpenCL.so.1 \
+$   templates/minimal-opencl-ofx/test/run-tests.sh
+  exit=0
+
+$ # the artifact first: a module the host can dlopen, and nothing else
+  exports        : OfxGetNumberOfPlugins OfxGetPlugin 
+  dynamic symbols: 2 defined in total
+  undefined OFX  : none (all host access goes through fetchSuite at runtime)
+  RPATH/RUNPATH  : none
+  dlopen         : OfxGetNumberOfPlugins() = 1
+  identifier     : com.ofxplugindeveloper.openclgain
+
+$ # the shared host protocol, with the host never offering a device (CPU path)
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+
+$ # then the same .ofx with kOfxImageEffectPropOpenCLEnabled=1, a real queue in
+$ # kOfxImageEffectPropOpenCLCommandQueue, and every image carried by a cl_mem
+$ # in kOfxImagePropData
+[1/6] loading /workspace/chats/178f73e54dd5ef590a75a324/templates/minimal-opencl-ofx/build/bundle/OpenCLGain.ofx.bundle/Contents/Linux-x86-64/OpenCLGain.ofx
+  ok 1 - OfxGetNumberOfPlugins() is 1
+  ok 2 - the module identifies itself as com.ofxplugindeveloper.openclgain
+[2/6] opening an OpenCL device for the host to hand over
+  platform: Portable Computing Language
+  device  : cpu-haswell-AMD Ryzen 7 3800X 8-Core Processor (OpenCL 3.0 PoCL HSTR: cpu-x86_64-pc-linux-gnu-haswell)
+  ok 3 - load answered kOfxStatOK
+  ok 4 - describe answered kOfxStatOK
+  ok 5 - the descriptor advertises OpenCL Buffers render
+  ok 6 - the descriptor keeps the CPU path advertised
+  ok 7 - describeInContext answered kOfxStatOK
+  ok 8 - createInstance answered a handle
+  ok 9 - the host set gain to 2.0
+[3/6] the CPU path, with the host offering no device
+  ok 10 - render answered kOfxStatOK without OpenCL
+  ok 11 - the CPU frame is the source times two, bit for bit
+  ok 12 - no device buffer was written while OpenCL was off
+[4/6] the same render with the device enabled
+  ok 13 - the host re-opened the device
+  ok 14 - render answered kOfxStatOK with OpenCL enabled
+  ok 15 - the plug-in wrote through the cl_mem it was handed, not a host pointer
+  ok 16 - the device frame is the source times two, bit for bit (max delta 0.000000)
+[5/6] a render window smaller than the frame
+  ok 17 - the host set gain to 3.0
+  ok 18 - render answered kOfxStatOK for the window
+  ok 19 - inside the window the frame is the source times three
+  ok 20 - outside the window the previous frame is untouched (the kernel wrote no padding)
+[6/6] a negative row pitch is refused, not walked backwards
+  ok 21 - render refused a negative row pitch on an OpenCL buffer
+  ok 22 - the refusal wrote nothing into the device buffer
+opencl_suite: 22 checks, 0 failed
+
+# What this proves, and what it does not:
+#
+# [V] the plug-in advertises kOfxImageEffectPropOpenCLRenderSupported, keeps the
+#     CPU path, and on the CPU path produces the source times two bit for bit
+#     through the whole host protocol (118 checks x 3 host profiles).
+# [V] with OpenCL enabled it writes through the cl_mem it was handed: the
+#     destination buffer starts as a 0x7f seed pattern and the harness only
+#     reads a frame back after the queue is finished. A plug-in that wrote to a
+#     host pointer instead would leave the seed in place, and the suite says so.
+# [V] the device frame is the source times two, bit for bit (max delta 0.0).
+# [V] a window smaller than the frame changes only the window: with gain 3.0 on
+#     a 5,7..29,31 window, inside is src*3 and outside still src*2 from the
+#     previous full-frame render. That is the check that caught the first
+#     version of the kernel, which indexed from the buffer origin and rendered
+#     the top-left corner for a window somewhere else.
+# [V] a negative row pitch is refused (kOfxStatErrUnsupported) instead of walked
+#     backwards: ofxImageEffect.h says negative rowBytes is for CPU images only.
+# [U] every GPU number. PoCL is a CPU device - this is real driver semantics
+#     (kernel build, queue semantics, buffer contents), not hardware throughput.
+# [V] the bundle keeps the repository's 2.17 glibc floor. The first build did
+#     not: linking -ldl on this glibc 2.34 host recorded dlopen/dlsym/dlerror at
+#     GLIBC_2.34, so the gate's floor stage failed the bundle with
+#     "needs GLIBC_2.34, bound 2.17" while the other two bundles sat at 2.14.
+#     ClRuntime.cpp now asks for dlopen@GLIBC_2.2.5 (and dlsym/dlerror the same
+#     way); objdump -T reports GLIBC_2.14 / 2.2.5 / 2.3.4 / 2.4 and
+#     tools/check-glibc.sh --max 2.17 passes.
+# [U] OpenCL Images mode (kOfxImageEffectPropOpenCLSupported /
+#     kOfxImageEffectPropOpenCLImage). The template implements Buffers only, and
+#     the harness never hands over a cl_mem in that property.

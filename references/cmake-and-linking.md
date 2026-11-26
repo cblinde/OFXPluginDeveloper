@@ -454,25 +454,56 @@ and refuses the plug-in; below 2.28 it loads neither.
 ### OpenCL without a vendor SDK
 
 The OpenCL path an OFX plug-in needs is smaller than the CUDA one: the host
-creates the context and the command queue and hands them over in
-`kOfxImageEffectPropOpenCLCommandQueue`, and the images arrive as
-`kOfxImageEffectPropOpenCLImage` - so a plug-in does not link a vendor SDK and
-does not create a context of its own. What it does need is a loader
-(`libOpenCL.so.1`) and a vendor ICD at run time.
+creates the context and the command queue and hands the queue over in
+`kOfxImageEffectPropOpenCLCommandQueue`, so a plug-in does not create a context
+of its own. Images arrive either as a `cl_mem` in `kOfxImagePropData` (OpenCL
+Buffers) or in `kOfxImageEffectPropOpenCLImage` (OpenCL Images). A plug-in
+therefore does not link a vendor SDK - and `templates/minimal-opencl-ofx` does
+not link `libOpenCL` either: `src/ClRuntime.cpp` resolves the handful of entry
+points it needs with `dlopen`, so the module imports nothing but the C++ runtime.
+Two dynamic symbols, no `NEEDED libOpenCL`, no RPATH, and a suite that renders
+through a real queue ([`opencl-template.log`](../evidence/2026-11-26-linux/opencl-template.log)).
 
-Two consequences for a build, both measured on this machine:
+**The header contradicts itself about which property is which**, and the
+contradiction is not a typo you can read through:
 
-- **The headers are the plug-in's problem, the loader is not.** `CL/cl.h` is not
-  installed here and the template cannot assume it is on the build machine; a
-  shim with the entry points the plug-in calls (the way `test/shim/cuda_runtime.h`
-  stands in for the CUDA runtime) is what makes the source compile anywhere. The
-  runtime side is a real `libOpenCL.so.1`: `tools/opencl-spike.cpp` opens one with
-  `dlopen`/`dlsym`, and the types it declares are the OpenCL 1.2 ABI rather than a
-  private invention ([`opencl-spike.log`](../evidence/2026-11-26-linux/opencl-spike.log)).
+| Place | Says |
+| --- | --- |
+| `ofxGPURender.h:716-718` | "using OpenCL Images, the cl_mem ... `kOfxImageEffectPropOpenCLImage`"; "both `kOfxImageEffectPropOpenCLSupported` (Buffers) and `kOfxImageEffectPropOpenCLRenderSupported` (Images)" |
+| `ofxGPURender.h:792-796` | "`kOfxImageEffectPropOpenCLSupported` (Images) and/or `kOfxImageEffectPropOpenCLRenderSupported` (Buffers)"; buffers keep `kOfxImagePropData` |
+| `ofxsImageEffect.cpp:669-683` | `setSupportsOpenCLBuffersRender()` writes `kOfxImageEffectPropOpenCLRenderSupported`; `setSupportsOpenCLImagesRender()` writes `kOfxImageEffectPropOpenCLSupported` |
+
+The Support library's two setters are the tie-breaker a plug-in can act on, and
+they agree with the second paragraph. What is unambiguous either way is the data
+property: buffers come through `kOfxImagePropData`, images through
+`kOfxImageEffectPropOpenCLImage`. The template implements Buffers, hands over and
+reads back `cl_mem` buffers, and says so in its suite rather than guessing.
+
+Four more things that cost a run here:
+
+- **`rowBytes` is not negative for an OpenCL buffer.** `ofxImageEffect.h`'s note
+  on `kOfxImagePropRowBytes` allows a negative pitch "for CPU images only, not
+  CUDA/Metal/OpenCL Buffers" (and not at all for OpenCL Images). A plug-in that
+  walks such a buffer backwards reads the padding; the template refuses the
+  render with `kOfxStatErrUnsupported` and its suite asserts the refusal.
+- **`-ldl` on a glibc 2.34 host pins the module to 2.34.** `dlopen`/`dlsym`/
+  `dlerror` moved into `libc` in 2.34 and the linker records the new version, so
+  the OpenCL bundle asked for `GLIBC_2.34` while the other two bundles built here
+  ask for `GLIBC_2.14` - and the gate's 2.17 floor failed it. The 2.2.5
+  compatibility symbols are still in `libc`; `ClRuntime.cpp` names them with
+  `__asm__(".symver dlopen,dlopen@GLIBC_2.2.5")` (and the same for `dlsym` and
+  `dlerror`), and the bundle is back at a 2.14 maximum. Copy that block into any
+  plug-in that links the dynamic loader.
+- **The queue is the host's, and so is the readback.** The plug-in enqueues and
+  returns; `ofxGPURender.h` says not to finish the queue. Nothing is observable
+  until the host reads the buffer, which is why the harness owns the context, the
+  queue and the readback - and why "the plug-in used the device" is a check
+  (a seeded destination buffer) rather than an assumption.
 - **A CPU device is enough to test the code path, not the performance.** PoCL 5.0
-  gives an OpenCL 3.0 device on the CPU with image support, so a kernel can be
-  built and its numbers read back here; anything about throughput needs a GPU and
-  is not measured.
+  gives an OpenCL 3.0 device on the CPU, so a kernel can be built, enqueued and
+  read back here; anything about throughput needs a GPU and is not measured. The
+  template's suite is 118 contract checks × 3 host profiles on the CPU path plus
+  22 OpenCL checks, 0 failed **[V]** for the path, **[U]** for every GPU number.
 
 The one packaging trap that cost a run: Ubuntu puts PoCL's kernel headers
 (`pocl_types.h`, `_kernel.h`, `opencl-c.h`) in `libpocl2-common`, not in

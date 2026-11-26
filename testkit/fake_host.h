@@ -200,6 +200,37 @@ public:
   void setImageOrigin(ImageOrigin o);    // which row kOfxImagePropData addresses
   void setDestinationByteImage(bool on); // hand the plug-in a byte image
 
+  // Replaces the source frame with `rgba` (tight, top-down, RGBA float) at
+  // `width` x `height`. The default is one constant colour over 64x48, which
+  // cannot show an addressing mistake: every pixel is the same, so a plug-in
+  // that reads the wrong one still matches. A test that cares about addressing
+  // sets a gradient and computes the expected frame from sourcePixels().
+  void setSourcePixels(const std::vector<float>& rgba, int width, int height);
+  std::vector<float> sourcePixels() const;
+
+  // Hands the plug-in a real OpenCL device: `on` opens the loader named by
+  // OPENCL_LOADER_LIB (default libOpenCL.so.1), creates one context and one
+  // command queue, and from then on every image is carried by a cl_mem handed
+  // over in kOfxImagePropData, with the queue in
+  // kOfxImageEffectPropOpenCLCommandQueue and kOfxImageEffectPropOpenCLEnabled=1
+  // on every render - the OpenCL Buffers shape of ofxGPURender.h. Returns false,
+  // leaving the host as it was, when the machine has no platform or device.
+  //
+  // The host keeps its own copy of every frame: the cl_mem is created with
+  // CL_MEM_COPY_HOST_PTR, and render() reads the destination buffer back after
+  // the plug-in returns, so destination() stays the harness's view. The
+  // destination buffer is seeded with a byte pattern before the render, which is
+  // what makes openclDestinationWritten() answerable.
+  bool setOpenCL(bool on);
+  bool openclEnabled() const;
+  // True when the last OpenCL render left the destination cl_mem carrying
+  // anything but the seed pattern, i.e. the plug-in wrote through the device.
+  // A plug-in that quietly fell back to a host pointer it was not given fails
+  // this, which is the check that keeps the device path from being decorative.
+  bool openclDestinationWritten() const;
+  std::string openclPlatformName() const;
+  std::string openclDeviceName() const;
+
   // Destination read back tightly packed, top-down, RGBA float.
   std::vector<float> destination() const;
   // The whole destination allocation in memory order, margins included; use it
@@ -259,6 +290,9 @@ private:
   OfxStatus pluginMainWithContext(const char* action, const char* context);
   void fillTimeArgs(void* inArgs, double time, const OfxRectI& window);
   void invalidateImages();
+  // Fills the destination cl_mem of the last render and answers whether the
+  // plug-in wrote into it; see FakeHost::openclDestinationWritten.
+  void readBackOpenCL();
 };
 
 } // namespace testkit
