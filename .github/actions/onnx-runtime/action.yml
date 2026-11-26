@@ -1,0 +1,62 @@
+name: ONNX Runtime from NuGet
+description: >-
+  Unpack the ONNX Runtime NuGet package into the include/ + lib/ layout the
+  inference template expects, and export ONNXRUNTIME_ROOT to later steps.
+
+# Why the NuGet package and not the release tarball or a pip wheel: the pip wheel
+# ships libonnxruntime.so without any header, and the release tarball has moved
+# URL more than once. The package is the same one the documents point at, it
+# carries both halves, and `tools/check-runtime.py` can read it back to prove
+# which API version was actually installed.
+#
+# The extracted tree is cached under .ort/, so the 184 MB download happens once
+# per package version rather than once per run.
+
+inputs:
+  version:
+    description: Microsoft.ML.OnnxRuntime package version
+    required: false
+    default: "1.32.0"
+
+runs:
+  using: composite
+  steps:
+    - name: Cache the unpacked tree
+      uses: actions/cache@v4
+      with:
+        path: .ort
+        key: ort-nuget-${{ inputs.version }}-linux-x64
+
+    - name: Download and unpack
+      shell: bash
+      env:
+        ORT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        root="${GITHUB_WORKSPACE}/.ort/${ORT_VERSION}"
+        if [ -f "${root}/lib/libonnxruntime.so" ] && [ -f "${root}/include/onnxruntime_cxx_api.h" ]; then
+          echo "reusing cached tree at ${root}"
+        else
+          curl -fsSL -o /tmp/ort.nupkg \
+            "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/${ORT_VERSION}"
+          python3 - "${root}" <<'PY'
+          import os, shutil, sys, zipfile
+
+          root = sys.argv[1]
+          os.makedirs(f"{root}/include", exist_ok=True)
+          os.makedirs(f"{root}/lib", exist_ok=True)
+          with zipfile.ZipFile("/tmp/ort.nupkg") as package:
+              for name in package.namelist():
+                  if name.startswith("build/native/include/") and name.endswith(".h"):
+                      with package.open(name) as src, \
+                           open(f"{root}/include/{os.path.basename(name)}", "wb") as dst:
+                          shutil.copyfileobj(src, dst)
+                  elif name == "runtimes/linux-x64/native/libonnxruntime.so":
+                      with package.open(name) as src, \
+                           open(f"{root}/lib/libonnxruntime.so", "wb") as dst:
+                          shutil.copyfileobj(src, dst)
+          PY
+        fi
+        test -f "${root}/include/onnxruntime_cxx_api.h"
+        test -f "${root}/lib/libonnxruntime.so"
+        echo "ONNXRUNTIME_ROOT=${root}" >> "${GITHUB_ENV}"

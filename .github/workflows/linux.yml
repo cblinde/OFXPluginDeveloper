@@ -1,0 +1,116 @@
+name: linux
+
+# What this workflow adds to docs.yml: the same Linux runs that produced
+# evidence/2026-11-26-linux/, executed on every push instead of by hand.
+#
+#   suites            CPU_ONLY=1, ONNX Runtime from NuGet, the whole gate. The
+#                     gate includes the per-bundle glibc stage, so a bundle that
+#                     needs a newer glibc than its template targets fails here
+#                     (2.17 for the reference and CUDA plug-ins, 2.32 for the
+#                     inference bundle - references/cmake-and-linking.md §5).
+#   thread-sanitizer  the CUDA template's host suite under TSan, with ASLR off
+#                     for the process tree - see the comment on that step for
+#                     why, and evidence/2026-11-26-linux/report.txt §F5.
+#
+# No runner has a GPU, so nothing here claims a kernel ran. GPU work stays on a
+# machine with a device; what this workflow covers is everything that does not
+# need one.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  suites:
+    runs-on: ubuntu-latest
+    env:
+      CPU_ONLY: "1"
+      RUN_VALGRIND: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ONNX Runtime
+        # Without this the inference template is skipped by name, and a CI run
+        # that skips it fails anyway - which is the point of the shared action.
+        uses: ./.github/actions/onnx-runtime
+
+      - name: Runtime API floor
+        # Says which part is too old in one line, and catches a package URL that
+        # slides back to a runtime the template no longer targets.
+        run: python3 tools/check-runtime.py "$ONNXRUNTIME_ROOT" --require-api 18
+
+      - name: Python side of the fixtures
+        # run-tests.sh names the fixture stage skipped when numpy/onnx/
+        # onnxruntime are absent, and a stage that is skipped on every run is a
+        # stage nobody notices breaking. This keeps it running.
+        run: python3 -m pip install --quiet --disable-pip-version-check onnx onnxruntime numpy
+
+      - name: Template suites (the whole gate)
+        shell: bash
+        run: |
+          set -o pipefail
+          ./run-tests.sh 2>&1 | tee run-tests.log
+
+      - name: The glibc stage really ran
+        # A stage that silently stops existing is how the inference bundle stayed
+        # above its floor while every run looked green. The bounds themselves live
+        # in run-tests.sh and in references/cmake-and-linking.md §5; this step only
+        # refuses a log that lost the stage.
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^== glibc bound: every built bundle' run-tests.log
+          for bundle in minimal-ofx minimal-cuda-ofx onnx-inference-ofx; do
+            grep -q -- "^-- ${bundle}: glibc <= " run-tests.log
+          done
+
+      - name: Upload the log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-suites-log
+          path: run-tests.log
+          if-no-files-found: warn
+
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ThreadSanitizer over the CUDA host suite
+        # Why ASLR has to be off, in one place:
+        #
+        # TSan reserves a large fixed shadow-memory region and maps the
+        # application into addresses it chooses. Current Ubuntu kernels randomise
+        # mmap addresses with 32 bits of entropy (vm.mmap_rnd_bits=32), which puts
+        # the process or a shared library where that shadow region has to go; TSan
+        # then aborts before the first check with
+        #
+        #   FATAL: ThreadSanitizer: unexpected memory mapping 0x...
+        #
+        # which is an environment clash, not a finding in this repository (the
+        # abort was reproduced here on 2026-11-26, evidence/2026-11-26-linux/report.txt
+        # §F5). `setarch -R` sets ADDR_NO_RANDOMIZE for the whole process tree, so
+        # every child - the build, the harness, the dlopen'd plug-in - runs with
+        # randomisation off. Without it this job fails for the wrong reason; with
+        # it, the suite runs 136 checks in each of the three host profiles.
+        #
+        # The grep afterwards refuses a run that "succeeded" without the
+        # sanitizer actually being on.
+        shell: bash
+        run: |
+          set -o pipefail
+          setarch "$(uname -m)" -R env \
+            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
+            ./templates/minimal-cuda-ofx/test/run-tests.sh 2>&1 | tee tsan.log
+          grep -q 'sanitizer: thread' tsan.log
+          grep -q 'contract_test: 136 checks, 0 failed' tsan.log
+
+      - name: Upload the log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tsan-log
+          path: tsan.log
+          if-no-files-found: warn

@@ -67,27 +67,11 @@ jobs:
         # Windows build stayed broken while the run stayed green. The package is
         # the same one the docs point at, unpacked into the release layout the
         # template expects (include/ + lib/).
-        run: |
-          set -euo pipefail
-          curl -fsSL -o /tmp/ort.nupkg \
-            https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.32.0
-          python3 - <<'PY'
-          import os, shutil, zipfile
-          root = os.path.expanduser("~/ort")
-          with zipfile.ZipFile("/tmp/ort.nupkg") as z:
-              for name in z.namelist():
-                  if name.startswith("build/native/include/") and name.endswith(".h"):
-                      os.makedirs(f"{root}/include", exist_ok=True)
-                      with z.open(name) as src, open(f"{root}/include/{os.path.basename(name)}", "wb") as dst:
-                          shutil.copyfileobj(src, dst)
-                  elif name == "runtimes/linux-x64/native/libonnxruntime.so":
-                      os.makedirs(f"{root}/lib", exist_ok=True)
-                      with z.open(name) as src, open(f"{root}/lib/libonnxruntime.so", "wb") as dst:
-                          shutil.copyfileobj(src, dst)
-          PY
-          test -f ~/ort/include/onnxruntime_cxx_api.h
-          test -f ~/ort/lib/libonnxruntime.so
-          echo "ONNXRUNTIME_ROOT=$HOME/ort" >> "$GITHUB_ENV"
+        #
+        # The unpack lives in .github/actions/onnx-runtime because the linux
+        # workflow needs the same tree; two copies of it would drift, and the
+        # version has to be the one the documents name.
+        uses: ./.github/actions/onnx-runtime
 
       - name: Runtime API floor
         # The suite below builds the template, so a runtime whose header lacks an
@@ -96,7 +80,7 @@ jobs:
         # case: a download URL that slides back to a runtime the template no
         # longer targets. 18 is the floor the source needs (the TF32 switch), not
         # the version this job uses (1.32.0).
-        run: python3 tools/check-runtime.py "$HOME/ort" --require-api 18
+        run: python3 tools/check-runtime.py "$ONNXRUNTIME_ROOT" --require-api 18
 
       - name: Test fixture self-test
         # Generating the fixtures and loading them back through ONNX Runtime is a
