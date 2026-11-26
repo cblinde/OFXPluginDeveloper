@@ -89,6 +89,18 @@ message. Two host-facing facts:
   always uses the bundle's own DLLs. The reproduction is
   `tools/host_cuda_probe.cpp`; the detail and the measured evidence are
   [`ai-architectures-and-runtimes.md`](ai-architectures-and-runtimes.md).
+
+  The host side stopped being an argument on 2026-11-26. Compiled here and run
+  against Resolve Studio 21.2.0.5's folder, the probe loads all sixteen CUDA
+  DLLs that sit beside `Resolve.exe`, creates a context, and resolves every base
+  name to Resolve's own file
+  ([`host-cuda-probe.txt`](../evidence/2026-11-26-windows/host-cuda-probe.txt));
+  the running `Resolve.exe`, listed from outside, holds seven of them plus the
+  driver's `nvcuda64`
+  ([`resolve-modules.txt`](../evidence/2026-11-26-windows/resolve-modules.txt)).
+  So a host that owns the stack exists, it loads it before any plug-in runs, and
+  `-DOFXPLUGIN_CUDA_FROM_HOST=ON` is the only shape that does not put a second
+  module of the same name into its process.
 - **Check the provider's import table per ORT version.** `dumpbin /dependents` on
   the provider you ship, looking for `onnxruntime.dll`. Neither the 1.20.1 nor
   the 1.32.0 provider imports it, which is what makes the `onnxruntime-ofx.dll`

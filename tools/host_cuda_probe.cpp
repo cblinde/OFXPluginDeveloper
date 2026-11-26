@@ -10,9 +10,9 @@
 //
 // Windows only, one file, no dependencies. The source is the handover's
 // (references/field-evidence.md, F33), where it was compiled with MSVC and run
-// against DaVinci Resolve 21.2.0.5; it has not been compiled in this repository,
-// which has no MSVC and no Windows headers. Rebuild it yourself before trusting
-// its output on another machine.
+// against DaVinci Resolve 21.2.0.5. It does build here, with the VS 18 BuildTools
+// toolchain (cl 14.50); that run is evidence/2026-11-26-windows/host-cuda-probe.txt.
+// Rebuild it yourself before trusting its output on another machine.
 //
 // Build (x64 MSVC, no dependencies):
 //     cl /std:c++17 /EHsc /O2 tools\host_cuda_probe.cpp
@@ -39,6 +39,9 @@
 //     modules of it, which is the state the runtime guard exists to prevent.
 //   * `FAILED (error 127)` for a component of `--load`: a component set older than
 //     the host's dispatcher cannot be loaded next to it.
+//   * `--keep` plus a module listing of the *host's* process, not this one, is how
+//     "the host owns this stack" was established for Resolve: seven of its DLLs
+//     are in the process before any plug-in runs.
 //   * `what the process resolves for each base name` -- the paths a *later*
 //     import would bind to, which is what the CUDA provider's imports do.
 //

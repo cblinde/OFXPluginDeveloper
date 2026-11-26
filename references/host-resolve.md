@@ -65,6 +65,20 @@ CUDA or Metal. The default is Auto. Consequences:
   you are advertising a path that cannot run.
 - Users switch modes to troubleshoot; your plugin must survive both.
 
+**Resolve owns its CUDA stack, and it loads it at startup.** Listed from outside
+while Resolve Studio 21.2.0.5 ran (2026-11-26), the process holds twelve
+CUDA-related modules: `cudart64_12`, the legacy `cudart64_110`, `cublas64_12`,
+`cublasLt64_12`, `cufft64_11`, `cudnn64_9` and `nvrtc64_120_0` out of its install
+folder, and the driver's `nvcuda64`, `nvapi64` and `nvml` out of `System32`
+([`resolve-modules.txt`](../evidence/2026-11-26-windows/resolve-modules.txt)).
+The split cuDNN libraries, `cudnn_graph64_9`, `cudnn_ops64_9` and the rest, ship
+in that folder but are not loaded, which is what a cuDNN dispatcher looks like
+before it runs an algorithm. Two consequences: the mode switch above decides
+whether your plug-in is *offered* a CUDA path, not whether CUDA is present; and a
+bundle that preloads `cudnn64_9.dll` or `cudart64_12.dll` by path puts a second
+module of that name into this process. What to ship instead is in
+[`packaging-and-install.md`](packaging-and-install.md).
+
 ### 2.3 Streams: expect none
 
 Resolve is not observed to populate `kOfxImageEffectPropCudaStream` **(C)**.

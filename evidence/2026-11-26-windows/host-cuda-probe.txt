@@ -1,0 +1,36 @@
+# host_cuda_probe against Resolve Studio 21.2.0.5's install folder, 2026-11-26
+# Windows 11, RTX 3060, driver nvcuda from System32.
+# Build (VS 18 BuildTools, MSVC 14.50):
+#   cl /nologo /std:c++17 /EHsc /O2 tools/host_cuda_probe.cpp /Fe:host_cuda_probe.exe /Fo:obj/
+# Run:
+#   host_cuda_probe.exe "E:/Program Files/Blackmagic Design/DaVinci Resolve" --init
+# Exit 0. Sixteen CUDA DLLs in the folder, all load, a CUDA context is created,
+# and every base name resolves to Resolve's own file.
+
+host stack from E:\Program Files\Blackmagic Design\DaVinci Resolve
+  load     cublas64_12.dll        ok
+  load     cublasLt64_12.dll      ok
+  load     cudart64_110.dll       ok
+  load     cudart64_12.dll        ok
+  load     cudart64_65.dll        ok
+  load     cudart64_75.dll        ok
+  load     cudart64_80.dll        ok
+  load     cudnn64_9.dll          ok
+  load     cudnn_adv64_9.dll      ok
+  load     cudnn_cnn64_9.dll      ok
+  load     cudnn_engines_precompiled64_9.dll ok
+  load     cudnn_engines_runtime_compiled64_9.dll ok
+  load     cudnn_graph64_9.dll    ok
+  load     cudnn_heuristic64_9.dll ok
+  load     cudnn_ops64_9.dll      ok
+  load     cufft64_11.dll         ok
+
+cudaSetDevice(0) = 0
+cudaFree(0)      = 0 (forces the context)
+
+what the process resolves for each base name:
+  resolved cudnn64_9.dll          E:\Program Files\Blackmagic Design\DaVinci Resolve\cudnn64_9.dll
+  resolved cublas64_12.dll        E:\Program Files\Blackmagic Design\DaVinci Resolve\cublas64_12.dll
+  resolved cublasLt64_12.dll      E:\Program Files\Blackmagic Design\DaVinci Resolve\cublasLt64_12.dll
+  resolved cufft64_11.dll         E:\Program Files\Blackmagic Design\DaVinci Resolve\cufft64_11.dll
+  resolved cudart64_12.dll        E:\Program Files\Blackmagic Design\DaVinci Resolve\cudart64_12.dll
