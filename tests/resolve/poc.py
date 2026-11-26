@@ -236,9 +236,23 @@ def run(args, report):
          f"{len(facts['ofx'])} .ofx, decoders {facts['decoders']}", time.monotonic() - started)
 
     if args.plan:
-        for name in ("install", "launch", "connect", "load", "build", "render", "quit"):
-            step(report, name, "not-run", "needs a Resolve host; --plan stops here")
-        step(report, "check", "ready", "decoder present; would run after the render")
+        # The names and the order are the ones a real run reports, because that is
+        # what --plan is for. `gpu` belongs between connect and build: it reads the
+        # host's own compute-API line out of the log of the session that just
+        # connected, so it needs a running host but no effect yet.
+        for name, status, detail in (
+                ("install", "not-run", "needs a Resolve host; --plan stops here"),
+                ("launch", "not-run", "needs a Resolve host; --plan stops here"),
+                ("connect", "not-run", "needs a Resolve host; --plan stops here"),
+                ("gpu", "not-run",
+                 "needs a running host; reads its compute-API line from the log"),
+                ("build", "not-run",
+                 "needs a Resolve host; --plan stops here (only with --build-project)"),
+                ("load", "not-run", "needs a Resolve host; --plan stops here"),
+                ("render", "not-run", "needs a Resolve host; --plan stops here"),
+                ("check", "ready", "decoder present; would run after the render"),
+                ("quit", "not-run", "needs a Resolve host; --plan stops here")):
+            step(report, name, status, detail)
         report["result"] = "not-run"
         return 0
 
