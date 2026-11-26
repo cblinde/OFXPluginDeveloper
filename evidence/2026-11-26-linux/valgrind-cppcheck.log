@@ -60,3 +60,29 @@ $ CPU_ONLY=1 RUN_VALGRIND=1 ./templates/onnx-inference-ofx/test/run-tests.sh
   contract_test: 90 checks, 0 failed
   == [5/5] valgrind memcheck (contract harness) ==
     ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+$ # the reference suite gained a memcheck stage; run here for the first time
+$ valgrind --version; RUN_VALGRIND=1 ./templates/minimal-ofx/test/run-tests.sh
+valgrind-3.22.0
+  exit=0
+    host profile: nuke
+  contract_test: 118 checks, 0 failed
+    host profile: resolve
+  contract_test: 118 checks, 0 failed
+    host profile: natron
+  contract_test: 118 checks, 0 failed
+  == [4/4] valgrind memcheck ==
+    host profile: nuke
+  contract_test: 118 checks, 0 failed
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+    host profile: resolve
+  contract_test: 118 checks, 0 failed
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+    host profile: natron
+  contract_test: 118 checks, 0 failed
+    ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+$ # the CI step's own assertions on that log
+  stage marker: found
+  reference checks: 118, 0 failed
+  clean summaries: 3 of 3

@@ -201,6 +201,8 @@ jobs:
     # this repository's own container has neither root nor sudo. A runner has both,
     # so this job turns two skipped lines into results - and each step proves the
     # tool actually ran, because an analysis that silently skipped looks clean.
+    # memcheck runs over all three suites; the reference one is the template a
+    # reader copies, so a leak there would be copied too.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -247,13 +249,18 @@ jobs:
             grep -qF 'static analysis: clean' "analysis-${template}.log"
           done
 
-      - name: memcheck, both harnesses
-        # The greps refuse a run whose valgrind stage disappeared: the suites print
-        # the stage number, and a stage that stops existing would otherwise just
-        # shorten the log.
+      - name: memcheck, all three suites
+        # The greps refuse a run whose valgrind stage disappeared or whose passes
+        # stopped happening: the suites print the stage number, and a stage that
+        # stops existing would otherwise just shorten the log. The reference suite
+        # runs memcheck once per host profile, so it owes three clean summaries.
         shell: bash
         run: |
           set -o pipefail
+          RUN_VALGRIND=1 ./templates/minimal-ofx/test/run-tests.sh 2>&1 | tee memcheck-reference.log
+          grep -qF '== [4/4] valgrind memcheck' memcheck-reference.log
+          grep -qF 'contract_test: 118 checks, 0 failed' memcheck-reference.log
+          test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-reference.log)" = 3
           CPU_ONLY=1 RUN_VALGRIND=1 ./templates/minimal-cuda-ofx/test/run-tests.sh 2>&1 | tee memcheck-cuda.log
           grep -qF '== [5/5] valgrind memcheck' memcheck-cuda.log
           ( cd templates/onnx-inference-ofx && ./build.sh )
