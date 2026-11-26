@@ -1,0 +1,9 @@
+# The one record of what actually ran in a host. Every prose claim about a host
+# has to agree with a row here; `tools/check-docs.py` reads this file and fails a
+# document that says a host with a row has never run something.
+#
+# host	template	path	date	label	evidence	note
+Resolve Studio 21.2.0.5	reference	CPU	2026-11-25	V	evidence/2026-11-25-windows/resolve-poc-gain.log	gain default 2.0; 1920x1080 PNG is the source times two to the byte, so render() ran
+Resolve Studio 21.2.0.5	CUDA gain	GPU	2026-11-26	V	evidence/2026-11-26-windows/resolve-poc-cuda-gain.log	mae 0.0 over 8294400 bytes; the declaration names the CUDA path for all eight invocations
+Resolve Studio 21.2.0.5	reference	kill	2026-11-25	V	evidence/2026-11-25-windows/resolve-poc-kill.log	host killed with a job in flight; the run ends fail with the host exit code in 47 s
+NatronRenderer	reference	CPU	2026-11-24	V	evidence/2026-11-24-windows/report.txt	one 256x256 frame through testkit/verify-bundle.bat, pixels checked

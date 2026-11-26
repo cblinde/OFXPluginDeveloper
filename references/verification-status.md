@@ -181,9 +181,13 @@ pageable copy of one frame costs **32× the 1080p kernel** — the copy, not the
 maths, is what the zero-copy contract exists to avoid. Mean of 100/30/10
 iterations; one GPU, one driver, one OS build.
 
-**Not verified here:** Nuke and SCRATCH have run nothing, and Resolve has never run
-this plug-in's **GPU** path - its CPU path did (see above); the inference template's CPU session
-has a Windows run behind it
+**Not verified here:** Nuke and SCRATCH have run nothing, and no host has been
+timed. The rows behind every host claim in this document are in
+[`verification-matrix.tsv`](verification-matrix.tsv) - Resolve's CPU path ran on
+2026-11-25 and the CUDA template's GPU path ran there on 2026-11-26 - and
+`tools/check-docs.py` reads that file to catch a document that says a host with a
+recorded run has never run anything. The inference template's CPU session has a
+Windows run behind it
 ([`onnx-inference-suite.log`](../evidence/2026-11-24-windows/onnx-inference-suite.log))
 and so does its CUDA session, with the provider bundled from the GPU package and
 cuDNN 9/cuBLAS/cuFFT/cudart taken from wheels, label

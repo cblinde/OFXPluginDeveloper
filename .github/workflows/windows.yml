@@ -1,0 +1,78 @@
+name: windows
+
+# The MSVC half of this repository: build.bat, the .bat suites, the contract
+# harness and the ONNX template's CPU session. None of it needs a device, and
+# windows-latest has none - so the GPU rows are not silently skipped here, the
+# last step says they are not run.
+#
+# What this job cannot prove, and must not be read as proving: any CUDA kernel
+# on a GPU, any host render, the sanitizer builds (clang-cl ASan is not wired),
+# or valgrind (Linux only). Those keep their own rows and their own evidence.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  suites:
+    runs-on: windows-latest
+    env:
+      # The CUDA template builds through its CPU shim: no toolkit on the runner,
+      # and a bundle that silently needed one would fail the artifact check.
+      CPU_ONLY: "1"
+      # Valgrind does not exist on Windows; the .bat suites say so instead.
+      RUN_VALGRIND: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ONNX Runtime
+        # Same action and same version default as the Linux job, so a bump is one
+        # field in one file. Windows unpacks include/ + lib/ + bin/.
+        uses: ./.github/actions/onnx-runtime
+        with:
+          platform: win-x64
+
+      - name: Documentation and tool self-checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/check-docs.py
+          python tools/check-runtime.py "$ONNXRUNTIME_ROOT" --require-api 18
+          python tools/check-runtime.py --self-test
+
+      - name: Reference template
+        shell: cmd
+        run: |
+          templates\minimal-ofx\build.bat || exit /b 1
+          templates\minimal-ofx\test\run-tests.bat Release nobuild || exit /b 1
+
+      - name: CUDA template through its CPU path
+        shell: cmd
+        run: |
+          templates\minimal-cuda-ofx\build.bat || exit /b 1
+          templates\minimal-cuda-ofx\test\run-tests.bat Release nobuild || exit /b 1
+
+      - name: ONNX template, CPU session
+        shell: cmd
+        run: templates\onnx-inference-ofx\test\test.bat Release || exit /b 1
+
+      - name: Negative controls
+        shell: cmd
+        run: testkit\run-negative-controls.bat || exit /b 1
+
+      - name: GPU rows are not run in this job
+        shell: bash
+        run: |
+          echo "::notice title=No GPU on windows-latest::the CUDA kernel suite, the CUDA execution provider suite and every host render keep their own evidence rows; this job proves the MSVC build, the contract harness and the CPU paths only."

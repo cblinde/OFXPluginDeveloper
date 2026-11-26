@@ -361,6 +361,51 @@ def check_absence_claims(root, files, texts, report):
                                  f"claims there is no `{claimed}`, but it exists")
 
 
+def check_host_run_claims(root, files, texts, report):
+    """A document that says a host has never run something has to be right.
+
+    `checklists.md` still read "Resolve, Nuke and SCRATCH have never run this
+    template" after Resolve had rendered frames through two of them. That is the
+    same class of stale absence claim as the missing LICENSE above, one level up:
+    the claim names a host instead of a path, so the file that records what ran
+    where is the authority and this reads it.
+    """
+    matrix = os.path.join(root, "references", "verification-matrix.tsv")
+    if not os.path.exists(matrix):
+        report.error("references/verification-matrix.tsv", 1,
+                     "missing: a claim that a host never ran cannot be checked")
+        return
+    hosts = set()
+    for number, line in enumerate(read(matrix).splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 6:
+            report.error("references/verification-matrix.tsv", number,
+                         "row needs six tab-separated fields: host, template, path, date, label, evidence")
+            continue
+        host = parts[0].strip()
+        hosts.add(host)
+        hosts.add(host.split()[0])
+        evidence = parts[5].strip()
+        if evidence and not os.path.exists(os.path.normpath(os.path.join(root, evidence))):
+            report.error("references/verification-matrix.tsv", number,
+                         f"evidence `{evidence}` does not exist")
+    if not hosts:
+        return
+    alternatives = "|".join(re.escape(host) for host in sorted(hosts, key=len, reverse=True))
+    pattern = re.compile(
+        r"(?P<host>" + alternatives + r")[^\n]{0,160}?"
+        r"(?:have never|has never|never)\s+(?:run|ran)\s+(?:this|that|any)\s+"
+        r"(?:template|plug-in|plugin|build)", re.I)
+    for name in files:
+        for match in pattern.finditer(texts[name]):
+            line = texts[name][:match.start()].count("\n") + 1
+            report.error(name, line,
+                         f"claims {match.group('host')} never ran, but "
+                         "references/verification-matrix.tsv records a run")
+
+
 def check_section_numbering(root, files, texts, report):
     """A numbered document's sections run 1..N in reading order.
 
@@ -895,6 +940,7 @@ def main():
     check_empty_tables(root, files, texts, report)
     check_link_numbers(root, files, texts, report)
     check_absence_claims(root, files, texts, report)
+    check_host_run_claims(root, files, texts, report)
     check_section_numbering(root, files, texts, report)
     check_section_refs(root, files, texts, report)
     check_counts(root, files, texts, report)
