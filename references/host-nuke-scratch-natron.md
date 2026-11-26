@@ -145,5 +145,8 @@ Frontier, the on-set grading tool, now offers an OFX host beside its own pipelin
 host in October 2026, so a plug-in appears there only when the user enables it
 (**[B]**, the project's pull request). Neither has been run here, and both fall
 under the same rule as the three hosts above: probe capabilities, never the host
-name - and assume a CPU image path until that host's own documentation says it
-offers a GPU one.
+name. They are not the same shape, though, and the difference matters more than
+the rule: Livegrade Frontier is a **Metal-only** host that never hands a plug-in
+CPU buffers, so "assume a CPU path" would be exactly wrong there, while
+EffectCraft is the CPU host. What each one demands, with its sources, is in
+[`host-detection-and-acceptance.md`](host-detection-and-acceptance.md) §3.

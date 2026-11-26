@@ -133,22 +133,52 @@ The decision rule that survives contact with the projects above:
    Every project that started there either moved the interpreter to a worker or
    wrapped it in a supervisor.
 
-**Three runtimes that are not a fifth row.** ExecuTorch, LiteRT and GGUF are what
-comes up whenever "ONNX Runtime is heavy" comes up, and none of them changes the
-table above. ExecuTorch is PyTorch's ahead-of-time format: a `.pte` file, a
-runtime measured in kilobytes, a dozen backends (**[B]**, PyTorch's own ExecuTorch
-documentation). It is not a candidate here for the reason libtorch is not - the
-models this repository ships arrive as ONNX, and the ones that do not arrive as
-PyTorch, which the sidecar row already covers. LiteRT is TensorFlow Lite's
-successor and mobile-first (**[B]**, Google's LiteRT documentation); a desktop
-host handing over a 1080p float frame gets nothing from its delegate model that an
-in-process runtime does not already do. GGUF is the container the local inference
-tools converged on, and llama.cpp runs it on CPU, Metal, CUDA and Vulkan (**[B]**,
-the llama.cpp repository) - excellent at generating tokens, irrelevant to a filter
-whose whole job is one pass over a frame. The point of writing it down is that the
-decision is about the *shape of the work*, not about the runtime's quality: a
-per-frame 1080p filter is one forward pass with a frame-shaped tensor, and each of
-these three is optimised for something else.
+### Three runtimes that stay out, and why
+
+Each of these is real, well funded and frequently in the news, and each one gets
+proposed as a template here. None of them is what a desktop host handing over a
+1080p float frame needs, so the answer belongs in one place instead of being
+re-derived every few months. All three are **[B]**: the facts come from their own
+documentation, not from a run in this repository.
+
+**ExecuTorch** is PyTorch's on-device runtime
+([runtime overview](https://docs.pytorch.org/executorch/stable/runtime-overview.html)).
+It loads `.pte` files produced by `to_executorch()`, one per target that needs
+hardware specialisation, and its backends are chosen for phones, wearables and
+microcontrollers - XNNPACK for Arm and x86 CPU, Core ML for iOS, Vulkan for
+Android GPUs, Qualcomm for its NPUs
+([getting started](https://docs.pytorch.org/executorch/main/getting-started.html)).
+The trade against ONNX Runtime is a second export pipeline and a per-device
+artifact in exchange for a smaller binary on hardware this repository does not
+target. For an image effect the runtime is not the bottleneck; the conversion
+step is pure cost.
+
+**LiteRT** (formerly TensorFlow Lite) is Google's on-device framework, `.tflite`
+in, CompiledModel API out, with GPU support through ML Drift - which since 2026
+covers OpenCL, OpenGL, Metal and WebGPU across Android, iOS, macOS, Windows,
+Linux and the web ([overview](https://ai.google.dev/edge/litert/overview),
+[GPU announcement](https://developers.googleblog.com/litert-the-universal-framework-for-on-device-ai)).
+So the honest objection is **not** "mobile only": it is that adopting it means a
+conversion step from PyTorch/TensorFlow into a second format and a second runtime
+next to the one that already loads this repository's models on three hosts, for a
+graph that ONNX expresses today. Its optimisation work is aimed at generative
+models and NPUs, which is not this workload.
+
+**GGUF** is not a runtime at all but the container the local-LLM tools converged
+on: tensors plus a standard metadata block, optimised for fast loading of
+quantised weights and used by GGML and llama.cpp
+([format](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md),
+[Hugging Face's description](https://huggingface.co/docs/hub/en/gguf)). The
+executor behind it is an LLM inference engine; a float32 image graph - one input
+frame, one output frame, no token loop - gets nothing from that format, and the
+quantisation it exists for is exactly what the golden comparisons in
+[`onnx-and-tensorrt.md`](onnx-and-tensorrt.md) rule out.
+
+The point is not that any of the three is poor. It is that the decision is about
+the **shape of the work**: one forward pass over a frame-shaped tensor is what the
+in-process row already covers, and each of these three is optimised for something
+else - the same reason libtorch is not a fifth row either.
+
 ---
 
 ## 3. Language runtimes inside a plugin: what actually breaks

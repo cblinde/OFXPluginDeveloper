@@ -64,3 +64,21 @@ Record the result as a table in the plugin's own repository. That table is the
 only compatibility claim you can defend.
 
 ---
+## 3. Hosts that appeared in 2026
+
+The hosts this repository has run against are listed elsewhere; these two are not
+in any of them, and a list that stops at the ones someone happened to own reads
+as if it were closed. Both facts are **[B]** — vendor documentation, not a run
+here.
+
+| Host | What it hosts | What it demands | What that means for these templates |
+| --- | --- | --- | --- |
+| Pomfort Livegrade Frontier | OpenFX image-effect nodes inside a live look pipeline, applied to camera signals in real time; frontier edition only, plugin folders are the standard `/Library/OFX/Plugins` and `~/Library/OFX/Plugins` ([knowledge base](https://kb.pomfort.com/livegrade/reference/frontier-features/openfx-effect-node)) | **Metal only**: images arrive as Metal textures and never as CPU buffers, the plugin must be an RGBA filter, and it must contain native Apple silicon code; OpenFX 1.5 or newer ([Pomfort's developer documentation](https://github.com/pomfort/openfx-plugins)) | Nothing here loads in it: every GPU path in this repository is CUDA on Windows and Linux, and the CPU path is not offered by the host. It is the concrete reason a Metal template exists as a row of its own, and the first host that makes Metal the product rather than a port |
+| EffectCraft | an opt-in OpenFX host (`--features openfx`) that loads native `.ofx`/`.ofx.bundle` plugins as ordinary effects, off by default and the only crate allowed `unsafe` ([PR #508](https://github.com/storytold/effectcraft/pull/508), [host docs](https://github.com/glumbis/effectcraft/blob/openfx/docs/ofx.md)) | a **CPU** image-effect host at OpenFX 1.4, with a loader that checks the API version and refuses a module for another version | The one new host a CPU build of these templates could plausibly meet today, and the reason not to claim it: nobody has run that, and the host is a fork feature at an older API version than the headers here. It is a test target for whoever has the build, not a compatibility claim |
+
+The OpenFX project's own October 2026 status update names the first one -
+"New interest from Pomfort: Livegrade Frontier now has an OpenFX host" - which is
+where the list should have been updated in the first place
+([ASWF TAC update, 2026-10-14](https://tac.aswf.io/meetings/2026-10-14/OpenFX_ASWF_TAC_Update_Oct_2026.pdf)).
+
+---
