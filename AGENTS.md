@@ -6,23 +6,16 @@ reasoning lives in the documents it points at. Keep it a router.
 ## Commands
 
 ```bash
-./run-tests.sh                              # docs check + every build + every suite + comparator self-test
+./run-tests.sh                              # docs check + every build + every suite
 templates/minimal-ofx/build.sh              # one plug-in, from a clean checkout
-templates/minimal-ofx/test/run-tests.sh     # artifact inspection + fake-host contract
-templates/minimal-*/test/run-tests.bat      # the same checks on Windows
 python3 tools/check-docs.py                 # documentation drift, ~1 s
-tools/measure-halo.sh model.onnx            # tile overlap per model, writes <model>.halo.json
-python3 tools/make-testmodels.py --out build/testmodels   # synthetic 1/3/4-channel and 2x models
-python3 tools/model_probe.py model.onnx     # shapes, dynamic dims, size factor, alignment
-python3 tools/bench_ep.py model.onnx        # median/p90 per execution provider
-python3 tools/check-runtime.py <ort-root>   # API version, used entry points, provider exports
-tools/sweep-vram.sh model.onnx              # largest tile before ORT OOM (needs a GPU)
+python3 tools/probe-env.py                  # which toolchain this machine has
 ```
 
-`./run-tests.sh` needs `ONNXRUNTIME_ROOT` (a CI run without it fails, a local one
-marks the template NOT VERIFIED) and `CPU_ONLY=1` without a CUDA toolkit.
-`tools/make-testmodels.py` needs `onnx`, plus `onnxruntime`+`numpy` to self-test.
-A `.venv/` in the root wins over `PATH`; recipe: `references/testing-layers.md` §13.
+The rest - `check-runtime.py`, `bench_ep.py`, `model_probe.py`,
+`make-testmodels.py`, `measure-halo.sh`, `sweep-vram.sh` - each with its
+arguments, and the `ONNXRUNTIME_ROOT`, `CPU_ONLY` and `.venv/` rules:
+`references/testing-layers.md` §13, "The tools on their own".
 
 ---
 

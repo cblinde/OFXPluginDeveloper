@@ -853,6 +853,22 @@ passed with on 2026-11-25. The gate itself only asks for
 the 2026-11-25 reason for pinning was that numpy 2.x against onnxruntime 1.14
 exited 139 instead of failing a test.
 
+### The tools on their own
+
+The commands above run everything; each of these answers one question and is
+worth reaching for while debugging rather than through the suite:
+
+| Command | Question it answers |
+|---|---|
+| `python3 tools/probe-env.py` | which compiler, generator, CUDA toolkit and Python this machine has; `--self-test` removes a capability and has to report not-ready |
+| `python3 tools/check-docs.py` | documentation drift - links, anchors, counts, provenance labels, section references; ~1 s |
+| `python3 tools/check-runtime.py <ort-root>` | `ORT_API_VERSION`, the entry points this repository calls, provider exports and the CUDA imports; `--require-api` and `--require-plugin-provider` gate a root, `--self-test` proves the reading on fixtures it builds |
+| `python3 tools/make-testmodels.py --out <dir>` | synthetic 1/3/4-channel and 2x ONNX models, so nothing needs a download |
+| `python3 tools/model_probe.py model.onnx` | shapes, dynamic dims, size factor, and the alignment multiple the model wants |
+| `python3 tools/bench_ep.py model.onnx` | median/p90 per execution provider |
+| `tools/measure-halo.sh model.onnx` | tile overlap per model, writes `<model>.halo.json` |
+| `tools/sweep-vram.sh model.onnx` | largest tile before ORT runs out of VRAM (needs a GPU) |
+
 Every comparison the harness trusts is shown failing before it is credited with
 passing. Three of them have their own test: `testkit/selftest-compare.sh` corrupts
 a reference, `tools/check-glibc.sh --selftest` lowers the bound until the check
