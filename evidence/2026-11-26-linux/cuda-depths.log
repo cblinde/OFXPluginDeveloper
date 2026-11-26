@@ -1,0 +1,96 @@
+$ # the CUDA template's 16F and 8-bit paths: launchers, declarations, renders.
+$ uname -sr; g++ --version | head -1
+Linux 7.0.0-38-generic
+g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+
+$ CPU_ONLY=1 ./templates/minimal-cuda-ofx/build.sh
+  exit=0
+  # No nvcc on this cell, so Kernel.cu is not compiled at all: the launchers in
+  # it are source here, not a verified build. What runs below is the plug-in's
+  # depth dispatch and its CPU path for each depth.
+
+$ CPU_ONLY=1 ./templates/minimal-cuda-ofx/test/run-tests.sh
+  # contract harness, three host profiles (nuke, resolve, natron)
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+
+  # the depth stages of the harness, once per profile
+ok 63 - descriptor declares RGBA16F
+ok 64 - set gain for the half pass
+ok 65 - render accepts an RGBA16F image
+ok 67 - the RGBA16F frame is the source times the gain at that depth
+ok 68 - descriptor declares RGBA8
+ok 69 - set gain for the byte pass
+ok 70 - render accepts an RGBA8 image
+ok 72 - the RGBA8 frame is the source times the gain at that depth
+ok 144 - descriptor declares RGBA16F
+ok 145 - set gain for the half pass
+ok 146 - render accepts an RGBA16F image
+ok 148 - the RGBA16F frame is the source times the gain at that depth
+ok 149 - descriptor declares RGBA8
+ok 150 - set gain for the byte pass
+ok 151 - render accepts an RGBA8 image
+ok 153 - the RGBA8 frame is the source times the gain at that depth
+ok 63 - descriptor declares RGBA16F
+ok 64 - set gain for the half pass
+ok 65 - render accepts an RGBA16F image
+ok 67 - the RGBA16F frame is the source times the gain at that depth
+ok 68 - descriptor declares RGBA8
+ok 69 - set gain for the byte pass
+ok 70 - render accepts an RGBA8 image
+ok 72 - the RGBA8 frame is the source times the gain at that depth
+ok 144 - descriptor declares RGBA16F
+ok 145 - set gain for the half pass
+ok 146 - render accepts an RGBA16F image
+ok 148 - the RGBA16F frame is the source times the gain at that depth
+ok 149 - descriptor declares RGBA8
+ok 150 - set gain for the byte pass
+ok 151 - render accepts an RGBA8 image
+ok 153 - the RGBA8 frame is the source times the gain at that depth
+ok 63 - descriptor declares RGBA16F
+ok 64 - set gain for the half pass
+ok 65 - render accepts an RGBA16F image
+ok 67 - the RGBA16F frame is the source times the gain at that depth
+ok 68 - descriptor declares RGBA8
+ok 69 - set gain for the byte pass
+ok 70 - render accepts an RGBA8 image
+ok 72 - the RGBA8 frame is the source times the gain at that depth
+ok 144 - descriptor declares RGBA16F
+ok 145 - set gain for the half pass
+ok 146 - render accepts an RGBA16F image
+ok 148 - the RGBA16F frame is the source times the gain at that depth
+ok 149 - descriptor declares RGBA8
+ok 150 - set gain for the byte pass
+ok 151 - render accepts an RGBA8 image
+ok 153 - the RGBA8 frame is the source times the gain at that depth
+
+  # kernel equivalence, unchanged: the 16F and 8-bit kernels on the CPU
+  PASS: all cases match
+
+  # memcheck stage
+  ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+  ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+  all checks passed
+
+# What this proves, and what it does not:
+#
+# [V] the descriptor advertises three bit depths: the harness reads
+#     kOfxImageEffectPropSupportedBitDepths and the run gets RGBA16F and RGBA8
+#     images back without a refusal (the plug-in's render() accepts a depth only
+#     if a pixel size exists for it; eUShort is still refused).
+# [V] the CPU path renders both depths with the same rule as its kernel: the
+#     half loop converts through float with one round-to-nearest-even step, the
+#     byte loop multiplies the stored code value, rounds and saturates. The
+#     harness compares the produced frame against source*gain quantised to the
+#     same depth, bit for bit, over a frame of 4096-step fractions (half) and
+#     0..255 code values (byte), at 64x48, 162 checks per host profile.
+# [V] the depth is taken from the image, not from a parameter: the same run
+#     renders RGBA32F, RGBA16F and RGBA8 frames without re-creating the instance.
+# [U] the two new launchers (LaunchGainRGBA16F, LaunchGainRGBA8) were never
+#     compiled: this cell has no nvcc, so nothing in Kernel.cu was built or run.
+#     Their kernels are covered - 162 half shapes and 164 byte cases through
+#     test/shim, evidence byte-and-half-kernels.log - and the launchers add
+#     device selection, the grid and the alignment refusal, which only a CUDA
+#     build can compile.
+# [U] every GPU number at either depth: no device ran this.

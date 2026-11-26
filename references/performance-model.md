@@ -192,8 +192,8 @@ reach the host's UI; see `debugging-and-symptoms.md` §1 for the channel that do
 ### 3.1 One 16-byte load and one 16-byte store per pixel
 
 The template ships two **RGBA32F** kernels with the same arithmetic: a vectorized
-fast path and a scalar fallback for the buffers that cannot legally be vectorized
-(a third kernel, 16F, has no launcher yet - §3.6). Both
+fast path and a scalar fallback for the buffers that cannot legally be vectorized,
+plus one kernel each at 16F and 8-bit with their own launchers (§3.6, §3.7). Both
 call `ScalePixel`, so they cannot drift apart. Measured with the real toolchain
 on this repo's `Kernel.cu` (`nvcc -arch=sm_89 -ptx`, nvcc 12.9.41) **[M]**:
 
@@ -266,7 +266,8 @@ degenerate sizes are the interesting ones: a 1×1 frame still costs **9 µs**, w
 is launch and event overhead and nothing else, so a tiled host that hands over
 small windows pays a fixed price per launch rather than a per-pixel one. Shape is
 therefore not a performance variable in this kernel - **format** would be, and the
-template has no 16F or 8-bit kernel to measure. The vector path still earns its place (no extra cost, fewer
+template's 16F and 8-bit kernels have no device numbers either: they exist, they are
+launched, and nobody has measured them on hardware. The vector path still earns its place (no extra cost, fewer
 instructions), but a plug-in should not be architected around it as the
 performance lever — reduce traffic (region of interest, half precision,
 fewer passes) before widening loads. This repository has not measured any of
@@ -333,9 +334,13 @@ without rounding, and the single conversion back is the same rounding `__hmul2`
 applies - which is why the harness compares against a bit-identical reference
 instead of a tolerance.
 
-**No launcher calls it and nothing advertises RGBA16F.** A kernel alone promises
-nothing to a host; declaring a half clip and handing device pointers into it is a
-separate promise about the host's buffers, and it is not made here.
+**`LaunchGainRGBA16F` calls it and the template advertises RGBA16F**, so a host
+that hands over a half clip reaches this kernel instead of a refusal. The promise
+that comes with that - device pointers into a half image, 4-byte rows - is what
+`IsHalf2Addressable` guards: a buffer that is not 4-byte addressable is refused
+with a launch error rather than faulted. The launcher itself is not compiled on
+this machine (no nvcc, see the bottom of this file); what is verified is the kernel
+and the predicate, and the plug-in's half CPU path through the contract harness.
 
 What the kernel is good for is the addressing question, which this machine can
 answer without a device: a 16F pixel is 8 bytes, so the kernel needs 4-byte rows

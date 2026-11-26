@@ -23,6 +23,10 @@ public:
 
     void setSrcImg(OFX::Image* src);
     void setGain(const float gain[4]);
+    /// The depth of the images this render receives. Read from the fetched
+    /// destination image, not from a parameter, so a host that changes the clip
+    /// format between renders cannot leave a stale value behind.
+    void setDepth(OFX::BitDepthEnum depth) { _depth = depth; }
 
     /// CUDA path: zero-copy on the host's device buffers.
     void processImagesCuda() override;
@@ -33,6 +37,7 @@ public:
 private:
     OFX::Image* _src;   // borrowed, released by the caller
     float _gain[4];
+    OFX::BitDepthEnum _depth = OFX::eBitDepthFloat;
 };
 
 class GainPlugin : public OFX::ImageEffect

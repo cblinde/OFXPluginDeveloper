@@ -104,6 +104,42 @@ extern "C" int LaunchGainRGBA32F(void* hostStream,
                                   std::int64_t dstPitch,
                                   const float gain[4]);
 
+/// Multiply-premultiplied RGBA16F by a per-channel gain, written as halves.
+///
+/// Same contract as LaunchGainRGBA32F, with two differences that come from the
+/// pixel format rather than from taste: the arithmetic converts to float and
+/// back with round-to-nearest-even (so it agrees with a half multiply bit for
+/// bit, see ScaleHalf2), and there is no scalar fallback. A minimum of 4-byte
+/// addressability is what a `__half2` access needs, so a buffer that is not
+/// 4-byte addressable is refused with cudaErrorInvalidValue instead of faulting:
+/// the plug-in can then report kOfxStatGPURenderFailed rather than corrupt a
+/// frame. In practice every host allocation and every rowBytes a host derives
+/// from a half image satisfies this.
+extern "C" int LaunchGainRGBA16F(void* hostStream,
+                                 const void* src,
+                                 void* dst,
+                                 int width,
+                                 int height,
+                                 std::int64_t srcPitch,
+                                 std::int64_t dstPitch,
+                                 const float gain[4]);
+
+/// Multiply RGBA8 by a per-channel gain, on the stored code values.
+///
+/// OFX does not define what a byte image's code values mean - that is the host's
+/// colour management - so this multiplies the stored byte, rounds to nearest and
+/// saturates at 255, exactly what ScaleByte does on the device. Same contract as
+/// LaunchGainRGBA32F; no alignment predicate, because a byte is addressable
+/// everywhere a host can put one.
+extern "C" int LaunchGainRGBA8(void* hostStream,
+                               const void* src,
+                               void* dst,
+                               int width,
+                               int height,
+                               std::int64_t srcPitch,
+                               std::int64_t dstPitch,
+                               const float gain[4]);
+
 /// Blocks until the default stream is idle. Only call this when the host did NOT
 /// hand you a cudaStream_t: the OFX contract then requires the render action to
 /// return with its work complete. See references/ofx-lifecycle-and-threads.md.

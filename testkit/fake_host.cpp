@@ -8,6 +8,7 @@
 
 #include "cl_host.h"
 
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -123,11 +124,14 @@ struct ImageObj {
   int originY = 0;
   long long rowBytes = 0;
   void* data = nullptr;
-  bool isByte = false;
-  std::vector<float> floats;
-  std::vector<unsigned char> bytes;
-  const float* floatData = nullptr; // typed view of data, for read-back
-  long long pitchFloats = 0;
+  ImageDepth depth = ImageDepth::Float;
+  std::vector<float> floats;          // Float images
+  std::vector<unsigned char> raw;     // Half and Byte images, byte per byte
+  // Read-back view: the first row of the declared region and the stride to the
+  // next one, in bytes, whatever the depth. snapshotImage() decodes through it.
+  const char* readData = nullptr;
+  long long readPitch = 0;
+  long long bpp = 16;
   // OpenCL Buffers mode: the cl_mem handed over instead of a host pointer, and
   // the size of the allocation it carries. Null when the host has no device or
   // when setOpenCL(false) released it.
@@ -148,6 +152,152 @@ struct EffectObj {
 };
 
 constexpr int kPadPixels = 5; // padding so rowBytes != width*16
+
+long long bytesPerPixel(ImageDepth depth)
+{
+  return depth == ImageDepth::Float ? 16 : depth == ImageDepth::Half ? 8 : 4;
+}
+
+const char* depthFromImage(ImageDepth depth)
+{
+  return depth == ImageDepth::Half    ? kOfxBitDepthHalf
+         : depth == ImageDepth::Byte  ? kOfxBitDepthByte
+                                      : kOfxBitDepthFloat;
+}
+
+/// binary16 <-> binary32, round to nearest even. The kernels convert through
+/// float the same way, so an image stored here is the image a plug-in would
+/// receive from a host that allocated it in half.
+unsigned short floatToHalf(float value)
+{
+  unsigned int f = 0;
+  std::memcpy(&f, &value, sizeof(f));
+  const unsigned int sign = (f >> 16) & 0x8000u;
+  f &= 0x7fffffffu;
+  if (f >= 0x47800000u) {
+    if (f > 0x7f800000u) return static_cast<unsigned short>(sign | 0x7e00u);
+    return static_cast<unsigned short>(sign | 0x7c00u);
+  }
+  if (f < 0x38800000u) {
+    const unsigned int shift = 126u - (f >> 23);
+    if (shift > 25u) return static_cast<unsigned short>(sign);
+    unsigned int mantissa = (f & 0x7fffffu) | 0x800000u;
+    unsigned int half = mantissa >> shift;
+    const unsigned int rest = mantissa & ((1u << shift) - 1u);
+    const unsigned int halfway = 1u << (shift - 1u);
+    if (rest > halfway || (rest == halfway && (half & 1u))) ++half;
+    return static_cast<unsigned short>(sign | half);
+  }
+  unsigned int half = sign | ((f >> 13) - (112u << 10));
+  const unsigned int rest = f & 0x1fffu;
+  if (rest > 0x1000u || (rest == 0x1000u && (half & 1u))) ++half;
+  return static_cast<unsigned short>(half);
+}
+
+float halfToFloat(unsigned short bits)
+{
+  const unsigned int sign = (bits & 0x8000u) ? 0x80000000u : 0u;
+  const unsigned int exponent = (bits >> 10) & 0x1fu;
+  unsigned int mantissa = bits & 0x3ffu;
+  unsigned int out = 0;
+  if (exponent == 0) {
+    if (mantissa == 0) {
+      out = sign;
+    } else {
+      unsigned int e = 113u;
+      while ((mantissa & 0x400u) == 0) {
+        mantissa <<= 1;
+        --e;
+      }
+      out = sign | (e << 23) | ((mantissa & 0x3ffu) << 13);
+    }
+  } else if (exponent == 0x1fu) {
+    out = sign | 0x7f800000u | (mantissa << 13);
+  } else {
+    out = sign | ((exponent - 15u + 127u) << 23) | (mantissa << 13);
+  }
+  float value = 0.0f;
+  std::memcpy(&value, &out, sizeof(value));
+  return value;
+}
+
+unsigned char quantiseByte(float value)
+{
+  const float rounded = std::nearbyint(value);
+  if (!(rounded > 0.0f)) return 0;
+  if (rounded > 255.0f) return 255;
+  return static_cast<unsigned char>(rounded);
+}
+
+float decodeComponent(const char* p, ImageDepth depth)
+{
+  if (depth == ImageDepth::Float) {
+    float v = 0.0f;
+    std::memcpy(&v, p, sizeof(v));
+    return v;
+  }
+  if (depth == ImageDepth::Half) {
+    unsigned short bits = 0;
+    std::memcpy(&bits, p, sizeof(bits));
+    return halfToFloat(bits);
+  }
+  return static_cast<float>(*reinterpret_cast<const unsigned char*>(p));
+}
+
+void encodeComponent(char* p, ImageDepth depth, float value)
+{
+  if (depth == ImageDepth::Float) {
+    std::memcpy(p, &value, sizeof(value));
+  } else if (depth == ImageDepth::Half) {
+    const unsigned short bits = floatToHalf(value);
+    std::memcpy(p, &bits, sizeof(bits));
+  } else {
+    *reinterpret_cast<unsigned char*>(p) = quantiseByte(value);
+  }
+}
+
+} // namespace
+
+const char* imageDepthName(ImageDepth depth)
+{
+  return depth == ImageDepth::Half ? "half" : depth == ImageDepth::Byte ? "byte" : "float";
+}
+
+bool parseImageDepth(const std::string& name, ImageDepth* out)
+{
+  if (name == "float") {
+    *out = ImageDepth::Float;
+  } else if (name == "half") {
+    *out = ImageDepth::Half;
+  } else if (name == "byte") {
+    *out = ImageDepth::Byte;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+float quantiseToDepth(float value, ImageDepth depth)
+{
+  if (depth == ImageDepth::Half) return halfToFloat(floatToHalf(value));
+  if (depth == ImageDepth::Byte) return static_cast<float>(quantiseByte(value));
+  return value;
+}
+
+namespace {
+
+/// Allocates an image's storage and returns its first byte. Float images keep
+/// their floats in a vector<float> (the frame the harness prints and compares);
+/// half and byte images are raw bytes.
+char* allocatePixels(ImageObj* img, long long bytes)
+{
+  if (img->depth == ImageDepth::Float) {
+    img->floats.assign(static_cast<size_t>(bytes / 4) + 4, 0.0f);
+    return reinterpret_cast<char*>(img->floats.data());
+  }
+  img->raw.assign(static_cast<size_t>(bytes) + 16, 0);
+  return reinterpret_cast<char*>(img->raw.data());
+}
 
 } // namespace
 
@@ -184,6 +334,8 @@ struct Impl {
   bool negativePitch = false;
   ImageOrigin origin = ImageOrigin::Bottom;
   bool byteDst = false;
+  ImageDepth depth = ImageDepth::Float;
+  // See FakeHost::setImageDepth: both images at this depth.
   int srcInset = 0; // see FakeHost::setSourceBoundsInset
   int dstInset = 0; // see FakeHost::setDestinationBoundsInset
   // See FakeHost::setSourceCroppedToWindow: the source is published as the last
@@ -744,7 +896,7 @@ void attachClImage(ImageObj* img, bool seed)
     img->clImage = nullptr;
   }
   if (!g->clOn || g->handover != OpenCLHandover::Images || !g->clInfo.imageSupport) return;
-  if (img->isByte || img->w <= 0 || img->h <= 0) return;
+  if (img->depth != ImageDepth::Float || img->w <= 0 || img->h <= 0) return;
 
   cl::cl_image_format format{cl::CL_RGBA, cl::CL_FLOAT};
   cl::cl_int err = cl::CL_SUCCESS;
@@ -775,7 +927,7 @@ void attachClBuffer(ImageObj* img, bool seed)
     g->clInfo.api.ReleaseMemObject(img->clBuffer);
     img->clBuffer = nullptr;
   }
-  if (!g->clOn || img->isByte || img->allocBytes <= 0) return;
+  if (!g->clOn || img->depth != ImageDepth::Float || img->allocBytes <= 0) return;
   if (g->handover == OpenCLHandover::Images) {
     attachClImage(img, seed);
     return;
@@ -806,47 +958,53 @@ void buildSourceImage(ImageObj* img, const OfxRectI& rect) {
   img->boundsInset = g->srcInset;
   img->originX = x0;
   img->originY = y0;
+  img->depth = g->depth;
+  img->bpp = bytesPerPixel(img->depth);
   const int pitchPixels = g->padded ? img->w + kPadPixels : img->w;
-  const long long bytesPerRow = static_cast<long long>(pitchPixels) * 16;
+  const long long bytesPerRow = static_cast<long long>(pitchPixels) * img->bpp;
   const bool negative = g->negativePitch;
   // Image row y sits at memory row (h-1-y) when exactly one of the two axes -
   // where the pointer starts and which way the stride runs - is "from the end".
   const bool reversed = (g->origin == ImageOrigin::Top) != negative;
-  img->isByte = false;
-  img->floats.assign(static_cast<size_t>(pitchPixels) * img->h * 4, 0.0f);
-  float* base = img->floats.data();
+  char* base = allocatePixels(img, static_cast<long long>(pitchPixels) * img->h * img->bpp);
+  const long long unit = img->bpp / 4;
   for (int y = 0; y < img->h; ++y) {
     const int memRow = reversed ? (img->h - 1 - y) : y;
-    float* row = base + static_cast<size_t>(memRow) * pitchPixels * 4;
+    char* row = base + static_cast<long long>(memRow) * bytesPerRow;
     const size_t framePixel = (static_cast<size_t>(y0 + y) * g->imgW + static_cast<size_t>(x0));
     for (int x = 0; x < img->w; ++x) {
       for (int c = 0; c < 4; ++c) {
-        row[x * 4 + c] = g->srcRGBA[(framePixel + static_cast<size_t>(x)) * 4 + c];
+        encodeComponent(row + static_cast<long long>(x) * img->bpp + c * unit, img->depth,
+                        g->srcRGBA[(framePixel + static_cast<size_t>(x)) * 4 + c]);
       }
     }
     // Poison the padding so a plug-in that steps by width instead of rowBytes
     // shows up as a mismatch rather than passing on coincidentally-equal values.
     for (int x = img->w; x < pitchPixels; ++x) {
-      for (int c = 0; c < 4; ++c) row[x * 4 + c] = -12345.0f;
+      for (int c = 0; c < 4; ++c) {
+        encodeComponent(row + static_cast<long long>(x) * img->bpp + c * unit, img->depth,
+                        -12345.0f);
+      }
     }
   }
   // Read-back walks image rows, not the way the plug-in's pointer happens to.
   const int readRow = reversed ? (img->h - 1) : 0;
-  img->floatData = base + static_cast<size_t>(readRow) * pitchPixels * 4;
-  img->pitchFloats = static_cast<long long>(pitchPixels) * 4 * (reversed ? -1 : 1);
+  img->readData = base + static_cast<long long>(readRow) * bytesPerRow;
+  img->readPitch = bytesPerRow * (reversed ? -1 : 1);
   // The pointer a plug-in sees: its row follows the pitch sign only, so the Top
   // origin hands out the last row while bounds still starts at y1.
   const int dataRow = negative ? (img->h - 1) : 0;
-  img->data = base + static_cast<size_t>(dataRow) * pitchPixels * 4;
+  img->data = base + static_cast<long long>(dataRow) * bytesPerRow;
   img->rowBytes = negative ? -bytesPerRow : bytesPerRow;
-  img->allocBytes = static_cast<long long>(img->floats.size()) * 4;
+  img->allocBytes = static_cast<long long>(pitchPixels) * img->h * img->bpp;
   attachClBuffer(img, /*seed=*/false);
 }
 
 void buildDstImage(ImageObj* img) {
   img->w = g->imgW;
   img->h = g->imgH;
-  img->isByte = g->byteDst;
+  img->depth = g->byteDst ? ImageDepth::Byte : g->depth;
+  img->bpp = bytesPerPixel(img->depth);
   img->boundsInset = g->dstInset;
   img->originX = 0;
   img->originY = 0;
@@ -859,35 +1017,20 @@ void buildDstImage(ImageObj* img) {
   // and a coin flip.
   const int rows = img->h + 2 * inset;
   const int pitchPixels = img->w + 2 * inset + (g->padded ? kPadPixels : 0);
-  const long long bytesPerPixel = img->isByte ? 4 : 16;
-  const long long bytesPerRow = static_cast<long long>(pitchPixels) * bytesPerPixel;
+  const long long bytesPerRow = static_cast<long long>(pitchPixels) * img->bpp;
   const bool negative = g->negativePitch;
   const bool reversed = (g->origin == ImageOrigin::Top) != negative;
-  img->floatData = nullptr;
-  img->pitchFloats = 0;
-  char* base = nullptr;
-  if (img->isByte) {
-    img->bytes.assign(static_cast<size_t>(pitchPixels) * rows * 4, 0);
-    base = reinterpret_cast<char*>(img->bytes.data());
-  } else {
-    img->floats.assign(static_cast<size_t>(pitchPixels) * rows * 4, 0.0f);
-    base = reinterpret_cast<char*>(img->floats.data());
-  }
+  char* base = allocatePixels(img, static_cast<long long>(pitchPixels) * rows * img->bpp);
   const int dataRow = negative ? (rows - 1) : 0;
   img->data = base + static_cast<size_t>(dataRow) * bytesPerRow;
   img->rowBytes = negative ? -bytesPerRow : bytesPerRow;
-  if (!img->isByte) {
-    // Read-back starts on the same memory row it always did, moved inwards by
-    // the margin: the declared region occupies rows [inset, inset + h), so the
-    // row that holds image row 0 is `inset + readRow` from the base pointer.
-    // At inset 0 this is the expression it replaced.
-    const int readRow = reversed ? (img->h - 1) : 0;
-    img->floatData = reinterpret_cast<const float*>(
-        base + static_cast<long long>(readRow + inset) * bytesPerRow);
-    img->pitchFloats = static_cast<long long>(pitchPixels) * 4 * (reversed ? -1 : 1);
-  }
-  img->allocBytes = img->isByte ? static_cast<long long>(img->bytes.size())
-                                : static_cast<long long>(img->floats.size()) * 4;
+  // Read-back starts on the same memory row it always did, moved inwards by the
+  // margin: the declared region occupies rows [inset, inset + h), so the row that
+  // holds image row 0 is `inset + readRow` from the base pointer.
+  const int readRow = reversed ? (img->h - 1) : 0;
+  img->readData = base + static_cast<long long>(readRow + inset) * bytesPerRow;
+  img->readPitch = bytesPerRow * (reversed ? -1 : 1);
+  img->allocBytes = static_cast<long long>(pitchPixels) * rows * img->bpp;
   attachClBuffer(img, /*seed=*/true);
 }
 
@@ -940,7 +1083,7 @@ void publishImageProps(ImageObj* img, ClipObj* clip) {
   const int inset = img->boundsInset;
   char* data = static_cast<char*>(img->data) +
                static_cast<long long>(inset) * img->rowBytes +
-               static_cast<long long>(inset) * (img->isByte ? 4 : 16);
+               static_cast<long long>(inset) * img->bpp;
   // In OpenCL Buffers mode kOfxImagePropData carries a cl_mem, not a pointer to
   // floats: ofxGPURender.h says "when OpenCL Buffers are being used ... the clip
   // image property kOfxImagePropData will be set and non-null". The host's own
@@ -963,8 +1106,7 @@ void publishImageProps(ImageObj* img, ClipObj* clip) {
   setInt(&img->props, kOfxImagePropBounds, 1, img->originY + inset);
   setInt(&img->props, kOfxImagePropBounds, 2, img->originX + img->w - inset);
   setInt(&img->props, kOfxImagePropBounds, 3, img->originY + img->h - inset);
-  setString(&img->props, kOfxImageEffectPropPixelDepth, 0,
-            img->isByte ? kOfxBitDepthByte : kOfxBitDepthFloat);
+  setString(&img->props, kOfxImageEffectPropPixelDepth, 0, depthFromImage(img->depth));
   setString(&img->props, kOfxImageEffectPropComponents, 0, kOfxImageComponentRGBA);
   setDouble(&img->props, kOfxImagePropPixelAspectRatio, 0, 1.0);
   setString(&img->props, kOfxImageEffectPropPreMultiplication, 0,
@@ -1032,8 +1174,7 @@ OfxStatus clipGetImageFn(OfxImageClipHandle clipHandle, OfxTime, const OfxRectD*
   // clip object is shared, so the write is skipped: a real host announces the
   // format before the render action, not inside clipGetImage.
   if (!g->parallel) {
-    setString(&clip->props, kOfxImageEffectPropPixelDepth, 0,
-              img->isByte ? kOfxBitDepthByte : kOfxBitDepthFloat);
+    setString(&clip->props, kOfxImageEffectPropPixelDepth, 0, depthFromImage(img->depth));
     setString(&clip->props, kOfxImageEffectPropComponents, 0, kOfxImageComponentRGBA);
   }
   *imageHandle = handleOf(&img->props);
@@ -1821,7 +1962,7 @@ void FakeHost::setDestinationBoundsInset(int pixels) {
 }
 
 std::vector<float> FakeHost::destinationBuffer() const {
-  if (!impl_->dstImage || impl_->dstImage->isByte) return {};
+  if (!impl_->dstImage || impl_->dstImage->depth != ImageDepth::Float) return {};
   // The whole allocation in memory order, margins included. destination() walks
   // the declared bounds; this one shows a write that landed outside them.
   return impl_->dstImage->floats;
@@ -1849,6 +1990,21 @@ void FakeHost::setImageOrigin(ImageOrigin o) {
   invalidateImages();
 }
 
+void FakeHost::setImageDepth(ImageDepth depth) {
+  impl_->depth = depth;
+  // A host announces the format on the clips before the render action; a plug-in
+  // that validates the clip instead of the image has to see the same answer.
+  for (const char* name : {kOfxImageEffectSimpleSourceClipName, kOfxImageEffectOutputClipName}) {
+    auto it = impl_->clipByName.find(name);
+    if (it != impl_->clipByName.end()) {
+      setString(&it->second->props, kOfxImageEffectPropPixelDepth, 0, depthFromImage(depth));
+    }
+  }
+  invalidateImages();
+}
+
+ImageDepth FakeHost::imageDepth() const { return impl_->depth; }
+
 void FakeHost::setDestinationByteImage(bool on) {
   impl_->byteDst = on;
   // The host announces the output format on the clip before the render action,
@@ -1872,11 +2028,17 @@ long long FakeHost::destinationRowBytes() const {
 namespace {
 
 std::vector<float> snapshotImage(const ImageObj* img) {
-  if (!img || img->isByte || img->w <= 0) return {};
+  if (!img || img->w <= 0 || img->readData == nullptr) return {};
   std::vector<float> out(static_cast<size_t>(img->w) * img->h * 4, 0.0f);
+  const long long unit = img->bpp / 4;
   for (int y = 0; y < img->h; ++y) {
-    const float* px = img->floatData + static_cast<long long>(y) * img->pitchFloats;
-    for (int i = 0; i < img->w * 4; ++i) out[static_cast<size_t>(y) * img->w * 4 + i] = px[i];
+    const char* row = img->readData + static_cast<long long>(y) * img->readPitch;
+    for (int x = 0; x < img->w; ++x) {
+      for (int c = 0; c < 4; ++c) {
+        out[(static_cast<size_t>(y) * img->w + x) * 4 + c] =
+            decodeComponent(row + static_cast<long long>(x) * img->bpp + c * unit, img->depth);
+      }
+    }
   }
   return out;
 }

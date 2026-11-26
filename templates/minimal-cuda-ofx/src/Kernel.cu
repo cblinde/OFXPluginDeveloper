@@ -100,12 +100,10 @@ __device__ __forceinline__ __half2 ScaleHalf2(const __half2 v, const __half2 gai
 /// Half-precision RGBA: four `__half` per pixel, 8 bytes, two `__half2` loads
 /// and two stores per pixel.
 ///
-/// There is no launcher for this kernel and nothing advertises 16F: an OFX clip
-/// that declares RGBA16F and then hands the data here is a promise about the
-/// host's buffers (4-byte-addressable rows, and a host that actually accepts a
-/// half clip), and that promise is not made until a plug-in path uses it. What
-/// this kernel is for is the arithmetic and the addressing: an odd width that a
-/// float4 access could not take, a padded pitch, and a negative row stride.
+/// Launched by LaunchGainRGBA16F, which the plug-in reaches for when the host
+/// hands over an RGBA16F image. What the kernel has to get right beyond the
+/// arithmetic is the addressing: an odd width that a float4 access could not
+/// take, a padded pitch, and a negative row stride.
 __global__ void GainKernelRGBA16FHalf4(const __half* __restrict__ src,
                                        __half* __restrict__ dst,
                                        const int width,
@@ -303,6 +301,122 @@ extern "C" int LaunchGainRGBA32F(void* hostStream,
     // Immediate launch errors (bad grid, no device, invalid pointer kind).
     // Asynchronous execution errors are only observable at a synchronisation
     // point, which is precisely why the sync policy matters (see header).
+    const cudaError_t launch = cudaGetLastError();
+    if (launch != cudaSuccess) {
+        return static_cast<int>(launch);
+    }
+    return kLaunchOK;
+}
+
+extern "C" int LaunchGainRGBA16F(void* hostStream,
+                                 const void* src,
+                                 void* dst,
+                                 int width,
+                                 int height,
+                                 std::int64_t srcPitch,
+                                 std::int64_t dstPitch,
+                                 const float gain[4])
+{
+    if (width <= 0 || height <= 0) {
+        return kLaunchOK;
+    }
+    if (src == nullptr || dst == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    // `__half2` is 4 bytes wide, so both bases and both pitches must be
+    // 4-byte addressable. There is no scalar fallback on purpose: a half image
+    // from a real host always is, and a silent second kernel would be one more
+    // path nobody runs.
+    if (!IsHalf2Addressable(src, dst, srcPitch, dstPitch)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+
+    int device = 0;
+    cudaGetDevice(&device);
+    cudaPointerAttributes attributes{};
+    const cudaError_t query = cudaPointerGetAttributes(&attributes, src);
+    if (query == cudaSuccess && attributes.device >= 0) {
+        device = attributes.device;
+    } else {
+        cudaGetLastError();
+    }
+    const DeviceGuard guard(device);
+
+    const dim3 block(16, 16, 1);
+    const dim3 grid(static_cast<unsigned>((width + block.x - 1) / block.x),
+                    static_cast<unsigned>((height + block.y - 1) / block.y),
+                    1);
+
+    cudaStream_t stream = reinterpret_cast<cudaStream_t>(hostStream);
+    const long long sp = static_cast<long long>(srcPitch);
+    const long long dp = static_cast<long long>(dstPitch);
+
+    // The gain goes over as halves because the kernel multiplies half2 pairs:
+    // converting here means the rounding happens once, not per pixel.
+    GainKernelRGBA16FHalf4<<<grid, block, 0, stream>>>(
+        static_cast<const __half*>(src),
+        static_cast<__half*>(dst),
+        width,
+        height,
+        sp,
+        dp,
+        __floats2half2_rn(gain[0], gain[1]),
+        __floats2half2_rn(gain[2], gain[3]));
+
+    const cudaError_t launch = cudaGetLastError();
+    if (launch != cudaSuccess) {
+        return static_cast<int>(launch);
+    }
+    return kLaunchOK;
+}
+
+extern "C" int LaunchGainRGBA8(void* hostStream,
+                               const void* src,
+                               void* dst,
+                               int width,
+                               int height,
+                               std::int64_t srcPitch,
+                               std::int64_t dstPitch,
+                               const float gain[4])
+{
+    if (width <= 0 || height <= 0) {
+        return kLaunchOK;
+    }
+    if (src == nullptr || dst == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    // No alignment predicate: a byte pixel is four bytes and every pointer and
+    // pitch a host can hand out is byte addressable, which is why an odd pitch
+    // and an odd pixel offset are legal here.
+
+    int device = 0;
+    cudaGetDevice(&device);
+    cudaPointerAttributes attributes{};
+    const cudaError_t query = cudaPointerGetAttributes(&attributes, src);
+    if (query == cudaSuccess && attributes.device >= 0) {
+        device = attributes.device;
+    } else {
+        cudaGetLastError();
+    }
+    const DeviceGuard guard(device);
+
+    const dim3 block(16, 16, 1);
+    const dim3 grid(static_cast<unsigned>((width + block.x - 1) / block.x),
+                    static_cast<unsigned>((height + block.y - 1) / block.y),
+                    1);
+
+    cudaStream_t stream = reinterpret_cast<cudaStream_t>(hostStream);
+    const float4 g = make_float4(gain[0], gain[1], gain[2], gain[3]);
+
+    GainKernelRGBA8<<<grid, block, 0, stream>>>(
+        static_cast<const unsigned char*>(src),
+        static_cast<unsigned char*>(dst),
+        width,
+        height,
+        static_cast<long long>(srcPitch),
+        static_cast<long long>(dstPitch),
+        g);
+
     const cudaError_t launch = cudaGetLastError();
     if (launch != cudaSuccess) {
         return static_cast<int>(launch);

@@ -114,7 +114,7 @@ testkit/build-contract-test.sh /tmp/contract_test .ofx-ref
   --id com.example.myplugin \
   --param gain:double --param gainAlpha:double \
   --clip Source --clip Output \
-  --identity --set gain=2.0 --not-identity-after-set --byte-dst-rejected
+  --identity --set gain=2.0 --not-identity-after-set --depth half --depth byte
 ```
 
 Flags: `--param name:type` (repeatable; `type` is one of `double`, `int`
@@ -125,7 +125,10 @@ mismatch that reads like a plug-in defect),
 `--set name=value` before render (`rgb` values are `r,g,b`, `rgba` values
 `r,g,b,a`), `--identity` (expect `kOfxStatOK` and the
 source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
-answer `kOfxStatErrUnsupported` for an 8-bit destination), `--negative-pitch`,
+answer `kOfxStatErrUnsupported` for an 8-bit destination), `--depth float|half|byte`
+(repeatable: source and destination at that depth, and the frame must be the source
+times the gain quantised to it — for a plug-in that declares the depth; use
+`--byte-dst-rejected` for one that does not), `--negative-pitch`,
 `--image-origin top|bottom`, `--mark X,Y` (a mark the plug-in draws at a frame
 position; asserted in frame coordinates, so a mirrored one fails with the row it
 landed on; full frame only, since an inset destination moves the row origin),

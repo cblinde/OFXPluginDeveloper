@@ -197,6 +197,12 @@ struct Spec {
   bool expectIdentity = false;
   bool expectNotIdentityAfterSet = false;
   bool byteDstRejected = false;
+  // --depth half|byte: hand the plug-in source and destination images of that
+  // depth and require the frame it produces. Repeatable, so one run covers every
+  // depth a plug-in declares. The expectation is the source as the image stores
+  // it, times the gain, quantised back to the same depth - the plug-in's own
+  // arithmetic, with only the depth conversion supplied by the harness.
+  std::vector<testkit::ImageDepth> depths;
   // --src-bounds-inset: publish a source region of definition inset inside the
   // buffer, so the render window covers pixels the source does not have.
   int srcBoundsInset = 0;
@@ -1360,6 +1366,108 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
     }
   }
 
+  for (const testkit::ImageDepth depth : spec.depths) {
+    const std::string name = testkit::imageDepthName(depth);
+    const std::string label = depth == testkit::ImageDepth::Half     ? "RGBA16F"
+                              : depth == testkit::ImageDepth::Byte ? "RGBA8"
+                                                                   : "RGBA32F";
+    stage(("render at " + name).c_str());
+    const std::string depthProp = depth == testkit::ImageDepth::Half     ? kOfxBitDepthHalf
+                                 : depth == testkit::ImageDepth::Byte ? kOfxBitDepthByte
+                                                                     : kOfxBitDepthFloat;
+    bool declaredDepth = false;
+    std::string declaredList;
+    for (int i = 0; i < 8; ++i) {
+      const std::string value = host.descriptorString(kOfxImageEffectPropSupportedPixelDepths, i);
+      if (value.empty()) break;
+      declaredList += (declaredList.empty() ? "" : ", ") + value;
+      declaredDepth = declaredDepth || value == depthProp;
+    }
+    if (!check("descriptor declares " + label, declaredDepth,
+               "declared: " + (declaredList.empty() ? "<none>" : declaredList))) {
+      return failCycle(host);
+    }
+    host.setImageDepth(depth);
+    // Code values across the whole range, so a quantisation or a clamp error is
+    // a mismatch rather than one lonely pixel.
+    std::vector<float> seeded(static_cast<size_t>(spec.width) * spec.height * 4, 0.0f);
+    for (int y = 0; y < spec.height; ++y) {
+      for (int x = 0; x < spec.width; ++x) {
+        // A half image can carry fractions and this one does, so a conversion bug
+        // in the plug-in shows up as a mismatch rather than as an exact integer
+        // that every bit pattern would survive. A byte image carries code values,
+        // so the same frame would quantise to 0..3 and prove nothing; it gets
+        // integers across the whole range instead.
+        const int span = depth == testkit::ImageDepth::Half ? 4096 : 256;
+        const float unit = depth == testkit::ImageDepth::Half ? 1.0f / 64.0f : 1.0f;
+        float* px = &seeded[(static_cast<size_t>(y) * spec.width + x) * 4];
+        px[0] = static_cast<float>((x * 37 + y * 11) % span) * unit;
+        px[1] = static_cast<float>((x * 11 + y * 53) % span) * unit;
+        px[2] = static_cast<float>((x * 71 + y * 17) % span) * unit;
+        px[3] = depth == testkit::ImageDepth::Half ? 1.0f : 255.0f;
+      }
+    }
+    host.setSourcePixels(seeded, spec.width, spec.height);
+    // Re-apply the run's settings: an earlier stage (the concurrency one, which
+    // gives each instance its own value) may have left another number on this
+    // instance, and this check compares against the settings the run declared.
+    for (const auto& set : spec.sets) {
+      if (!check("set " + set.first + " for the " + name + " pass",
+                 host.setParam(set.first, set.second))) {
+        return failCycle(host);
+      }
+    }
+    // What the host actually handed over: the frame after the depth conversion.
+    const std::vector<float> handed = host.sourcePixels();
+    const OfxStatus depthStatus = host.render(0.0, window);
+    const std::vector<float> produced = host.destination();
+    host.setImageDepth(testkit::ImageDepth::Float);
+    if (!check("render accepts an " + label + " image", depthStatus == kOfxStatOK,
+               statusName(depthStatus))) {
+      return failCycle(host);
+    }
+    double gainRGB = 1.0;
+    double gainAlpha = 1.0;
+    for (const auto& set : spec.sets) {
+      if (set.first == "gain") {
+        gainRGB = std::atof(set.second.c_str());
+      } else if (set.first == "gainAlpha") {
+        gainAlpha = std::atof(set.second.c_str());
+      }
+    }
+    if (!check("destination is readable at " + name,
+               produced.size() == seeded.size() && handed.size() == seeded.size(),
+               std::to_string(produced.size()) + " floats")) {
+      return failCycle(host);
+    }
+    double worst = 0.0;
+    int wrong = 0;
+    std::string where;
+    for (size_t i = 0; i + 3 < produced.size(); i += 4) {
+      for (int c = 0; c < 4; ++c) {
+        const double expected = testkit::quantiseToDepth(
+            handed[i + c] * static_cast<float>(c == 3 ? gainAlpha : gainRGB), depth);
+        const double diff = std::abs(static_cast<double>(produced[i + c]) - expected);
+        if (diff != 0.0) ++wrong;
+        if (diff > worst) {
+          worst = diff;
+          where = "pixel (" + std::to_string((i / 4) % spec.width) + "," +
+                  std::to_string((i / 4) / spec.width) + ") channel " + std::to_string(c) +
+                  " (" + std::to_string(produced[i + c]) + " vs " +
+                  std::to_string(expected) + ")";
+        }
+      }
+    }
+    if (wrong != 0) {
+      where += ", " + std::to_string(wrong) + " components differ";
+    }
+    if (!check("the " + label + " frame is the source times the gain at that depth",
+               worst == 0.0,
+               "max deviation " + std::to_string(worst) + " at " + where)) {
+      return failCycle(host);
+    }
+  }
+
   if (spec.roiExpand >= 0) {
     stage("roi region");
     // A plug-in that reports a source region smaller than it reads loses the
@@ -1580,6 +1688,7 @@ int main(int argc, char** argv) {
                  "usage: contract_test <plugin.ofx> --id <identifier> [--param name:type]...\n"
                  "       [--clip name]... [--set name=value]... [--context <context>]\n"
                  "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
+                 "       [--depth float|half|byte]...\n"
                  "       [--negative-pitch] [--image-origin top|bottom] [--mark X,Y] [--set-status-only]\n"
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
                  "       [--dst-bounds-inset N] [--roi-expand N] [--roi-context]\n"
@@ -1691,6 +1800,17 @@ int main(int argc, char** argv) {
       spec.expectIdentity = true;
     } else if (a == "--not-identity-after-set") {
       spec.expectNotIdentityAfterSet = true;
+    } else if (a == "--depth") {
+      if (i + 1 >= argc) {
+        std::fprintf(stderr, "error: --depth needs float, half or byte\n");
+        return 2;
+      }
+      testkit::ImageDepth depth = testkit::ImageDepth::Float;
+      if (!testkit::parseImageDepth(argv[++i], &depth)) {
+        std::fprintf(stderr, "error: --depth %s is not float, half or byte\n", argv[i]);
+        return 2;
+      }
+      spec.depths.push_back(depth);
     } else if (a == "--byte-dst-rejected") {
       spec.byteDstRejected = true;
     } else if (a == "--src-bounds-inset") {

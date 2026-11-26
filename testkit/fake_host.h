@@ -44,6 +44,26 @@ struct Impl; // defined in fake_host.cpp
 // independently to build that layout at all.
 enum class ImageOrigin { Bottom, Top };
 
+// The pixel layout of the images a run hands over. OFX names four depths; the
+// three below are the ones a plug-in can realistically declare and render, and
+// the harness can present any of them. "Declares RGBA16F" is not a claim until a
+// half image actually arrives, and neither is "declares RGBA8".
+//
+// A half image is stored as its 16-bit pattern and converted through float on
+// the way in and out, which is exact in both directions. A byte image carries
+// code values: OFX leaves their meaning to the host's colour management, so the
+// harness treats the frame's floats as code values (round to nearest, clamp to
+// [0, 255]) - the same rule the plug-in's byte path applies.
+enum class ImageDepth { Float, Half, Byte };
+
+// The --depth value ("float", "half", "byte") and back; nullptr/unknown for
+// anything else, so a typo is a usage error rather than a silent default.
+const char* imageDepthName(ImageDepth depth);
+bool parseImageDepth(const std::string& name, ImageDepth* out);
+// The value as an image at this depth would store it, for a test that computes
+// what a render must produce.
+float quantiseToDepth(float value, ImageDepth depth);
+
 // Which of the two OpenCL handovers ofxGPURender.h defines the host presents.
 // Buffers put a cl_mem in kOfxImagePropData and keep rowBytes; Images put a
 // cl_mem image2d_t in kOfxImageEffectPropOpenCLImage and have no row stride at
@@ -205,6 +225,11 @@ public:
   void setNegativePitch(bool on);        // rowBytes < 0
   void setImageOrigin(ImageOrigin o);    // which row kOfxImagePropData addresses
   void setDestinationByteImage(bool on); // hand the plug-in a byte image
+  // Both images - source and destination - at `depth`. The clip properties are
+  // updated with them, the way a host announces the working format before the
+  // render action, and the cached images are rebuilt.
+  void setImageDepth(ImageDepth depth);
+  ImageDepth imageDepth() const;
 
   // Replaces the source frame with `rgba` (tight, top-down, RGBA float) at
   // `width` x `height`. The default is one constant colour over 64x48, which

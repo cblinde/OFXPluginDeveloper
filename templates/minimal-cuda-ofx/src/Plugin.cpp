@@ -11,8 +11,10 @@
 //      library requires; it generates OfxGetNumberOfPlugins/OfxGetPlugin.
 #include "Plugin.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -72,9 +74,98 @@ void recordPath(const char* path, int width, int height)
     }
 }
 
-/// RGBA32F only: 4 floats per pixel. Kept as a named constant because every
-/// pointer offset in this file is expressed in terms of it.
-constexpr std::int64_t kPixelBytes = 4 * sizeof(float);
+/// Bytes per pixel for each depth the plug-in declares. Every pointer offset in
+/// this file is expressed in terms of the depth's value, so a mixed-depth mistake
+/// is a named constant away rather than a bare 16.
+constexpr std::int64_t kPixelBytesRGBA32F = 4 * sizeof(float);
+constexpr std::int64_t kPixelBytesRGBA16F = 4 * sizeof(std::uint16_t);
+constexpr std::int64_t kPixelBytesRGBA8 = 4 * sizeof(std::uint8_t);
+
+std::int64_t pixelBytes(OFX::BitDepthEnum depth)
+{
+    switch (depth) {
+    case OFX::eBitDepthFloat:
+        return kPixelBytesRGBA32F;
+    case OFX::eBitDepthHalf:
+        return kPixelBytesRGBA16F;
+    case OFX::eBitDepthUByte:
+        return kPixelBytesRGBA8;
+    default:
+        return 0;
+    }
+}
+
+/// IEEE 754 binary16 -> binary32. Exact: every half is a float.
+float halfToFloat(std::uint16_t bits)
+{
+    const std::uint32_t sign = (bits & 0x8000u) ? 0x80000000u : 0u;
+    const std::uint32_t exponent = (bits >> 10) & 0x1fu;
+    std::uint32_t mantissa = bits & 0x3ffu;
+    std::uint32_t out = 0;
+    if (exponent == 0) {
+        if (mantissa == 0) {
+            out = sign;
+        } else {
+            // Subnormal half: renormalise into a normal float.
+            std::uint32_t e = 113u;
+            while ((mantissa & 0x400u) == 0) {
+                mantissa <<= 1;
+                --e;
+            }
+            out = sign | (e << 23) | ((mantissa & 0x3ffu) << 13);
+        }
+    } else if (exponent == 0x1fu) {
+        out = sign | 0x7f800000u | (mantissa << 13);
+    } else {
+        out = sign | ((exponent - 15u + 127u) << 23) | (mantissa << 13);
+    }
+    float value = 0.0f;
+    std::memcpy(&value, &out, sizeof(value));
+    return value;
+}
+
+/// binary32 -> binary16 with round-to-nearest-even, the mode of every CUDA
+/// half conversion and of __float2int_rn in the byte kernel. The device path
+/// converts through float as well (ScaleHalf2), so this keeps the CPU fallback
+/// and the kernel agreeing bit for bit on a half image.
+std::uint16_t floatToHalf(float value)
+{
+    std::uint32_t f = 0;
+    std::memcpy(&f, &value, sizeof(f));
+    const std::uint32_t sign = (f >> 16) & 0x8000u;
+    f &= 0x7fffffffu;
+    if (f >= 0x47800000u) {
+        // Overflow, infinity or NaN. 0x7e00 is the canonical quiet NaN.
+        if (f > 0x7f800000u) return static_cast<std::uint16_t>(sign | 0x7e00u);
+        return static_cast<std::uint16_t>(sign | 0x7c00u);
+    }
+    if (f < 0x38800000u) {
+        // Result is a half subnormal (or zero): the unit is 2^-24, so the
+        // mantissa is shifted right by (126 - biasedExponent) bits.
+        const std::uint32_t shift = 126u - (f >> 23);
+        if (shift > 25u) return static_cast<std::uint16_t>(sign);
+        std::uint32_t mantissa = (f & 0x7fffffu) | 0x800000u;
+        std::uint32_t half = mantissa >> shift;
+        const std::uint32_t rest = mantissa & ((1u << shift) - 1u);
+        const std::uint32_t halfway = 1u << (shift - 1u);
+        if (rest > halfway || (rest == halfway && (half & 1u))) ++half;
+        return static_cast<std::uint16_t>(sign | half);
+    }
+    std::uint32_t half = sign | ((f >> 13) - (112u << 10));
+    const std::uint32_t rest = f & 0x1fffu;
+    if (rest > 0x1000u || (rest == 0x1000u && (half & 1u))) ++half;
+    return static_cast<std::uint16_t>(half);
+}
+
+/// The byte kernel's quantisation, on the host: round to nearest even, then
+/// saturate at 255 rather than wrapping. Same rule as ScaleByte.
+unsigned char quantiseByte(float value)
+{
+    const float rounded = std::nearbyint(value);
+    if (!(rounded > 0.0f)) return 0;  // also catches NaN
+    if (rounded > 255.0f) return 255;
+    return static_cast<unsigned char>(rounded);
+}
 
 } // namespace
 
@@ -135,15 +226,41 @@ void GainProcessor::processImagesCuda()
     const std::int64_t srcPitch = _src->getRowBytes();
     const std::int64_t dstPitch = _dstImg->getRowBytes();
 
+    // The column offset is in pixels of this render's depth, so it comes from the
+    // same place the kernel choice does. A depth without a pixel size has no
+    // path here - render() already refused it, this is the belt to that brace.
+    const std::int64_t bytesPerPixel = pixelBytes(_depth);
+    if (bytesPerPixel == 0) {
+        OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
+    }
+
     const char* srcOrigin = static_cast<const char*>(_src->getPixelData())
                           + static_cast<std::int64_t>(window.y1 - srcBounds.y1) * srcPitch
-                          + static_cast<std::int64_t>(window.x1 - srcBounds.x1) * kPixelBytes;
+                          + static_cast<std::int64_t>(window.x1 - srcBounds.x1) * bytesPerPixel;
     char* dstOrigin = static_cast<char*>(_dstImg->getPixelData())
                     + static_cast<std::int64_t>(window.y1 - dstBounds.y1) * dstPitch
-                    + static_cast<std::int64_t>(window.x1 - dstBounds.x1) * kPixelBytes;
+                    + static_cast<std::int64_t>(window.x1 - dstBounds.x1) * bytesPerPixel;
 
-    const int status = LaunchGainRGBA32F(_pCudaStream, srcOrigin, dstOrigin, width, height,
-                                         srcPitch, dstPitch, _gain);
+    // One entry point per depth, chosen from the image the host handed over.
+    // 32F has a scalar fallback inside its launcher (a float4 access needs
+    // 16-byte addressability); the other two have one path each.
+    int status = kLaunchOK;
+    switch (_depth) {
+    case OFX::eBitDepthFloat:
+        status = LaunchGainRGBA32F(_pCudaStream, srcOrigin, dstOrigin, width, height,
+                                   srcPitch, dstPitch, _gain);
+        break;
+    case OFX::eBitDepthHalf:
+        status = LaunchGainRGBA16F(_pCudaStream, srcOrigin, dstOrigin, width, height,
+                                   srcPitch, dstPitch, _gain);
+        break;
+    case OFX::eBitDepthUByte:
+        status = LaunchGainRGBA8(_pCudaStream, srcOrigin, dstOrigin, width, height,
+                                 srcPitch, dstPitch, _gain);
+        break;
+    default:
+        OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
+    }
     if (status != kLaunchOK) {
         OFX::Log::print("Minimal CUDA Gain: kernel launch failed: %s", StatusMessage(status));
         OFX::throwSuiteStatusException(kOfxStatGPURenderFailed);
@@ -154,7 +271,10 @@ void GainProcessor::processImagesCuda()
     // which is the point of having both. This is the declaration §8 of
     // references/resolve-automation.md asks for, and the only proof a test can
     // read back when it cannot see the host's GPU preference.
-    OFX::Log::print("Minimal CUDA Gain: CUDA path, %dx%d, stream %s", width, height,
+    const char* depthName = _depth == OFX::eBitDepthHalf     ? "RGBA16F"
+                            : _depth == OFX::eBitDepthUByte ? "RGBA8"
+                                                            : "RGBA32F";
+    OFX::Log::print("Minimal CUDA Gain: CUDA path, %s %dx%d, stream %s", depthName, width, height,
                     _pCudaStream == nullptr ? "not supplied by the host" : "supplied by the host");
     recordPath("CUDA", width, height);
 
@@ -196,18 +316,61 @@ void GainProcessor::multiThreadProcessImages(OfxRectI window)
         // declared in the header but defined out of line in the Support library,
         // so calling it inside the x loop pays a function call per pixel. The
         // pixel arithmetic below is unchanged - only the addressing is hoisted.
-        float* dstRow = static_cast<float*>(_dstImg->getPixelAddress(window.x1, y));
-        if (dstRow == nullptr) {
-            continue;
+        //
+        // The loop is chosen by depth, and each one applies the same rule its
+        // kernel does: float arithmetic, half through float with one rounding,
+        // byte on the stored code value with saturation. That is what lets the
+        // contract harness expect the same frame from a host with a GPU and one
+        // without.
+        switch (_depth) {
+        case OFX::eBitDepthFloat: {
+            float* dstRow = static_cast<float*>(_dstImg->getPixelAddress(window.x1, y));
+            if (dstRow == nullptr) {
+                continue;
+            }
+            // render() rejects an unconnected source, so _src is always set here.
+            const float* srcRow = static_cast<const float*>(_src->getPixelAddress(window.x1, y));
+            for (int x = window.x1; x < window.x2; ++x, dstRow += 4, srcRow += 4) {
+                dstRow[0] = srcRow[0] * _gain[0];
+                dstRow[1] = srcRow[1] * _gain[1];
+                dstRow[2] = srcRow[2] * _gain[2];
+                dstRow[3] = srcRow[3] * _gain[3];
+            }
+            break;
         }
-        // render() rejects an unconnected source, so _src is always set here.
-        const float* srcRow = static_cast<const float*>(_src->getPixelAddress(window.x1, y));
-
-        for (int x = window.x1; x < window.x2; ++x, dstRow += 4, srcRow += 4) {
-            dstRow[0] = srcRow[0] * _gain[0];
-            dstRow[1] = srcRow[1] * _gain[1];
-            dstRow[2] = srcRow[2] * _gain[2];
-            dstRow[3] = srcRow[3] * _gain[3];
+        case OFX::eBitDepthHalf: {
+            std::uint16_t* dstRow =
+                static_cast<std::uint16_t*>(_dstImg->getPixelAddress(window.x1, y));
+            if (dstRow == nullptr) {
+                continue;
+            }
+            const std::uint16_t* srcRow =
+                static_cast<const std::uint16_t*>(_src->getPixelAddress(window.x1, y));
+            for (int x = window.x1; x < window.x2; ++x, dstRow += 4, srcRow += 4) {
+                for (int c = 0; c < 4; ++c) {
+                    dstRow[c] = floatToHalf(halfToFloat(srcRow[c]) * _gain[c]);
+                }
+            }
+            break;
+        }
+        case OFX::eBitDepthUByte: {
+            unsigned char* dstRow =
+                static_cast<unsigned char*>(_dstImg->getPixelAddress(window.x1, y));
+            if (dstRow == nullptr) {
+                continue;
+            }
+            const unsigned char* srcRow =
+                static_cast<const unsigned char*>(_src->getPixelAddress(window.x1, y));
+            for (int x = window.x1; x < window.x2; ++x, dstRow += 4, srcRow += 4) {
+                for (int c = 0; c < 4; ++c) {
+                    dstRow[c] = quantiseByte(static_cast<float>(srcRow[c]) * _gain[c]);
+                }
+            }
+            break;
+        }
+        default:
+            // render() refused this depth before any pixel was touched.
+            break;
         }
     }
 }
@@ -237,9 +400,11 @@ void GainPlugin::render(const OFX::RenderArguments& args)
 {
     // Reject anything we did not declare support for, loudly. Silently writing
     // the wrong pixel format is the most common source of "the plugin renders
-    // black" reports.
-    if (_dstClip->getPixelDepth() != OFX::eBitDepthFloat ||
-        _dstClip->getPixelComponents() != OFX::ePixelComponentRGBA) {
+    // black" reports. The three depths below are the ones describe() advertises;
+    // eBitDepthUShort is the one OFX depth they do not cover, and it is refused
+    // here rather than misinterpreted as bytes.
+    if (_dstClip->getPixelComponents() != OFX::ePixelComponentRGBA ||
+        pixelBytes(_dstClip->getPixelDepth()) == 0) {
         OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
     }
 
@@ -318,6 +483,7 @@ void GainPlugin::setupAndProcess(GainProcessor& processor, const OFX::RenderArgu
     processor.setDstImg(dst.get());
     processor.setSrcImg(src.get());
     processor.setGain(gain);
+    processor.setDepth(dst->getPixelDepth());
 
     // Must be called before process(): this is what tells ImageProcessor which
     // GPU API (if any) the host enabled for this render, plus the stream.
@@ -345,7 +511,12 @@ void GainPluginFactory::describe(OFX::ImageEffectDescriptor& desc)
     desc.addSupportedContext(OFX::eContextFilter);
     desc.addSupportedContext(OFX::eContextGeneral);
 
+    // The three depths the kernels cover. Half and byte are not decoration: each
+    // has its own device kernel and its own CPU loop, and a host that hands over
+    // such an image gets that path or a refusal, never a guess.
     desc.addSupportedBitDepth(OFX::eBitDepthFloat);
+    desc.addSupportedBitDepth(OFX::eBitDepthHalf);
+    desc.addSupportedBitDepth(OFX::eBitDepthUByte);
 
     desc.setSingleInstance(false);
     desc.setHostFrameThreading(false);

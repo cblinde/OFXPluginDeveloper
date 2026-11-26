@@ -168,7 +168,7 @@ for %%P in (nuke resolve natron) do (
     --clip Source --clip Output ^
     --identity --negative-pitch ^
     --set gain=2.0 --not-identity-after-set ^
-    --byte-dst-rejected ^
+    --depth half --depth byte ^
     --src-bounds-inset 2 --dst-bounds-inset 2 ^
     --concurrency-param gain ^
     --concurrency-threads %THREADS% || goto :error
