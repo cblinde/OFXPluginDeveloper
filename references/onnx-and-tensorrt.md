@@ -804,15 +804,28 @@ What the setting buys is a bound on the worst case, not a saving on either model
 the model whose chosen plan wants the large workspace is still unfound, and that
 search is what the backlog keeps.
 
-**`HEURISTIC` versus `EXHAUSTIVE` still does not separate in wall-clock time, and
-the reason is not a cache.** Three session creations per setting, in one process,
-without warming the measured session: 2.24-2.28 ms under `HEURISTIC` against
-2.45-3.78 ms under `EXHAUSTIVE` at 1920×1080, and the same range at 640×480
-(**[V]**, [`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log)).
-The earlier explanation - that cuDNN's on-disk `ComputeCache` already held the
-plans - does not survive inspection: `%LOCALAPPDATA%\NVIDIA` holds `DXCache`,
-`GLCache`, `OptixCache` and `warp`, and no `ComputeCache`, before the runs and
-after them. What cuDNN's own API log shows instead is a difference in *what is
+**`HEURISTIC` versus `EXHAUSTIVE` does not separate in wall-clock time, cold or
+warm, and the reason is not a cache.** There is nothing to clear between runs on
+this machine: `%LOCALAPPDATA%\NVIDIA` holds `DXCache`, `GLCache`, `OptixCache` and
+`warp`, and no plan cache, before and after every run below, and no `CUDNN_*`
+variable is set - so the uncached first session is what these numbers measure.
+Five runs per setting, each in a fresh process, interleaved so that drift cannot
+favour one:
+
+| Shape | Setting | First session, median (spread) | First inference, median |
+|---|---|---|---|
+| 1920×1080 | `HEURISTIC` | **32.4 ms** (31.2-41.2) | 451 ms |
+| 1920×1080 | `EXHAUSTIVE` | **32.1 ms** (31.7-33.8) | 450 ms |
+| 640×480 | `HEURISTIC` | **32.9 ms** (31.3-35.2) | 199 ms |
+| 640×480 | `EXHAUSTIVE` | **32.1 ms** (31.9-34.5) | 200 ms |
+
+Steady state separates no better: three further creations in one process, without
+warming the measured session, take 2.24-2.28 ms under `HEURISTIC` and 2.45-3.78 ms
+under `EXHAUSTIVE` at both shapes (**[V]**,
+[`../evidence/2026-11-26-windows/ep-session.log`](../evidence/2026-11-26-windows/ep-session.log)).
+So the ~32 ms is context creation and cuDNN init, paid once per process whatever
+the search setting, and the search itself is the milliseconds the next paragraph
+unpicks. What cuDNN's own API log shows is a difference in *what is
 finalised*, not in how long it takes: at the same log level `EXHAUSTIVE` calls
 `cudnnBackendFinalize` ten times per session where `HEURISTIC` calls it once, and
 neither mode calls `cudnnFindConvolutionForwardAlgorithmEx` or
@@ -884,7 +897,7 @@ to **`HEURISTIC`**, not to its `EXHAUSTIVE` default. The reason is the first
 session, not the steady state: `EXHAUSTIVE` benchmarks every candidate against
 the real tensors, and in a host the first session is what a user waits for.
 Here both settings created the session in 2.2-3.8 ms and the first session in a
-process cost 32-34 ms whatever the setting, so the argument rests on what
+process cost 32 ms median whatever the setting, so the argument rests on what
 `EXHAUSTIVE` enumerates (ten finalised plans against one, **[V]**) and on the
 scale a production graph reaches (**[B]**), not on a stopwatch difference in this
 repository. `HEURISTIC` is also the more

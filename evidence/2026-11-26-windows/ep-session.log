@@ -92,3 +92,34 @@ limit=1GB, kSameAsRequested        failed: Non-zero status code returned while r
 # Row 3/4 note: cuDNN plan cache on this machine before and after the runs.
 #   %LOCALAPPDATA%/NVIDIA contains DXCache, GLCache, OptixCache and warp; no ComputeCache,
 #   before the runs or after them.
+
+# Row 3, the uncached first session: one fresh process per run, five runs per
+# setting, interleaved (HEURISTIC then EXHAUSTIVE, five rounds), 2026-11-26.
+# Nothing is cached between them - %LOCALAPPDATA%/NVIDIA holds DXCache, GLCache,
+# OptixCache and warp only, before and after, and no CUDNN_* variable is set -
+# so each "attempt 1" below is the first session and the first inference in a
+# process that has never seen this graph.
+#
+# 1920x1080, round, setting, create ms, first run ms
+1 HEURISTIC    32.89 ms, first run   444.43 ms (132710400 values)
+1 EXHAUSTIVE    31.94 ms, first run   437.39 ms (132710400 values)
+2 HEURISTIC    41.23 ms, first run   451.06 ms (132710400 values)
+2 EXHAUSTIVE    33.82 ms, first run   453.00 ms (132710400 values)
+3 HEURISTIC    31.78 ms, first run   452.27 ms (132710400 values)
+3 EXHAUSTIVE    31.71 ms, first run   459.37 ms (132710400 values)
+4 HEURISTIC    32.35 ms, first run   470.18 ms (132710400 values)
+4 EXHAUSTIVE    32.24 ms, first run   450.44 ms (132710400 values)
+5 HEURISTIC    31.18 ms, first run   439.47 ms (132710400 values)
+5 EXHAUSTIVE    32.10 ms, first run   443.10 ms (132710400 values)
+
+# 640x480, the same protocol
+1 HEURISTIC    31.88 ms, first run   198.51 ms (19660800 values)
+1 EXHAUSTIVE    31.85 ms, first run   199.04 ms (19660800 values)
+2 HEURISTIC    35.18 ms, first run   208.23 ms (19660800 values)
+2 EXHAUSTIVE    34.51 ms, first run   206.99 ms (19660800 values)
+3 HEURISTIC    31.30 ms, first run   211.97 ms (19660800 values)
+3 EXHAUSTIVE    32.03 ms, first run   203.03 ms (19660800 values)
+4 HEURISTIC    32.89 ms, first run   195.98 ms (19660800 values)
+4 EXHAUSTIVE    32.42 ms, first run   199.20 ms (19660800 values)
+5 HEURISTIC    33.05 ms, first run   198.69 ms (19660800 values)
+5 EXHAUSTIVE    32.09 ms, first run   199.99 ms (19660800 values)
