@@ -49,6 +49,23 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
+      - name: Action pins and workflow shape
+        # Deliberately the same two commands `docs.yml` already runs on the same
+        # push, and only in this job. The reason is where the answer is needed,
+        # not coverage: this file is one of the artefacts check-workflows.py
+        # validates, and a `uses:` without a commit or a `run:` block that stopped
+        # parsing here is what keeps this very job from starting - the failure
+        # would then be reported by a different workflow under the name
+        # "check-docs", while the reader is asking why the suites never ran. It
+        # costs a second, needs no network and no runtime download, so it goes
+        # first. It is also the copy that survives `docs.yml` gaining a path
+        # filter: that is the file a future edit is most likely to narrow to
+        # "docs only", because every other step here needs the machine a filter
+        # would skip.
+        run: |
+          python3 tools/check-workflows.py --selftest
+          python3 tools/check-workflows.py
+
       - name: ONNX Runtime
         # Without this the inference template is skipped by name, and a CI run
         # that skips it fails anyway - which is the point of the shared action.

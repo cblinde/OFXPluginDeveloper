@@ -815,7 +815,14 @@ Each workflow runs its half of the gate once per push: `docs.yml` checks the
 documents, their coverage against `4290e68`, the two tool self-tests and the shell
 syntax, `linux.yml` runs the template suites, the sanitizers and the glibc stage.
 The `templates` job that ran the whole gate a second time was deleted, so a green
-tick has one meaning and one runtime download. Both files carry
+tick has one meaning and one runtime download.
+
+One check is in both on purpose: `check-workflows.py` reads the files these jobs
+are made of, so it runs in `docs.yml` as the fast gate **and** as the first step
+of `linux.yml`'s `suites` job - where the file it validates is the one whose
+broken pin would stop the job from starting, and the only report would be a
+`check-docs` failure for a reason nobody looking for missing suites reads. Each
+run costs a second and neither downloads anything. Both files carry
 `permissions: contents: read`, a `concurrency` group that cancels a superseded
 pull-request run and leaves `main` alone, and pinned actions by commit SHA with
 the tag in a trailing comment (`actions/checkout` v4.4.0,
