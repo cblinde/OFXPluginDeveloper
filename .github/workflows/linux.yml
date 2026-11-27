@@ -1,360 +1,380 @@
-name: linux
-
-# What this workflow adds to docs.yml: the same Linux runs that produced
-# evidence/2026-11-26-linux/, executed on every push instead of by hand.
-#
-#   suites             CPU_ONLY=1, ONNX Runtime from NuGet, the whole gate, all
-#                      four templates. The gate includes the per-bundle glibc
-#                      stage, so a bundle that needs a newer glibc than its
-#                      template targets fails here (2.17 for the reference, CUDA
-#                      and OpenCL plug-ins, 2.32 for the inference bundle -
-#                      references/cmake-and-linking.md §5). The OpenCL template
-#                      runs its suite against a PoCL CPU device, because a run
-#                      that never had a device is not a pass: `run-tests.sh`
-#                      fails CI by name when that suite found nothing to render
-#                      on, unless ALLOW_SKIPPED_TEMPLATES=1 says so out loud.
-#   thread-sanitizer   the three templates whose scripts carry SANITIZE, under
-#                      TSan, with ASLR off for the process tree - see the comment
-#                      on that step.
-#   address-undefined  the same three under ASan+UBSan, which needs no ASLR
-#                      change and finds the leaks TSan does not look for.
-#
-# The sanitizer jobs instrument the harnesses; the plug-in images are ordinary
-# builds, because that is what `run-tests.sh` does when SANITIZE is set. What
-# they cover is the host contract - two load/unload cycles, several live
-# instances and concurrent renders per profile - which is where per-instance
-# state lives.
-#
-# No runner has a GPU, so nothing here claims a kernel ran. GPU work stays on a
-# machine with a device; what this workflow covers is everything that does not
-# need one.
-#
-# The sanitizer jobs cover three templates, and that is a property of the
-# templates rather than of the runner: `minimal-opencl-ofx`'s scripts take no
-# SANITIZE variable - its suite compiles its own binary from a fixed command line
-# - so instrumenting it would produce a non-instrumented build and the
-# `sanitizer: ...` grep on its log would fail for the wrong reason. Everything
-# that does not need the sanitizer covers it: the suites job builds and tests it
-# through `run-tests.sh` (device half NOT RUN without a device), and the analysis
-# and memcheck steps name it explicitly.
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-# Least privilege: the jobs read the tree and upload their own logs.
-permissions:
-  contents: read
-
-concurrency:
-  # A branch and its pull request are one line of work, and a newer push
-  # supersedes the run it replaces - three template suites twice over is what a
-  # redundant run costs. `main` is not cancelled, so the log for a merged commit
-  # still exists when someone reads it later.
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-jobs:
-  suites:
-    runs-on: ubuntu-latest
-    env:
-      CPU_ONLY: "1"
-      RUN_VALGRIND: "0"
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
-
-      - name: Action pins and workflow shape
-        # Deliberately the same two commands `docs.yml` already runs on the same
-        # push, and only in this job. The reason is where the answer is needed,
-        # not coverage: this file is one of the artefacts check-workflows.py
-        # validates, and a `uses:` without a commit or a `run:` block that stopped
-        # parsing here is what keeps this very job from starting - the failure
-        # would then be reported by a different workflow under the name
-        # "check-docs", while the reader is asking why the suites never ran. It
-        # costs a second, needs no network and no runtime download, so it goes
-        # first. It is also the copy that survives `docs.yml` gaining a path
-        # filter: that is the file a future edit is most likely to narrow to
-        # "docs only", because every other step here needs the machine a filter
-        # would skip.
-        #
-        # It is moreover the same pair `run-tests.sh` runs in its tool self-test
-        # stage later in this very job, so the pair appears twice in the job -
-        # deliberately, and for the position rather than the coverage. Here it
-        # fails seconds after checkout, before the ONNX Runtime download and
-        # before the gate that takes minutes: a pin that lost its commit, a `run:`
-        # that stopped parsing or a workflow whose YAML broke is then the first
-        # line of the log, not a stage inside a suite that has already spent its
-        # download.
-        run: |
-          python3 tools/check-workflows.py --selftest
-          python3 tools/check-workflows.py
-
-      - name: ONNX Runtime
-        # Without this the inference template is skipped by name, and a CI run
-        # that skips it fails anyway - which is the point of the shared action.
-        uses: ./.github/actions/onnx-runtime
-
-      - name: Runtime API floor
-        # Says which part is too old in one line, and catches a package URL that
-        # slides back to a runtime the template no longer targets.
-        run: python3 tools/check-runtime.py "$ONNXRUNTIME_ROOT" --require-api 18
-
-      - name: Python side of the fixtures
-        # run-tests.sh names the fixture stage skipped when numpy/onnx/
-        # onnxruntime are absent, and a stage that is skipped on every run is a
-        # stage nobody notices breaking. This keeps it running.
-        run: python3 -m pip install --quiet --disable-pip-version-check onnx onnxruntime numpy
-
-      - name: An OpenCL device for that suite
-        # Nobody hands a GitHub runner a GPU, so the OpenCL template's suite would
-        # exit 2 (no device) on every push and the gate would owe the reader a
-        # paragraph instead of a result. PoCL is the CPU implementation this
-        # repository already measured against (references/cmake-and-linking.md
-        # §5) and names in its own skip message; the ICD package pulls the kernel
-        # headers in through Depends:. If the install fails, the suite reports its
-        # no-device exit and `run-tests.sh` fails the run by name - this step does
-        # not turn the hole into a pass.
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends pocl-opencl-icd clinfo
-          clinfo -l
-
-      - name: Template suites (the whole gate)
-        shell: bash
-        run: |
-          set -o pipefail
-          ./run-tests.sh 2>&1 | tee run-tests.log
-
-      - name: The glibc stage really ran
-        # A stage that silently stops existing is how the inference bundle stayed
-        # above its floor while every run looked green. The bounds themselves live
-        # in run-tests.sh and in references/cmake-and-linking.md §5; this step only
-        # refuses a log that lost the stage.
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -q '^== glibc bound: every built bundle' run-tests.log
-          for bundle in minimal-ofx minimal-cuda-ofx minimal-opencl-ofx onnx-inference-ofx; do
-            grep -q -- "^-- ${bundle}: glibc <= " run-tests.log
-          done
-          # The OpenCL template's test stage has to exist whether or not this
-          # runner has a device: one summary line says the suite ran, the other
-          # says it did not, and losing both would mean the stage vanished.
-          grep -qE '^== test: minimal-opencl-ofx' run-tests.log
-          grep -qE '^  (OpenCL device path|NOT RUN: OpenCL device path)' run-tests.log
-
-      - name: Upload the log
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-        with:
-          name: linux-suites-log
-          path: run-tests.log
+name: linux
+
+# What this workflow adds to docs.yml: the same Linux runs that produced
+# evidence/2026-11-26-linux/, executed on every push instead of by hand.
+#
+#   suites             CPU_ONLY=1, ONNX Runtime from NuGet, the whole gate, all
+#                      four templates. The gate includes the per-bundle glibc
+#                      stage, so a bundle that needs a newer glibc than its
+#                      template targets fails here (2.17 for the reference, CUDA
+#                      and OpenCL plug-ins, 2.32 for the inference bundle -
+#                      references/cmake-and-linking.md §5). The OpenCL template
+#                      runs its suite against a PoCL CPU device, because a run
+#                      that never had a device is not a pass: `run-tests.sh`
+#                      fails CI by name when that suite found nothing to render
+#                      on, unless ALLOW_SKIPPED_TEMPLATES=1 says so out loud.
+#   thread-sanitizer   the three templates whose scripts carry SANITIZE, under
+#                      TSan, with ASLR off for the process tree - see the comment
+#                      on that step.
+#   address-undefined  the same three under ASan+UBSan, which needs no ASLR
+#                      change and finds the leaks TSan does not look for.
+#
+# The sanitizer jobs instrument the harnesses; the plug-in images are ordinary
+# builds, because that is what `run-tests.sh` does when SANITIZE is set. What
+# they cover is the host contract - two load/unload cycles, several live
+# instances and concurrent renders per profile - which is where per-instance
+# state lives.
+#
+# No runner has a GPU, so nothing here claims a kernel ran. GPU work stays on a
+# machine with a device; what this workflow covers is everything that does not
+# need one.
+#
+# The sanitizer jobs cover three templates, and that is a property of the
+# templates rather than of the runner: `minimal-opencl-ofx`'s scripts take no
+# SANITIZE variable - its suite compiles its own binary from a fixed command line
+# - so instrumenting it would produce a non-instrumented build and the
+# `sanitizer: ...` grep on its log would fail for the wrong reason. Everything
+# that does not need the sanitizer covers it: the suites job builds and tests it
+# through `run-tests.sh` (device half NOT RUN without a device), and the analysis
+# and memcheck steps name it explicitly.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: the jobs read the tree and upload their own logs.
+permissions:
+  contents: read
+
+concurrency:
+  # A branch and its pull request are one line of work, and a newer push
+  # supersedes the run it replaces - three template suites twice over is what a
+  # redundant run costs. `main` is not cancelled, so the log for a merged commit
+  # still exists when someone reads it later.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  suites:
+    runs-on: ubuntu-latest
+    env:
+      CPU_ONLY: "1"
+      RUN_VALGRIND: "0"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Action pins and workflow shape
+        # Deliberately the same two commands `docs.yml` already runs on the same
+        # push, and only in this job. The reason is where the answer is needed,
+        # not coverage: this file is one of the artefacts check-workflows.py
+        # validates, and a `uses:` without a commit or a `run:` block that stopped
+        # parsing here is what keeps this very job from starting - the failure
+        # would then be reported by a different workflow under the name
+        # "check-docs", while the reader is asking why the suites never ran. It
+        # costs a second, needs no network and no runtime download, so it goes
+        # first. It is also the copy that survives `docs.yml` gaining a path
+        # filter: that is the file a future edit is most likely to narrow to
+        # "docs only", because every other step here needs the machine a filter
+        # would skip.
+        #
+        # It is moreover the same pair `run-tests.sh` runs in its tool self-test
+        # stage later in this very job, so the pair appears twice in the job -
+        # deliberately, and for the position rather than the coverage. Here it
+        # fails seconds after checkout, before the ONNX Runtime download and
+        # before the gate that takes minutes: a pin that lost its commit, a `run:`
+        # that stopped parsing or a workflow whose YAML broke is then the first
+        # line of the log, not a stage inside a suite that has already spent its
+        # download.
+        run: |
+          python3 tools/check-workflows.py --selftest
+          python3 tools/check-workflows.py
+
+      - name: ONNX Runtime
+        # Without this the inference template is skipped by name, and a CI run
+        # that skips it fails anyway - which is the point of the shared action.
+        uses: ./.github/actions/onnx-runtime
+
+      - name: Runtime API floor
+        # Says which part is too old in one line, and catches a package URL that
+        # slides back to a runtime the template no longer targets.
+        run: python3 tools/check-runtime.py "$ONNXRUNTIME_ROOT" --require-api 18
+
+      - name: Python side of the fixtures
+        # run-tests.sh names the fixture stage skipped when numpy/onnx/
+        # onnxruntime are absent, and a stage that is skipped on every run is a
+        # stage nobody notices breaking. This keeps it running.
+        run: python3 -m pip install --quiet --disable-pip-version-check onnx onnxruntime numpy
+
+      - name: An OpenCL device for that suite
+        # Nobody hands a GitHub runner a GPU, so the OpenCL template's suite would
+        # exit 2 (no device) on every push and the gate would owe the reader a
+        # paragraph instead of a result. PoCL is the CPU implementation this
+        # repository already measured against (references/cmake-and-linking.md
+        # §5) and names in its own skip message; the ICD package pulls the kernel
+        # headers in through Depends:. If the install fails, the suite reports its
+        # no-device exit and `run-tests.sh` fails the run by name - this step does
+        # not turn the hole into a pass.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends pocl-opencl-icd clinfo
+          clinfo -l
+
+      - name: Template suites (the whole gate)
+        shell: bash
+        run: |
+          set -o pipefail
+          ./run-tests.sh 2>&1 | tee run-tests.log
+
+      - name: The glibc stage really ran
+        # A stage that silently stops existing is how the inference bundle stayed
+        # above its floor while every run looked green. The bounds themselves live
+        # in run-tests.sh and in references/cmake-and-linking.md §5; this step only
+        # refuses a log that lost the stage.
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^== glibc bound: every built bundle' run-tests.log
+          for bundle in minimal-ofx minimal-cuda-ofx minimal-opencl-ofx onnx-inference-ofx; do
+            grep -q -- "^-- ${bundle}: glibc <= " run-tests.log
+          done
+          # The OpenCL template's test stage has to exist whether or not this
+          # runner has a device: one summary line says the suite ran, the other
+          # says it did not, and losing both would mean the stage vanished.
+          grep -qE '^== test: minimal-opencl-ofx' run-tests.log
+          grep -qE '^  (OpenCL device path|NOT RUN: OpenCL device path)' run-tests.log
+
+      - name: Upload the log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: linux-suites-log
+          path: run-tests.log
+          if-no-files-found: warn
+
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: ONNX Runtime
+        uses: ./.github/actions/onnx-runtime
+
+      - name: ThreadSanitizer, the three templates that carry SANITIZE
+        # Why ASLR has to be off, in one place:
+        #
+        # TSan reserves a large fixed shadow-memory region and maps the
+        # application into addresses it chooses. Current Ubuntu kernels randomise
+        # mmap addresses with 32 bits of entropy (vm.mmap_rnd_bits=32), which puts
+        # the process or a shared library where that shadow region has to go; TSan
+        # then aborts before the first check with
+        #
+        #   FATAL: ThreadSanitizer: unexpected memory mapping 0x...
+        #
+        # which is an environment clash, not a finding in this repository (the
+        # abort was reproduced here on 2026-11-26, evidence/2026-11-26-linux/report.txt
+        # §F5). `setarch -R` sets ADDR_NO_RANDOMIZE for the whole process tree, so
+        # every child - the build, the harness, the dlopen'd plug-in - runs with
+        # randomisation off. Without it this job fails for the wrong reason.
+        #
+        # Each template is its own run and its own log, so a failure names the
+        # template instead of the job. The grep refuses a run that "succeeded"
+        # without the sanitizer actually being on: all three suites print the
+        # sanitizer in their header.
+        shell: bash
+        run: |
+          set -euo pipefail
+          tsan_one() {
+            name="$1"
+            shift
+            echo "== ${name}"
+            setarch "$(uname -m)" -R env "$@" 2>&1 | tee "tsan-${name}.log"
+            grep -q 'sanitizer: thread' "tsan-${name}.log"
+          }
+          tsan_one minimal-ofx \
+            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
+            ./templates/minimal-ofx/test/run-tests.sh
+          tsan_one minimal-cuda-ofx \
+            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
+            ./templates/minimal-cuda-ofx/test/run-tests.sh
+          # The inference contract stages drive the bundle built by build.sh; the
+          # sanitized pipeline target gets its own tree inside the suite.
+          ( cd templates/onnx-inference-ofx && ./build.sh )
+          tsan_one onnx-inference-ofx \
+            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
+            ./templates/onnx-inference-ofx/test/run-tests.sh
+
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: linux-tsan-logs
+          path: tsan-*.log
+          if-no-files-found: warn
+
+  address-undefined:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: ONNX Runtime
+        uses: ./.github/actions/onnx-runtime
+
+      - name: AddressSanitizer and UndefinedBehaviorSanitizer, the same three
+        # No setarch here: ASan takes its shadow mapping from the process's own
+        # address space and does not collide with high-entropy ASLR the way TSan's
+        # fixed layout does. The suites set ASAN_OPTIONS and UBSAN_OPTIONS
+        # themselves (leak detection on, UBSan stops at the first error), so this
+        # step only has to prove the sanitizer was really in the build.
+        shell: bash
+        run: |
+          set -euo pipefail
+          asan_one() {
+            name="$1"
+            shift
+            echo "== ${name}"
+            env "$@" 2>&1 | tee "asan-${name}.log"
+            grep -q 'sanitizer: address,undefined' "asan-${name}.log"
+          }
+          asan_one minimal-ofx \
+            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
+            ./templates/minimal-ofx/test/run-tests.sh
+          asan_one minimal-cuda-ofx \
+            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
+            ./templates/minimal-cuda-ofx/test/run-tests.sh
+          ( cd templates/onnx-inference-ofx && ./build.sh )
+          asan_one onnx-inference-ofx \
+            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
+            ./templates/onnx-inference-ofx/test/run-tests.sh
+
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: linux-asan-logs
+          path: asan-*.log
+          if-no-files-found: warn
+
+  static-analysis:
+    # The two checks that were "skipped, not clean" everywhere they ran by hand:
+    # memcheck wants libc6-dbg, cppcheck wants its cfg where the package puts it, and
+    # this repository's own container has neither root nor sudo. A runner has both,
+    # so this job turns two skipped lines into results - and each step proves the
+    # tool actually ran, because an analysis that silently skipped looks clean.
+    # memcheck runs over all four suites; the reference one is the template a
+    # reader copies, so a leak there would be copied too.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: ONNX Runtime
+        uses: ./.github/actions/onnx-runtime
+
+      - name: valgrind, cppcheck and the debug symbols
+        # `apt-get install valgrind` does not pull libc6-dbg, and memcheck without it
+        # aborts before the first check - "a function redirection which is mandatory
+        # ... cannot be set up", the memcmp redirection in ld-linux. cppcheck's cfg
+        # ships in the package; the Debian build looks for it under
+        # /usr/lib/x86_64-linux-gnu/cppcheck, a directory apt creates and dpkg -x does
+        # not. Both facts are measured in evidence/2026-11-26-linux/valgrind-cppcheck.log.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            valgrind libc6-dbg cppcheck shellcheck
+
+      - name: The tools really work
+        # memcheck on /bin/true rather than a version comparison: the failure this
+        # guards against (missing debuginfo) is what it hits first, and valgrind
+        # 3.27.1 - on the pool head, not on 24.04 - crashes in its debuginfo stage on
+        # this glibc, so "a valgrind is installed" says nothing.
+        shell: bash
+        run: |
+          set -euo pipefail
+          valgrind --version
+          valgrind --error-exitcode=1 --leak-check=full /bin/true
+          cppcheck --version
+
+      - name: cppcheck and shellcheck, all four templates
+        # REQUIRE_ANALYSIS=1 turns a missing tool into a failure instead of a skip,
+        # and the grep refuses a run that never printed its summary - the four
+        # templates had their own analysis entry points so that a finding names the
+        # template it is in. Static analysis needs no device, so the OpenCL one is
+        # in this loop like the others.
+        shell: bash
+        run: |
+          set -euo pipefail
+          for template in minimal-ofx minimal-cuda-ofx minimal-opencl-ofx onnx-inference-ofx; do
+            echo "== ${template}"
+            REQUIRE_ANALYSIS=1 "./templates/${template}/test/run-analysis.sh" 2>&1 \
+              | tee "analysis-${template}.log"
+            grep -qF 'static analysis: clean' "analysis-${template}.log"
+          done
+
+      - name: memcheck, all four suites
+        # The greps refuse a run whose valgrind stage disappeared or whose passes
+        # stopped happening: the suites print the stage number, and a stage that
+        # stops existing would otherwise just shorten the log. The reference suite
+        # runs memcheck once per host profile, so it owes three clean summaries;
+        # the inference suite covers the whole-frame and the tiled render, so it
+        # owes two.
+        shell: bash
+        run: |
+          set -o pipefail
+          RUN_VALGRIND=1 ./templates/minimal-ofx/test/run-tests.sh 2>&1 | tee memcheck-reference.log
+          grep -qF '== [4/4] valgrind memcheck' memcheck-reference.log
+          grep -qF 'contract_test: 118 checks, 0 failed' memcheck-reference.log
+          test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-reference.log)" = 3
+          CPU_ONLY=1 RUN_VALGRIND=1 ./templates/minimal-cuda-ofx/test/run-tests.sh 2>&1 | tee memcheck-cuda.log
+          grep -qF '== [5/5] valgrind memcheck' memcheck-cuda.log
+          ( cd templates/onnx-inference-ofx && ./build.sh )
+          CPU_ONLY=1 RUN_VALGRIND=1 ./templates/onnx-inference-ofx/test/run-tests.sh 2>&1 | tee memcheck-inference.log
+          grep -qF '== [5/5] valgrind memcheck' memcheck-inference.log
+          grep -qF 'contract_test: 90 checks, 0 failed' memcheck-inference.log
+          test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-inference.log)" = 2
+          # The fourth suite: its no-device exit code (2) is the suite's word for
+          # "this machine has nothing to run it on". The contract half still goes
+          # through memcheck without a device, so that pass is credited and the
+          # device half is reported as NOT RUN instead of failing the job.
+          opencl_status=0
+          RUN_VALGRIND=1 ./templates/minimal-opencl-ofx/test/run-tests.sh \
+            > memcheck-opencl.log 2>&1 || opencl_status=$?
+          cat memcheck-opencl.log
+          grep -qF '== [6/6] valgrind memcheck' memcheck-opencl.log
+          grep -qF 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-opencl.log
+          if [[ "${opencl_status}" == 2 ]]; then
+            echo "NOT RUN: minimal-opencl-ofx - the OpenCL suite needs a device"
+          else
+            [[ "${opencl_status}" == 0 ]] || exit "${opencl_status}"
+            grep -qE 'opencl_suite: [0-9]+ checks, 0 failed' memcheck-opencl.log
+            test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-opencl.log)" = 2
+          fi
+
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: linux-analysis-logs
+
+      # templates/minimal-vulkan-ofx/ is built in windows.yml, CPU-only, with the
+      # reason spelled out there. Not built here on purpose: the template needs
+      # vulkan/vulkan.h and glslang at configure time and this image has neither,
+      # and a -DOFXPLUGIN_VULKAN=OFF build would exercise the OFX shell only -
+      # which the reference template already covers - while looking like a Vulkan
+      # row. The pipeline is measured on a machine with a device
+      # (evidence/2026-11-27-windows/vulkan-selftest.log).
+          path: |
+            memcheck-*.log
+            analysis-*.log
           if-no-files-found: warn
 
-  thread-sanitizer:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
-
-      - name: ONNX Runtime
-        uses: ./.github/actions/onnx-runtime
-
-      - name: ThreadSanitizer, the three templates that carry SANITIZE
-        # Why ASLR has to be off, in one place:
-        #
-        # TSan reserves a large fixed shadow-memory region and maps the
-        # application into addresses it chooses. Current Ubuntu kernels randomise
-        # mmap addresses with 32 bits of entropy (vm.mmap_rnd_bits=32), which puts
-        # the process or a shared library where that shadow region has to go; TSan
-        # then aborts before the first check with
-        #
-        #   FATAL: ThreadSanitizer: unexpected memory mapping 0x...
-        #
-        # which is an environment clash, not a finding in this repository (the
-        # abort was reproduced here on 2026-11-26, evidence/2026-11-26-linux/report.txt
-        # §F5). `setarch -R` sets ADDR_NO_RANDOMIZE for the whole process tree, so
-        # every child - the build, the harness, the dlopen'd plug-in - runs with
-        # randomisation off. Without it this job fails for the wrong reason.
-        #
-        # Each template is its own run and its own log, so a failure names the
-        # template instead of the job. The grep refuses a run that "succeeded"
-        # without the sanitizer actually being on: all three suites print the
-        # sanitizer in their header.
+      - name: Vulkan template is not built on this runner
+        # Deliberate: the template needs vulkan/vulkan.h and glslang at
+        # configure time and this image has neither. A -DOFXPLUGIN_VULKAN=OFF
+        # build would exercise the OFX shell only, which the reference template
+        # already covers, while looking like a Vulkan row. windows.yml builds
+        # that shell with the same switch and says the same thing; the pipeline
+        # is measured on a machine with a device
+        # (evidence/2026-11-27-windows/vulkan-selftest.log).
         shell: bash
         run: |
-          set -euo pipefail
-          tsan_one() {
-            name="$1"
-            shift
-            echo "== ${name}"
-            setarch "$(uname -m)" -R env "$@" 2>&1 | tee "tsan-${name}.log"
-            grep -q 'sanitizer: thread' "tsan-${name}.log"
-          }
-          tsan_one minimal-ofx \
-            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
-            ./templates/minimal-ofx/test/run-tests.sh
-          tsan_one minimal-cuda-ofx \
-            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
-            ./templates/minimal-cuda-ofx/test/run-tests.sh
-          # The inference contract stages drive the bundle built by build.sh; the
-          # sanitized pipeline target gets its own tree inside the suite.
-          ( cd templates/onnx-inference-ofx && ./build.sh )
-          tsan_one onnx-inference-ofx \
-            CPU_ONLY=1 SANITIZE=thread RUN_VALGRIND=0 \
-            ./templates/onnx-inference-ofx/test/run-tests.sh
-
-      - name: Upload the logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-        with:
-          name: linux-tsan-logs
-          path: tsan-*.log
-          if-no-files-found: warn
-
-  address-undefined:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
-
-      - name: ONNX Runtime
-        uses: ./.github/actions/onnx-runtime
-
-      - name: AddressSanitizer and UndefinedBehaviorSanitizer, the same three
-        # No setarch here: ASan takes its shadow mapping from the process's own
-        # address space and does not collide with high-entropy ASLR the way TSan's
-        # fixed layout does. The suites set ASAN_OPTIONS and UBSAN_OPTIONS
-        # themselves (leak detection on, UBSan stops at the first error), so this
-        # step only has to prove the sanitizer was really in the build.
-        shell: bash
-        run: |
-          set -euo pipefail
-          asan_one() {
-            name="$1"
-            shift
-            echo "== ${name}"
-            env "$@" 2>&1 | tee "asan-${name}.log"
-            grep -q 'sanitizer: address,undefined' "asan-${name}.log"
-          }
-          asan_one minimal-ofx \
-            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
-            ./templates/minimal-ofx/test/run-tests.sh
-          asan_one minimal-cuda-ofx \
-            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
-            ./templates/minimal-cuda-ofx/test/run-tests.sh
-          ( cd templates/onnx-inference-ofx && ./build.sh )
-          asan_one onnx-inference-ofx \
-            CPU_ONLY=1 SANITIZE=address,undefined RUN_VALGRIND=0 \
-            ./templates/onnx-inference-ofx/test/run-tests.sh
-
-      - name: Upload the logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-        with:
-          name: linux-asan-logs
-          path: asan-*.log
-          if-no-files-found: warn
-
-  static-analysis:
-    # The two checks that were "skipped, not clean" everywhere they ran by hand:
-    # memcheck wants libc6-dbg, cppcheck wants its cfg where the package puts it, and
-    # this repository's own container has neither root nor sudo. A runner has both,
-    # so this job turns two skipped lines into results - and each step proves the
-    # tool actually ran, because an analysis that silently skipped looks clean.
-    # memcheck runs over all four suites; the reference one is the template a
-    # reader copies, so a leak there would be copied too.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
-
-      - name: ONNX Runtime
-        uses: ./.github/actions/onnx-runtime
-
-      - name: valgrind, cppcheck and the debug symbols
-        # `apt-get install valgrind` does not pull libc6-dbg, and memcheck without it
-        # aborts before the first check - "a function redirection which is mandatory
-        # ... cannot be set up", the memcmp redirection in ld-linux. cppcheck's cfg
-        # ships in the package; the Debian build looks for it under
-        # /usr/lib/x86_64-linux-gnu/cppcheck, a directory apt creates and dpkg -x does
-        # not. Both facts are measured in evidence/2026-11-26-linux/valgrind-cppcheck.log.
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            valgrind libc6-dbg cppcheck shellcheck
-
-      - name: The tools really work
-        # memcheck on /bin/true rather than a version comparison: the failure this
-        # guards against (missing debuginfo) is what it hits first, and valgrind
-        # 3.27.1 - on the pool head, not on 24.04 - crashes in its debuginfo stage on
-        # this glibc, so "a valgrind is installed" says nothing.
-        shell: bash
-        run: |
-          set -euo pipefail
-          valgrind --version
-          valgrind --error-exitcode=1 --leak-check=full /bin/true
-          cppcheck --version
-
-      - name: cppcheck and shellcheck, all four templates
-        # REQUIRE_ANALYSIS=1 turns a missing tool into a failure instead of a skip,
-        # and the grep refuses a run that never printed its summary - the four
-        # templates had their own analysis entry points so that a finding names the
-        # template it is in. Static analysis needs no device, so the OpenCL one is
-        # in this loop like the others.
-        shell: bash
-        run: |
-          set -euo pipefail
-          for template in minimal-ofx minimal-cuda-ofx minimal-opencl-ofx onnx-inference-ofx; do
-            echo "== ${template}"
-            REQUIRE_ANALYSIS=1 "./templates/${template}/test/run-analysis.sh" 2>&1 \
-              | tee "analysis-${template}.log"
-            grep -qF 'static analysis: clean' "analysis-${template}.log"
-          done
-
-      - name: memcheck, all four suites
-        # The greps refuse a run whose valgrind stage disappeared or whose passes
-        # stopped happening: the suites print the stage number, and a stage that
-        # stops existing would otherwise just shorten the log. The reference suite
-        # runs memcheck once per host profile, so it owes three clean summaries;
-        # the inference suite covers the whole-frame and the tiled render, so it
-        # owes two.
-        shell: bash
-        run: |
-          set -o pipefail
-          RUN_VALGRIND=1 ./templates/minimal-ofx/test/run-tests.sh 2>&1 | tee memcheck-reference.log
-          grep -qF '== [4/4] valgrind memcheck' memcheck-reference.log
-          grep -qF 'contract_test: 118 checks, 0 failed' memcheck-reference.log
-          test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-reference.log)" = 3
-          CPU_ONLY=1 RUN_VALGRIND=1 ./templates/minimal-cuda-ofx/test/run-tests.sh 2>&1 | tee memcheck-cuda.log
-          grep -qF '== [5/5] valgrind memcheck' memcheck-cuda.log
-          ( cd templates/onnx-inference-ofx && ./build.sh )
-          CPU_ONLY=1 RUN_VALGRIND=1 ./templates/onnx-inference-ofx/test/run-tests.sh 2>&1 | tee memcheck-inference.log
-          grep -qF '== [5/5] valgrind memcheck' memcheck-inference.log
-          grep -qF 'contract_test: 90 checks, 0 failed' memcheck-inference.log
-          test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-inference.log)" = 2
-          # The fourth suite: its no-device exit code (2) is the suite's word for
-          # "this machine has nothing to run it on". The contract half still goes
-          # through memcheck without a device, so that pass is credited and the
-          # device half is reported as NOT RUN instead of failing the job.
-          opencl_status=0
-          RUN_VALGRIND=1 ./templates/minimal-opencl-ofx/test/run-tests.sh \
-            > memcheck-opencl.log 2>&1 || opencl_status=$?
-          cat memcheck-opencl.log
-          grep -qF '== [6/6] valgrind memcheck' memcheck-opencl.log
-          grep -qF 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-opencl.log
-          if [[ "${opencl_status}" == 2 ]]; then
-            echo "NOT RUN: minimal-opencl-ofx - the OpenCL suite needs a device"
-          else
-            [[ "${opencl_status}" == 0 ]] || exit "${opencl_status}"
-            grep -qE 'opencl_suite: [0-9]+ checks, 0 failed' memcheck-opencl.log
-            test "$(grep -c 'ERROR SUMMARY: 0 errors from 0 contexts' memcheck-opencl.log)" = 2
-          fi
-
-      - name: Upload the logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-        with:
-          name: linux-analysis-logs
-          path: |
-            memcheck-*.log
-            analysis-*.log
-          if-no-files-found: warn
+          echo "not built here: templates/minimal-vulkan-ofx/ - no Vulkan headers or glslang on the runner; windows.yml builds it CPU-only."

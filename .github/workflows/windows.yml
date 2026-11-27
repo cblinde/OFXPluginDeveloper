@@ -216,6 +216,26 @@ jobs:
           )
           if errorlevel 1 exit /b 1
 
+      - name: Vulkan template, CPU path (the device path needs an SDK this runner lacks)
+        # The fifth template: templates/minimal-vulkan-ofx. It needs vulkan/vulkan.h
+        # and a shader compiler at configure time and windows-latest has neither,
+        # so this builds the same OFX shell with -DOFXPLUGIN_VULKAN=OFF: artifact
+        # check, contract suite and install step run, and the device self-test
+        # reports NOT VERIFIED by design - exit 2 is a notice, anything else is the
+        # verdict. The pipeline itself is measured where there is a GPU
+        # (evidence/2026-11-27-windows/vulkan-selftest.log).
+        shell: cmd
+        run: |
+          set "OFXPLUGIN_VULKAN=OFF"
+          call templates\minimal-vulkan-ofx\build.bat Release || exit /b 1
+          call templates\minimal-vulkan-ofx\test\run-tests.bat Release nobuild
+          if errorlevel 3 exit /b 1
+          if errorlevel 2 (
+            echo ::notice title=No Vulkan device on this runner::the OFX shell and the artifact check passed; the self-test needs a device.
+            exit /b 0
+          )
+          if errorlevel 1 exit /b 1
+
       - name: Negative controls
         shell: cmd
         run: testkit\run-negative-controls.bat || exit /b 1

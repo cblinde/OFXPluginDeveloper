@@ -902,6 +902,7 @@ ONNXRUNTIME_ROOT=/path/to/ort ./run-tests.sh
 cd templates/minimal-ofx && ./build.sh && ./test/run-tests.sh
 cd templates/minimal-cuda-ofx && ./build.sh && ./test/run-tests.sh
 cd templates/minimal-opencl-ofx && ./build.sh && ./test/run-tests.sh   # needs an OpenCL device
+cd templates/minimal-vulkan-ofx && ./build.sh && ./test/run-tests.sh   # needs Vulkan headers + glslang, and a device for the self-test
 #   Windows: .\build.bat Release, then test\run-tests.bat (the driver's
 #   OpenCL.dll, no SDK and no import library)
 cd templates/onnx-inference-ofx && ONNXRUNTIME_ROOT=/path/to/ort \

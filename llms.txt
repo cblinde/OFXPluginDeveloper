@@ -41,6 +41,7 @@
 - `templates/minimal-cuda-ofx/`
 - `templates/minimal-ofx/`
 - `templates/minimal-opencl-ofx/`
+- `templates/minimal-vulkan-ofx/`
 - `templates/onnx-inference-ofx/`
 
 ## Optional

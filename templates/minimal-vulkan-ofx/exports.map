@@ -1,0 +1,18 @@
+/* Export list for the reference plug-in (GNU ld / gold / lld on Linux).
+ *
+ * -fvisibility=hidden already hides the Support library's strong symbols, but it
+ * does not hide weak template instantiations: without this script the artifact
+ * still exports five weak std::vector<OFX::...> helpers (measured: 7 defined
+ * dynamic symbols instead of 2). A version script makes the export set explicit
+ * and compiler-independent, which is what a host's loader should see.
+ *
+ * macOS uses -exported_symbols_list, Windows a .def file; see BUILD_PLAYBOOK.md
+ * §3.5.
+ */
+{
+  global:
+    OfxGetNumberOfPlugins;
+    OfxGetPlugin;
+  local:
+    *;
+};

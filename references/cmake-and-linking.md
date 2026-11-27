@@ -522,6 +522,40 @@ pocl-opencl-icd` pulls the common package through `Depends:`; a `dpkg -x`
 install has to name it.
 
 
+### Vulkan without the SDK's import library
+
+A Vulkan path in a plug-in looks like the OpenCL one above from the host's side
+- it gets CPU images and nothing else - and unlike OpenCL there is no queue to
+borrow: the plug-in creates the instance, the device and the queue itself
+(`templates/minimal-vulkan-ofx`, which is the working version of this section).
+
+What that costs at build time, and what it does not:
+
+- **Headers are needed, the import library is not.** `vulkan_core.h` defines the
+  structs and the `PFN_` types; every entry point is then resolved with
+  `LoadLibraryW(L"vulkan-1.dll")` and `vkGetInstanceProcAddr`. A bundle built this
+  way has no `vulkan-1.lib` in it and no Vulkan DLL beside it, so a machine without
+  a driver fails inside `render()` with a reason the plug-in reports, not at
+  `LoadLibrary` with error 126 (**[V]**, the template's artifact lists only
+  `KERNEL32`, `MSVCP140`, `VCRUNTIME140*` and the CRT).
+- **A shader compiler is a build dependency, not a run-time one.** `glslc` or
+  `glslang` turns `shaders/gain.comp` into SPIR-V, and `cmake/spv-header.cmake`
+  turns that into a header the module embeds - so there is no `.spv` in the bundle
+  and no path to resolve at run time.
+- **`find_package(Vulkan)` finds only a LunarG install.** The template takes
+  `-DVULKAN_INCLUDE_DIR` and `-DVULKAN_SHADER_COMPILER` for exactly the case this
+  machine is in (headers from Vulkan-Headers, `glslang` from its release zip), the
+  same pair `Gyom03/rife-ofx` passes by hand for its NCNN backend (**[B]**).
+- **Never destroy the device from a static destructor.** On Windows the host
+  unloads the `.ofx` under the loader lock, and a destructor that calls into
+  `vulkan-1.dll` there deadlocks: measured 2026-11-27, the contract suite hung at
+  its unload stage until the engine became a process-lifetime object
+  (`testing-layers.md` §13).
+- **One host-visible buffer is the smallest correct arrangement**, and the honest
+  starting point: the frame is written and read through mapped memory, which on a
+  discrete GPU is system RAM over PCIe. A device-local buffer plus a staging copy
+  is the next step, and it is measurable - the template does not claim it.
+
 ### `nvcc` flags
 
 | Flag | Why |

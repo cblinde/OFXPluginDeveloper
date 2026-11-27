@@ -48,7 +48,8 @@ Nuke and SCRATCH have run nothing. See
 | --- | --- |
 | `SKILL.md` | The entry point: ground rules, the build workflow, and the routing table |
 | `references/` | 23 single-subject documents - constants, lifecycle, streams, pixels, RoI, colour, host quirks, CMake, packaging, debugging, performance, ONNX, AI architectures, pattern index, testing, verification status, field evidence, reference projects, checklists, Resolve automation |
-| `templates/` | Four complete plug-ins: `minimal-ofx` (CPU), `minimal-cuda-ofx` (CUDA + fallback), `minimal-opencl-ofx` (OpenCL through the host's queue + fallback), `onnx-inference-ofx` (model per frame) |
+| `templates/` | Five complete plug-ins: `minimal-ofx` (CPU), `minimal-cuda-ofx` (CUDA + fallback), `minimal-opencl-ofx` (OpenCL through the host's queue + fallback),
+`minimal-vulkan-ofx` (Vulkan compute the plug-in owns + fallback), `onnx-inference-ofx` (model per frame) |
 | `testkit/` | The host harness: `dlopen` + contract checks, the official OFX host, and the headless Natron render |
 | `tools/` | `probe-env.py` (which capabilities this machine has, and which suites that unblocks), `check-docs.py` (documentation drift: the heading skeleton in `heading-manifest.tsv`, an inventory of the tools below, the template list across README/AGENTS/SKILL, which scaffold each table offers, the reference paths, the CI coverage of the templates, the negated host claims against `verification-matrix.tsv`, and the ONNX Runtime pin across the documents and the action; `--selftest` shows each of the inventory rules failing), `check-runtime.py` (an ONNX Runtime root's entry points and provider exports), `check-workflows.py` (every action pinned to a commit, plus the workflow shape faults a YAML error leaves behind), `check-shell.sh` (every tracked `*.sh` parsed with `bash -n`, so a script no workflow happens to call still fails here), `check-model-canary.py` (the shipped model on whatever runtime is installed), `check-glibc.sh` (the glibc bound over a built bundle), `coverage-check.py` (restructure proof), `_model_shape.py` (the frame a model and its
 `test_shape.txt` agree on, shared by the three tools that feed one), `make-testmodels.py`, `model_probe.py`, `bench_ep.py`, `measure-halo.sh` and `measure-halo.cpp`, `aot-compile-model.sh`, `opencl-spike.sh` and `opencl-spike.cpp` (a real OpenCL context and two kernels through the loader, no vendor SDK), `sweep-vram.sh`, `host_cuda_probe.cpp`, `ep_register_probe.cpp` |
@@ -88,6 +89,13 @@ templates/minimal-opencl-ofx/
   test/opencl_suite.cpp              real context, queue, cl_mem buffers and image2d images from the fake host
   test/run-tests.sh                  build, contract x 3 profiles, the OpenCL suite, memcheck
   test/run-analysis.sh               cppcheck + shellcheck over sources and scripts
+templates/minimal-vulkan-ofx/
+  CMakeLists.txt                     bundle build; Vulkan headers + one shader, no vulkan-1.lib
+  src/Plugin.cpp                     RGBA gain: gather the window, dispatch, scatter back; CPU fallback
+  src/VulkanGain.h  src/VulkanGain.cpp  instance, device, pipeline, one host-visible buffer, fence wait
+  shaders/gain.comp                  the kernel: RGBA32F in place, alpha copied
+  cmake/spv-header.cmake             SPIR-V to a generated header, so the bundle carries no .spv
+  test/vulkan_selftest.cpp           device vs CPU on 61 px and 1920x1080, every channel
 templates/onnx-inference-ofx/
   CMakeLists.txt                     bundle build, ONNX Runtime detection + bundling
   src/Plugin.h  src/Plugin.cpp       OFX wrapper: window addressing, alpha, render

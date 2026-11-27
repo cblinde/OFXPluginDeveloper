@@ -1,0 +1,34 @@
+#version 450
+
+// A gain on RGBA32F pixels, in place.
+//
+// The buffer the host binds is the render window only - the plug-in copies the
+// window out of the host's image first - so nothing here needs to know about
+// rowBytes, tiles or the image origin. That is the whole point of owning the
+// device: the OFX side stays exactly the CPU path, and this file sees a
+// contiguous array.
+//
+// Alpha is copied, not scaled: scaling it would change coverage instead of
+// colour (references/colour-and-alpha.md section 2), and the CPU path in
+// Plugin.cpp does the same, which is what makes the self-test comparable.
+
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) buffer Pixels {
+    vec4 px[];
+} pixels;
+
+layout(push_constant) uniform Push {
+    float gain;
+    uint  count;
+} push;
+
+void main()
+{
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= push.count) {
+        return;
+    }
+    const vec4 src = pixels.px[i];
+    pixels.px[i] = vec4(src.rgb * push.gain, src.a);
+}

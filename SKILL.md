@@ -116,7 +116,8 @@ relative to this file.
 | What other shipped plug-ins did, and the seven-step reading plan | `references/reference-projects.md` | this repo's own code |
 | Pre-flight review, sign-off, the questions with their settling sentence | `references/checklists.md` | tutorials |
 | Run it: artifact + contract with no host, then a headless host render | `testkit/README.md` | prose |
-| Copy a working scaffold | `templates/minimal-ofx/` (CPU), `templates/minimal-cuda-ofx/` (CUDA + fallback), `templates/minimal-opencl-ofx/` (the host's OpenCL queue + fallback), `templates/onnx-inference-ofx/` (model per frame) | the docs |
+| Copy a working scaffold | `templates/minimal-ofx/` (CPU), `templates/minimal-cuda-ofx/` (CUDA + fallback), `templates/minimal-opencl-ofx/` (the host's OpenCL queue + fallback),
+`templates/minimal-vulkan-ofx/` (Vulkan compute the plug-in owns + fallback), `templates/onnx-inference-ofx/` (model per frame) | the docs |
 
 Two rules for this table. If the task is "make it work at all", it is §3 below,
 not a reference file. If two rows seem to apply, the narrower one is the one to
@@ -170,6 +171,7 @@ probe is choosing between.
 | CPU-only pixel maths | `templates/minimal-ofx/` | smallest host-loadable module; no CUDA, no model |
 | CUDA path with CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
 | OpenCL path through the host's queue | `templates/minimal-opencl-ofx/` | `cl_mem`/image2d lifetime, queue ordering and the no-device fallback are written; the host hands over the queue, the plug-in never creates a context |
+| Vulkan compute with no host property | `templates/minimal-vulkan-ofx/` | own instance, device and queue; one host-visible buffer; the unload-safe device lifetime is written |
 | ONNX model per frame | `templates/onnx-inference-ofx/` | session, packing, tiling, goldens; CUDA EP first, CPU fallback (`references/onnx-and-tensorrt.md` §4) |
 | Model whose output is not an image | `templates/onnx-inference-ofx/` for session and packaging only | `ModelRunner` requires out shape == in shape; the head decoder is yours |
 

@@ -1,0 +1,30 @@
+== minimal-vulkan-ofx: build, contract suite, device self-test (2026-11-27, Windows) ==
+# Machine: Windows, MSVC 14.50, NVIDIA GeForce RTX 3060, Vulkan 1.4.357 from the
+# installed driver. No LunarG SDK: headers come from Vulkan-Headers and glslang
+# 16.6.0 supplies the shader compiler, both outside the repository
+# (.validation/vk/, gitignored).
+
+$ VULKAN_INCLUDE_DIR=... VULKAN_SHADER_COMPILER=... REFERENCE_GAIN_DEFAULT=2.0 build.bat Release
+  -> ok, artifact check passed (no vulkan-1.lib among the dependents)
+
+$ test\run-tests.bat Release nobuild
+== [1/5] build skipped (nobuild)
+== [2/5] artifact (exports, dependents) ==
+== [3/5] host contract (LoadLibraryExW + fake host) ==
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+== [4/5] install and load the installed copy ==
+contract_test: 90 checks, 0 failed
+== [5/5] device self-test (Vulkan vs CPU) ==
+device: NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0)
+  61 px, gain 2.0        pass 244 channels within 1e-6 (alpha included)
+  1920x1080, gain 0.5    pass 8294400 channels within 1e-6 (alpha included)
+  1920x1080, gain 1.0    pass 8294400 channels within 1e-6 (alpha included)
+vulkan_selftest: all cases passed
+all Windows checks passed
+
+# 118 x 4 + 90 host-contract checks are the OFX half; the three self-test cases
+# compare 16,589,044 channels (alpha included) against the CPU loop at 1e-6.
+# Only the last line is the verdict.
