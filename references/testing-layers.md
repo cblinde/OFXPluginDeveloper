@@ -344,8 +344,7 @@ template's suite runs a fourth pass this way
 0 failed** with both capability writes refused, while the same pass against a copy
 with the guard deleted fails at **15 checks, 1 failed**, `FAIL kOfxActionDescribe:
 kOfxStatErrMissingHostFeature` - the Resolve symptom reproduced in this repository.
-The other three templates carry the same guard around the same two writes and keep
-passing their own suites.
+The other three templates carry the same guard around the same two writes: `minimal-opencl-ofx` passes its own suite (118 x 3 plus 38 device checks), and both remaining templates were recompiled on 2026-11-27, after the reference template's guard was repaired, so this claim rests on four builds and not two. `minimal-cuda-ofx` built with `nvcc` and put 7 cubins in the bundle ([`guard-recheck-cuda-build.log`](../evidence/2026-11-27-windows/guard-recheck-cuda-build.log)); `onnx-inference-ofx` built on its CPU path, because no `onnxruntime_providers_cuda.dll` sits beside the runtime it was pointed at ([`guard-recheck-onnx-build.log`](../evidence/2026-11-27-windows/guard-recheck-onnx-build.log)). Both builds exit 0. What that proves is that the guard compiles and the bundles link - only the reference template's fourth pass actually refuses a capability write.
 
 **A reference per platform, a tolerance per reference.** A single
 `--golden-tolerance` on the command line is one global decision, so every

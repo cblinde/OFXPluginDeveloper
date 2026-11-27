@@ -1,0 +1,110 @@
+[build] generator: Visual Studio 18 2026
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- ONNX Runtime include: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/include
+-- ONNX Runtime library: not linked (loaded from beside the .ofx)
+CMake Warning at CMakeLists.txt:475 (message):
+  OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON but no onnxruntime_providers_cuda was
+  found in:
+  Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/bin;Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/lib;/usr/local/cuda/bin;/usr/local/cuda/lib64;/usr/lib/x86_64-linux-gnu;/usr/lib/aarch64-linux-gnu.
+  Nothing is copied: the session keeps falling back to the CPU.  A GPU build
+  needs the -gpu package of ONNX Runtime, or set OFXPLUGIN_CUDA_RUNTIME_DIRS
+  to the directory that has it.
+
+
+CMake Warning at CMakeLists.txt:486 (message):
+  OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON: cuDNN (libcudnn / cudnn*64_*.dll) not
+  found in
+  Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/bin;Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/lib;/usr/local/cuda/bin;/usr/local/cuda/lib64;/usr/lib/x86_64-linux-gnu;/usr/lib/aarch64-linux-gnu.
+  onnxruntime_providers_cuda imports it, so a bundle without it fails with
+  error 126 (module not found) instead of reporting a missing file.
+Call Stack (most recent call first):
+  CMakeLists.txt:498 (ofx_warn_missing_cuda)
+
+
+CMake Warning at CMakeLists.txt:486 (message):
+  OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON: cuBLAS (libcublas / cublas64_*.dll) not
+  found in
+  Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/bin;Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/lib;/usr/local/cuda/bin;/usr/local/cuda/lib64;/usr/lib/x86_64-linux-gnu;/usr/lib/aarch64-linux-gnu.
+  onnxruntime_providers_cuda imports it, so a bundle without it fails with
+  error 126 (module not found) instead of reporting a missing file.
+Call Stack (most recent call first):
+  CMakeLists.txt:499 (ofx_warn_missing_cuda)
+
+
+CMake Warning at CMakeLists.txt:486 (message):
+  OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON: cuBLASLt (libcublasLt /
+  cublasLt64_*.dll) not found in
+  Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/bin;Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/lib;/usr/local/cuda/bin;/usr/local/cuda/lib64;/usr/lib/x86_64-linux-gnu;/usr/lib/aarch64-linux-gnu.
+  onnxruntime_providers_cuda imports it, so a bundle without it fails with
+  error 126 (module not found) instead of reporting a missing file.
+Call Stack (most recent call first):
+  CMakeLists.txt:500 (ofx_warn_missing_cuda)
+
+
+CMake Warning at CMakeLists.txt:486 (message):
+  OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON: cuFFT (libcufft / cufft64_*.dll) not
+  found in
+  Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/bin;Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/lib;/usr/local/cuda/bin;/usr/local/cuda/lib64;/usr/lib/x86_64-linux-gnu;/usr/lib/aarch64-linux-gnu.
+  onnxruntime_providers_cuda imports it, so a bundle without it fails with
+  error 126 (module not found) instead of reporting a missing file.
+Call Stack (most recent call first):
+  CMakeLists.txt:501 (ofx_warn_missing_cuda)
+
+
+CMake Warning at CMakeLists.txt:486 (message):
+  OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON: CUDA runtime (libcudart /
+  cudart64_*.dll) not found in
+  Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/bin;Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/lib;/usr/local/cuda/bin;/usr/local/cuda/lib64;/usr/lib/x86_64-linux-gnu;/usr/lib/aarch64-linux-gnu.
+  onnxruntime_providers_cuda imports it, so a bundle without it fails with
+  error 126 (module not found) instead of reporting a missing file.
+Call Stack (most recent call first):
+  CMakeLists.txt:502 (ofx_warn_missing_cuda)
+
+
+-- CUDA provider bundle: 1 file(s), 0 MB
+-- Licence texts in Contents/Resources: none found beside the runtime. Add ONNX Runtime's LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before shipping (packaging-and-install.md section 2).
+-- OFX plugin : OnnxInference
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+-- Configuring done (0.0s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
+MSBuild-Version 18.4.0+6e61e96ac für .NET Framework
+
+  Checking File Globs
+  1>Checking Build System
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+  OnnxInference.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx
+  Bundling ONNX Runtime next to the .ofx as onnxruntime-ofx.dll	Bundling onnxruntime_providers_shared.dll for the CUDA execution provider
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+  ai_pipeline_test.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\Release\ai_pipeline_test.exe
+  Copying onnxruntime-ofx.dll next to ai_pipeline_test.exe
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/CMakeLists.txt
+
+Bundle: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle
+  Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx
+  Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle\Contents\Win64\onnxruntime-ofx.dll
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle
+header: none in this root (a bundle, or a package shipped without headers); the provider facts below still apply
+core: onnxruntime-ofx.dll
+provider onnxruntime_providers_cuda.dll: 1 exports, built-in provider
+        imports: cuBLASLt 12, cuBLAS 12, cuFFT 11, CUDA runtime 12, cuDNN 9
+        imports the core by name: no
+        CUDA major: 12 (cuBLAS and the CUDA runtime agree; a host ships that major or refuses this provider)
+other providers: onnxruntime_providers_shared.dll
+verdict: every gate asked for passed
+
+Exports and load-time imports:
+  layout: OnnxInference.ofx.bundle/Contents/Win64 (an architecture the spec names, no '@' directory)
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    KERNEL32.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-filesystem-l1-1-0.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
