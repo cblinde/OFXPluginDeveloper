@@ -195,6 +195,22 @@ against the copy a zero-copy path avoids, in one run on the same RTX 3060:
 | 4K | 0.850 ms (312 GB/s) | 0.846 ms (314 GB/s) | 13.480 ms | 27.332 ms (9.7 GB/s) |
 | 8K | 3.479 ms (305 GB/s) | 3.363 ms (316 GB/s) | 55.287 ms | 107.396 ms (9.9 GB/s) |
 
+Re-run in this checkout on 2026-11-27 (same card class, CUDA runtime 13.5 from the
+driver, nvcc 13.0 on `PATH`), the harness reported the six stages by name rather
+than by a case count: `[1/6]` geometry, pitch and routing through the launcher,
+`[2/6]` 200 queued launches on one non-blocking stream with one sync, `[3/6]` 8
+host threads with 0 failing, `[4/6]` zero-copy on pinned mapped memory, `[5/6]`
+both kernels launched directly (`333x101` exact match each), `[6/6]` throughput -
+then three contract passes of **162 checks, 0 failed** and
+`execution_mode_test: 34 cases, 0 failed`, and `all Windows checks passed`. The
+throughput block, 1080p / 4K / 8K: vec4 **0.314 / 1.037 / 3.416 ms** (211 / 256 /
+311 GB/s), scalar 0.306 / 0.830 / 3.399 ms, CPU loop 3.920 / 14.864 / 70.796 ms
+(12.5x / 14.3x / 20.7x the vec4 kernel), pageable H2D+D2H copy 8.147 / 31.657 /
+133.617 ms. Same conclusions as the field test and not the same numbers - a 1080p
+kernel at 211 GB/s instead of 317 says what else was running on the card, which
+is why both records exist (**[V]**,
+[`cuda-suite.log`](../evidence/2026-11-27-windows/cuda-suite.log)).
+
 Three things this settles that were previously argued from PTX and arithmetic:
 both kernel forms are **bandwidth-bound**, so the vec4 form's 4× instruction
 reduction buys no throughput on this GPU; the kernel is ~16× the CPU loop; and a
