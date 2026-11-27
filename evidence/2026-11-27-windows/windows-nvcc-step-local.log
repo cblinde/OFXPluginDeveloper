@@ -1,0 +1,52 @@
+# The new windows.yml step, run locally on 2026-11-27 before its first CI run.
+#
+# The step gives the windows job a CUDA toolkit and compiles the CUDA template
+# with nvcc there. The job could not do that before: windows-latest ships no
+# toolkit, so build.bat built the CPU shim in every earlier run of that job.
+#
+# What ran here is the command of the workflow, from a .cmd so that cmd's own
+# redirection is not rewritten by the shell that starts it:
+#
+#   rmdir /s /q templates\minimal-cuda-ofx\build
+#   where ninja >nul 2>&1 || python -m pip install --quiet ninja
+#   set "CPU_ONLY="
+#   set "CMAKE_GENERATOR=Ninja"
+#   templates\minimal-cuda-ofx\build.bat
+#   testkit\check-ofx-artifact.bat <bundle>\Contents\Win64\MinimalCudaGain.ofx --cuda --strict
+#
+# The machine: Windows 11, BuildTools 18 with MSVC 19.44 and 19.50, CUDA 12.9 and
+# 13.0 installed. It differs from a runner in the one way that matters: the
+# toolkit is already here, so the `Jimver/cuda-toolkit` action (v0.2.36, CUDA
+# 12.9.1) is not replayed by this log - only the two commands after it are.
+
+## 1. configure: Ninja, toolkit found, the CUDA language enabled
+
+[build] CUDA toolkit: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+[build] generator: Ninja (no NVIDIA build customisations for the installed Visual Studio)
+-- The CXX compiler identification is MSVC 19.44.35224.0
+-- The CUDA compiler identification is NVIDIA 13.0.48 with host compiler MSVC 19.44.35224.0
+-- Check for working CUDA compiler: .../v13.0/bin/nvcc.exe - skipped
+-- CUDA architectures: 75;80;86;89;90;100;120 (default list)
+-- Default gain: 1.0
+-- OFX plugin : MinimalCudaGain (CUDA ON)
+
+## 2. the artifact: exports, dependents, device code
+
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  cuobjdump: ...\v13.0\bin\cuobjdump.exe
+  device code: 7 cubin(s)
+
+## 3. what this proves, and what it does not
+
+Proved **[V]**: with a fresh build directory and the Ninja generator, `build.bat`
+configured CMake with the CUDA language, compiled `Kernel.cu` with nvcc 13.0.48,
+produced a bundle whose `.ofx` exports the two entry points and carries 7 cubins
+(one per architecture in the default list), and `check-ofx-artifact.bat --cuda
+--strict` exited 0.
+
+Not proved here: that a runner image finds the toolkit the action installs (CUDA
+12.9.1, not the 13.0 used above), that the runner's MSVC is one nvcc 12.9 accepts
+(19.44 was, on this machine; the Ninja path pins 14.4x through `vcvars64
+-vcvars_ver`, and a runner with only a newer toolset would say so rather than
+compile), and - the point of the step - that no kernel ran: it never executes
+`test\gpu-kernel-test.cu`.

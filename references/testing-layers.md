@@ -817,8 +817,11 @@ their coverage against `4290e68`, the tool self-tests and the shell syntax,
 a runner that still has no OpenCL device fails the run by name rather than
 leaving the step green), the sanitizers over the three whose scripts carry
 `SANITIZE`, and the glibc stage of every bundle,
-`windows.yml` builds all four templates with MSVC and runs the contract, ONNX CPU
-and negative-control steps, and `canary.yml` asks the newest ONNX Runtime release
+`windows.yml` builds all four templates with MSVC, installs a CUDA toolkit so that
+the CUDA template is also compiled by `nvcc` on a runner that has no GPU (the
+compile and the `cuobjdump` artifact check are gated; no kernel runs there), and
+runs the contract, ONNX CPU and negative-control steps, and `canary.yml` asks the
+newest ONNX Runtime release
 once a week whether the shipped model still loads. The `templates` job that ran
 the whole gate a second time was deleted, so a green tick has one meaning and one
 runtime download.

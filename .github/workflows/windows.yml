@@ -1,19 +1,22 @@
 name: windows
 
 # The MSVC half of this repository: build.bat, the .bat suites, the contract
-# harness and the ONNX template's CPU session. None of it needs a device, and
-# windows-latest has none - so the GPU rows are not silently skipped here, the
-# last step says they are not run.
+# harness, the ONNX template's CPU session, and a CUDA toolkit so that the
+# CUDA template is compiled by nvcc here instead of only through its CPU shim.
+# No step needs a device, and windows-latest has none - so the GPU rows are not
+# silently skipped, the last step says they are not run.
 #
-# What this job cannot prove, and must not be read as proving: any CUDA kernel
-# on a GPU, any host render, the sanitizer builds (clang-cl ASan is not wired),
-# or valgrind (Linux only). Those keep their own rows and their own evidence.
+# What this job cannot prove, and must not be read as proving: that a CUDA
+# kernel ran, any host render, the sanitizer builds (clang-cl ASan is not
+# wired), or valgrind (Linux only). Those keep their own rows and evidence.
 #
 # Before the first CI run this file was checked locally on 2026-11-26: actionlint
 # 1.7.12 clean, and every step below run as written - the three builds, all three
 # suites, the negative controls and the two tool steps, exit 0 each. The log is
 # evidence/2026-11-26-windows/windows-job-local.log, and it says where this
-# machine differs from a runner (MSVC 14.50, Python 3.10.6, no 3.12).
+# machine differs from a runner (MSVC 14.50, Python 3.10.6, no 3.12). The
+# nvcc step added on 2026-11-27 has its own re-run record for the same reason:
+# evidence/2026-11-27-windows/windows-nvcc-step-local.log.
 
 on:
   push:
@@ -31,8 +34,9 @@ jobs:
   suites:
     runs-on: windows-latest
     env:
-      # The CUDA template builds through its CPU shim: no toolkit on the runner,
-      # and a bundle that silently needed one would fail the artifact check.
+      # The first CUDA step builds through the template's CPU shim; the nvcc
+      # step clears this per invocation, so a shim build that silently needed a
+      # toolkit would still fail that step's artifact check.
       CPU_ONLY: "1"
       # Valgrind does not exist on Windows; the .bat suites say so instead.
       RUN_VALGRIND: "0"
@@ -71,6 +75,49 @@ jobs:
         run: |
           templates\minimal-cuda-ofx\build.bat || exit /b 1
           templates\minimal-cuda-ofx\test\run-tests.bat Release nobuild || exit /b 1
+
+      - name: CUDA toolkit
+        # windows-latest ships no CUDA toolkit, which is why the step above only
+        # reaches the CPU shim. `network` fetches the sub-packages named here
+        # instead of the ~3 GB local installer: nvcc to compile Kernel.cu, and
+        # cudart for the runtime the bundle links. No
+        # `visual_studio_integration`, because the next step builds with Ninja and
+        # reaches the .cu through nvcc directly. Pinned by commit like every other
+        # action in this tree.
+        uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d  # v0.2.36
+        with:
+          cuda: "12.9.1"
+          method: network
+          sub-packages: '["nvcc", "cudart"]'
+
+      - name: CUDA template compiled with nvcc
+        # What this step proves: MSVC plus the toolkit's nvcc compile the
+        # template's CUDA path - Kernel.cu through CMake's CUDA language - and the
+        # .ofx that comes out carries device code, which check-ofx-artifact.bat
+        # --cuda reads back with cuobjdump (SASS for the architectures this
+        # toolkit targets). CPU_ONLY is empty on purpose: build.bat then stops by
+        # name when no toolkit is found, instead of quietly building the shim
+        # again and letting this step pass on the wrong binary.
+        #
+        # What it does not prove: that any kernel runs. The runner has no GPU, so
+        # test\gpu-kernel-test.cu is never executed here and nothing in this job is
+        # throughput, bit-exactness or host behaviour; those keep the row that ran
+        # on the RTX 3060 (evidence/2026-11-24-windows). This step is a compile and
+        # an artifact check, and no more.
+        #
+        # Ninja and a fresh build directory: the CPU step above configured build\
+        # with the Visual Studio generator, CMake refuses to reuse that directory
+        # under another generator, and the CUDA build pins the MSVC toolset through
+        # `vcvars64 -vcvars_ver` - which only the Ninja path can do.
+        env:
+          CPU_ONLY: ""
+          CMAKE_GENERATOR: Ninja
+        shell: cmd
+        run: |
+          rmdir /s /q templates\minimal-cuda-ofx\build 2>nul
+          where ninja >nul 2>&1 || python -m pip install --quiet ninja
+          templates\minimal-cuda-ofx\build.bat || exit /b 1
+          testkit\check-ofx-artifact.bat templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx --cuda --strict || exit /b 1
 
       - name: ONNX template, CPU session
         shell: cmd
@@ -130,4 +177,4 @@ jobs:
       - name: GPU rows are not run in this job
         shell: bash
         run: |
-          echo "::notice title=No GPU on windows-latest::the CUDA kernel suite, the CUDA execution provider suite and every host render keep their own evidence rows; this job proves the MSVC build, the contract harness and the CPU paths only."
+          echo "::notice title=No GPU on windows-latest::the CUDA kernel suite, the CUDA execution provider suite and every host render keep their own evidence rows; this job proves the MSVC and nvcc compiles, the contract harness and the CPU paths only - it ran no kernel and loaded no host."
