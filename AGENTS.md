@@ -33,15 +33,15 @@ arguments, and the `ONNXRUNTIME_ROOT`, `CPU_ONLY` and `.venv/` rules:
 ## Hard rules
 
 1. **Never claim a host render is verified beyond what ran.** Resolve Studio 21.2
-   ran `tests/resolve/poc.py` three times (all **[V]**): default gain (identical to
-   the source, `mae 0.0`), `-DREFERENCE_GAIN_DEFAULT=2.0` (source ×2, `mae 0.0`), and
-   the CUDA template at `-DGAIN_DEFAULT=2.0` declaring CUDA for every render; a
-   fourth run killed the host with a job in flight. `testkit/verify-bundle.bat`
-   then ran two more sessions of the reference bundle through tier 3, one with the
-   GPU processing mode on Auto and one on CUDA, and the host's own compute-API line
-   is in each report. `NatronRenderer` rendered one 256×256 frame through
-   `testkit/`. No tiled host, no second GPU, no third host.
-   Every prose claim about a host has to agree with `references/verification-matrix.tsv`.
+   ran `tests/resolve/poc.py` for the reference template (CPU gain and the doubled
+   gain), killed the host with a job in flight, loaded the OpenCL template (which
+   arrives with `opencl=0`), and loaded the inference template on its CPU path and,
+   from a four-file provider-only bundle, on the CUDA path with `all nodes on CUDA`;
+   a CUDA-13 provider loaded there too, because that machine has the toolkit on
+   `PATH`. `testkit/verify-bundle.bat` took the reference bundle through tier 3 on
+   Auto and on CUDA, and `NatronRenderer` rendered one 256×256 frame. No tiled
+   host, no second GPU, no third host. `references/verification-matrix.tsv` is the
+   per-run record, and the authority for every host claim in prose.
 2. **Claim nothing a compiler, `nm` or a test did not prove.** `[V]` means the
    command ran in this repository; `[I]` means inferred; `[B]` means external
    evidence. Labels are defined in `references/cmake-and-linking.md`.

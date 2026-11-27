@@ -217,7 +217,9 @@ message. Two host-facing facts:
   Measured 2026-11-27, and the second row is why the caveat matters: the 1.32.0
   provider-only bundle **did** load and run in Resolve on the machine it was built
   on, because the CUDA 13.0 toolkit sits on `PATH` and `cublas64_13.dll` resolves
-  from there - the label read `all nodes on CUDA`. That is a separate case and must
+  from there - the label read `all nodes on CUDA`, and the transcript is in
+  [`resolve-onnx-provider-cuda13.log`](../evidence/2026-11-27-windows/resolve-onnx-provider-cuda13.log)
+  (it had been claimed from the import table alone). That is a separate case and must
   not be read as Resolve's own CUDA stack accepting 13: on an install with only
   what Resolve ships, the same file has nothing to bind to
   ([`onnx-provider-cuda13-deps.log`](../evidence/2026-11-27-windows/onnx-provider-cuda13-deps.log)).
@@ -228,7 +230,10 @@ message. Two host-facing facts:
   The configure step prints `CUDA provider bundle: the provider imports cuBLAS N`
   and warns when the cuBLAS copied beside it is another major - the stale
   `OFXPLUGIN_CUDA_RUNTIME_DIRS` cache entry that once put a 1.32 provider next to
-  1.20.1's core; and `python3 tools/check-runtime.py <root-or-bundle>
+  1.20.1's core, and `cmake -E copy_if_different`, which compares timestamps and
+  therefore left a 1.32.0 provider in a bundle whose configure line reported
+  1.20.1's 642 MB (measured 2026-11-27; staging is `cmake -E copy` now); and
+  `python3 tools/check-runtime.py <root-or-bundle>
   --require-cuda-major 12` fails a built bundle with both majors, the version
   pairing and the error the host raises. That command now runs by itself: the ONNX
   template's `build.bat` calls it on the bundle it just produced (12 unless

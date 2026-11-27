@@ -281,7 +281,11 @@ if(OFXPLUGIN_BUNDLE_ONNX_RUNTIME)
     set(_onnx_bundled_name "libonnxruntime.so.1")
   endif()
   add_custom_command(TARGET ${PLUGIN_TARGET} POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    # `copy`, not `copy_if_different`: that one compares timestamps, so pointing
+    # ONNXRUNTIME_ROOT at a package unpacked earlier than the last build leaves
+    # the previous package's DLLs in place - a 1.32.0 provider stayed in a bundle
+    # the configure line reported as 642 MB of 1.20.1 (measured 2026-11-27).
+    COMMAND "${CMAKE_COMMAND}" -E copy
             "${_onnx_copy}"
             "$<TARGET_FILE_DIR:${PLUGIN_TARGET}>/${_onnx_bundled_name}"
     COMMENT "Bundling ONNX Runtime next to the .ofx as ${_onnx_bundled_name}")
@@ -607,7 +611,11 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
       math(EXPR _cuda_bytes "${_cuda_bytes} + ${_size}")
       math(EXPR _cuda_count "${_cuda_count} + 1")
       add_custom_command(TARGET ${PLUGIN_TARGET} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_file}"
+    # `copy`, not `copy_if_different`: that one compares timestamps, so pointing
+    # ONNXRUNTIME_ROOT at a package unpacked earlier than the last build leaves
+    # the previous package's DLLs in place - a 1.32.0 provider stayed in a bundle
+    # the configure line reported as 642 MB of 1.20.1 (measured 2026-11-27).
+        COMMAND "${CMAKE_COMMAND}" -E copy "${_file}"
                 "$<TARGET_FILE_DIR:${PLUGIN_TARGET}>/${_name}"
         COMMENT "Bundling ${_name} for the CUDA execution provider")
     endforeach()
@@ -716,7 +724,11 @@ target_link_libraries(ai_pipeline_test PRIVATE ${CMAKE_DL_LIBS})
 # directory is the only place this test is meant to run from.
 if(WIN32 AND ONNXRUNTIME_DLL)
   add_custom_command(TARGET ai_pipeline_test POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    # `copy`, not `copy_if_different`: that one compares timestamps, so pointing
+    # ONNXRUNTIME_ROOT at a package unpacked earlier than the last build leaves
+    # the previous package's DLLs in place - a 1.32.0 provider stayed in a bundle
+    # the configure line reported as 642 MB of 1.20.1 (measured 2026-11-27).
+    COMMAND "${CMAKE_COMMAND}" -E copy
             "${ONNXRUNTIME_DLL}"
             "$<TARGET_FILE_DIR:ai_pipeline_test>/onnxruntime-ofx.dll"
     COMMENT "Copying onnxruntime-ofx.dll next to ai_pipeline_test.exe")
@@ -731,7 +743,11 @@ endif()
 # embedded in the dylib, not a fixed SONAME, so there is nothing to rename.
 if(UNIX AND NOT APPLE)
   add_custom_command(TARGET ai_pipeline_test POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    # `copy`, not `copy_if_different`: that one compares timestamps, so pointing
+    # ONNXRUNTIME_ROOT at a package unpacked earlier than the last build leaves
+    # the previous package's DLLs in place - a 1.32.0 provider stayed in a bundle
+    # the configure line reported as 642 MB of 1.20.1 (measured 2026-11-27).
+    COMMAND "${CMAKE_COMMAND}" -E copy
             "${ONNXRUNTIME_LIBRARY}"
             "$<TARGET_FILE_DIR:ai_pipeline_test>/libonnxruntime.so.1"
     COMMENT "Staging libonnxruntime.so.1 next to ai_pipeline_test")

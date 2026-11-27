@@ -1,0 +1,37 @@
+== The CUDA-13 (1.32.0) provider-only bundle in Resolve Studio 21.2.0.5, 2026-11-27 ==
+# Why this file exists: packaging-and-install.md claimed this run and cited the
+# import table (onnx-provider-cuda13-deps.log) instead of a transcript, so the
+# claim had no artifact. Re-run to give it one.
+#
+# Build: ONNXRUNTIME_ROOT=.validation/ort-gpu-1.32.0,
+# OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON, OFXPLUGIN_CUDA_FROM_HOST=ON,
+# OFXPLUGIN_HOST_CUDA_MAJOR=13 -> four files, provider imports cuBLAS 13,
+# gate "--require-cuda-major 13": verdict: every gate asked for passed.
+#
+# The machine has the CUDA 13.0 toolkit on PATH
+# (C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\x64), so
+# cublas64_13.dll resolves from there and NOT from Resolve. This is a
+# contaminated environment, not Resolve accepting CUDA 13: on a host that
+# offers only the CUDA 12 it ships, the same provider fails at load (1114).
+
+resolve proof of concept (run)
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+  launch    pass     pid 8112
+  connect   pass     DaVinci Resolve Studio 21.2.0.5
+  gpu       pass     2026-11-27 19:30:17,605 | Compute API set to automatic, defaulting to CUDA.; 2026-11-27 19:30:17,605 | Selected compute API: CUDA
+  build     pass     poc: ONNX Inference on source.png
+  render    pass     poc00108000.png
+  check     pass     1920x1080 via ffmpeg
+  quit      pass     API quit, then the recorded PID
+report: Z:\Tools-DEV\OFXPluginDeveloper_Local\tests\resolve\reports\poc-2026-11-27T18-30-16+00-00.json
+
+== $ONNX_PROVIDER_LOG, written by the plug-in after the session existed ==
+
+CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA) | Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_conv.onnx
+
+== What this proves ==
+# The 1.32.0 provider-only bundle loads, creates a session and renders a
+# 1920x1080 frame in Resolve with 'all nodes on CUDA' - given a process that
+# can resolve CUDA 13. It does not prove Resolve supplies CUDA 13, and it is
+# not the configuration this repository ships.
