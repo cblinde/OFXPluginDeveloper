@@ -1,0 +1,94 @@
+# The project round trip after the describe() guard: is the frame the model's output?
+# 2026-11-27 20:51, Windows 11, Resolve Studio 21.2.0.5, RTX 3060
+#
+# What was still inferred
+#   `poc.py --import-project` rendered a frame off an imported project and it
+#   differed from the source by mae 94.873 with a CUDA session on the shipped
+#   model (row19-imported-project.log). "Differs from the source" is not the same
+#   claim as "is the model's output": a plug-in that inverted the picture would
+#   pass the first and fail the second. And `poc.py --project` - load a prepared
+#   .drp by path - was last measured as a host refusal, on an older bundle.
+#
+# Bundle
+#   .validation/build-provider-only, rebuilt from HEAD (cmake --build ... ->
+#   exit 0; OnnxInference.ofx 209,408 bytes, unchanged because no source change
+#   since it was built), provider-only ONNX Runtime 1.20.1, and
+#   Contents/Resources/model.onnx = models/test_conv.onnx. ONNX_MODEL_PATH is
+#   unset, so the shipped copy is the only model the plug-in can find.
+#   ONNX_PROVIDER_LOG was set to a path that did not exist yet, so the log is
+#   this run's and nobody else's.
+#
+# A. `--project <path>`: the by-path mode, re-measured on this bundle
+#
+#   python tests/resolve/poc.py --bundle .validation/build-provider-only/bundle/OnnxInference.ofx.bundle \
+#       --project .validation/drp/row19-final.drp \
+#       --reference .validation/resolve-source.png --expect 1920x1080 --gui
+#
+#   validate  pass   1 .ofx, decoders ['ffmpeg']
+#   install   pass   C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+#   launch    pass   pid 13468
+#   connect   pass   DaVinci Resolve Studio 21.2.0.5
+#   gpu       pass   Compute API set to automatic, defaulting to CUDA.; Selected compute API: CUDA
+#   error     fail   RuntimeError: could not load project: ...\drp\row19-final.drp
+#                    (LoadProject refuses a .drp by ...)
+#   quit      pass   API quit, then the recorded PID
+#   exit 1
+#
+#   So the by-path mode is still a host refusal on 21.2.0.5, absolute path
+#   included: there is nothing to render, and the round trip is the only route.
+#
+# B. the round trip: ImportProject -> LoadProject(<base name>) -> one frame
+#
+#   cp .validation/drp/row19-final.drp .validation/drp/row19-roundtrip.drp   (fresh base name)
+#   python tests/resolve/poc.py --bundle ... --import-project .validation/drp/row19-roundtrip.drp \
+#       --reference .validation/resolve-source.png --expect 1920x1080 --gui
+#
+#   validate  pass   1 .ofx, decoders ['ffmpeg']
+#   install   pass   C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+#   launch    pass   pid 12784
+#   connect   pass   DaVinci Resolve Studio 21.2.0.5
+#   gpu       pass   Compute API set to automatic, defaulting to CUDA.; Selected compute API: CUDA
+#   load      pass   row19-roundtrip.drp project format
+#   render    pass   poc00108000.png
+#   check     fail   mae 94.873 > 0.0; max pixel error 255 > 0.0
+#   quit      pass   API quit, then the recorded PID
+#   exit 1
+#
+#   The `check fail` is the checker doing its job, not the plug-in: --reference
+#   points at the SOURCE, and this plug-in is supposed to change the frame. What
+#   matters is that the frame is not the source, which is the weaker half.
+#
+#   $ONNX_PROVIDER_LOG, one line, from this run:
+#     CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested,
+#     all nodes on CUDA) | C:\Program Files\Common Files\OFX\Plugins\
+#     OnnxInference.ofx.bundle\Contents\Win64/../Resources/model.onnx
+#
+# C. is that frame the model's output? computed independently, from the same PNG
+#
+#   .validation/row19-expect.py: test_conv.onnx on ONNX Runtime CPU 1.23.2
+#   (the .venv), fed the source PNG's RGB as planar 0..1 - the same input the
+#   plug-in feeds - then clipped and rounded to 8 bits like a PNG write does.
+#
+#   source 1920x1080x4 (ffmpeg)
+#   render 1920x1080x4 (ffmpeg)
+#   model: models/test_conv.onnx | input input [1, 3, 'h', 'w'] | provider CPUExecutionProvider
+#   expected (1080, 1920, 3) | values outside 0..1 before clipping: 3133783
+#   render vs model output (RGB): mae 0.000000, max_pixel 0, channels identical 100.00%
+#   render vs source (RGB):       mae 126.497124, max_pixel 255, channels identical 26.90%
+#   model output vs source (RGB): mae 126.497124, max_pixel 255, channels identical 26.90%
+#   render alpha vs source alpha: mae 0.000000, max_pixel 0, channels identical 100.00%
+#
+#   The rendered RGB is bit-identical to a convolution computed outside the
+#   host, on the CPU, by a different ONNX Runtime build - and alpha is
+#   bit-identical to the source, which is the plug-in's contract (RGB through
+#   the model, alpha copied). The 94.873 in B is 126.497 over three channels and
+#   zero over alpha, i.e. (3/4) x 126.497: the same two measurements, one
+#   averaged over four channels.
+#
+# What this does not prove
+#   One host (21.2.0.5), one GPU, one still, one 611-byte Conv model. It does not
+#   make `--project` by path work: that mode remains a refusal, and the round
+#   trip is the measured route. The comparison is 8-bit: 3,133,783 of 6,220,800
+#   output values leave 0..1 before clipping, so the PNG hides whatever the
+#   plug-in wrote there - an out-of-range intermediate would be invisible to this
+#   check (and to the plug-in's own golden fixtures, which are float).

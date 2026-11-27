@@ -163,7 +163,15 @@ What follows from that, and what does not:
   1920×1080 with `JobStatus Complete` in 808 ms, differing from the source by
   `mae 94.873` - the figure the same bundle's CPU path gave for the same source -
   and `$ONNX_PROVIDER_LOG` reading `CUDA (device 0, …, all nodes on CUDA) | …/Contents/Resources/model.onnx`,
-  so the project carried the effect and the bundle carried the model.
+  so the project carried the effect and the bundle carried the model. What the
+  run left inferred was that the frame *is* the model's output rather than only
+  "not the source"; the re-run on 2026-11-27 20:51 answered that with the
+  current bundle: `--project <path>` still ends in the host's refusal (absolute
+  path included), the round trip with a fresh base name renders, and the
+  rendered RGB is **bit-identical** to `test_conv.onnx` computed outside the
+  host on the CPU (`mae 0.000000`, `max_pixel 0`, every one of 6,220,800 RGB
+  bytes), with alpha bit-identical to the source (**[V]**,
+  [`row19-project-roundtrip.log`](../evidence/2026-11-27-windows/row19-project-roundtrip.log)).
 - Loading one is what `poc.py --project` does, and that mode ran for the first
   time on 2026-11-26: four defects fell out of it - an undefined `render_size`, a
   `KeyError` without `--resolve`, a `connect()` that demanded an open project, and

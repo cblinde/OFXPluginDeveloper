@@ -101,7 +101,11 @@ on the second kind of start says which one it used.
 
 `--project some.drp` loads a prepared project by path, and the path is measured up
 to the host's own answer, not past it: `LoadProject` refuses a `.drp` by path on
-21.2.0.5, relative and absolute alike, which is why the mode above exists. It needed four fixes first - an undefined `render_size`, a
+21.2.0.5, relative and absolute alike, which is why the mode above exists. That
+refusal was re-measured on 2026-11-27 20:51 with the current provider-only
+bundle, and it is still the answer - so this mode has no frame to compare, and
+the round trip is the measured route
+([`row19-project-roundtrip.log`](../../evidence/2026-11-27-windows/row19-project-roundtrip.log)). It needed four fixes first - an undefined `render_size`, a
 `KeyError: 'resolve'` when `--resolve` was omitted, a `connect()` that waited for a
 project the caller was about to load itself, and a relative path `LoadProject`
 refuses. An export taken before the host has saved the project writes an empty
