@@ -101,10 +101,11 @@ message. Two host-facing facts:
   carried `cudnn64_9.dll` from its own install folder, and its module list also names its
 own `onnxruntime.dll` (**[V]**,
   [`resolve-provider-only.log`](../evidence/2026-11-26-windows/resolve-provider-only.log)).
-  The frame is a **pass-through**, and not because of the packaging: Resolve hands a
-  script an OFX effect object with `GetInfo`, `GetIndex`, `GetIsEnabled`, `SetIndex`
-  and `SetIsEnabled` and nothing else, so `modelPath` cannot be set, `isIdentity`
-  stays true and `render()` never runs. **The Fusion route is closed too**, which
+  The frame in that run is a **pass-through**, and not because of the packaging:
+  Resolve hands a script an OFX effect object with `GetInfo`, `GetIndex`,
+  `GetIsEnabled`, `SetIndex` and `SetIsEnabled` and nothing else, so no parameter
+  can be set from the script - which this plug-in does not need, because it reads
+  `ONNX_MODEL_PATH` or `Contents/Resources/model.onnx` when it is created. **The Fusion route is closed too**, which
   closes the last scripting door: `effect.GetFusionComp()` returns `None` for an
   effect added with `AddEffect("ofx", …)`, and a comp added to the timeline item
   (`item.AddFusionComp()`) holds only `MediaIn`/`MediaOut` - `AddTool` refuses the
@@ -116,9 +117,15 @@ own `onnxruntime.dll` (**[V]**,
   project` line carries the effect, its stored name is the file's base name and
   `LoadProject(<base name>)` reopens it with the effect on the item (**[V]**,
   [`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)
-  §6). What still stops the frame is the plug-in: Resolve answers `describe failed
-  on plugin com.ofxplugindeveloper.onnxinference, error code 4` and never creates
-  an instance, so the render is the source unchanged whatever the model path says.
+  §6). What stopped the frame was the plug-in's own `describe()`: Resolve answered
+  `describe failed on plugin com.ofxplugindeveloper.onnxinference, error code 4`
+  and never created an instance, so the render was the source unchanged whatever
+  the model path said. The write behind that answer is measured - of everything
+  `describe()` sets, the host rejects only `kOfxImageEffectPropCPURenderSupported`,
+  and the support library turns that `PropertyUnknownToHost` into
+  `kOfxStatErrMissingHostFeature` (4). Guarded, the same host loads the bundle,
+  creates the filter context and renders the model's output
+  (**[V]**, [`onnx-describe-resolve.log`](../evidence/2026-11-27-windows/onnx-describe-resolve.log)).
   The model path itself no longer needs the project - `ONNX_MODEL_PATH` or a
   `Contents/Resources/model.onnx` beside the binary ([`improvement-backlog.md`](improvement-backlog.md)
   row 19) - and "uses Resolve's own cuDNN" is not claimed here. Neither does a module

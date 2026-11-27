@@ -117,6 +117,7 @@ not the console transcript.
 | `Resolve Studio 21.2.0.5` | reference | CPU | 2026-11-26 | [`resolve-tier3-auto-report.json`](../evidence/2026-11-26-windows/resolve-tier3-auto-report.json) |
 | `Resolve Studio 21.2.0.5` | reference | CPU | 2026-11-26 | [`resolve-tier3-cuda-report.json`](../evidence/2026-11-26-windows/resolve-tier3-cuda-report.json) |
 | `Resolve Studio 21.2.0.5` | OpenCL gain | CPU | 2026-11-27 | [`resolve-opencl-host-report.json`](../evidence/2026-11-27-windows/resolve-opencl-host-report.json) |
+| `Resolve Studio 21.2.0.5` | ONNX Inference | CPU | 2026-11-27 | [`resolve-onnx-host-report.json`](../evidence/2026-11-27-windows/resolve-onnx-host-report.json) |
 | `Resolve Studio 21.2.0.5` | reference | kill | 2026-11-25 | [`resolve-poc-kill-report.json`](../evidence/2026-11-25-windows/resolve-poc-kill-report.json) |
 | `NatronRenderer` | reference | CPU | 2026-11-24 | [`report.txt`](../evidence/2026-11-24-windows/report.txt) |
 

@@ -243,10 +243,46 @@ from a Resolve Lite 16 profile dump) and what they imply for this build stays
 - **One input, no temporal access, no transition, no generator.** Four descriptor
   features the template does not declare, so a Resolve user looking for them in
   the effect's UI finds nothing ([`ofx-api-constants.md`](ofx-api-constants.md) §1.1).
-- **No render of the pixel path, no crash data.** The 2026-11-25 frame is a
-  pass-through, so `render()` never had to run; the blacklist behaviour in §2.5
-  and the GPU-mode switch in §2.2 stay host facts to design against, not
-  observations of this plug-in, and the CUDA path has never been offered to it.
+- **No render of the pixel path, no crash data.** The 2026-11-25 frame from this
+  bundle is a pass-through, so `render()` never had to run; the blacklist
+  behaviour in §2.5 and the GPU-mode switch in §2.2 stay host facts to design
+  against, not observations of this plug-in, and the CUDA path has never been
+  offered to it. Other templates have since rendered in the same host (the OpenCL
+  and ONNX matrix rows of 2026-11-27), which says nothing about this bundle's CUDA
+  path.
+
+### 2.11 What 21.2.0.5 accepts from describe(), and the frame that follows
+
+Measured on 2026-11-27 with a probe in a scratch copy of the ONNX template
+(`evidence/2026-11-27-windows/onnx-describe-resolve.log`). Resolve answered
+`describe failed on plugin com.ofxplugindeveloper.onnxinference, error code 4`
+for a build that wrote three OFX 1.5.1 / GPU properties unguarded; the probe
+splits the action per write:
+
+- **Accepted**: labels, grouping, description, `eContextFilter` and
+  `eContextGeneral`, float bit depth, `setSingleInstance(false)`,
+  `setHostFrameThreading(false)`, `setSupportsMultiResolution(false)`,
+  `setSupportsTiles(false)`, `setTemporalClipAccess(false)`,
+  `setRenderTwiceAlways(false)`, `setSupportsMultipleClipPARs(false)`,
+  `setSupportsMultipleClipDepths(false)`, `setRenderThreadSafety(eRenderInstanceSafe)`,
+  `kOfxImageEffectPropNoSpatialAwareness` and `setSupportsCudaRender(false)`.
+- **Rejected**: `kOfxImageEffectPropCPURenderSupported`, as
+  `PropertyUnknownToHost` - the support library's `what()` is the property name.
+  Escaping `describe()` it becomes `kOfxStatErrMissingHostFeature` (4), because
+  the dispatcher in `Support/Library/ofxsImageEffect.cpp` maps both
+  `HostInadequate` and `PropertyUnknownToHost` to 4; that is the "error code 4" in
+  the host log. Status 3 (`kOfxStatErrUnknown`) never reaches the host here: the
+  property wrapper turns it into the exception first
+  (`Support/Library/ofxsProperty.cpp:8-40`).
+
+What follows for a plug-in that wants a frame out of this host: a capability
+write is a claim, not a question, and a host that does not know the property can
+fail the whole action. Guard the 1.5.1 additions - `try`/`catch` around the
+write, or ask `propGet` first - and the rest of `describe()` is cheap. With the
+guard the host instantiated the effect, created the filter context and rendered
+1920x1080; the frame is the model's output, not the source (`mae 94.87` against
+the source, and half an 8-bit level from the same model run on the CPU, which
+also pins the pixels the host hands over to 0..1).
 
 ---
 

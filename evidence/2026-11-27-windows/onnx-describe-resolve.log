@@ -1,0 +1,121 @@
+# ONNX inference in Resolve Studio 21.2.0.5: what describe() sets, 2026-11-27.
+#
+# Backlog row 19. The question: the host answered `describe failed on plugin
+# com.ofxplugindeveloper.onnxinference, error code 4` and never instantiated the
+# plug-in, so every frame it produced was the source. Which of the writes in
+# describe() does it refuse, and does the effect render once the refusal is out
+# of the way?
+
+## 1. Why a probe, and what it reports
+
+`OFX::Log` writes nothing in a release build, and a refused describe and a
+working one produce the same pixels until an instance exists. So the measurement
+is a probe in a scratch copy of the template (`.validation/onnx-probe/`, built
+against `.ofx-ref`, never committed): every describe() step appends one line to
+the file named in `$OFXCL_PROBE`, and the three property writes that can throw
+report what the host answered instead of aborting describe - so one host session
+lists all of them:
+
+    describe begin
+    describe flags=ok
+    describe cpu_property=ok | failed reason=<what()> | failed status=<n>
+    describe nosa_property=...
+    describe cuda_render=...
+    describe end
+
+`describe begin` / `flags=ok` / `end` bracket the plain setters (labels, grouping,
+description, both contexts, bit depth, single instance, frame threading,
+multi-resolution, tiles, temporal clip access, render-twice, multiple-PARs,
+multiple-depths, render-thread-safety), which throw nothing and therefore need no
+line of their own.
+
+## 2. What the host accepts  [V]
+
+One run of the probe bundle through `tests/resolve/poc.py` (model shipped as
+`Contents/Resources/model.onnx`), OFX log of that session:
+
+    describe begin
+    describe flags=ok
+    describe cpu_property=failed reason=OfxImageEffectPropCPURenderSupported
+    describe nosa_property=ok
+    describe cuda_render=ok
+    describe end
+
+Read: Resolve 21.2.0.5 accepts every write the template makes in describe() -
+labels, grouping, description, `eContextFilter` and `eContextGeneral`, float bit
+depth, `setSingleInstance(false)`, `setHostFrameThreading(false)`,
+`setSupportsMultiResolution(false)`, `setSupportsTiles(false)`,
+`setTemporalClipAccess(false)`, `setRenderTwiceAlways(false)`,
+`setSupportsMultipleClipPARs(false)`, `setSupportsMultipleClipDepths(false)`,
+`setRenderThreadSafety(eRenderInstanceSafe)`,
+`kOfxImageEffectPropNoSpatialAwareness` and `setSupportsCudaRender(false)` - and
+rejects exactly one: `kOfxImageEffectPropCPURenderSupported`.
+
+The reason string is the support library's `PropertyUnknownToHost`, whose
+`what()` is the property name (`Support/Library/ofxsProperty.cpp:8-40`: an
+unknown property status becomes that exception; it is not a `Suite` exception, so
+no status number is carried).
+
+## 3. Where "error code 4" comes from  [I]
+
+`Support/Library/ofxsImageEffect.cpp`, the main-entry dispatcher, catches in
+this order: `OFX::Exception::Suite` -> `stat = ex.status()` (:2831-2838);
+`HostInadequate` -> `kOfxStatErrMissingHostFeature` (:2849-2851);
+`PropertyUnknownToHost` -> `kOfxStatErrMissingHostFeature` (:2859-2861). So a
+describe() that lets `PropertyUnknownToHost` escape returns status 4, and 4 is
+`kOfxStatErrMissingHostFeature` (`include/ofxCore.h:916`) - the number Resolve
+prints after `describe failed on plugin ...`.
+
+## 4. The same describe(), one write apart  [V]
+
+At the session that produced the message (2026-11-26 22:21, commit 764547a) the
+source wrote all three properties unguarded
+(`templates/onnx-inference-ofx/src/Plugin.cpp:418/419/423`); the host logged
+`describe failed ... error code 4` once, then `Plugin [...] is not available`
+2240 times and rendered the source (`mae 0.0`, `resolve-project-route.log` §6).
+
+On 2026-11-27 the only change is a `try`/`catch` around the
+`kOfxImageEffectPropCPURenderSupported` write (commit be06bc4). With it the same
+host loads the bundle, creates the filter context and renders 1920x1080:
+
+    validate  pass  1 .ofx, decoders ['ffmpeg']
+    install   pass  C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+    connect   pass  DaVinci Resolve Studio 21.2.0.5
+    gpu       pass  Selected compute API: CUDA
+    build     pass  poc: ONNX Inference on source.png
+    render    pass  poc00108000.png
+    check     pass  1920x1080 via ffmpeg
+    quit      pass  API quit, then the recorded PID
+    report: tests/resolve/reports/poc-2026-11-27T16-21-43+00-00.json
+
+Committed as `resolve-onnx-host-report.json` beside this file. The host's own
+log for the session carries `OFX: loading com.ofxplugindeveloper.onnxinference`
+and no `describe failed` line.
+
+## 5. The frame is the model's output, not a copy  [V]
+
+Bundle: the template's own, built with `ONNXRUNTIME_ROOT=.validation/ort-1.32.0`
+(the CPU package - no execution provider beside the .ofx), model
+`templates/onnx-inference-ofx/models/test_conv.onnx` copied to
+`Contents/Resources/model.onnx`.
+
+    frame vs source          mae 94.872843, max_pixel 255, 8294400 bytes
+    frame vs the model run   0..1 input:  mae 0.198, max 0.5 (of 255),
+      on the CPU                            correlation 0.9994
+    frame vs the model run   0..255 input: mae 2.142, max 8, correlation 0.9135
+
+The CPU reference is `onnxruntime` 1.23.2 in this repository's venv, the same
+PNG decoded to RGB, packed planar `[1,3,H,W]`, the model's single `Conv` run on
+`CPUExecutionProvider`, output clipped to 0..255. Matching the host frame to
+within half an 8-bit level at input scale 0..1 says two things at once: the host
+hands the plug-in pixels in 0..1, and the frame it recorded is that convolution,
+not the source (which differs by 94.9 levels).
+
+## 6. What stays unmeasured
+
+- The CUDA execution provider inside Resolve: this run shipped the CPU package,
+  so the provider path of row 19 is still only measured up to "the bundle loads".
+- The project round trip (`ImportProject` + `LoadProject`) has not been
+  re-rendered since the guard; the render above is `poc.py`'s direct route.
+- Tiles, proxy and colour management: the model still sees whatever the host
+  hands over, in 0..1, with no colourspace read.

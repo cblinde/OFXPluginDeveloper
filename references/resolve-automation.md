@@ -151,9 +151,13 @@ What follows from that, and what does not:
   no `"<name>.Cfg"` - and `LoadProject(<base name>)` reopens it with the effect on
   the item. The model path no longer needs the container at all: the plug-in reads
   `ONNX_MODEL_PATH`, else `Contents/Resources/model.onnx`, once at instance
-  creation ([`improvement-backlog.md`](improvement-backlog.md) row 19). What still
-  stops the frame is the host refusing the plug-in - `describe failed … error code
-  4`, never an instance.
+  creation ([`improvement-backlog.md`](improvement-backlog.md) row 19). What kept
+  the frame out of that route is the host refusing the plug-in - `describe failed
+  … error code 4`, never an instance - and that refusal is one write in
+  `describe()`, `kOfxImageEffectPropCPURenderSupported`, guarded since commit
+  be06bc4; with the guard the same host renders the model's output
+  (**[V]**, [`onnx-describe-resolve.log`](../evidence/2026-11-27-windows/onnx-describe-resolve.log)).
+  The imported-project route itself has not been re-rendered since.
 - Loading one is what `poc.py --project` does, and that mode ran for the first
   time on 2026-11-26: four defects fell out of it - an undefined `render_size`, a
   `KeyError` without `--resolve`, a `connect()` that demanded an open project, and
