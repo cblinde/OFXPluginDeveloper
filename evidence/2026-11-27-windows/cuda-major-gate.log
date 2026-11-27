@@ -1,0 +1,73 @@
+# The CUDA-major gate, Windows 11 + RTX 3060, 2026-11-27
+#
+# The coupling
+#   Resolve 21.2 ships cuBLAS 12. ONNX Runtime 1.20.1's CUDA provider imports
+#   cublas64_12.dll and loads there; 1.32.0's imports cublas64_13.dll and the host
+#   refuses it with "Error 1114: eine DLL-Initialisierungsroutine ist
+#   fehlgeschlagen" and nothing else in its log. That is a property of the pair
+#   (provider, host), not of either alone - so it is checked against the host and
+#   not against a number someone typed.
+#
+# Reading the major from the host
+#   $ python tools/check-runtime.py --detect-host-major "E:/Program Files/Blackmagic Design/DaVinci Resolve"
+#   12                                              <- stdout, for scripts
+#   host CUDA major: 12 (from cublas64_12.dll)      <- stderr, for a reader
+#   exit 0
+#
+#   Nothing is read from the driver on purpose: a driver reports the toolkit it
+#   supports (13 here, from the CUDA 13.0 toolkit on PATH), not the libraries a
+#   host ships (12). That difference is the whole failure mode.
+#
+# The build that must stop, and does
+#   ONNXRUNTIME_ROOT=.validation/ort-gpu-1.32.0
+#   OFXPLUGIN_CUDA_RUNTIME_DIRS=.validation/ort-gpu-1.32.0/bin
+#   OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON
+#   RESOLVE_EXE=E:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe
+#   templates\onnx-inference-ofx\build.bat Release   -> exit 1
+#
+#     CUDA-major gate: 12, read from E:\Program Files\Blackmagic Design\DaVinci Resolve
+#     CUDA-major gate: the provider must import CUDA 12
+#     FAIL: onnxruntime_providers_cuda.dll imports cuBLAS/CUDA runtime 13, but the
+#     host ships 12: a host refuses such a provider at load (error 1114, the DLL
+#     initialisation routine failed). Build the bundle against an ONNX Runtime
+#     whose CUDA provider targets 12 (1.20.1 pairs with CUDA 12, 1.32.0 wants
+#     CUDA 13), or bundle the CUDA 13 runtime as well and accept a second stack in
+#     the host's process.
+#     BUILD FAILED (see the output above)
+#
+# The same build with the pairing the host needs
+#   ONNXRUNTIME_ROOT=.validation/ort-gpu-1.20.1, same flags                 -> exit 0
+#
+#     CUDA-major gate: 12, read from E:\Program Files\Blackmagic Design\DaVinci Resolve
+#     CUDA-major gate: the provider must import CUDA 12
+#     CUDA major: 12 (cuBLAS and the CUDA runtime agree; a host ships that major
+#     or refuses this provider)
+#     verdict: every gate asked for passed
+#
+# The suite after the change
+#   templates\onnx-inference-ofx\test\test.bat Release                       -> exit 0
+#   contract_test: 148 checks, 0 failed   (nuke / resolve / natron)
+#   contract_test: 150 checks, 0 failed   (tiled host profile)
+#   contract_test:  84 checks, 0 failed
+#   all checks passed
+#
+# The tool's own self-test, including the four new cases
+#   python tools/check-runtime.py --self-test   -> self-test: 44 checks, 0 failed
+#   a host read as 12 (cublas64_12.dll), a host read as 13, a directory holding
+#   two majors refused rather than guessed, a directory with no cuBLAS refused
+#   (exit 2), and the detected number alone on stdout with the explanation on
+#   stderr - so `for /f` in build.bat captures a number and not a sentence.
+#
+# What is not measured here
+#   The load-time sentence (PairingNote in ModelRunner.cpp) is compiled into the
+#   .ofx - `strings` finds it - and the suite passes over the path where the
+#   provider loads normally, but no run in this session produced the 1114 status
+#   again, so it is verified as compiled text and not as a label a host printed.
+#   The 1114 label itself is the one measured on 2026-11-26
+#   (evidence/2026-11-26-windows/resolve-provider-only.log).
+#
+# One state this run left behind and cleaned up: the model.onnx copied into
+# build\bundle\...\Contents\Resources for an earlier host run made the contract's
+# isIdentity check fail (a bundle that ships a model is not pass-through). The
+# suite's own step 4 creates that copy in a temporary bundle; the build output
+# keeps none, and the failing run was repeated without it to green.

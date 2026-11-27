@@ -27,6 +27,17 @@ rem                     zip at hand? The NuGet package carries the same files:
 rem                       https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/<version>
 rem                     (a .nupkg is a zip) with build\native\include,
 rem                     runtimes\win-x64\native\*.lib and ...\*.dll.
+rem   OFXPLUGIN_HOST_CUDA_MAJOR
+rem                     the CUDA major the target host ships, when it is not the
+rem                     one found automatically (Resolve 21.2 ships 12). Detection
+rem                     reads the host's own cublas64_<major>.dll, because a driver
+rem                     reports the toolkit it supports, not the libraries a host
+rem                     ships - a 13 typed in here is how a CUDA-13 provider lands
+rem                     in a CUDA-12 host and fails at load with Error 1114.
+rem   OFXPLUGIN_HOST_DIR / RESOLVE_EXE
+rem                     where to look for that host (default: the DaVinci Resolve
+rem                     directory under Program Files)
+rem
 rem   OFXPLUGIN_BUNDLE_CUDA_PROVIDER
 rem                     ON copies onnxruntime_providers_cuda and the DLLs it
 rem                     imports beside the .ofx. Needs the -gpu package under
@@ -201,12 +212,15 @@ if not exist "%BUNDLE%\Contents\Win64\onnxruntime-ofx.dll" (
 echo   %BUNDLE%\Contents\Win64\onnxruntime-ofx.dll
 rem A provider DLL carries its CUDA major in its import names (cublas64_12.dll,
 rem cublas64_13.dll), and a host refuses the mismatch as "Error 1114" with nothing
-rem else in its log. The host this bundle is built for is Resolve 21.2, which ships
-rem CUDA 12; OFXPLUGIN_HOST_CUDA_MAJOR widens that deliberately for a host on the
-rem newer major. A bundle without a provider has nothing to check and says so.
-set "HOST_CUDA_MAJOR=%OFXPLUGIN_HOST_CUDA_MAJOR%"
-if not defined HOST_CUDA_MAJOR set "HOST_CUDA_MAJOR=12"
+rem else in its log. So the major this bundle must satisfy is read from the host
+rem itself - its own cublas64_<major>.dll - not assumed and not taken from the
+rem driver, which reports the toolkit it supports rather than the libraries a host
+rem ships. 1.20.1's provider imports CUDA 12 and Resolve 21.2 ships 12; 1.32.0's
+rem imports 13 and cannot load there. A bundle without a provider has nothing to
+rem check and says so.
+call :recognise_host
 if exist "%BUNDLE%\Contents\Win64\onnxruntime_providers_cuda.dll" (
+  echo   CUDA-major gate: the provider must import CUDA %HOST_CUDA_MAJOR%
   python "%HERE%..\..\tools\check-runtime.py" "%BUNDLE%" --require-cuda-major %HOST_CUDA_MAJOR% || goto :error
 ) else (
   echo   no CUDA provider in this bundle, so the CUDA-major gate does not apply
@@ -217,6 +231,35 @@ rem --strict: the Visual Studio generator branch never runs vcvars64, so dumpbin
 rem is not on PATH; the checker finds it through vswhere, and a build that cannot
 rem inspect its artifact fails instead of printing a skip.
 call "%HERE%..\..\testkit\check-ofx-artifact.bat" "%PLUGIN_OFX%" --strict || goto :error
+exit /b 0
+
+:recognise_host
+rem Which major the bundle has to satisfy. An explicit OFXPLUGIN_HOST_CUDA_MAJOR
+rem wins, and says so - it is a statement about a host this build cannot see.
+set "HOST_CUDA_MAJOR=%OFXPLUGIN_HOST_CUDA_MAJOR%"
+if defined HOST_CUDA_MAJOR (
+  echo   CUDA-major gate: %HOST_CUDA_MAJOR%, from OFXPLUGIN_HOST_CUDA_MAJOR - the
+  echo   host directory was not consulted, so this number is the builder's claim
+  exit /b 0
+)
+set "HOST_DIR=%OFXPLUGIN_HOST_DIR%"
+if not defined HOST_DIR if defined RESOLVE_EXE for %%I in ("%RESOLVE_EXE%") do set "HOST_DIR=%%~dpI"
+if not defined HOST_DIR if exist "%ProgramFiles%\Blackmagic Design\DaVinci Resolve\Resolve.exe" set "HOST_DIR=%ProgramFiles%\Blackmagic Design\DaVinci Resolve"
+rem %%~dpI keeps the trailing backslash, and a quoted path ending in one is
+rem not a path cmd can test - trim it before the directory is looked at.
+if defined HOST_DIR if "!HOST_DIR:~-1!"=="\" set "HOST_DIR=!HOST_DIR:~0,-1!"
+if defined HOST_DIR if exist "!HOST_DIR!" (
+  for /f "usebackq delims=" %%M in (`python "%HERE%..\..\tools\check-runtime.py" --detect-host-major "!HOST_DIR!" 2^>nul`) do set "HOST_CUDA_MAJOR=%%M"
+)
+if defined HOST_CUDA_MAJOR (
+  echo   CUDA-major gate: %HOST_CUDA_MAJOR%, read from %HOST_DIR%
+  exit /b 0
+)
+rem Nothing to read: fall back to the major Resolve 21.2 ships, and say that this
+rem is a default rather than a measurement - the gate is still a gate.
+echo   CUDA-major gate: 12 (no host directory found; using the major Resolve 21.2
+echo   ships - set OFXPLUGIN_HOST_DIR or RESOLVE_EXE to read it from a host)
+set "HOST_CUDA_MAJOR=12"
 exit /b 0
 
 :error

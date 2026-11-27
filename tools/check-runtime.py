@@ -7,6 +7,7 @@ libraries export and import.
     python3 tools/check-runtime.py <root> --json
     python3 tools/check-runtime.py <root> --require-api 22 --require-plugin-provider
     python3 tools/check-runtime.py <root-or-bundle> --require-cuda-major 12
+    python3 tools/check-runtime.py --detect-host-major "<host directory>"
     python3 tools/check-runtime.py --self-test
 
 Why a tool and not a paragraph: the two facts that decide whether a code path can
@@ -299,6 +300,37 @@ def provider_cuda_major(entry):
         if label in CUDA_MAJOR_LABELS and major is not None:
             majors.add(major)
     return majors.pop() if len(majors) == 1 else None
+
+
+def detect_host_major(directory):
+    """The CUDA major a host's own directory ships, read from its cuBLAS file.
+
+    This is the number `--require-cuda-major` should be compared against, and the
+    host is the only honest source for it: Resolve puts `cublas64_12.dll` beside
+    `Resolve.exe`, and a driver - which reports the toolkit it *supports*, not the
+    libraries a host *ships* - puts a 13 in front of a 12 and is how a CUDA-13
+    bundle ends up installed into a CUDA-12 host (error 1114 at load, and nothing
+    else in the log). Returns (major, file name) or (None, why not).
+    """
+    found = {}
+    for base, dirs, files in os.walk(directory):
+        # The host's own data directories hold copies from elsewhere; the library
+        # that gets loaded sits beside the executable or in Support\Libraries.
+        dirs[:] = [d for d in dirs
+                   if d.lower() not in ("cache", "logs", "logarchive", "easyshare",
+                                        ".thumbnails", "crashreports")]
+        for name in files:
+            match = (re.match(r"^cublas64_(\d+)\.dll$", name, re.I)
+                     or re.match(r"^libcublas\.so\.(\d+)$", name, re.I))
+            if match:
+                found.setdefault(int(match.group(1)), name)
+    if not found:
+        return None, "no cublas64_<major>.dll or libcublas.so.<major> under %s" % directory
+    if len(found) > 1:
+        return None, ("several cuBLAS majors under %s: %s"
+                      % (directory, ", ".join(sorted(found.values()))))
+    major = sorted(found)[0]
+    return major, found[major]
 
 
 def library_files(root):
@@ -679,6 +711,29 @@ def self_test():
                any("1114" in problem for problem in mismatches), True)
         expect("the mismatch names the versions that pair",
                any(CUDA_MAJOR_PAIRS in problem for problem in mismatches), True)
+        # The host side of the same question: the major a host directory ships,
+        # read from its own library rather than typed in.
+        write("host12/cublas64_12.dll", b"MZ")
+        write("host12/cublasLt64_12.dll", b"MZ")
+        write("host13/cublas64_13.dll", b"MZ")
+        write("hostboth/cublas64_12.dll", b"MZ")
+        write("hostboth/cublas64_13.dll", b"MZ")
+        write("hostcuda-empty/omt.pdb", b"")
+        expect("the host's CUDA major is read from its cuBLAS file",
+               detect_host_major(os.path.join(base, "host12"))[0], 12)
+        expect("a host on the newer major is read as 13",
+               detect_host_major(os.path.join(base, "host13"))[0], 13)
+        expect("a host with two cuBLAS majors is not guessed at",
+               detect_host_major(os.path.join(base, "hostboth"))[0], None)
+        expect("a directory without cuBLAS says so",
+               detect_host_major(os.path.join(base, "hostcuda-empty"))[0], None)
+        expect("exit status when the host's major is readable",
+               quiet(["--detect-host-major", os.path.join(base, "host12")])[0], 0)
+        expect("the detected major is stdout and the explanation is not",
+               quiet(["--detect-host-major", os.path.join(base, "host12")])[1].strip(),
+               "12")
+        expect("exit status when the host's major is not readable",
+               quiet(["--detect-host-major", os.path.join(base, "hostcuda-empty")])[0], 2)
         expect("a CUDA 12 provider against a CUDA 12 host passes",
                blocked(inspect(os.path.join(base, "cuda12")), None, False, 12), [])
         expect("the report states the CUDA major it read",
@@ -800,6 +855,10 @@ def main(argv=None):
                         help="fail unless the CUDA provider imports cuBLAS and the "
                              "CUDA runtime of major N, i.e. the major the host ships "
                              "(Resolve 21.2: 12)")
+    parser.add_argument("--detect-host-major", metavar="DIR",
+                        help="print the CUDA major the host in DIR ships, read "
+                             "from its own cuBLAS library; the number "
+                             "--require-cuda-major should be given")
     parser.add_argument("--self-test", action="store_true",
                         help="build PE and ELF fixtures in a temp dir and "
                              "check this tool's own reading and gates; "
@@ -808,6 +867,18 @@ def main(argv=None):
 
     if args.self_test:
         return self_test()
+    if args.detect_host_major:
+        if not os.path.isdir(args.detect_host_major):
+            sys.stderr.write("error: %s is not a directory\n" % args.detect_host_major)
+            return 2
+        major, why = detect_host_major(args.detect_host_major)
+        if major is None:
+            sys.stderr.write("error: %s\n" % why)
+            return 2
+        # stdout is the number alone: build.bat captures it with for /f.
+        print(major)
+        sys.stderr.write("host CUDA major: %d (from %s)\n" % (major, why))
+        return 0
     if args.root is None:
         parser.error("a root is required unless --self-test is given")
 

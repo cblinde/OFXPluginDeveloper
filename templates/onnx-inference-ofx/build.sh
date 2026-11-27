@@ -116,6 +116,32 @@ if command -v readelf >/dev/null 2>&1; then
   fi
 fi
 
+# The CUDA provider's major is what a host refuses at load: Resolve 21.2 ships
+# CUDA 12, so the 1.20.1 provider (imports libcublas.so.12) loads and the 1.32.0
+# one (imports 13) does not - the Windows host calls that Error 1114 and says
+# nothing else. The number the bundle must satisfy is read from the host when one
+# is named (OFXPLUGIN_HOST_DIR, else RESOLVE_DIR) and its own libcublas.so.<major>,
+# because a driver reports the toolkit it supports, not the libraries a host
+# ships. With no host the build says which default it used.
+PROVIDER="$(find "$(dirname "${OFX_BIN}")" -name 'libonnxruntime_providers_cuda.so' | head -1)"
+if [[ -n "${PROVIDER}" ]]; then
+  HOST_CUDA_MAJOR="${OFXPLUGIN_HOST_CUDA_MAJOR:-}"
+  HOST_DIR="${OFXPLUGIN_HOST_DIR:-${RESOLVE_DIR:-}}"
+  if [[ -z "${HOST_CUDA_MAJOR}" && -n "${HOST_DIR}" && -d "${HOST_DIR}" ]]; then
+    HOST_CUDA_MAJOR="$(python3 "${HERE}/../../tools/check-runtime.py" \
+      --detect-host-major "${HOST_DIR}" 2>/dev/null || true)"
+  fi
+  if [[ -z "${HOST_CUDA_MAJOR}" ]]; then
+    HOST_CUDA_MAJOR=12
+    echo "  CUDA-major gate: 12 (no host directory given; using the major Resolve"
+    echo "  ships - set OFXPLUGIN_HOST_DIR or RESOLVE_DIR to read it from a host)"
+  else
+    echo "  CUDA-major gate: ${HOST_CUDA_MAJOR}"
+  fi
+  python3 "${HERE}/../../tools/check-runtime.py" "${BUNDLE}" \
+    --require-cuda-major "${HOST_CUDA_MAJOR}"
+fi
+
 echo
 echo "Bundle: ${BUNDLE}"
 echo "  ${OFX_BIN}"

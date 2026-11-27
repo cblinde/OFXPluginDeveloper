@@ -400,6 +400,29 @@ std::string ShortMessage(const std::string& text)
     return line;
 }
 
+/// The one explanation that fits a load failure whose status text names no
+/// cause: a provider whose cuBLAS major the host does not ship. Resolve 21.2
+/// ships cuBLAS 12, so the 1.20.1 provider (imports 12) initialises and the
+/// 1.32.0 one (imports 13) fails with "Error 1114: eine DLL-
+/// Initialisierungsroutine ist fehlgeschlagen" - a sentence naming neither the
+/// library nor the mismatch. The note is appended, never substituted: the status
+/// text is the evidence, the note is the part a reader can act on.
+std::string PairingNote(const std::string& status)
+{
+    const bool looksLikeLoadFailure =
+        status.find("1114") != std::string::npos ||
+        status.find("Initialisierungsroutine") != std::string::npos ||
+        status.find("initialization routine") != std::string::npos;
+    if (!looksLikeLoadFailure) {
+        return std::string();
+    }
+    return std::string(" [this is what a cuBLAS major the host does not ship looks "
+                       "like: ONNX Runtime 1.20.1 imports cuBLAS 12, which Resolve "
+                       "21.2 ships, and 1.32.0 imports 13, which it does not. "
+                       "tools/check-runtime.py <bundle> --require-cuda-major 12]");
+}
+
+
 /// The count the session is really built with. 0 means "decide here": one
 /// thread, because the host already calls render() on several threads and ORT's
 /// own default is one intra-op thread per physical core *per session*. The
@@ -688,7 +711,7 @@ bool AppendCudaProvider(Ort::SessionOptions& options, std::string* reason,
         }
         return true;
     } catch (const std::exception& e) {
-        *reason = ShortMessage(e.what());
+        *reason = ShortMessage(e.what()) + PairingNote(e.what());
         return false;
     }
 }

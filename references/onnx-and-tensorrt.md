@@ -1160,6 +1160,34 @@ suite exits 1 only because its CUDA gate refuses a CPU fallback. That is why the
 V2 stage line prints the whole status text: the label's shortened message stops at
 the path and never reaches the reason.
 
+**The pairing is enforced where it can still change, not remembered.** The rule
+is one line - Resolve 21.2 ships cuBLAS 12, so the 1.20.1 provider (imports 12)
+loads there and the 1.32.0 provider (imports 13) fails with `Error 1114` - and
+there are now three places that say it and one that acts on it:
+
+- `tools/check-runtime.py --detect-host-major <host dir>` prints the major the
+  host **ships**, read from its own `cublas64_<n>.dll` (or
+  `libcublas.so.<n>`), and says so on stderr with the file it read. This is the
+  only honest source: a driver reports the toolkit it *supports*, so a driver that
+  offers 13 in front of a host that ships 12 is exactly how a CUDA-13 provider
+  lands in a CUDA-12 host.
+- `build.bat` calls it before the provider gate: `RESOLVE_EXE`,
+  `OFXPLUGIN_HOST_DIR`, else the DaVinci Resolve directory under `Program Files`,
+  and prints `CUDA-major gate: 12, read from <dir>`. `OFXPLUGIN_HOST_CUDA_MAJOR`
+  still overrides - and the build prints that the number is then the builder's
+  claim, not a measurement. `build.sh` does the same on Linux.
+- the provider gate itself stops the build with the whole story:
+  `FAIL: onnxruntime_providers_cuda.dll imports cuBLAS/CUDA runtime 13, but the
+  host ships 12: a host refuses such a provider at load (error 1114, the DLL
+  initialisation routine failed). Build the bundle against an ONNX Runtime whose
+  CUDA provider targets 12 (1.20.1 pairs with CUDA 12, 1.32.0 wants CUDA 13)…`
+  and a non-zero exit (**[V]**, measured against `.validation/ort-gpu-1.32.0`,
+  2026-11-27).
+- at load time, when a host still gets the wrong pairing from somewhere else, the
+  provider label's reason now carries the same sentence: `ShortMessage` keeps
+  ORT's own status text and `PairingNote()` appends what it means when that text
+  contains `1114`. The status stays first because it is the evidence.
+
 **What the host's own crash reports said.** The abort of 2026-11-25 left no
 stack here, but Windows kept four reports for `Resolve.exe` in
 `C:\ProgramData\Microsoft\Windows\WER\ReportArchive`, and each one carries a
