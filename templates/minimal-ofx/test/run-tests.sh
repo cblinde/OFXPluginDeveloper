@@ -73,6 +73,17 @@ for profile in "${HOST_PROFILES[@]}"; do
   "${HARNESS}" "${OFX_FILE}" --host-profile "${profile}" "${HARNESS_ARGS[@]}"
 done
 
+# Resolve 21.2.0.5 answers a write of kOfxImageEffectPropCPURenderSupported with
+# kOfxStatErrUnknown, the support library turns that into a failed describe and
+# the plug-in never loads ("error code 4"). The guard around the two capability
+# writes is what keeps it loading, and this run is what executes the guard: with
+# the guard removed, describe fails here with kOfxStatErrMissingHostFeature.
+echo "  host profile: resolve, refusing both capability writes"
+"${HARNESS}" "${OFX_FILE}" --host-profile resolve \
+  --reject-property kOfxImageEffectPropCPURenderSupported \
+  --reject-property kOfxImageEffectPropNoSpatialAwareness \
+  "${HARNESS_ARGS[@]}"
+
 echo
 echo "== [4/4] valgrind memcheck =="
 WANT="${RUN_VALGRIND:-auto}"

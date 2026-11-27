@@ -104,6 +104,27 @@ for %%P in (nuke resolve natron) do (
     --concurrency-threads %THREADS% || goto :error
 )
 
+rem Resolve 21.2.0.5 answers a write of kOfxImageEffectPropCPURenderSupported with
+rem kOfxStatErrUnknown, the support library turns that into a failed describe and
+rem the plug-in never loads ("error code 4"). The guard around the two capability
+rem writes is what keeps it loading, and this run is what executes the guard: with
+rem the guard removed, describe fails here with kOfxStatErrMissingHostFeature.
+echo   host profile: resolve, refusing both capability writes
+"%CONTRACT%" "%OFX_FILE%" ^
+    --host-profile resolve ^
+    --reject-property kOfxImageEffectPropCPURenderSupported ^
+    --reject-property kOfxImageEffectPropNoSpatialAwareness ^
+    --id com.ofxplugindeveloper.referencegain ^
+    --version 1.0 ^
+    --param gain:double ^
+    --clip Source ^
+    --clip Output ^
+    --byte-dst-rejected ^
+    --src-bounds-inset 2 --dst-bounds-inset 2 ^
+    --negative-pitch ^
+    --concurrency-param gain ^
+    --concurrency-threads %THREADS% || goto :error
+
 echo.
 echo all Windows checks passed
 exit /b 0

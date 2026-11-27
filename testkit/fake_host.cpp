@@ -301,6 +301,23 @@ char* allocatePixels(ImageObj* img, long long bytes)
 
 } // namespace
 
+namespace {
+
+// Property names this "host" answers with kOfxStatErrUnknown, the way Resolve
+// 21.2.0.5 answers kOfxImageEffectPropCPURenderSupported. Empty by default: a
+// fake host that refuses nothing cannot tell a guarded capability write from a
+// guard that was never executed.
+std::vector<std::string> gRejectedProperties;
+
+bool propertyIsRejected(const char* name) {
+  for (const std::string& rejected : gRejectedProperties) {
+    if (rejected == name) return true;
+  }
+  return false;
+}
+
+} // namespace
+
 struct Impl {
   OfxHost host{};
   PropSet hostProps;
@@ -427,6 +444,7 @@ const Value* slotConst(PropSet* s, const char* name, int index) {
 }
 
 OfxStatus setString(PropSet* s, const char* n, int i, const char* v) {
+  if (propertyIsRejected(n)) return kOfxStatErrUnknown;
   std::vector<Value>* vec = slot(s, n, i);
   if (!vec) return kOfxStatErrBadHandle;
   Value& val = (*vec)[i];
@@ -1533,6 +1551,18 @@ FakeHost::FakeHost() : impl_(&state()) {
 
 FakeHost::~FakeHost() {
   // The host state outlives every FakeHost (see state()).
+}
+
+void FakeHost::rejectProperty(const char* name) {
+  if (name == nullptr || *name == '\0') return;
+  gRejectedProperties.emplace_back(name);
+  // The identifier in the headers is `kOfxImageEffectPropCPURenderSupported`;
+  // the value the property suite sees is `OfxImageEffectPropCPURenderSupported`.
+  // Both spellings are accepted, because handing a suite the wrong one is a
+  // green run that tests nothing.
+  if (name[0] == 'k' && std::strncmp(name + 1, "Ofx", 3) == 0) {
+    gRejectedProperties.emplace_back(name + 1);
+  }
 }
 
 void FakeHost::attach(OfxPlugin* plugin) {

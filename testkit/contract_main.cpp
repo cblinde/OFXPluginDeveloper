@@ -176,6 +176,11 @@ struct Spec {
   // one host, so a suite that wants all three shapes runs the harness three
   // times.
   testkit::HostProfile profile = testkit::HostProfile::Nuke;
+  // --reject-property NAME (repeatable): a property this host answers with
+  // kOfxStatErrUnknown, so a suite can prove the plug-in's guard around a
+  // capability write actually runs. A plug-in without the guard fails describe
+  // here; with it, every check still has to pass.
+  std::vector<std::string> rejectedProperties;
   int apiVersion = 1;
   int versionMajor = 1;
   int versionMinor = 0;
@@ -903,6 +908,10 @@ std::string rectText(const OfxRectD& r) {
 bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   testkit::FakeHost host;
   host.setHostProfile(spec.profile);
+  for (const std::string& rejected : spec.rejectedProperties) {
+    std::fprintf(stderr, "host refuses a write of %s\n", rejected.c_str());
+    host.rejectProperty(rejected.c_str());
+  }
   Module module;
   std::string error;
   if (!check("dlopen(" + spec.path + ")", module.open(spec.path, &error), error)) return failCycle(host);
@@ -1134,14 +1143,38 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   // thumbnail with no spatial awareness has to produce the same frame - there is
   // no spatial parameter to disable, so any difference is the plug-in's.
   {
+    // A host that refuses a capability write (`--reject-property`) cannot see the
+    // declaration, so the check for it is "the property is absent and describe
+    // still succeeded" instead. Without that, the strict-host pass would fail a
+    // plug-in for the host's answer rather than for the plug-in's behaviour.
+    // Both spellings of a property name are compared: the headers say
+    // `kOfxImageEffectPropCPURenderSupported`, the property suite sees
+    // `OfxImageEffectPropCPURenderSupported`, and a list that matched neither
+    // would be a strict-host pass that refuses nothing.
+    const auto bare = [](const std::string& name) {
+      const bool prefixed = name.size() > 4 && name[0] == 'k' && name.compare(1, 3, "Ofx") == 0;
+      return prefixed ? name.substr(1) : name;
+    };
+    const auto refused = [&spec, &bare](const char* name) {
+      for (const std::string& rejected : spec.rejectedProperties) {
+        if (bare(rejected) == bare(name)) return true;
+      }
+      return false;
+    };
+    const bool cpuRefused = refused(kOfxImageEffectPropCPURenderSupported);
     const std::string cpuSupported = host.descriptorString(kOfxImageEffectPropCPURenderSupported);
-    if (!check("descriptor declares CPURenderSupported", cpuSupported == "true",
-               "\"" + cpuSupported + "\" (expected \"true\")")) {
+    if (!check(cpuRefused ? "descriptor: CPURenderSupported refused by this host, the plug-in still described"
+                          : "descriptor declares CPURenderSupported",
+               cpuRefused ? cpuSupported != "false" : cpuSupported == "true",
+               "\"" + cpuSupported + "\"")) {
       return failCycle(host);
     }
+    const bool noSpatialRefused = refused(kOfxImageEffectPropNoSpatialAwareness);
     const std::string noSpatial = host.descriptorString(kOfxImageEffectPropNoSpatialAwareness);
-    if (!check("descriptor declares NoSpatialAwareness", noSpatial == "true",
-               "\"" + noSpatial + "\" (expected \"true\")")) {
+    if (!check(noSpatialRefused ? "descriptor: NoSpatialAwareness refused by this host, the plug-in still described"
+                                : "descriptor declares NoSpatialAwareness",
+               noSpatialRefused ? noSpatial != "false" : noSpatial == "true",
+               "\"" + noSpatial + "\"")) {
       return failCycle(host);
     }
     const std::vector<float> plainPixels = host.destination();
@@ -1717,6 +1750,8 @@ int main(int argc, char** argv) {
     return 2;
   }
   spec.path = argv[1];
+  // Say which properties this host will refuse: a strict-host run whose list
+  // was typo'd would otherwise be a normal run that proves nothing.
   for (int i = 2; i < argc; ++i) {
     const std::string a = argv[i];
     auto next = [&](const char* what) -> std::string {
@@ -1739,6 +1774,8 @@ int main(int argc, char** argv) {
       spec.versionMinor = dot == std::string::npos ? 0 : std::atoi(v.substr(dot + 1).c_str());
     } else if (a == "--context") {
       spec.context = next("--context");
+    } else if (a == "--reject-property") {
+      spec.rejectedProperties.push_back(next("--reject-property"));
     } else if (a == "--host-profile") {
       const std::string v = next("--host-profile");
       if (v == "nuke" || v == "tiles") {

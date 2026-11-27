@@ -551,7 +551,13 @@ void GainPluginFactory::describe(OFX::ImageEffectDescriptor& desc)
         desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
     } catch (const OFX::Exception::PropertyUnknownToHost&) {
     }
-    desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
+    // A host that has never heard of the property answers with an unknown
+    // status, and the support library turns that into a failed describe - the
+    // whole plug-in then never loads (Resolve 21.2.0.5, measured 2026-11-27).
+    try {
+        desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
+    } catch (const OFX::Exception::PropertyUnknownToHost&) {
+    }
 
 #ifdef OFXPLUGIN_WITH_CUDA
     // Advertising CUDA makes the host pass device pointers. Only do it when a

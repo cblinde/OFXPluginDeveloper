@@ -318,6 +318,32 @@ meets both instead of meeting 1.5 three times. `natron` keeps 1.5 because
 `README-hosts.txt` has no dump for it - a gap in the evidence, stated rather than
 filled with a guess.
 
+**A host that refuses a property is a shape too.** A profile changes what a host
+declares; `--reject-property NAME` (repeatable) changes what it *accepts*. Resolve
+21.2.0.5 answers a write of `kOfxImageEffectPropCPURenderSupported` with
+`kOfxStatErrUnknown`, the support library raises `PropertyUnknownToHost`, the write
+propagates out of `describe()`, and the host reports `kOfxStatErrMissingHostFeature`
+and creates no instance at all - in Resolve that reads "error code 4"
+([`onnx-describe-resolve.log`](../evidence/2026-11-27-windows/onnx-describe-resolve.log)).
+The plug-in keeps its `try`/`catch` around that write for exactly this host, and
+until now no suite entered the `catch`: a fake host that stores every write cannot
+distinguish a guarded capability write from one that was never guarded. The switch
+closes that hole. The harness prints every name it will refuse (`host refuses a
+write of …`) before the plug-in is loaded, so a typo in the list is a loud no-op
+rather than a green run that tests nothing; both spellings are accepted, because
+the headers say `kOfxImageEffectPropCPURenderSupported` and the property suite sees
+`OfxImageEffectPropCPURenderSupported`. The two capabilities a refused host cannot
+see are judged differently: `descriptor: CPURenderSupported refused by this host,
+the plug-in still described` replaces the usual "the descriptor declares it" check,
+since the host, not the plug-in, is why the property is absent. The reference
+template's suite runs a fourth pass this way
+([`strict-host.log`](../evidence/2026-11-27-windows/strict-host.log)): **118 checks,
+0 failed** with both capability writes refused, while the same pass against a copy
+with the guard deleted fails at **15 checks, 1 failed**, `FAIL kOfxActionDescribe:
+kOfxStatErrMissingHostFeature` - the Resolve symptom reproduced in this repository.
+The other three templates carry the same guard around the same two writes and keep
+passing their own suites.
+
 **A reference per platform, a tolerance per reference.** A single
 `--golden-tolerance` on the command line is one global decision, so every
 platform and provider gets the same loosened rule. The harness resolves the
@@ -1095,6 +1121,7 @@ ONNX Runtime 1.20.1 and then 1.32.0
 | One-hole headline, Windows (ORT 1.20.1, `CPU_ONLY=1`) | `ONNXRUNTIME_ROOT` set but no CUDA path: the summary reads `all suites that ran passed, but the GPU step did not run:` with `NOT RUN: GPU kernels (CPU_ONLY)` under it - one hole, named, not rounded up. The inference template still ran on the GPU package's provider: label `… tf32 off, all nodes on CUDA`, **160 + 160 + 82 checks, 0 failed**, and the build against the older headers is what caught the C++-only option wrapper that 1.20.1 does not have ([`onnx-1.20.1-cpu-only.log`](../evidence/2026-11-25-windows/onnx-1.20.1-cpu-only.log)) |
 | Inference fallback probe, Windows (ORT 1.32.0, CUDA 13) | a throwaway session with `session.disable_cpu_ep_fallback=1` loads the graph, so the label reads `CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)` in both host profiles; the control - same model, same runtime, no provider appended - fails with the key and builds without it, so the key is doing the work ([`onnx-fallback-probe.log`](../evidence/2026-11-25-windows/onnx-fallback-probe.log)) |
 | Host profiles, the four templates with a `.bat` runner | the contract runs once per host shape (`--host-profile nuke`, `resolve` and `natron`, §5): **118 × 3** for `ReferenceGain`, **144 × 3** for `MinimalCudaGain`, **168 × 3 + 90** for `OnnxInference` (the 90 is the tiled pass), 0 failed in every pass, identical counts in all three shapes. `MinimalOpenclGain` has the same **118 × 3** on its CPU path, on Linux and since 2026-11-26 on Windows too, and its device-enabled checks are counted in the OpenCL rows below, not here |
+| Strict host, Windows (2026-11-27) | `templates/minimal-ofx/test/run-tests.bat` runs the contract a fourth time with `--reject-property kOfxImageEffectPropCPURenderSupported` and `--reject-property kOfxImageEffectPropNoSpatialAwareness`: **118 checks, 0 failed**, `all Windows checks passed`, exit 0; the same harness against the reference template with both `try`/`catch` blocks removed stops at **15 checks, 1 failed**, `FAIL kOfxActionDescribe: kOfxStatErrMissingHostFeature` - the describe failure Resolve 21.2.0.5 produces, so the guard is what the pass measures **[V]** |
 | OpenCL suite, Windows, NVIDIA device (2026-11-26) | `templates/minimal-opencl-ofx/test/run-tests.bat` on Windows with MSVC 14.50 and the driver's own loader: platform `NVIDIA CUDA`, device `NVIDIA GeForce RTX 3060 (OpenCL 3.0 CUDA)`, so this is a GPU device where every earlier device run was PoCL on the CPU. Contract harness on the CPU path **118 × 3, 0 failed**; the device suite **38 checks, 0 failed** - buffers and Images handover both, the window render, and the negative row pitch refused. The plug-in reaches OpenCL through `LoadLibraryA("OpenCL.dll")` + `GetProcAddress`, so `dumpbin /dependents` shows the CRT and `KERNEL32.dll` and nothing of the vendor's, and the build needs no SDK. Memcheck is skipped on Windows and the log says so. Device throughput stays **[U]** ([`opencl-suite.log`](../evidence/2026-11-26-windows/opencl-suite.log)) |
 | Inference suite, Windows, CPU (ORT 1.32.0) | the arithmetic did not move with the runtime: the golden rendered by 1.20.1 matches **exactly**, no retry, and the CUDA attempt fails by design with the reason in the label - which is what isolates a provider change from a runtime change ([`onnx-inference-cpu-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cpu-1.32.log)) |
 | Windows artifact | 2 exports (`dumpbin /exports`), 7 cubins `sm_75`…`sm_120` (`cuobjdump -lelf`), no CUDA runtime import **[B]** |

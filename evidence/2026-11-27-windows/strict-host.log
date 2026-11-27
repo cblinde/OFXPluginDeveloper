@@ -1,0 +1,19 @@
+# Strict host: a fake host that refuses the two capability writes (2026-11-27, Windows)
+#
+# templates/minimal-ofx/test/run-tests.bat, MSVC 14.50, host profile resolve,
+# --reject-property kOfxImageEffectPropCPURenderSupported --reject-property kOfxImageEffectPropNoSpatialAwareness
+# Guarded plug-in: the pass runs and the suite passes.
+host refuses a write of kOfxImageEffectPropCPURenderSupported
+host refuses a write of kOfxImageEffectPropNoSpatialAwareness
+host refuses a write of kOfxImageEffectPropCPURenderSupported
+host refuses a write of kOfxImageEffectPropNoSpatialAwareness
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 118 checks, 0 failed
+all Windows checks passed (exit 0)
+
+# Control: the same harness against a copy of the template with both try/catch
+# blocks removed, one capability write refused. The describe fails the way Resolve
+# 21.2.0.5 fails it.
+host refuses a write of kOfxImageEffectPropCPURenderSupported
+FAIL kOfxActionDescribe: kOfxStatErrMissingHostFeature
+contract_test: 15 checks, 1 failed

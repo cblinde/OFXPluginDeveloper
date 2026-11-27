@@ -253,7 +253,19 @@ public:
             desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
         } catch (const OFX::Exception::PropertyUnknownToHost&) {
         }
-        desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
+    // A host that has never heard of the property answers with an unknown
+    // status, and the support library turns that into a failed describe - the
+    // whole plug-in then never loads (Resolve 21.2.0.5, measured 2026-11-27).
+    try {
+        // A host that has never heard of the property answers with an unknown
+        // status, and the support library turns that into a failed describe - the
+        // whole plug-in then never loads (Resolve 21.2.0.5, measured 2026-11-27).
+        try {
+            desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
+        } catch (const OFX::Exception::PropertyUnknownToHost&) {
+        }
+    } catch (const OFX::Exception::PropertyUnknownToHost&) {
+    }
     }
 
     void describeInContext(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum context) override

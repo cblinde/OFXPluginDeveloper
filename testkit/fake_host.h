@@ -124,6 +124,12 @@ public:
   // proxy), so the harness keeps every window check and the profile only
   // changes the host's declared capabilities.
   void setHostProfile(HostProfile profile);
+
+  // Make every property write of this name fail with kOfxStatErrUnknown, which
+  // is what a host that does not know a 1.5.1 or GPU capability answers (Resolve
+  // 21.2.0.5 does exactly that for kOfxImageEffectPropCPURenderSupported). Call
+  // before attach(): the write happens during describe.
+  void rejectProperty(const char* name);
   HostProfile hostProfile() const;
   bool hostSupportsTiles() const;
   bool hostSupportsMultiResolution() const;
