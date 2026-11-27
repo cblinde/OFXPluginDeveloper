@@ -63,6 +63,55 @@ if not exist "%OFX%" (
   exit /b 1
 )
 
+rem ---- layout: the packaging spec, checked where the link table cannot ------
+rem A host finds the binary by walking NAME.ofx.bundle/Contents/<ARCH>/NAME.ofx.
+rem An architecture directory it does not know is a plug-in that never loads, an
+rem Info.plist outside a macOS bundle is a file the host never reads, and a
+rem directory whose name starts with '@' is skipped by the scan altogether. None
+rem of that shows up in dumpbin, so it is checked here - first, because it needs
+rem no tool. A .ofx passed from outside a bundle keeps the old behaviour: the
+rem layout stage says it was skipped instead of inventing a verdict.
+for %%I in ("%OFX%\..") do set "ARCH=%%~nxI"
+for %%I in ("%OFX%\..\..") do set "CONTENTS=%%~nxI"
+for %%I in ("%OFX%\..\..\..") do set "BUNDLE=%%~nxI"
+for %%I in ("%OFX%\..\..\..") do set "BUNDLE_ROOT=%%~fI"
+set "IN_BUNDLE=0"
+if /i "%CONTENTS%"=="Contents" (
+  echo %BUNDLE%|findstr /e /i /c:".ofx.bundle" >nul
+  if not errorlevel 1 set "IN_BUNDLE=1"
+)
+if "%IN_BUNDLE%"=="0" (
+  echo   layout: skipped ^(not a .ofx.bundle/Contents/^<arch^> path^)
+  goto :layout_done
+)
+set "KNOWN=0"
+for %%A in (Win64 Win-arm64ec MacOS Linux-x86-64 Linux-aarch64) do if /i "%ARCH%"=="%%A" set "KNOWN=1"
+if "%KNOWN%"=="0" (
+  echo FAIL: the architecture directory "%ARCH%" is not one the spec names
+  echo   expected one of: Win64, Win-arm64ec, MacOS, Linux-x86-64, Linux-aarch64
+  exit /b 1
+)
+if /i "%ARCH%"=="MacOS" (
+  if not exist "%BUNDLE_ROOT%\Contents\Info.plist" (
+    echo FAIL: a MacOS bundle needs Contents\Info.plist
+    exit /b 1
+  )
+) else (
+  if exist "%BUNDLE_ROOT%\Contents\Info.plist" (
+    echo FAIL: Info.plist is a macOS bundle file, not one for %ARCH%
+    exit /b 1
+  )
+)
+for /d /r "%BUNDLE_ROOT%\Contents" %%D in (*) do (
+  set "PARENT_NAME=%%~nxD"
+  if "!PARENT_NAME:~0,1!"=="@" (
+    echo FAIL: "%%~nxD" starts with '@', which the host's scan skips
+    exit /b 1
+  )
+)
+echo   layout: %BUNDLE%/Contents/%ARCH% ^(an architecture the spec names, no '@' directory^)
+:layout_done
+
 rem ---- resolve dumpbin -------------------------------------------------------
 set "DUMPBIN="
 for /f "delims=" %%D in ('where dumpbin 2^>nul') do if not defined DUMPBIN set "DUMPBIN=%%~D"

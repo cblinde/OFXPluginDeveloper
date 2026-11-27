@@ -37,9 +37,20 @@ repository root **[B]**.
 ## 2. Build and packaging standards
 
 **Bundle layout.** Hosts scan `NAME.ofx.bundle/Contents/<ARCH>/NAME.ofx`, where
-`ARCH` is `Win64`, `Linux-x86-64`, `Linux-aarch64` or `MacOS`. The file must end
-in `.ofx` on every platform and the **stem must match the bundle name**:
-`MinimalCudaGain.ofx.bundle/Contents/Win64/MinimalCudaGain.ofx`.
+`ARCH` is `Win64`, `Win-arm64ec`, `Linux-x86-64`, `Linux-aarch64` or `MacOS`. The
+file must end in `.ofx` on every platform and the **stem must match the bundle
+name**: `MinimalCudaGain.ofx.bundle/Contents/Win64/MinimalCudaGain.ofx`.
+
+**The layout is checked, not just described.** `testkit/check-ofx-artifact.bat`
+walks up from the `.ofx` it was handed and asserts the four things a host reads
+but a link table cannot show: the directory above the binary is one of the
+architecture names above, its parent is `Contents`, the bundle ends in
+`.ofx.bundle`, and no directory under `Contents` starts with `@` (the scan skips
+those). `Info.plist` is required for a `MacOS` bundle and refused in any other,
+because a host on Windows or Linux never reads it. Measured on 2026-11-27 against
+four doctored bundles: `Contents/Win65/` and a stray `Contents/Info.plist` and a
+`Contents/@cache/` each fail with their own line, and a `.ofx` checked outside a
+bundle prints `layout: skipped` instead of inventing a verdict.
 
 **What ships is part of the bundle.** The architecture directory decides whether
 a host finds the module; the files beside it decide whether it works and whether
