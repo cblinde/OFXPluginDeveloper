@@ -509,7 +509,9 @@ Four more things that cost a run here:
   gives an OpenCL 3.0 device on the CPU, so a kernel can be built, enqueued and
   read back here; anything about throughput needs a GPU and is not measured. The
   template's suite is 118 contract checks × 3 host profiles on the CPU path plus
-  22 OpenCL checks, 0 failed **[V]** for the path, **[U]** for every GPU number.
+  its own device checks - 22 on the PoCL CPU device this bullet records, 38 on an
+  NVIDIA device ([testing-layers.md](testing-layers.md) §13) - 0 failed **[V]** for the
+  path, **[U]** for every GPU number.
 
 The one packaging trap that cost a run: Ubuntu puts PoCL's kernel headers
 (`pocl_types.h`, `_kernel.h`, `opencl-c.h`) in `libpocl2-common`, not in

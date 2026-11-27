@@ -2,7 +2,8 @@
 rem ---------------------------------------------------------------------------
 rem Windows counterpart of test/run-tests.sh for this template.
 rem
-rem   test\run-tests.bat                 build, artifact check, host contract
+rem   test\run-tests.bat                 build, artifact check, host contract,
+rem                                      install
 rem   test\run-tests.bat Release nobuild reuse build\ instead of calling build.bat
 rem
 rem Linux runs this through g++, nm -D, readelf, dlopen and valgrind. None of
@@ -13,7 +14,11 @@ rem   [1/4] build     build.bat, then the artifact check it already runs
 rem   [2/4] artifact  testkit\check-ofx-artifact.bat --strict (dumpbin, cuobjdump)
 rem   [3/4] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
 rem                   host protocol as dlopen: load, describe, create, render,
-rem                   destroy, unload, twice, with the negative cases
+rem                   destroy, unload, twice, with the negative cases; once
+rem                   per host shape plus one pass that refuses both
+rem                   capability writes
+rem   [4/4] install   cmake --install into a temp prefix, then load and
+rem                   render from the installed copy
 rem
 rem What it does NOT do: valgrind and the sanitizer builds. A build that leaks is
 rem caught on Linux; on Windows the contract's unload cycle is what runs.

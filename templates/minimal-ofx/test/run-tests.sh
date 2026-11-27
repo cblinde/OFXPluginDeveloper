@@ -4,9 +4,13 @@
 # The reference plug-in's test: build it (which already inspects the artifact),
 # then drive the shared contract harness through the whole host protocol -
 # load, describe, describeInContext, createInstance, render, destroy, unload -
-# twice. When valgrind is installed the same harness runs under memcheck, once
-# per host profile, because the reference plug-in is the one every other
-# template is compared against and a leak there would be copied.
+# twice - once per host profile, and once more with both capability writes
+# refused, which is the only run that executes the guard around them. Then
+# cmake --install into a temporary prefix and the same contract against the
+# installed copy, because the build tree is not an install. When valgrind is
+# installed the harness runs under memcheck, once per host profile, because
+# the reference plug-in is the one every other template is compared against
+# and a leak there would be copied.
 #
 #   ./run-tests.sh
 #   SANITIZE=address,undefined ./run-tests.sh
