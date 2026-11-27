@@ -85,27 +85,30 @@ message. Two host-facing facts:
   of ours to collide (2.8 GB → 1.1 GB in the reporter's bundle **[B]**). It needs a
   CUDA host; it does not replace the runtime guard on a full bundle.
 
-  **Measured in Resolve Studio 21.2.0.5, 2026-11-26.** Both facts hold, and the
-  provider-only bundle has a constraint the switch alone does not express: the
-  provider DLL is what the host must load, and it imports a specific CUDA major.
-  Built against the 1.32.0 package its provider imports `cublas64_13.dll` and
-  `cublasLt64_13.dll`; the host ships 12, so the host refuses the plug-in outright -
-  `Create context [OfxImageEffectContextFilter_...] failed for plugin
-  [com.ofxplugindeveloper.onnxinference]` and `Plugin [...] is not available!!!!`
-  repeat, and nothing renders. Built against the 1.20.1 package - cuBLAS/cuBLASLt
-  12, cuFFT 11, cudart 12 and cuDNN 9, exactly the files in the host's folder - the
-  host loads the plug-in, applies it and renders one 1920x1080 frame. Both bundles
-  hold four files (`OnnxInference.ofx`, `onnxruntime-ofx.dll`,
-  `onnxruntime_providers_cuda.dll`, `onnxruntime_providers_shared.dll`) and no
-  cuDNN, cuBLAS, cuFFT or cudart of their own, and at run time the host's process
-  carried `cudnn64_9.dll` from its own install folder, and its module list also names its
-own `onnxruntime.dll` (**[V]**,
+  **Measured in Resolve Studio 21.2.0.5, 2026-11-26 - and the run says less than
+  this paragraph first claimed.** Both bundles hold four files
+  (`OnnxInference.ofx`, `onnxruntime-ofx.dll`, `onnxruntime_providers_cuda.dll`,
+  `onnxruntime_providers_shared.dll`) and no cuDNN, cuBLAS, cuFFT or cudart of
+  their own, and at run time the host's process carried `cudnn64_9.dll` from its
+  own install folder and its own `onnxruntime.dll` (**[V]**,
   [`resolve-provider-only.log`](../evidence/2026-11-26-windows/resolve-provider-only.log)).
-  The frame in that run is a **pass-through**, and not because of the packaging:
-  Resolve hands a script an OFX effect object with `GetInfo`, `GetIndex`,
-  `GetIsEnabled`, `SetIndex` and `SetIsEnabled` and nothing else, so no parameter
-  can be set from the script - which this plug-in does not need, because it reads
-  `ONNX_MODEL_PATH` or `Contents/Resources/model.onnx` when it is created. **The Fusion route is closed too**, which
+  The plug-in itself never ran in either session: the host registers each bundle,
+  then fails to create a context - 19 times with the 1.32.0 package, 151 times
+  with the 1.20.1 one, and `Plugin [...] is not available!!!!` besides - and the
+  frame is the source (`mae 0.0`) even with `ONNX_MODEL_PATH` pointing at a
+  model. So the run establishes the first half of the claim - the host supplies
+  the CUDA stack, our bundle adds no second copy of a base name - and nothing
+  about our provider, which no session loaded. That the provider imports a
+  specific CUDA major remains a constraint to design for (**[B]**, ONNX Runtime's
+  provider requirements), but it is not what separated these two packages: both
+  failed before a provider could load, for the reason measured on 2026-11-27
+  below.
+  The frame in that run is a **pass-through** because no instance was created,
+  not for want of a parameter: Resolve hands a script an OFX effect object with
+  `GetInfo`, `GetIndex`, `GetIsEnabled`, `SetIndex` and `SetIsEnabled` and nothing
+  else, so nothing can be set from the script - which this plug-in does not need,
+  because it reads `ONNX_MODEL_PATH` or `Contents/Resources/model.onnx` when it is
+  created. **The Fusion route is closed too**, which
   closes the last scripting door: `effect.GetFusionComp()` returns `None` for an
   effect added with `AddEffect("ofx", …)`, and a comp added to the timeline item
   (`item.AddFusionComp()`) holds only `MediaIn`/`MediaOut` - `AddTool` refuses the

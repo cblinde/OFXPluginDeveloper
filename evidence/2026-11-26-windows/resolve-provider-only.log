@@ -2,7 +2,8 @@
 #
 # Two packages, same switch:
 #   1.32.0 GPU package -> the host refuses the plug-in
-#   1.20.1 GPU package -> the host loads it, applies it, renders one frame
+#   1.20.1 GPU package -> the host registers the bundle and renders a frame, but
+#                         the plug-in never instantiates (correction, §7)
 #
 # Why the difference is a packaging fact, not a bug in the switch: the provider DLL
 # is what the host has to load, and it imports a specific CUDA major.
@@ -74,3 +75,28 @@ E:\Program Files\Blackmagic Design\DaVinci Resolve\cublasLt64_12.dll
 # GetIsEnabled, SetIndex and SetIsEnabled and nothing else, so the model parameter cannot
 # be set and render() never runs. A device render in Resolve needs a project that already
 # carries the parameter value - not a script.
+
+## 7. Correction, 2026-11-27: neither session instantiated the plug-in
+
+The header and §5 said the 1.20.1 run "loads it, applies it and renders one
+frame". The frame is real, the plug-in is not: with `ONNX_MODEL_PATH` pointing at
+`test_conv.onnx` that frame is `mae 0.0` against the source, which no run of this
+model can produce, and the host log of that session carries
+
+    18:57:48,401  OFX: loading com.ofxplugindeveloper.onnxinference
+    18:58:xx      Create context [OfxImageEffectContextFilter_...] failed ...  151 times
+    18:58:xx      Plugin [...] is not available!!!!                              15 times
+
+The 1.32.0 session at 18:55 shows the same failure, 19 create-context failures and
+6 "not available" lines. So the CUDA major of the provider DLL is not what
+separated the two packages: neither session ever created an instance, and a
+provider is loaded when a session is created. `onnxruntime-ofx.dll` and
+`onnxruntime_providers_cuda.dll` appear in neither module list for that reason.
+
+What the run does establish is the packaging fact it was made for, "the bundle
+adds no second copy of a base name the host already has" - and nothing about our
+provider, which never loaded. The frame is the source because the plug-in was not
+instantiated, not because a script cannot set a parameter; the cause is the
+unguarded `kOfxImageEffectPropCPURenderSupported` write in `describe()`, measured
+in `evidence/2026-11-27-windows/onnx-describe-resolve.log`, and guarded, the same
+host renders the model's output.
