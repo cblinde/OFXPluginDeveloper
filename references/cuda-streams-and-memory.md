@@ -168,7 +168,7 @@ gates, one function, and a test that runs without a GPU.
 | Device memory query | `DeviceMemoryFreeBytes()` in `Kernel.cu`, `cudaMemGetInfo` under the hood | **[V]** compiled and linked; the value is read at render time |
 | The decision at render time | `Plugin.cpp`, `processImagesCuda()`, logged once per render with its reason | **[V]** the log line names mode, depth, size, stream and reason |
 | Override | `OFXPLUGIN_GPU_MODE=auto|cpu|cuda|hybrid`; an unknown word is reported, not silently ignored | **[V]** |
-| Overlapping CPU work with the kernel | none of the four templates has independent CPU work to overlap | **not implemented**; see below |
+| Overlapping CPU work with the kernel | no template has independent CPU work to overlap | **not implemented**; see below |
 
 ### 4.1 The gates
 

@@ -149,15 +149,29 @@ unsigned int renderPixels(const OfxRectI& window)
     return pixels > 0xffffffffLL ? 0xffffffffu : (unsigned int)pixels;
 }
 
+/// True when gate 0 already answers for this process. Every caller below asks
+/// this before it touches a driver: creating an instance to learn "there is a
+/// device" for a render that will not use one costs the one-time context and the
+/// VRAM, inside the host's createInstance, and makes `OFXPLUGIN_VULKAN_MODE=cpu`
+/// a slower way to reach the same CPU loop.
+bool overrideForcesCpu()
+{
+    return requestedMode() == vkgain::Mode::CpuOnly;
+}
+
 /// What the decision needs to know about this render.
 vkgain::FrameFacts frameFacts(unsigned int pixels)
 {
     vkgain::FrameFacts facts;
     facts.builtWithVulkan = kBuiltWithVulkan;
-    facts.deviceReady = gpuAvailable();
     facts.pixels = pixels;
 #ifdef OFXPLUGIN_VULKAN
-    facts.maxPixels = facts.deviceReady ? engine().maxPixels() : 0;
+    // deviceReady stays false under the override, which is not a lie about the
+    // machine: gate 0 returns before gate 2 is asked.
+    if (!overrideForcesCpu()) {
+        facts.deviceReady = gpuAvailable();
+        facts.maxPixels = facts.deviceReady ? engine().maxPixels() : 0;
+    }
 #endif
     return facts;
 }
@@ -169,7 +183,7 @@ std::string cpuLabel(const std::string& reason)
 {
     std::string text = "CPU - " + reason;
 #ifdef OFXPLUGIN_VULKAN
-    if (!engine().ready()) {
+    if (!overrideForcesCpu() && !engine().ready()) {
         const std::string& why = engine().reason();
         if (!why.empty()) {
             text += ": ";

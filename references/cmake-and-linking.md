@@ -555,8 +555,9 @@ What that costs at build time, and what it does not:
   pointwise pass it is also the faster one: the frame is written and read through
   mapped memory, which on a discrete GPU is system RAM over PCIe, and a
   device-local buffer with a staging copy puts the same frame over PCIe twice.
-  Measured on one RTX 3060 at 1920×1080 over 300 frames: **102.5 ms/frame
-  host-visible against 117.2 ms/frame device-local**, with the CPU copies ~89 ms
+  Measured on one RTX 3060 at 1920×1080 over 300 frames (three runs): **102.5
+  to 106.7 ms/frame host-visible against 117.2 to 117.6 ms/frame device-local**,
+  with the CPU copies 89-91 ms
   in both and the difference entirely in the two extra `vkCmdCopyBuffer` trips
   (**[V]**, [`../evidence/2026-11-27-windows/vulkan-300-frames.log`](../evidence/2026-11-27-windows/vulkan-300-frames.log),
   table and reasoning in [`vulkan-compute.md`](vulkan-compute.md) §3). Staging

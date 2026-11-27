@@ -13,6 +13,8 @@
 #   templates/minimal-cuda-ofx/test/run-tests.sh
 #   templates/onnx-inference-ofx/test/run-tests.sh
 #   templates/minimal-opencl-ofx/test/run-tests.sh  (needs an OpenCL device)
+#   templates/minimal-vulkan-ofx/test/run-tests.sh  (needs a Vulkan SDK; its
+#                                                   CPU path builds without one)
 #
 # Environment:
 #   OFX_SOURCE_DIR     openfx checkout (default: ./.ofx-ref when present,
@@ -117,6 +119,20 @@ if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
   echo "       lib/libonnxruntime.so (see templates/onnx-inference-ofx/build.sh --help)."
 fi
 
+# The Vulkan template has a third shape: with a Vulkan SDK it builds the device
+# path, with OFXPLUGIN_VULKAN=OFF it builds and tests the CPU path and reports the
+# device step as NOT VERIFIED, and with neither it cannot build at all. The last
+# case is a named hole, not a red run - a machine without an SDK has not failed
+# the template. It is not enforced in CI the way ONNX and OpenCL are, because the
+# workflow builds it in a job that installs the SDK.
+vulkan="ran"
+if [[ -z "${VULKAN_SDK:-}${VULKAN_INCLUDE_DIR:-}" && "${OFXPLUGIN_VULKAN:-ON}" != "OFF" ]]; then
+  vulkan="no-sdk"
+  echo "[vulkan] no VULKAN_SDK or VULKAN_INCLUDE_DIR: templates/minimal-vulkan-ofx"
+  echo "         will NOT be built. Set VULKAN_SDK, or OFXPLUGIN_VULKAN=OFF to"
+  echo "         build its CPU path only."
+fi
+
 # The CUDA template runs in one of two modes, and the summary has to say which.
 # CPU_ONLY=1 asks for the fallback path on purpose, and a machine without nvcc
 # ends up there anyway; in neither case does a kernel run, so no summary line may
@@ -136,14 +152,21 @@ fi
 # that skipped the ONNX template and the GPU step must not be summarised as if
 # only one thing was missing.
 summary_headline() {
-  local holes=()
+  local holes=() text="" i
   [[ "${onnx}" == "1" ]] || holes+=("one template was not built")
+  [[ "${vulkan:-ran}" == "ran" ]] || holes+=("the Vulkan template was not built")
   [[ "${gpu_mode}" == "CUDA" ]] || holes+=("the GPU step did not run")
-  case ${#holes[@]} in
-    0) echo "all suites passed, every template that was built:" ;;
-    1) echo "all suites that ran passed, but ${holes[0]}:" ;;
-    *) echo "all suites that ran passed, but ${holes[0]} and ${holes[1]}:" ;;
-  esac
+  for ((i = 0; i < ${#holes[@]}; i++)); do
+    if ((i > 0)); then
+      if ((i == ${#holes[@]} - 1)); then text+=" and "; else text+=", "; fi
+    fi
+    text+="${holes[i]}"
+  done
+  if [[ -z "${text}" ]]; then
+    echo "all suites passed, every template that was built:"
+  else
+    echo "all suites that ran passed, but ${text}:"
+  fi
 }
 
 # A run that claims to cover everything is only allowed to stay green without
@@ -166,6 +189,20 @@ report_skipped_onnx() {
   echo "  tested: not its build, not its host contract, not its ai_pipeline test."
   echo "  The counts above do not cover it."
   echo "  Close it with: ONNXRUNTIME_ROOT=/path/to/onnxruntime ./run-tests.sh"
+  echo "------------------------------------------------------------------"
+}
+
+# The Vulkan template, when the machine had no SDK to build against.
+report_skipped_vulkan() {
+  [[ "${vulkan:-ran}" == "ran" ]] && return 0
+  echo
+  echo "------------------------------------------------------------------"
+  echo "NOT VERIFIED: templates/minimal-vulkan-ofx"
+  echo "  There was no Vulkan SDK to configure against, so nothing in that"
+  echo "  template was built or tested: not its path policy, not its bundle,"
+  echo "  not its contract test, not the device suite. The counts above do not"
+  echo "  cover it."
+  echo "  Close it with: VULKAN_SDK=/path/to/sdk ./run-tests.sh"
   echo "------------------------------------------------------------------"
 }
 
@@ -355,6 +392,15 @@ if [[ "${windows}" == "1" ]]; then
     echo "== test: onnx-inference-ofx (skipped: ONNXRUNTIME_ROOT unset) =="
   fi
 
+  if [[ "${vulkan}" == "ran" ]]; then
+    echo
+    echo "== test: minimal-vulkan-ofx (build, path policy, artifact, contract, device) =="
+    cmd //c "$(cygpath -w "${ROOT}/templates/minimal-vulkan-ofx/test/run-tests.bat")" Release
+  else
+    echo
+    echo "== test: minimal-vulkan-ofx (skipped: no Vulkan SDK) =="
+  fi
+
   echo
   echo "== negative controls: broken plug-ins must fail, the pattern must pass =="
   cmd //c "$(cygpath -w "${ROOT}/testkit/run-negative-controls.bat")"
@@ -388,6 +434,11 @@ if [[ "${windows}" == "1" ]]; then
   else
     echo "  NOT RUN: GPU kernels            (${gpu_mode})"
   fi
+  if [[ "${vulkan}" == "ran" ]]; then
+    echo "  Vulkan path + device suite      (minimal-vulkan-ofx, path policy + vulkan_suite)"
+  else
+    echo "  NOT RUN: minimal-vulkan-ofx     (no Vulkan SDK: set VULKAN_SDK)"
+  fi
   echo "  negative controls               (testkit/run-negative-controls.bat)"
   summary_tool_tests
   echo "  comparator self-test            (testkit/selftest-compare.bat)"
@@ -398,6 +449,7 @@ if [[ "${windows}" == "1" ]]; then
   echo "no readelf, and a PE image has no GLIBC_ version table"
   echo "=================================================================="
   report_skipped_onnx
+  report_skipped_vulkan
   report_skipped_gpu
   if [[ "${opencl_win:-0}" == "2" ]]; then
     opencl="no-device"
@@ -463,6 +515,14 @@ else
   echo "== test: onnx-inference-ofx (skipped: ONNXRUNTIME_ROOT unset) =="
 fi
 
+echo
+if [[ "${vulkan}" == "ran" ]]; then
+  echo "== test: minimal-vulkan-ofx (build, path policy, artifact, contract, device) =="
+  "${ROOT}/templates/minimal-vulkan-ofx/test/run-tests.sh"
+else
+  echo "== test: minimal-vulkan-ofx (skipped: no Vulkan SDK) =="
+fi
+
 # ---------------------------------------------------------------------------
 # glibc bound
 # ---------------------------------------------------------------------------
@@ -505,6 +565,12 @@ glibc_gate "minimal-cuda-ofx" "${glibc_max_cuda}" \
   "${ROOT}"/templates/minimal-cuda-ofx/build/bundle/*.ofx.bundle
 glibc_gate "minimal-opencl-ofx" "${glibc_max_minimal}" \
   "${ROOT}"/templates/minimal-opencl-ofx/build/bundle/*.ofx.bundle
+glibc_217="3"
+if [[ "${vulkan}" == "ran" ]]; then
+  glibc_gate "minimal-vulkan-ofx" "${glibc_max_minimal}" \
+    "${ROOT}"/templates/minimal-vulkan-ofx/build/bundle/*.ofx.bundle
+  glibc_217="4"
+fi
 if [[ "${onnx}" == "1" ]]; then
   glibc_gate "onnx-inference-ofx" "${glibc_max_onnx}" \
     "${ROOT}"/templates/onnx-inference-ofx/build/bundle/*.ofx.bundle
@@ -542,6 +608,9 @@ artifact_check() {
 artifact_check minimal-ofx
 artifact_check minimal-cuda-ofx
 artifact_check minimal-opencl-ofx
+if [[ "${vulkan}" == "ran" ]]; then
+  artifact_check minimal-vulkan-ofx
+fi
 if [[ "${onnx}" == "1" ]]; then
   artifact_check onnx-inference-ofx
 else
@@ -583,7 +652,12 @@ if [[ "${opencl}" == "ran" ]]; then
 else
   echo "  NOT RUN: OpenCL device path     (no OpenCL device on this machine)"
 fi
-echo "  glibc bound per bundle          (2.17 x3 / 2.32, cmake-and-linking.md §5)"
+if [[ "${vulkan}" == "ran" ]]; then
+  echo "  Vulkan path + device suite      (minimal-vulkan-ofx, path policy + vulkan_suite)"
+else
+  echo "  NOT RUN: minimal-vulkan-ofx     (no Vulkan SDK: set VULKAN_SDK)"
+fi
+echo "  glibc bound per bundle          (2.17 x${glibc_217} / 2.32, cmake-and-linking.md §5)"
 echo "  artifact check per bundle       (exports, dependents, device code)"
 if [[ "${gpu_mode}" == "CUDA" ]]; then
   echo "  GPU kernels                     (minimal-cuda-ofx, on the device)"
@@ -600,6 +674,7 @@ else
 fi
 echo "=================================================================="
 report_skipped_onnx
+report_skipped_vulkan
 report_skipped_gpu
 report_skipped_opencl
 require_onnx_in_ci

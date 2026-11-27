@@ -1,21 +1,38 @@
-# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-27 (excerpt of 3891 lines)
+# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-27 (excerpt of 4800 lines)
 #
-# Environment: ONNXRUNTIME_ROOT=.validation\ort-gpu-1.20.1 (GPU package, CUDA 12 /
-# cuDNN 9), OFX_SOURCE_DIR resolved to ./.ofx-ref, nvcc from CUDA 13.0 on PATH, no
-# CPU_ONLY, no SANITIZE, no RUN_VALGRIND. Windows route: the .bat runners.
+# Environment: ONNXRUNTIME_ROOT=.validation\ort-1.32.0 (the version the pin in
+# .github/actions/onnx-runtime names), VULKAN_SDK=.validation\vk\sdk,
+# OFX_SOURCE_DIR resolved to ./.ofx-ref, nvcc from CUDA 13.0 on PATH, no
+# CPU_ONLY, no SANITIZE, no RUN_VALGRIND. Windows route: the .bat runners, one per
+# template - and the fifth one is in this run, which is what changed: the Vulkan
+# template used to be absent from this route and the summary did not name it.
 #
 # This file keeps the section headers, the per-suite counts, every skip line and
-# the summary block; the full log (3891 lines) stays in .validation/, which is not
-# tracked. Nothing below was edited by hand.
+# the summary block; the full log (4800 lines) stays in .validation/, which is
+# not tracked. Nothing below was edited by hand. The counts: 562 reference, 486
+# CUDA, 354 + 38 OpenCL, 656 + 29 + 26 Vulkan, 678 inference = 2,829 - the
+# inference row is 148 x 3 + 150 + 84, and the totals in runtime-comparison.md
+# were 100 higher than this log until this run was read against them.
 
 == docs: check-docs ==
 == docs ==
-check-docs: 31 documents, 0 problems
+check-docs: 33 documents, 0 problems
 selftest: 7 faults reported, the clean tree accepted
+== licence and provenance ==
+check-provenance: 101 source file(s) with an SPDX line
+check-provenance: 0 problems
 == shell syntax ==
 check-shell: 26 script(s) parse
 == reference plug-in: minimal-ofx (build, artifact, contract) ==
 == [1/4] build (Release) ==
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Default gain: 2.0
+-- OFX plugin : ReferenceGain
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-ofx/build
 == [2/4] artifact (exports, dependents) ==
 == [3/4] host contract (LoadLibraryExW + fake host) ==
 contract_test: 118 checks, 0 failed
@@ -27,11 +44,22 @@ contract_test: 90 checks, 0 failed
 all Windows checks passed
 == test: minimal-cuda-ofx (build, artifact, contract) ==
 == [0/4] build (Release) ==
-  device code: 7 cubin(s)
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- CUDA architectures: 75;80;86;89;90;100;120 (default list)
+-- Default gain: 1.0
+-- OFX plugin : MinimalCudaGain (CUDA ON)
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle
+-- Configuring done (3.0s)
+-- Generating done (0.2s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build
+[0/2] Re-checking globbed directories...
 == [1/4] artifact (exports, dependents, device code) ==
-  device code: 7 cubin(s)
 == [2/4] GPU harness (real device code, not emulated) ==
 == the minimal-cuda-ofx kernels on real hardware ==
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+[3/6] concurrent launches from host threads
+[4/6] zero-copy on host-mapped memory
 [5/6] both kernels launched directly (bypassing the launcher)
 [6/6] throughput: the kernel, the CPU loop it replaces, and a copy
 == [3/4] host contract (LoadLibraryExW + fake host) ==
@@ -41,16 +69,66 @@ contract_test: 162 checks, 0 failed
 == [4/4] execution-mode gates (no GPU needed) ==
 all Windows checks passed
 == test: minimal-opencl-ofx (build, artifact, contract, OpenCL suite) ==
+[1/5] building the OpenCL plug-in (and verifying the artifact)
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Default gain: 1.0
+-- OFX plugin : OpenCLGain
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-opencl-ofx/build/bundle/OpenCLGain.ofx.bundle
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-opencl-ofx/build
+[2/5] compiling the shared contract harness
+[3/5] the host protocol, on the CPU path (3 profiles)
 contract_test: 118 checks, 0 failed
 contract_test: 118 checks, 0 failed
 contract_test: 118 checks, 0 failed
-  platform: NVIDIA CUDA
-  device  : NVIDIA GeForce RTX 3060 (OpenCL 3.0 CUDA)
+[4/5] compiling the suite against the shared fake host
+[5/5] running the OpenCL suite against Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
+[1/8] loading Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
+[2/8] opening an OpenCL device for the host to hand over
+[3/8] the CPU path, with the host offering no device
+[4/8] the same render with the device enabled
+[5/8] a render window smaller than the frame
+[6/8] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage
 opencl_suite: 38 checks, 0 failed
-  skipped: no valgrind on Windows. The POSIX script runs both binaries under
+[6/6] valgrind memcheck
 == build + test: onnx-inference-ofx ==
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Dropping cached ONNXRUNTIME_INCLUDE_DIR: it is not under ONNXRUNTIME_ROOT
+-- Dropping cached ONNXRUNTIME_LIBRARY: it is not under ONNXRUNTIME_ROOT
+-- Dropping cached ONNXRUNTIME_DLL: it is not under ONNXRUNTIME_ROOT
+-- ONNX Runtime include: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/include
+-- ONNX Runtime library: not linked (loaded from beside the .ofx)
+-- CUDA provider bundle: the provider imports cuBLAS 12. A host must resolve CUDA 12 or it refuses the plug-in at load (error 1114, the DLL initialisation routine failed). Pairs measured here: 1.20.1 -> cuBLAS 12, which Resolve 21.2.0.5 ships; 1.32.0 -> cuBLAS 13, which it does not - that one loads only if CUDA 13 is on the search path. Check a built bundle with tools/check-runtime.py <root> --require-cuda-major <host major>.
+-- CUDA provider bundle: provider only (OFXPLUGIN_CUDA_FROM_HOST=ON). The host must supply cuDNN 9, cuBLAS/cuBLASLt 12 and the CUDA ;12 runtime and cuFFT; the bundle ships none of them, so it cannot create a second copy of a base name the host has loaded.
+-- CUDA provider bundle: 2 file(s), 642 MB
+-- Licence texts in Contents/Resources: none found beside the runtime. Add ONNX Runtime's LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before shipping (packaging-and-install.md section 2).
+-- OFX plugin : OnnxInference
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+-- Configuring done (0.6s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
 == [1/6] build (Release) ==
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- ONNX Runtime include: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/include
+-- ONNX Runtime library: not linked (loaded from beside the .ofx)
+-- CUDA provider bundle: the provider imports cuBLAS 12. A host must resolve CUDA 12 or it refuses the plug-in at load (error 1114, the DLL initialisation routine failed). Pairs measured here: 1.20.1 -> cuBLAS 12, which Resolve 21.2.0.5 ships; 1.32.0 -> cuBLAS 13, which it does not - that one loads only if CUDA 13 is on the search path. Check a built bundle with tools/check-runtime.py <root> --require-cuda-major <host major>.
+-- CUDA provider bundle: provider only (OFXPLUGIN_CUDA_FROM_HOST=ON). The host must supply cuDNN 9, cuBLAS/cuBLASLt 12 and the CUDA ;12 runtime and cuFFT; the bundle ships none of them, so it cannot create a second copy of a base name the host has loaded.
+-- CUDA provider bundle: 2 file(s), 642 MB
+-- Licence texts in Contents/Resources: none found beside the runtime. Add ONNX Runtime's LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before shipping (packaging-and-install.md section 2).
+-- OFX plugin : OnnxInference
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+-- Configuring done (0.6s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
 == [2/6] inference pipeline (ai_pipeline_test) ==
+[1/4] PackRGB / UnpackRGB round-trip
+[2/4] whole-frame inference vs Python golden
+[3/4] tiled inference vs whole-frame inference
+[4/4] negative controls: wrong blending, negative halo, bad rect
 == [3/6] host contract (LoadLibraryExW + fake host), exact golden ==
 contract_test: 148 checks, 0 failed
 contract_test: 148 checks, 0 failed
@@ -61,6 +139,33 @@ contract_test: 150 checks, 0 failed
 contract_test: 84 checks, 0 failed
 == [6/6] fixtures and artifact ==
 all checks passed
+== test: minimal-vulkan-ofx (build, path policy, artifact, contract, device) ==
+== [1/6] build (Release) ==
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Vulkan     : Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/vk/sdk/Include, shader compiler Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/vk/sdk/Bin/glslc.exe
+-- Default gain: 1.0
+-- OFX plugin : VulkanGain
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/bundle/VulkanGain.ofx.bundle
+-- Device suite: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/self-test/vulkan_suite
+-- Mode test  : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/self-test/vulkan_mode_test
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build
+== [2/6] path policy (six gates, no device needed) ==
+vulkan_mode_test: 29 checks, 0 failed
+== [3/6] artifact (exports, dependents) ==
+== [4/6] host contract (LoadLibraryExW + fake host) ==
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 94 checks, 0 failed
+== [5/6] install and load the installed copy ==
+contract_test: 90 checks, 0 failed
+== [6/6] device suite (Vulkan vs CPU) ==
+vulkan_suite: 26 checks, 0 failed
+all Windows checks passed
 == negative controls: broken plug-ins must fail, the pattern must pass ==
 == [0/4] MSVC environment ==
 == [1/4] contract harness ==
@@ -68,52 +173,33 @@ all checks passed
 == [3/4] varying source fixture ==
 == [4/4] fifteen controls ==
 contract_test: 15 checks, 1 failed
-  caught (exit 1) with: FAIL kOfxActionDescribe: kOfxStatReplyDefault
 contract_test: 20 checks, 1 failed
-  caught (exit 1) with: FAIL param 'gain' type: OfxParamTypeInteger (expected OfxParamTypeDouble)
 contract_test: 32 checks, 1 failed
-  caught (exit 1) with: FAIL roi context: the inset window matches the whole frame bit for bit
 contract_test: 74 checks, 0 failed
-  passed, as a plug-in following the pattern must
 contract_test: 72 checks, 0 failed
 contract_test: 32 checks, 1 failed
-  caught (exit 1) with: FAIL roi context: the inset window stays within the tolerance of the whole frame
 contract_test: 74 checks, 0 failed
-  passed, as a plug-in following the pattern must
 contract_test: 28 checks, 1 failed
-  caught (exit 1) with: FAIL label parameter 'provider' =
 contract_test: 64 checks, 0 failed
-  passed, as a plug-in following the pattern must
 contract_test: 72 checks, 0 failed
-  passed, as a plug-in following the pattern must
 contract_test: 32 checks, 1 failed
-  caught (exit 1) with: FAIL label parameter 'mediaId' follows the clip property
 contract_test: 72 checks, 0 failed
-  passed, as a plug-in following the pattern must
 contract_test: 72 checks, 0 failed
-  passed, as a plug-in following the pattern must
 contract_test: 32 checks, 1 failed
-  caught (exit 1) with: FAIL overlay mark at (24,8)
 contract_test: 32 checks, 1 failed
-  caught (exit 1) with: FAIL overlay mark at (24,8)
-negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp
 == halo value: the stored overlap must still belong to this model ==
 == glibc bound self-test: the comparison must fail on a bound that is too low ==
-self-test: 0 case(s) failed
 == workflow pins: a tag-pinned or malformed workflow must be reported ==
 selftest: 10 faults reported, the clean file accepted, the empty root named
+check-workflows: 4 workflow(s) and 1 action(s), every remote action pinned
 == runtime inspection: a CUDA 13 provider must be named against a CUDA 12 host ==
-self-test: 37 checks, 0 failed
 == environment probe: a missing capability must block its suite ==
-self-test: 0 case(s) failed
 == resolve pixel checks: a uniform, black or wrong-sized frame must fail ==
-self-test: 0 case(s) failed
 == resolve stale-file test: a second run in one directory must not pass ==
 == test fixtures: synthetic models must load and match their shapes ==
-self-test: 4 model(s) x 2 sizes, 0 failure(s)
 == comparator self-test: the golden comparison must fail on a corrupt reference ==
 == comparator self-test (contract_test --selftest-compare)
-self-test: 0 case(s) failed
+
 ==================================================================
 all suites passed, every template that was built:
   docs drift check                (tools/check-docs.py, incl. the ONNX Runtime pin)
@@ -121,6 +207,7 @@ all suites passed, every template that was built:
   artifact + fake host            (minimal-ofx, minimal-cuda-ofx)
   OpenCL device suite             (minimal-opencl-ofx, contract_test + opencl_suite)
   GPU kernels                     (as test/run-tests.bat reported above)
+  Vulkan path + device suite      (minimal-vulkan-ofx, path policy + vulkan_suite)
   negative controls               (testkit/run-negative-controls.bat)
   halo value check                (models/test_conv.onnx)
   glibc bound self-test           (tools/check-glibc.sh --selftest)
@@ -131,5 +218,5 @@ all suites passed, every template that was built:
   test fixtures                   (tools/make-testmodels.py)
   comparator self-test            (testkit/selftest-compare.bat)
 RUN_VALGRIND, SANITIZE and the glibc bound are POSIX-only: no valgrind,
+no readelf, and a PE image has no GLIBC_ version table
 ==================================================================
-EXIT=0

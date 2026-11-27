@@ -64,8 +64,8 @@ back to back in the device suite** (**[V]**,
 
 | Path | ms/frame | of which dispatch (submit → fence) | of which CPU copies |
 |---|---|---|---|
-| host-visible | 102.5 - 102.6 | 13.4 - 13.5 | 89.0 - 89.2 |
-| device-local + staging | 117.2 - 117.3 | 27.9 - 28.1 | 89.0 - 89.4 |
+| host-visible | 102.5 - 106.7 | 13.4 - 15.5 | 89.0 - 91.2 |
+| device-local + staging | 117.2 - 117.6 | 26.4 - 28.1 | 89.0 - 91.2 |
 | CPU loop (`render()`'s fallback) | 3.0 | - | - |
 
 The arrangement that was added second is the slower one here, by ~14%, and the
@@ -168,6 +168,11 @@ reason: the machine that has to trust the gates is the one without the hardware.
 | 3 | an empty render window | CPU |
 | 4 | more pixels than `maxPixels()` | CPU; the dispatch would be truncated |
 | 5 | the device, if gates 0-4 passed | VULKAN_ONLY - the reason says whether `gpu` asked for it or auto chose it |
+
+The override is also the cheapest gate to take: `frameFacts()` in the plug-in asks
+it before it probes, so a forced-CPU instance never creates an instance, a device
+or a queue - which is what makes the switch usable on a machine whose device is
+busy, broken or simply not wanted, and not only on one without a driver.
 
 Gate 5 is the one that can answer with a request or with a default: `gpu` and
 auto both land there, and the reason string is what tells them apart - the

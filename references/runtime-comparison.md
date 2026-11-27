@@ -23,9 +23,9 @@ below is the checks, not the compiler.
 | `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 23 s | 486 | `all Windows checks passed` |
 | `minimal-opencl-ofx`: build, artifact, contract ×3, `opencl_suite` | 15 s | 354 + 38 | `OK: the OpenCL template passed on this machine` |
 | `minimal-vulkan-ofx`: build, path policy, artifact, contract ×6, install, `vulkan_suite` | 20 s | 656 + 29 + 26 | `all Windows checks passed` |
-| `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 26 s | 778 | `all checks passed` |
+| `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 26 s | 678 | `all checks passed` |
 | negative controls: `testkit/run-negative-controls.bat` | 12 s | 223 in 8 runs | 8 caught, every one expected |
-| **total** | **118 s** | **2,929 passing + 223 deliberately failing** | - |
+| **total** | **118 s** | **2,829 passing + 223 deliberately failing** | - |
 
 **The total is a sum, not one stopwatch.** The eight rows are eight separately
 timed commands, and 118 s is what they add up to. Seven of them - the two
@@ -46,11 +46,12 @@ long enough that a contributor would skip it.
 
 ## 2. How the counters add up
 
-**2,929** is 562 + 486 + (354 + 38) + (656 + 29 + 26) + 778, every one printed
+**2,829** is 562 + 486 + (354 + 38) + (656 + 29 + 26) + 678, every one printed
 by the suite that ran it as `contract_test: N checks, 0 failed` or
-`opencl_suite:` / `vulkan_suite: N checks, 0 failed`. A check is one
-assertion: one struct field, one action answer, one pixel comparison, one
-label.
+`opencl_suite:` / `vulkan_suite:` / `vulkan_mode_test: N checks, 0 failed`. The
+inference row is 148 x 3 + 150 + 84: three host profiles, the step that renders
+the model the bundle ships, and the tiled pass. A check is one assertion: one
+struct field, one action answer, one pixel comparison, one label.
 
 **223** is the negative-control suite, which is not a count of passes: each of its
 eight runs drives a deliberately broken plug-in and asserts that the harness
@@ -70,8 +71,8 @@ what is inside its number, because that is the whole argument.
 | CUDA scalar, same buffers | 0.20 - 0.31 | same | same runs |
 | CUDA pageable H2D+D2H copy of that frame | 6.5 - 8.1 (8-10 GB/s) | the transfer the kernel row leaves out | same runs |
 | CPU loop, in the CUDA harness | 3.26 - 3.92 (12.5-19.3× slower than vec4) | the loop `render()` falls back to | same runs |
-| Vulkan, host-visible coherent buffer | 95.4 / 102.5 | `memcpy` in, dispatch, `memcpy` out - dispatch 5.7-7.0, copies 88.3-89.2 | 20-frame suite run (`suite-timings.log`) and the 300-frame run in [`vulkan-compute.md`](vulkan-compute.md) §3 |
-| Vulkan, device-local + staging | 115.1 / 117.2 | the same frame over PCIe twice; dispatch 26-28, copies 88.7-89.4 | same two runs |
+| Vulkan, host-visible coherent buffer | 95.4 / 102.5-106.7 | `memcpy` in, dispatch, `memcpy` out - dispatch 5.7-15.5, copies 88.3-91.2 | 20-frame suite runs and three 300-frame runs in [`vulkan-compute.md`](vulkan-compute.md) §3 |
+| Vulkan, device-local + staging | 115.1 / 117.2-117.6 | the same frame over PCIe twice; dispatch 26-28, copies 88.7-91.2 | the same runs |
 | CPU loop, in the Vulkan suite | 3.25 | the same fallback, measured by another harness | `suite-timings.log` |
 | OpenCL, host queue | not printed | `opencl_suite` has no clock; it asserts pixels and refusals | [`testing-layers.md`](testing-layers.md) §13 |
 

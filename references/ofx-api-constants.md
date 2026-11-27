@@ -40,8 +40,8 @@ returns a status that `PropertySet::propSetString` turns into
 times and never calls `render()`, while the render job still ends `Complete`
 with the source unchanged (**[V]**, 2026-11-27,
 [`opencl-host-resolve.log`](../evidence/2026-11-27-windows/opencl-host-resolve.log)).
-All four templates guard the write, so a host that ignores it sees the
-property's default (`"true"`) rather than an unavailable plug-in.
+Every template that writes the property guards it, so a host that ignores the
+write sees the property's default (`"true"`) rather than an unavailable plug-in.
 
 Four traps follow from this table:
 

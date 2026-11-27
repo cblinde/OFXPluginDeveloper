@@ -168,7 +168,7 @@ if not exist "%PLUGIN_OFX%" (
   exit /b 1
 )
 echo   %PLUGIN_OFX%
-echo   CPU only: this plug-in has no CUDA path.
+echo   no CUDA dependency: the Vulkan loader is opened at run time.
 rem The nm / readelf proof from build.sh, in the tools Windows has: exports and
 rem load-time imports, checked rather than assumed. --strict matters here: the
 rem Visual Studio generator branch never runs vcvars64, so dumpbin is not on PATH.
