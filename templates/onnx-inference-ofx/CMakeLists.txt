@@ -13,6 +13,44 @@ option(OFXPLUGIN_BUNDLE_ONNX_RUNTIME
 # ---------------------------------------------------------------------------
 option(OFXPLUGIN_REQUIRE_SDK_COMMIT
   "Fail the configure when the OpenFX SDK checkout has no readable commit (release builds)" OFF)
+
+# ---------------------------------------------------------------------------
+# Release builds: fail instead of skipping
+#
+# The templates degrade on purpose - a machine without a CUDA toolkit still
+# configures the CPU path, and a bundle that asked for the CUDA provider
+# configures with a warning when the provider is not where the search looked.
+# That is right for a developer, and wrong for the build that produces a release:
+# the log is green, the artifact is smaller, and nobody notices until a user
+# reports that the device path never ran. openfx-io has the same switch
+# (OFX_IO_REQUIRE_ALL); this is the copy of that idea for one template.
+#
+#   cmake -S . -B build -DOFXPLUGIN_REQUIRE_ALL=ON
+#
+# With it on, every place below that would warn about a component this build
+# asked for stops the configure instead. What it does not do: turn on components
+# nobody asked for - OFXPLUGIN_ENABLE_CUDA=OFF and
+# OFXPLUGIN_BUNDLE_CUDA_PROVIDER=OFF are still honest ways to build a CPU-only
+# bundle, and REQUIRE_ALL does not complain about either.
+# ---------------------------------------------------------------------------
+option(OFXPLUGIN_REQUIRE_ALL
+  "Fail the configure instead of warning when a component this build asked for is missing (release/packaging builds)" OFF)
+
+# One place for the choice, so a caller reading a log sees the same sentence from
+# every template that uses it.
+function(ofx_component_missing text)
+  if(OFXPLUGIN_REQUIRE_ALL)
+    message(FATAL_ERROR
+      "${text}\n"
+      "  OFXPLUGIN_REQUIRE_ALL=ON: this build asked for the component, so a "
+      "configure that skips it would produce an artifact that is missing what "
+      "the build was for. Drop the option that asked for it, or set "
+      "-DOFXPLUGIN_REQUIRE_ALL=OFF if a partial build is what you want.")
+  else()
+    message(WARNING "${text}")
+  endif()
+endfunction()
+
 set(OFX_SOURCE_DIR "" CACHE PATH "Existing openfx checkout; leave empty to fetch OFX_Release_1.5.1")
 
 if(NOT OFX_SOURCE_DIR)
@@ -520,7 +558,7 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     endif()
 
     if(NOT _cuda_provider)
-      message(WARNING
+      ofx_component_missing(
         "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON but no onnxruntime_providers_cuda was "
         "found in: ${_cuda_dirs}. Nothing is copied: the session keeps falling "
         "back to the CPU. A GPU build needs the -gpu package of ONNX Runtime, or "
@@ -531,7 +569,7 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     # runtime still has to configure. The message names the load error it causes.
     function(ofx_warn_missing_cuda label found)
       if(NOT ${found})
-        message(WARNING
+        ofx_component_missing(
           "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON: ${label} not found in "
           "${_cuda_dirs}. onnxruntime_providers_cuda imports it, so a bundle "
           "without it fails with error 126 (module not found) instead of "
@@ -593,7 +631,7 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
       if(_cuda_copied_match)
         string(REGEX REPLACE ".*[._]" "" _cuda_copied_major "${_cuda_copied_match}")
         if(NOT _cuda_copied_major STREQUAL _provider_cuda_major)
-          message(WARNING
+          ofx_component_missing(
             "CUDA provider bundle: the provider imports cuBLAS "
             "${_provider_cuda_major}, but the cuBLAS copied beside it is "
             "${_cuda_copied_major} (${_cuda_cublas}). Every configure that "
@@ -788,7 +826,7 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER AND NOT _licence_nvidia_count GREATER 0)
   # installer, not beside the libraries, so no configure can find them and failing
   # here would only teach people to pass a flag. The bundle is refused later, by
   # testkit/check-ofx-artifact, which is the gate that stands in front of shipping.
-  message(WARNING
+  ofx_component_missing(
     "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON ships NVIDIA's runtime libraries and no "
     "LICENSE/NOTICE/ThirdParty/EULA file was found beside the CUDA directories "
     "(${_licence_nvidia_dirs}). Name a directory that holds the CUDA Toolkit EULA "

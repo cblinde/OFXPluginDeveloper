@@ -725,6 +725,32 @@ lives in the build directory and the build log, so a shipper quotes it from ther
 The whole inventory - which version is pinned in the tree, which the machine
 supplies, which a run observed - is [`versions.md`](versions.md).
 
+**A packaging build fails where a developer build warns.**
+`-DOFXPLUGIN_REQUIRE_ALL=ON` turns each "the component this build asked for is not
+here, carry on without it" into a configure error - the CUDA template's missing
+`nvcc`, and in the inference template the missing `onnxruntime_providers_cuda`,
+any import of it that would be copied (cuDNN, cuBLAS, cuFFT, cudart,
+`onnxruntime_providers_shared`), a provider whose cuBLAS major disagrees with the
+cuBLAS beside it, and a provider bundle with no NVIDIA licence text. Without it
+those are warnings, which is what a machine without a toolkit needs: the same
+switch in `openfx-io` is `OFX_IO_REQUIRE_ALL`, and the rule is the same - build
+what is present, or stop when a group that was not switched off is missing.
+`OFXPLUGIN_ENABLE_CUDA=OFF` and `OFXPLUGIN_BUNDLE_CUDA_PROVIDER=OFF` still build a
+CPU-only bundle and say nothing, because a component nobody asked for is not
+missing.
+
+Measured both ways on 2026-11-27 (**[V]**,
+[`../evidence/2026-11-27-windows/require-all.log`](../evidence/2026-11-27-windows/require-all.log)):
+the CUDA template with `OFXPLUGIN_ENABLE_CUDA=ON` and CUDA removed from `PATH`
+configures to completion with exit 0 and the warning
+`OFXPLUGIN_ENABLE_CUDA=ON but no CUDA compiler was found`, and stops with exit 1
+and `OFXPLUGIN_REQUIRE_ALL=ON: this build asked for the component ...` when the
+option is on; the inference template against the CPU package with
+`OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` does the same pair around
+`no onnxruntime_providers_cuda was`. No workflow sets the option: this repository
+has no release or packaging job, so the switch is for the build that ships, and
+the workflow that one day produces the bundles is where it belongs.
+
 ---
 
 ## Provenance labels

@@ -1,0 +1,29 @@
+# -DOFXPLUGIN_REQUIRE_ALL, both directions, Windows 2026-11-27.
+#
+# Four configures, two per template: the switch has to stop a packaging build where
+# the default merely warns, and the default has to stay a warning so a machine
+# without a toolkit can still configure the CPU path. Each block below is the
+# tail of one configure log; the full logs stay in .validation/.
+#
+# The CUDA runs had every CUDA directory removed from PATH and CUDACXX cleared, so
+# check_language(CUDA) finds nothing - the branch the option exists for. The
+# inference runs used the CPU package (.validation/ort-1.32.0), which has no
+# onnxruntime_providers_cuda, with OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON.
+
+== CUDA template, OFXPLUGIN_ENABLE_CUDA=ON, no CUDA on PATH, -DOFXPLUGIN_REQUIRE_ALL=ON ==
+  OFXPLUGIN_ENABLE_CUDA=ON but no CUDA compiler was found.
+    OFXPLUGIN_REQUIRE_ALL=ON: this build asked for the component, so a configure that skips it would produce an artifact that is missing what the build was for. Drop the option that asked for it, or set -DOFXPLUGIN_REQUIRE_ALL=OFF if a partial build is what you want.
+-- Configuring incomplete, errors occurred!
+
+== the same configure with the option off ==
+  OFXPLUGIN_ENABLE_CUDA=ON but no CUDA compiler was found.
+-- Configuring done (1.9s)
+
+== inference template, OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON against the CPU package, -DOFXPLUGIN_REQUIRE_ALL=ON ==
+  OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON but no onnxruntime_providers_cuda was
+    OFXPLUGIN_REQUIRE_ALL=ON: this build asked for the component, so a configure that skips it would produce an artifact that is missing what the build was for. Drop the option that asked for it, or set -DOFXPLUGIN_REQUIRE_ALL=OFF if a partial build is what you want.
+-- Configuring incomplete, errors occurred!
+
+== the same configure with the option off ==
+  OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON but no onnxruntime_providers_cuda was
+-- Configuring done (1.7s)

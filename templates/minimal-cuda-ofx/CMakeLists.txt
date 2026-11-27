@@ -8,6 +8,43 @@ set(PLUGIN_BUNDLE "${PLUGIN_TARGET}.ofx.bundle")
 option(OFXPLUGIN_ENABLE_CUDA "Compile the CUDA render path (requires the CUDA Toolkit)" ON)
 option(OFXPLUGIN_CUDA_STATIC_RUNTIME "Link cudart statically instead of dynamically" OFF)
 
+# ---------------------------------------------------------------------------
+# Release builds: fail instead of skipping
+#
+# The templates degrade on purpose - a machine without a CUDA toolkit still
+# configures the CPU path, and a bundle that asked for the CUDA provider
+# configures with a warning when the provider is not where the search looked.
+# That is right for a developer, and wrong for the build that produces a release:
+# the log is green, the artifact is smaller, and nobody notices until a user
+# reports that the device path never ran. openfx-io has the same switch
+# (OFX_IO_REQUIRE_ALL); this is the copy of that idea for one template.
+#
+#   cmake -S . -B build -DOFXPLUGIN_REQUIRE_ALL=ON
+#
+# With it on, every place below that would warn about a component this build
+# asked for stops the configure instead. What it does not do: turn on components
+# nobody asked for - OFXPLUGIN_ENABLE_CUDA=OFF and
+# OFXPLUGIN_BUNDLE_CUDA_PROVIDER=OFF are still honest ways to build a CPU-only
+# bundle, and REQUIRE_ALL does not complain about either.
+# ---------------------------------------------------------------------------
+option(OFXPLUGIN_REQUIRE_ALL
+  "Fail the configure instead of warning when a component this build asked for is missing (release/packaging builds)" OFF)
+
+# One place for the choice, so a caller reading a log sees the same sentence from
+# every template that uses it.
+function(ofx_component_missing text)
+  if(OFXPLUGIN_REQUIRE_ALL)
+    message(FATAL_ERROR
+      "${text}\n"
+      "  OFXPLUGIN_REQUIRE_ALL=ON: this build asked for the component, so a "
+      "configure that skips it would produce an artifact that is missing what "
+      "the build was for. Drop the option that asked for it, or set "
+      "-DOFXPLUGIN_REQUIRE_ALL=OFF if a partial build is what you want.")
+  else()
+    message(WARNING "${text}")
+  endif()
+endfunction()
+
 # CUDA 13.0's host_config.h stops at _MSC_VER 1950 - MSVC 14.50, the default
 # toolset of Visual Studio 18 - and a Visual Studio generator cannot be pointed
 # at an older toolset from here: CMake hands .cu files to NVIDIA's MSBuild
@@ -172,7 +209,7 @@ if(OFXPLUGIN_ENABLE_CUDA)
       # else: a -D value with no marker to compare against. Section 4 keeps it.
     endif()
   else()
-    message(WARNING
+    ofx_component_missing(
       "OFXPLUGIN_ENABLE_CUDA=ON but no CUDA compiler was found. "
       "Building the CPU-only render path; the plugin will not advertise CUDA.")
     set(OFXPLUGIN_ENABLE_CUDA OFF)
