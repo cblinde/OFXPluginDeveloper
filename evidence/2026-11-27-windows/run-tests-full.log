@@ -1,4 +1,4 @@
-# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-27 (excerpt of 4994 lines)
+# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-27 (excerpt of 5137 lines)
 #
 # Environment: ONNXRUNTIME_ROOT=.validation\ort-1.32.0 (the version the pin in
 # .github/actions/onnx-runtime names), VULKAN_SDK=.validation\vk\sdk,
@@ -6,16 +6,17 @@
 # CPU_ONLY, no SANITIZE, no RUN_VALGRIND. Windows route: the .bat runners, one per
 # template - all five of them, minimal-vulkan-ofx included.
 #
-# This is the run after the Vulkan runner gained a contract pass that sets
-# OFXPLUGIN_VULKAN_MODE=gpux and asserts the Device label carries the sentence
-# saying the word is unrecognised. That pass is 94 checks, so the template's count
-# is 899 (118 x 4 + the forced-CPU pass + the misspelt-override pass + the install
-# pass + the device-label pass, plus 29 in the policy test and 26 in the device
-# suite) and the tree's is 3,017.
+# This is the run after the OpenCL template gained the Vulkan treatment: a path
+# decision in src/PathDecision.h that a machine without a device can execute
+# (build/self-test/opencl_path_test, 29 checks), OFXPLUGIN_OPENCL_MODE=cpu, and a
+# contract pass that renders once with it and asserts the Device label says so
+# (94 checks). The OpenCL template is 515 checks (118 x 3 + 29 + 94 + 38) and the
+# tree is 3,140. The Vulkan template keeps its misspelt-override pass from the
+# run before this one: 899 checks.
 #
 # This file keeps the section headers, the per-suite counts, the host-profile
 # lines, every skip line, the summary block and the exit status; the full log
-# (4994 lines) stays in .validation/, which is not tracked. Nothing below was
+# (5137 lines) stays in .validation/, which is not tracked. Nothing below was
 # edited by hand.
 
 == docs: check-docs ==
@@ -64,9 +65,16 @@ all Windows checks passed
 -- Configuring done (3.0s)
 -- Generating done (0.2s)
 -- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build
+[0/2] Re-checking globbed directories...
 == [1/4] artifact (exports, dependents, device code) ==
 == [2/4] GPU harness (real device code, not emulated) ==
 == the minimal-cuda-ofx kernels on real hardware ==
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+[3/6] concurrent launches from host threads
+[4/6] zero-copy on host-mapped memory
+[5/6] both kernels launched directly (bypassing the launcher)
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
 == [3/4] host contract (LoadLibraryExW + fake host) ==
   host profile: nuke
 - host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
@@ -81,6 +89,7 @@ contract_test: 162 checks, 0 failed
 execution_mode_test: 34 cases, 0 failed
 all Windows checks passed
 == test: minimal-opencl-ofx (build, artifact, contract, OpenCL suite) ==
+[1/7] building the OpenCL plug-in (and verifying the artifact)
 -- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
 -- Default gain: 1.0
 -- OFX plugin : OpenCLGain
@@ -88,6 +97,10 @@ all Windows checks passed
 -- Configuring done (0.1s)
 -- Generating done (0.1s)
 -- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-opencl-ofx/build
+[3/7] compiling the shared contract harness
+[2/7] the path decision (six gates, no device needed)
+opencl_path_test: 29 checks, 0 failed
+[4/7] the host protocol, on the CPU path (3 profiles)
   host profile: nuke
 - host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
 contract_test: 118 checks, 0 failed
@@ -97,7 +110,21 @@ contract_test: 118 checks, 0 failed
   host profile: natron
 - host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
 contract_test: 118 checks, 0 failed
+  host profile: resolve, OFXPLUGIN_OPENCL_MODE=cpu (forced CPU path)
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 94 checks, 0 failed
+[5/7] compiling the suite against the shared fake host
+[6/7] running the OpenCL suite against Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
+[1/8] loading Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
+[2/8] opening an OpenCL device for the host to hand over
+[3/8] the CPU path, with the host offering no device
+[4/8] the same render with the device enabled
+[5/8] a render window smaller than the frame
+[6/8] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage
+[7/8] a negative row pitch is refused, not walked backwards
+[8/8] the host destroys the instance and unloads the plug-in
 opencl_suite: 38 checks, 0 failed
+[7/7] valgrind memcheck
   skipped: no valgrind on Windows. The POSIX script runs both binaries under
 OK: the OpenCL template passed on this machine
 == build + test: onnx-inference-ofx ==
@@ -112,9 +139,13 @@ OK: the OpenCL template passed on this machine
 -- OFX plugin : OnnxInference
 -- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
 -- Configuring done (0.1s)
--- Generating done (0.2s)
+-- Generating done (0.1s)
 -- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
 == [2/6] inference pipeline (ai_pipeline_test) ==
+[1/4] PackRGB / UnpackRGB round-trip
+[2/4] whole-frame inference vs Python golden
+[3/4] tiled inference vs whole-frame inference
+[4/4] negative controls: wrong blending, negative halo, bad rect
 == [3/6] host contract (LoadLibraryExW + fake host), exact golden ==
   host profile: nuke
 - host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)

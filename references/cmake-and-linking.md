@@ -485,6 +485,39 @@ is why the rowBytes validation lives inside the Buffers branch. Its suite render
 the same frame through both handovers and gets the same pixels
 ([`opencl-images.log`](../evidence/2026-11-26-linux/opencl-images.log)).
 
+**Which path runs, and how a run says so.** The first version left the whole
+decision to the host: the render read `isEnabledOpenCLRender` and either took the
+queue or fell through to the CPU loop, with the rule written in a comment. That is
+the right rule and it was untestable - a machine with a device never ran the loop,
+a machine without one never ran the kernel, and nothing asserted that the decision
+reaches a user at all. The rule now lives in `src/PathDecision.h` as two pure
+functions: `DecidePath()` asks whether the override forces the CPU, then whether
+the host enabled OpenCL, and answers with the path *and* the sentence the plug-in
+writes into a read-only `Device` parameter; `CheckHandover()` answers whether the
+handover is usable (queue, bounds origin, both images carrying
+`kOfxImageEffectPropOpenCLImage` or both carrying a `cl_mem`, and - in the Buffers
+branch only - a row pitch that is a positive multiple of 4). A fault is an
+**error**, not a demotion: the image is a `cl_mem`, so there is no CPU pixels to
+fall back to, and the CPU loop would multiply the handle's bytes as floats.
+
+`OFXPLUGIN_OPENCL_MODE` makes both halves of that reachable on a machine that has
+a device. `cpu` is gate 0 - it also drops the two OpenCL claims in `describe()`,
+because a host cannot hand a plug-in a `cl_mem` it never asked for, and a host that
+does it anyway gets `kOfxStatErrUnsupported` with the reason in the label rather
+than a frame of garbage. `opencl` (or `gpu`) asks for the device and is demoted
+with a reason when the host did not enable OpenCL; anything else reads as auto and
+the label names the unrecognised word, so a typo is visible instead of silently
+doing nothing. Measured on the RTX 3060: the runner's forced-CPU contract run
+renders one frame and asserts
+`label parameter 'device' = "CPU - OFXPLUGIN_OPENCL_MODE=cpu was set"` (94 checks,
+[`opencl-path-policy.log`](../evidence/2026-11-27-windows/opencl-path-policy.log)),
+and `test/opencl_path_test` executes the gates with no device, no loader and no
+SDK - 29 checks, the same shape as the other templates' policy tests
+(**[V]**, [`opencl-path-policy.log`](../evidence/2026-11-27-windows/opencl-path-policy.log)).
+The pitch check moved behind the handover branch while this was written: it used
+to run before the Images branch was chosen, which refused a legal `image2d_t`
+render over a field the render never reads.
+
 Four more things that cost a run here:
 
 - **`rowBytes` is not negative for an OpenCL buffer.** `ofxImageEffect.h`'s note

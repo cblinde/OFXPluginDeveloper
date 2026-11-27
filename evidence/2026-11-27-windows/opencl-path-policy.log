@@ -1,0 +1,65 @@
+# The OpenCL template's path decision, Windows 11 + RTX 3060, 2026-11-27
+# (excerpt of the runner's 645-line log, which stays in .validation/).
+#
+# Three things are in here, in the order the runner does them:
+#   1. build\self-test\opencl_path_test.exe - the gates between the host's queue
+#      and the CPU loop, from src/PathDecision.h. It links no OpenCL and no OFX
+#      header, so the same 29 checks run on a machine with no driver, no loader
+#      and no SDK. The gates, the parsing (including two unrecognised words) and
+#      the handover faults are all here.
+#   2. the forced-CPU contract run: OFXPLUGIN_OPENCL_MODE=cpu makes PathDecision's
+#      first gate answer CPU, the plug-in renders one frame on the loop and writes
+#      that decision into the read-only Device parameter, and --label-contains
+#      fails the run if the label does not carry it. That is the half the
+#      template could not prove before: on a machine whose host offers no OpenCL
+#      the CPU path is reached by accident, and here it is reached on purpose.
+#   3. the counts: three host profiles at 118 checks each, the forced run at 94,
+#      the path test 29, the device suite 38 - 515 in the template, 3,141 in the
+#      tree.
+#
+# What it does not prove: that the kernel's pixels equal the CPU loop's. That is
+# opencl_suite's question and it still needs the device; this log says nothing
+# about it either way.
+[2/7] the path decision (six gates, no device needed)
+PathDecision: the gates and the handover, no device needed
+  OFXPLUGIN_OPENCL_MODE unset reads as auto            ok   AUTO
+  an empty string reads as auto                        ok   AUTO
+  "auto" reads as auto                                 ok   AUTO
+  "cpu" forces the CPU path                            ok   CPU_ONLY
+  "opencl" asks for the device                         ok   OPENCL_ONLY
+  "gpu" is the same request as "opencl"                ok   OPENCL_ONLY
+  an uppercase "CPU" is unrecognised, not cpu          ok   AUTO
+  "cl" is unrecognised                                 ok   AUTO
+  OFXPLUGIN_OPENCL_MODE=cpu demotes a host that offers OpenCL ok   CPU
+  the forced-CPU reason names the override             ok   OFXPLUGIN_OPENCL_MODE=cpu was set
+  a host without OpenCL renders on the CPU             ok   CPU
+  the reason says the host did not enable it           ok   the host did not enable OpenCL on this render
+  OFXPLUGIN_OPENCL_MODE=opencl is demoted without a host queue ok   CPU
+  the demoted reason names both the override and the host ok   OFXPLUGIN_OPENCL_MODE=opencl was set, but the host did not enable OpenCL
+  a host that offers OpenCL takes it                   ok   OPENCL
+  the reason names the host's queue                    ok   the host's OpenCL queue
+  the device request and the host agree                ok   OPENCL
+  the reason names the override                        ok   OFXPLUGIN_OPENCL_MODE=opencl was set
+  a missing queue does not demote to a path that cannot read cl_mem ok   OPENCL
+  the reason names the missing queue                   ok   the host enabled OpenCL but handed no command queue
+  a queue, a pitch and two cl_mem are usable           ok   
+  no queue is a fault, not a demotion                  ok   the host enabled OpenCL but handed no kOfxImageEffectPropOpenCLCommandQueue
+  a negative pitch is refused                          ok   the row pitch is not a positive multiple of 4 bytes, or differs between the two images
+  a pitch that differs between the images is refused   ok   the row pitch is not a positive multiple of 4 bytes, or differs between the two images
+  a pitch that is not a multiple of 4 bytes is refused ok   the row pitch is not a positive multiple of 4 bytes, or differs between the two images
+  different bounds origins are refused                 ok   the source and destination bounds start at different pixels
+  an empty kOfxImagePropData is refused                ok   kOfxImagePropData holds no cl_mem in OpenCL Buffers mode
+  an image handover needs no row pitch                 ok   
+  one image with the property and one without is refused ok   only one of the two images carries kOfxImageEffectPropOpenCLImage
+29 checks, 0 failed
+
+ok 29 - label parameter 'device' = "CPU - OFXPLUGIN_OPENCL_MODE=cpu was set"
+ok 30 - label parameter 'device' contains "CPU - OFXPLUGIN_OPENCL_MODE=cpu was set"
+ok 76 - label parameter 'device' = "CPU - OFXPLUGIN_OPENCL_MODE=cpu was set"
+ok 77 - label parameter 'device' contains "CPU - OFXPLUGIN_OPENCL_MODE=cpu was set"
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 94 checks, 0 failed
+opencl_suite: 38 checks, 0 failed
+OK: the OpenCL template passed on this machine

@@ -48,7 +48,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPL="$(cd "${HERE}/.." && pwd)"
 ROOT="$(cd "${TPL}/../.." && pwd)"
 
-echo "[1/6] building the OpenCL plug-in (and verifying the artifact)"
+echo "[1/7] building the OpenCL plug-in (and verifying the artifact)"
 "${TPL}/build.sh"
 
 OFX_FILE="$(find "${TPL}/build/bundle" -name '*.ofx' -type f | head -1)"
@@ -56,13 +56,19 @@ OFX_DIR="${OFX_SOURCE_DIR:-${ROOT}/.ofx-ref}"
 SUITE="${TPL}/build/opencl_suite"
 HARNESS="${TPL}/build/contract_test"
 
-echo "[2/6] compiling the shared contract harness"
+echo "[3/7] compiling the shared contract harness"
 "${ROOT}/testkit/build-contract-test.sh" "${HARNESS}" "${OFX_DIR}"
 
 # The same protocol every other template certifies, with the host never offering
 # a device: kOfxImageEffectPropOpenCLEnabled stays 0, which is the CPU path this
 # plug-in keeps for hosts that have no OpenCL at all.
-echo "[3/6] the host protocol, on the CPU path (3 profiles)"
+# The path decision first: PathDecision.h links no OpenCL and no OFX header, so
+# this binary runs on a machine with no driver, no loader and no SDK - the gates
+# between the host's queue and the CPU loop are executed rather than reviewed.
+echo "[2/7] the path decision (six gates, no device needed)"
+"${TPL}/build/self-test/opencl_path_test"
+
+echo "[4/7] the host protocol, on the CPU path (3 profiles)"
 
 # SUITE_THREADS=random picks a different concurrent-render count per run, the way
 # FATE's threads=randomN does: not for determinism, but so that a race has to
@@ -90,7 +96,18 @@ for profile in nuke resolve natron; do
   "${HARNESS}" "${OFX_FILE}" --host-profile "${profile}" "${CONTRACT_ARGS[@]}"
 done
 
-echo "[4/6] compiling the suite against the shared fake host"
+# The one thing a machine with a device cannot otherwise reach: the override makes
+# PathDecision.h's first gate answer CPU, the plug-in writes that decision into the
+# Device parameter after a real render, and --label-contains fails the run if the
+# label does not carry it.
+echo "  host profile: resolve, OFXPLUGIN_OPENCL_MODE=cpu (forced CPU path)"
+OFXPLUGIN_OPENCL_MODE=cpu "${HARNESS}" "${OFX_FILE}" --host-profile resolve \
+  --id com.ofxplugindeveloper.openclgain --version 1.0 --param gain:double \
+  --clip Source --clip Output \
+  --label-param device \
+  --label-contains "device=CPU - OFXPLUGIN_OPENCL_MODE=cpu was set"
+
+echo "[5/7] compiling the suite against the shared fake host"
 "${CXX:-g++}" -std=c++17 -O2 -Wall -Wextra -Werror \
   -I "${ROOT}/testkit" -I "${OFX_DIR}/include" \
   "${HERE}/opencl_suite.cpp" "${ROOT}/testkit/fake_host.cpp" \
@@ -113,7 +130,7 @@ fi
 echo "  loader : ${OPENCL_LOADER_LIB:-<libOpenCL.so.1 by name>}"
 echo "  ICD    : ${OCL_ICD_VENDORS:-<loader default>}"
 
-echo "[5/6] running the OpenCL suite against ${OFX_FILE}"
+echo "[6/7] running the OpenCL suite against ${OFX_FILE}"
 set +e
 "${SUITE}" "${OFX_FILE}"
 status=$?
@@ -127,7 +144,7 @@ fi
 # contract harness runs here too, on the CPU path, because that is the pass the
 # other templates record and this plug-in keeps that path for hosts without a
 # device.
-echo "[6/6] valgrind memcheck"
+echo "[7/7] valgrind memcheck"
 WANT="${RUN_VALGRIND:-auto}"
 if [[ "${WANT}" == "0" ]]; then
   echo "  skipped: RUN_VALGRIND=0"

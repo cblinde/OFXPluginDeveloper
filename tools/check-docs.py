@@ -851,8 +851,8 @@ def check_suite_totals(root, files, texts, report):
         if line.startswith("== ") and not line.startswith("== ["):
             section = next((name for name in templates if name in line), None)
             continue
-        match = re.match(r"^(?:contract_test|opencl_suite|vulkan_suite|vulkan_mode_test): "
-                         r"(\d+) checks", line)
+        match = re.match(r"^(?:contract_test|opencl_suite|vulkan_suite|vulkan_mode_test|"
+                         r"opencl_path_test): (\d+) checks", line)
         if match and section:
             counted[section] = counted.get(section, 0) + int(match.group(1))
 

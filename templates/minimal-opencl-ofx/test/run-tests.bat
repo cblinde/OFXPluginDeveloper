@@ -7,9 +7,13 @@ rem   .\run-tests.bat
 rem
 rem What it does, in the same order the POSIX script does:
 rem   1. build the plug-in (which already verifies the artifact with dumpbin);
-rem   2. compile the shared contract harness and run it over the CPU path, three
-rem      host profiles - a host that offers no device still has to use this plug-in;
-rem   3. compile test/opencl_suite.cpp against the shared fake host and run it with
+rem   2. run the path decision - the gates between the host's queue and the CPU
+rem      loop - with no device, no loader and no SDK: build\self-test\
+rem      opencl_path_test.exe;
+rem   3. compile the shared contract harness and run it over the CPU path, three
+rem      host profiles, plus one run with OFXPLUGIN_OPENCL_MODE=cpu that asserts
+rem      the Device label names the override;
+rem   4. compile test/opencl_suite.cpp against the shared fake host and run it with
 rem      a real OpenCL context, queue, cl_mem buffers and image2d images handed over
 rem      by the host, using whatever OpenCL.dll the driver installed.
 rem
@@ -30,7 +34,7 @@ set "ROOT=%TPL%\..\.."
 set "BUILD=%TPL%\build"
 set "FAILED=0"
 
-echo [1/6] building the OpenCL plug-in (and verifying the artifact)
+echo [1/7] building the OpenCL plug-in (and verifying the artifact)
 call "%TPL%\build.bat" || exit /b 1
 
 set "OFX_FILE="
@@ -56,7 +60,7 @@ set "HARNESS=%BUILD%\contract_test.exe"
 set "SUITE=%BUILD%\opencl_suite.exe"
 
 echo.
-echo [2/6] compiling the shared contract harness
+echo [3/7] compiling the shared contract harness
 call "%ROOT%\testkit\build-contract-test.bat" "%HARNESS%" "%OFX_DIR%" || exit /b 1
 
 rem ---- MSVC environment, needed for the suite's own compile ------------------
@@ -76,7 +80,26 @@ if not defined VCVARS (
 call "%VCVARS%" >nul || exit /b 2
 
 echo.
-echo [3/6] the host protocol, on the CPU path (3 profiles)
+echo.
+echo [2/7] the path decision (six gates, no device needed)
+rem PathDecision.h decides between the host's queue and the CPU loop, and this is
+rem the only caller that needs no device: the binary links the header, not the
+rem plug-in, so it runs on a machine with no driver, no loader and no SDK. Without
+rem it the CPU path is only ever taken by accident - on this machine it is the
+rem forced-CPU run below, on a machine without a device it is the only path - and
+rem the gates themselves would be reviewed, not executed.
+if not exist "%BUILD%\self-test\opencl_path_test.exe" (
+  echo error: %BUILD%\self-test\opencl_path_test.exe was not built
+  exit /b 1
+)
+"%BUILD%\self-test\opencl_path_test.exe"
+if errorlevel 1 (
+  echo error: the path decision failed
+  exit /b 1
+)
+
+echo.
+echo [4/7] the host protocol, on the CPU path (3 profiles)
 rem SUITE_THREADS=random picks a different concurrent-render count per run, the
 rem way FATE's threads=randomN does: not for determinism, but so that a race has
 rem to show up in some run instead of in the one configuration someone hard-coded.
@@ -103,8 +126,27 @@ if "!FAILED!"=="1" (
   exit /b 1
 )
 
+rem The one thing a machine with a device cannot otherwise reach: the override
+rem makes PathDecision.h's first gate answer CPU, the plug-in writes that decision
+rem into the Device parameter after a real render, and --label-contains fails the
+rem run if the label does not carry it. Without the switch this assertion could
+rem only be made on a machine whose host offers no OpenCL.
+echo   host profile: resolve, OFXPLUGIN_OPENCL_MODE=cpu (forced CPU path)
+set "OFXPLUGIN_OPENCL_MODE=cpu"
+"%HARNESS%" "%OFX_FILE%" --host-profile resolve ^
+  --id com.ofxplugindeveloper.openclgain --version 1.0 ^
+  --param gain:double --clip Source --clip Output ^
+  --label-param device ^
+  --label-contains "device=CPU - OFXPLUGIN_OPENCL_MODE=cpu was set"
+set "FORCED_STATUS=%ERRORLEVEL%"
+set "OFXPLUGIN_OPENCL_MODE="
+if not "%FORCED_STATUS%"=="0" (
+  echo error: the forced-CPU run did not report the override in the Device label
+  exit /b 1
+)
+
 echo.
-echo [4/6] compiling the suite against the shared fake host
+echo [5/7] compiling the suite against the shared fake host
 rem /D_CRT_SECURE_NO_WARNINGS: the shared fake host parses with sscanf, which MSVC
 rem flags as C4996. The suite and the harness are the same binary shape the other
 rem templates build, so the flag travels with them.
@@ -124,7 +166,7 @@ if not "%CL_STATUS%"=="0" (
 )
 
 echo.
-echo [5/6] running the OpenCL suite against %OFX_FILE%
+echo [6/7] running the OpenCL suite against %OFX_FILE%
 echo   loader : %OPENCL_LOADER_LIB% (default OpenCL.dll from the driver)
 "%SUITE%" "%OFX_FILE%"
 set "SUITE_STATUS=%ERRORLEVEL%"
@@ -137,7 +179,7 @@ if not "%SUITE_STATUS%"=="0" if not "%SUITE_STATUS%"=="2" (
 )
 
 echo.
-echo [6/6] valgrind memcheck
+echo [7/7] valgrind memcheck
 echo   skipped: no valgrind on Windows. The POSIX script runs both binaries under
 echo   memcheck; this run does not, and says so instead of implying it did.
 

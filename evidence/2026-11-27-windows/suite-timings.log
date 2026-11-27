@@ -159,3 +159,25 @@ onnx-inference-ofx        19.0s    678 check(s)  all checks passed
 negative-controls         15.0s    223 check(s)  every fault detected, the pattern still passes
 # sum of the eight rows, each stopped on its own:      125.3s
 # one stopwatch around the block:                      125.6s
+
+## Fourth pass, after the OpenCL template grew its path test and forced-CPU run
+
+# Two things changed in the tree since the pass above: the OpenCL runner gained a
+# step that runs build/self-test/opencl_path_test (29 checks, no device needed) and
+# a contract pass with OFXPLUGIN_OPENCL_MODE=cpu that asserts the Device label
+# (94 checks), so its row is ~2s longer on the same machine. Everything else is the
+# same code, and every other row still moved - up to 2.5s - because this pass ran
+# while the machine was busy. That is the honest reading of the table: the shape
+# holds, the absolute seconds carry the machine's load.
+
+docs                       5.9s       0 check(s)  check-docs: 33 documents, 0 problems
+provenance                 9.3s       0 check(s)  check-provenance: 0 problems
+minimal-ofx               11.9s    562 check(s)  all Windows checks passed
+minimal-cuda-ofx          26.5s    486 check(s)  all Windows checks passed
+minimal-opencl-ofx        17.8s    515 check(s)  OK: the OpenCL template passed on this machine
+minimal-vulkan-ofx        21.4s    899 check(s)  all Windows checks passed
+onnx-inference-ofx        19.2s    678 check(s)  all checks passed
+negative-controls         15.1s    223 check(s)  every fault detected, the pattern still passes
+# sum of the eight rows, each stopped on its own:      127.0s
+# one stopwatch around the block:                      127.3s
+# Counts are this run's: 3,140 passing in the tree, 515 of them OpenCL.

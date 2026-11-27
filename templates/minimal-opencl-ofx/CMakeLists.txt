@@ -181,3 +181,21 @@ file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resour
 message(STATUS "Default gain: ${OPENCL_GAIN_DEFAULT}")
 message(STATUS "OFX plugin : ${PLUGIN_TARGET}")
 message(STATUS "Bundle     : ${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}")
+
+# ---------------------------------------------------------------------------
+# 3. The path decision, on a machine that has no device
+#
+# PathDecision.h is pure: it includes no OpenCL header and no OFX header, so this
+# target compiles and runs where the plug-in's device path cannot. That is the
+# point - the gates that decide between the host's queue and the CPU loop are the
+# part a CI machine and a laptop without a driver can check, and the runner calls
+# this binary before it compiles anything against the SDK.
+# ---------------------------------------------------------------------------
+add_executable(opencl_path_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/test/opencl_path_test.cpp")
+target_include_directories(opencl_path_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(opencl_path_test PRIVATE cxx_std_17)
+set_target_properties(opencl_path_test PROPERTIES
+  CXX_EXTENSIONS OFF
+  RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/self-test>")
+message(STATUS "Path test  : ${CMAKE_BINARY_DIR}/self-test/opencl_path_test")

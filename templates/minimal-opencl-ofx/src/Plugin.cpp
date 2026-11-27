@@ -23,6 +23,7 @@
 // OpenCL is enabled. It cannot - the buffer it was handed is a cl_mem, not a
 // pointer to floats - so a kernel that fails to build is an error, not a quiet
 // second path. The CPU path runs when the host says OpenCL is off.
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -36,6 +37,7 @@
 #include "ofxGPURender.h"
 
 #include "ClRuntime.h"
+#include "PathDecision.h"
 
 namespace {
 
@@ -45,6 +47,7 @@ constexpr int kVersionMinor = 0;
 const char* const kPluginIdentifier = "com.ofxplugindeveloper.openclgain";
 const char* const kPluginName = "OpenCL Gain";
 const char* const kParamGain = "gain";
+const char* const kParamDevice = "device";
 
 #ifndef OPENCL_GAIN_DEFAULT
 #define OPENCL_GAIN_DEFAULT 1.0
@@ -52,6 +55,60 @@ const char* const kParamGain = "gain";
 constexpr double kDefaultGain = OPENCL_GAIN_DEFAULT;
 
 constexpr int kComponents = 4;
+
+////////////////////////////////////////////////////////////////////////////////
+// Which path renders this frame
+////////////////////////////////////////////////////////////////////////////////
+
+/// OFXPLUGIN_OPENCL_MODE, read once per process. The word is one of auto, cpu,
+/// opencl (or gpu); anything else reads as auto and is named in the label, so a
+/// typo is visible instead of quietly ignored.
+oclgain::Request requestedMode()
+{
+    static const oclgain::Request mode = [] {
+        bool recognised = true;
+        const oclgain::Request parsed =
+            oclgain::ParseModeOverride(std::getenv("OFXPLUGIN_OPENCL_MODE"), &recognised);
+        return recognised ? parsed : oclgain::Request::Auto;
+    }();
+    return mode;
+}
+
+/// "" or the sentence a label appends when the override was not understood.
+std::string overrideProblem()
+{
+    const char* text = std::getenv("OFXPLUGIN_OPENCL_MODE");
+    if (text == nullptr || *text == '\0') {
+        return std::string();
+    }
+    bool recognised = true;
+    oclgain::ParseModeOverride(text, &recognised);
+    if (recognised) {
+        return std::string();
+    }
+    return std::string("OFXPLUGIN_OPENCL_MODE='") + text + "' is not auto, cpu or opencl";
+}
+
+/// The status a handover fault throws. The two that cannot be anything but an
+/// error keep the codes this render threw before the checks moved into
+/// PathDecision.h: a cl_mem is not a host pointer, so there is no CPU path to
+/// demote to.
+OfxStatus handoverStatus(oclgain::HandoverFault fault)
+{
+    switch (fault) {
+    case oclgain::HandoverFault::NoQueue:
+    case oclgain::HandoverFault::PartialImages:
+        return kOfxStatErrValue;
+    case oclgain::HandoverFault::NoBuffers:
+        return kOfxStatErrBadHandle;
+    case oclgain::HandoverFault::BadPitch:
+    case oclgain::HandoverFault::BadOrigin:
+        return kOfxStatErrUnsupported;
+    case oclgain::HandoverFault::None:
+        break;
+    }
+    return kOfxStatOK;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Pixel work, CPU path
@@ -112,11 +169,14 @@ public:
         , _dstClip(nullptr)
         , _srcClip(nullptr)
         , _gain(nullptr)
+        , _device(nullptr)
     {
         _dstClip = fetchClip(kOfxImageEffectOutputClipName);
         _srcClip = fetchClip(kOfxImageEffectSimpleSourceClipName);
         _gain = fetchDoubleParam(kParamGain);
-        if (_dstClip == nullptr || _srcClip == nullptr || _gain == nullptr) {
+        _device = fetchStringParam(kParamDevice);
+        if (_dstClip == nullptr || _srcClip == nullptr || _gain == nullptr ||
+            _device == nullptr) {
             OFX::throwSuiteStatusException(kOfxStatErrMissingHostFeature);
         }
     }
@@ -167,10 +227,30 @@ public:
 
         const float gain = static_cast<float>(_gain->getValueAtTime(args.time));
 
-        if (args.isEnabledOpenCLRender) {
+        oclgain::Facts facts;
+        facts.hostEnabledOpenCL = args.isEnabledOpenCLRender;
+        facts.queuePresent = args.pOpenCLCmdQ != nullptr;
+        const oclgain::Decision decision = oclgain::DecidePath(requestedMode(), facts);
+
+        if (decision.path == oclgain::Path::OpenCL) {
+            setLabel(std::string("OpenCL - ") + decision.reason);
             renderWithOpenCL(args, *src, *dst, gain);
             return;
         }
+
+        // The CPU loop cannot read a cl_mem: kOfxImagePropData is a buffer
+        // handle, not a host pointer, and multiplying it would render the
+        // handle's bytes. The override is the only way to arrive here with
+        // OpenCL enabled, and it is a refusal with the reason in the label, not
+        // a silent second path.
+        if (args.isEnabledOpenCLRender) {
+            setLabel(std::string("CPU - ") + decision.reason +
+                     "; the host handed a cl_mem, which the CPU loop cannot read");
+            OFX::Log::error(true, "OpenCL render refused: %s", decision.reason);
+            OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
+        }
+
+        setLabel(std::string("CPU - ") + decision.reason);
 
         GainProcessor processor(*this);
         processor.setDstImg(dst.get());
@@ -192,32 +272,33 @@ public:
     }
 
 private:
+    /// Writes the Device label when it changed, with the sentence that names an
+    /// override the parser did not understand. A host may refuse a write during
+    /// create; the label is a diagnostic, not a contract, and a refused write is
+    /// retried on the next render.
+    void setLabel(std::string text)
+    {
+        const std::string problem = overrideProblem();
+        if (!problem.empty()) {
+            text += "; ";
+            text += problem;
+        }
+        if (text == _label) {
+            return;
+        }
+        try {
+            _device->setValue(text);
+            _label = text;
+        } catch (const OFX::Exception::Suite&) {
+        }
+    }
+
     void renderWithOpenCL(const OFX::RenderArguments& args, OFX::Image& src, OFX::Image& dst,
                           float gain)
     {
-        if (args.pOpenCLCmdQ == nullptr) {
-            OFX::throwSuiteStatusException(kOfxStatErrValue);
-        }
-
-        // OpenCL Buffers are addressed with a non-negative row pitch:
-        // ofxImageEffect.h's kOfxImagePropRowBytes note says negative rowBytes is
-        // for CPU images only, "not CUDA/Metal/OpenCL Buffers". A host that sends
-        // one anyway gets a refusal instead of a kernel that walks backwards.
-        // Row pitch belongs to the Buffers handover: an OpenCL image has none,
-        // and the Images branch above never gets here.
-        const int srcRowBytes = src.getRowBytes();
-        const int dstRowBytes = dst.getRowBytes();
-        if (srcRowBytes <= 0 || dstRowBytes <= 0 || srcRowBytes != dstRowBytes ||
-            srcRowBytes % static_cast<int>(sizeof(float)) != 0) {
-            OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
-        }
-
         const OfxRectI& window = args.renderWindow;
         const OfxRectI& sb = src.getBounds();
         const OfxRectI& db = dst.getBounds();
-        if (sb.x1 != db.x1 || sb.y1 != db.y1) {
-            OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
-        }
 
         // Which handover is this? ofxGPURender.h: "if a plug-in supports both, it
         // must use kOfxImageEffectPropOpenCLImage to determine if Images or
@@ -226,11 +307,31 @@ private:
         // sets it on one image and not the other is broken, not half-broken.
         void* srcImage = src.getPropertySet().propGetPointer(kOfxImageEffectPropOpenCLImage, 0);
         void* dstImage = dst.getPropertySet().propGetPointer(kOfxImageEffectPropOpenCLImage, 0);
+        // Buffers mode: kOfxImagePropData is the cl_mem, not a pointer to pixels.
+        void* srcBuffer = src.getPropertySet().propGetPointer(kOfxImagePropData, 0);
+        void* dstBuffer = dst.getPropertySet().propGetPointer(kOfxImagePropData, 0);
+
+        // Every check the render used to do inline, in one function that a
+        // machine without a device can test: src/PathDecision.h.
+        oclgain::HandoverFacts hf;
+        hf.queuePresent = args.pOpenCLCmdQ != nullptr;
+        hf.imagesHandover = srcImage != nullptr || dstImage != nullptr;
+        hf.sourceImage = srcImage != nullptr;
+        hf.destImage = dstImage != nullptr;
+        hf.sourceBuffer = srcBuffer != nullptr;
+        hf.destBuffer = dstBuffer != nullptr;
+        hf.sourceRowPitch = src.getRowBytes();
+        hf.destRowPitch = dst.getRowBytes();
+        hf.sameBoundsOrigin = sb.x1 == db.x1 && sb.y1 == db.y1;
+        const oclgain::HandoverFault fault = oclgain::CheckHandover(hf);
+        if (fault != oclgain::HandoverFault::None) {
+            OFX::Log::error(true, "OpenCL render refused: %s",
+                            oclgain::HandoverFaultText(fault));
+            OFX::throwSuiteStatusException(handoverStatus(fault));
+        }
+
         std::string why;
-        if (srcImage != nullptr || dstImage != nullptr) {
-            if (srcImage == nullptr || dstImage == nullptr) {
-                OFX::throwSuiteStatusException(kOfxStatErrValue);
-            }
+        if (hf.imagesHandover) {
             if (!_opencl.prepare(args.pOpenCLCmdQ, /*images=*/true, &why)) {
                 throwError(why);
             }
@@ -241,13 +342,6 @@ private:
                 throwError(why);
             }
             return;
-        }
-
-        // Buffers mode: kOfxImagePropData is the cl_mem, not a pointer to pixels.
-        void* srcBuffer = src.getPropertySet().propGetPointer(kOfxImagePropData, 0);
-        void* dstBuffer = dst.getPropertySet().propGetPointer(kOfxImagePropData, 0);
-        if (srcBuffer == nullptr || dstBuffer == nullptr) {
-            OFX::throwSuiteStatusException(kOfxStatErrBadHandle);
         }
 
         if (!_opencl.prepare(args.pOpenCLCmdQ, /*images=*/false, &why)) {
@@ -263,7 +357,8 @@ private:
         if (!_opencl.enqueueGain(args.pOpenCLCmdQ, srcBuffer, dstBuffer,
                                  window.x2 - window.x1, window.y2 - window.y1,
                                  window.x1 - sb.x1, window.y1 - sb.y1,
-                                 srcRowBytes / static_cast<int>(sizeof(float)), gain, &why)) {
+                                 hf.sourceRowPitch / static_cast<int>(sizeof(float)), gain,
+                                 &why)) {
             throwError(why);
         }
         // No wait: the queue is the host's, and ofxGPURender.h asks the plug-in
@@ -280,6 +375,8 @@ private:
     OFX::Clip* _dstClip;
     OFX::Clip* _srcClip;
     OFX::DoubleParam* _gain;
+    OFX::StringParam* _device;
+    std::string _label;
     ocl::Runtime _opencl;
 };
 
@@ -325,8 +422,17 @@ public:
         // written through the buffer kernel) and Images (image2d_t in
         // kOfxImageEffectPropOpenCLImage, written through the image kernel). A
         // host that offers only one gets the one it offers.
-        desc.setSupportsOpenCLBuffersRender(true);
-        desc.setSupportsOpenCLImagesRender(true);
+        // OFXPLUGIN_OPENCL_MODE=cpu is applied here too, and that is the half
+        // that makes the override useful on a machine that has a device: a host
+        // cannot hand a plug-in a cl_mem it never asked for, so dropping the two
+        // claims is what turns the override into a CPU render instead of an
+        // error inside the first render. The claims are skipped rather than set
+        // to false, so a host that has no OpenCL sees exactly what it saw
+        // before.
+        if (requestedMode() != oclgain::Request::CpuOnly) {
+            desc.setSupportsOpenCLBuffersRender(true);
+            desc.setSupportsOpenCLImagesRender(true);
+        }
         // OFX 1.5.1 added this, and a host is not required to know it: the write
         // then throws, and an unguarded one takes the whole descriptor down with
         // it. Resolve Studio 21.2 does exactly that - every context creation fails
@@ -389,6 +495,18 @@ public:
         gain->setIncrement(0.01);
         gain->setDoubleType(OFX::eDoubleTypeScale);
         page->addChild(*gain);
+
+        // Read-only: which path ran and why. A gain is a gain either way, so this
+        // is how a user - and the runner's forced-CPU step - tells the host's
+        // OpenCL queue from the loop, and why the loop ran when it did.
+        OFX::StringParamDescriptor* device = desc.defineStringParam(kParamDevice);
+        device->setLabels("Device", "Device", "Device");
+        device->setScriptName(kParamDevice);
+        device->setHint("Which path rendered, or why the CPU path ran instead");
+        device->setStringType(OFX::eStringTypeLabel);
+        device->setDefault("");
+        device->setEnabled(false);
+        page->addChild(*device);
     }
 
     OFX::ImageEffect* createInstance(OfxImageEffectHandle handle, OFX::ContextEnum context) override
