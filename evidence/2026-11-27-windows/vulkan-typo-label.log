@@ -1,0 +1,127 @@
+# The unrecognised-mode run in templates/minimal-vulkan-ofx/test/run-tests.bat,
+# Windows 11 + RTX 3060 + Vulkan 1.4.357, 2026-11-27 (excerpt of the runner's
+# 1079-line log, which stays in .validation/).
+#
+# What this proves, and what it is for: OFXPLUGIN_VULKAN_MODE=gpux is a word
+# VulkanMode.h does not know. The policy test (vulkan_mode_test) already asserts
+# that the parser reports it as unrecognised; nothing asserted that the decision
+# reaches a user, which is the half that makes a typo harmless-or-not. The runner
+# sets the variable, renders one frame, and asks the harness for the Device
+# parameter with --label-contains, so the run fails if the label does not carry
+# the sentence. Two checks, both in this block: the label's value and the
+# substring, at check 29/30 on the first render and 76/77 on the second.
+#
+# The label is the device's, because an unrecognised word reads as auto and this
+# machine has a device: `NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0,
+# 4294967040 px per dispatch); OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or
+# gpu`. On a machine with no device the same sentence arrives on the CPU label
+# (`cpuLabel()` appends it too), so the run is not a device-only pass.
+#
+# Counts: this run is 94 checks, the same shape as the forced-CPU run; the
+# template's total is 899, the tree's 3,017.
+
+  host profile: resolve, OFXPLUGIN_VULKAN_MODE=gpux (unrecognised)
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] unload
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - descriptor declares CPURenderSupported
+ok 26 - descriptor declares NoSpatialAwareness
+ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 28 - thumbnail render produces the same frame as a full render
+ok 29 - label parameter 'device' = "NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per dispatch); OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 30 - label parameter 'device' contains "OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 31 - a second instance can be created
+ok 32 - two instances are live at the same time
+ok 33 - render instance 0 while instance 1 is alive
+ok 34 - render instance 1 with its own settings
+ok 35 - two instances with identical settings produce identical pixels
+ok 36 - instance for parallel worker 2
+ok 37 - instance for parallel worker 3
+ok 38 - concurrent renders produced every record
+ok 39 - every concurrent render returned kOfxStatOK
+ok 40 - every concurrent render produced a readable destination
+ok 41 - concurrent renders with identical settings are identical
+ok 42 - destroy instance 3
+ok 43 - destroy instance 2
+ok 44 - destroy instance 1
+ok 45 - kOfxActionDestroyInstance
+ok 46 - kOfxActionUnload
+ok 47 - unload cycle completed
+ok 48 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 49 - OfxGetNumberOfPlugins is exported
+ok 50 - OfxGetPlugin is exported
+ok 51 - OfxGetNumberOfPlugins() >= 1
+ok 52 - OfxGetPlugin(0) returns a plug-in
+ok 53 - pluginApi
+ok 54 - apiVersion
+ok 55 - pluginIdentifier is non-empty
+ok 56 - pluginIdentifier
+ok 57 - pluginIdentifier stable across loads
+ok 58 - pluginVersion
+ok 59 - setHost is non-null
+ok 60 - mainEntry is non-null
+ok 61 - kOfxActionLoad
+ok 62 - kOfxActionDescribe
+ok 63 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 64 - descriptor lists the requested context
+ok 65 - descriptor sets a legal render thread safety
+ok 66 - param 'gain' declared
+ok 67 - param 'gain' type
+ok 68 - clip 'Source' declared
+ok 69 - clip 'Output' declared
+ok 70 - kOfxActionCreateInstance
+ok 71 - kOfxImageEffectActionRender
+ok 72 - descriptor declares CPURenderSupported
+ok 73 - descriptor declares NoSpatialAwareness
+ok 74 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 75 - thumbnail render produces the same frame as a full render
+ok 76 - label parameter 'device' = "NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per dispatch); OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 77 - label parameter 'device' contains "OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 78 - a second instance can be created
+ok 79 - two instances are live at the same time
+ok 80 - render instance 0 while instance 1 is alive
+ok 81 - render instance 1 with its own settings
+ok 82 - two instances with identical settings produce identical pixels
+ok 83 - instance for parallel worker 2
+ok 84 - instance for parallel worker 3
+ok 85 - concurrent renders produced every record
+ok 86[stage] unload
+ - every concurrent render returned kOfxStatOK
+ok 87 - every concurrent render produced a readable destination
+ok 88 - concurrent renders with identical settings are identical
+ok 89 - destroy instance 3
+ok 90 - destroy instance 2
+ok 91 - destroy instance 1
+ok 92 - kOfxActionDestroyInstance
+ok 93 - kOfxActionUnload
+ok 94 - unload cycle completed
+contract_test: 94 checks, 0 failed

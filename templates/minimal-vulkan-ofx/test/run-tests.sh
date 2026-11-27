@@ -196,6 +196,22 @@ OFXPLUGIN_VULKAN_MODE=cpu "${HARNESS}" "${OFX_FILE}" --host-profile resolve \
   --clip Source --clip Output \
   --label-param device --label-contains device=CPU
 
+# A word the parser does not know must not vanish. VulkanMode.h reports it as
+# unrecognised, the plug-in reads that as auto and writes the raw word into the
+# Device label, so a typo is visible in the host instead of quietly doing
+# nothing - which is how a run that never left the device gets documented as a
+# CPU test. The policy test proves the parser's half; this is the only run that
+# proves the label's half, and it needs a process of its own because the mode is
+# read once per process. It passes on both kinds of machine: with a device the
+# label is the device's, without one it is the CPU label, and both append the
+# sentence this run asks for.
+echo "  host profile: resolve, OFXPLUGIN_VULKAN_MODE=gpux (unrecognised)"
+OFXPLUGIN_VULKAN_MODE=gpux "${HARNESS}" "${OFX_FILE}" --host-profile resolve \
+  --id com.ofxplugindeveloper.vulkaingain --version 1.0 --param gain:double \
+  --clip Source --clip Output \
+  --label-param device \
+  --label-contains "device=OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+
 echo
 # The build tree is not an install: a host loads what is under OFX/Plugins, so
 # `cmake --install` into a throwaway prefix is the move that exposes a path or a

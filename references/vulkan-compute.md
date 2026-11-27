@@ -208,9 +208,19 @@ device always took the device and a machine without one always took the loop, so
 no single run could assert both. Both runners now render once with
 `OFXPLUGIN_VULKAN_MODE=cpu` and require the `Device` parameter to read `CPU - ...`
 after the render: one named check in the contract suite, on a machine whose
-device is present and working. The `.bat` run is the one in the log; the `.sh`
-has not been executed here (§8), so what is verified about it is that it parses
-and that its device branch is exercised against stubs. The policy test prints **29 checks**, and they are
+device is present and working. A second run does the same with `gpux`, a word
+the parser rejects: `VulkanMode.h` reports it as unrecognised, the plug-in reads
+that as auto, and the label carries the raw word back - measured
+`NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per
+dispatch); OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu`, with
+`--label-contains` asserting the sentence (**[V]**,
+[`../evidence/2026-11-27-windows/vulkan-typo-label.log`](../evidence/2026-11-27-windows/vulkan-typo-label.log)).
+That half of the rule - a typo is *visible*, not merely noticed - was unproven
+before it: the policy test reads the parser's return value, and the CPU run
+only ever set a word the parser accepts. The `.bat` run is the one in the logs;
+the `.sh` has not been executed here (§8), so what is verified about it is that
+it parses, that it carries the same two runs, and that its device branch is
+exercised against stubs. The policy test prints **29 checks**, and they are
 the gates rather than the pixels - parsing including the typo and the
 case-sensitivity, the empty window, `maxPixels` exactly and one past it, and that
 neither override can promote past a gate. That the dispatch agrees with the CPU
@@ -220,7 +230,8 @@ loop is still `vulkan_suite`'s question, and it still needs the hardware.
 
 `test/run-tests.bat` and `test/run-tests.sh` run the same six steps in the same
 order - build, the path-policy test, artifact, the host contract through the fake
-host (which includes one render with the CPU override), the install round trip,
+host (two renders: one with the CPU override, one with `gpux`, a word the parser
+rejects), the install round trip,
 and the device self-test - and they decide the last one the same way:
 **exit 0 is a pass, exit 2 is the suite's "no Vulkan device on this machine" and
 reports `NOT VERIFIED`, anything else fails the run**. `NOT VERIFIED` is the

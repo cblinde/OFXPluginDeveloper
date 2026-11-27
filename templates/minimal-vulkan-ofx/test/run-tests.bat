@@ -176,6 +176,30 @@ set "FORCED_STATUS=%ERRORLEVEL%"
 set "OFXPLUGIN_VULKAN_MODE="
 if not "%FORCED_STATUS%"=="0" goto :error
 
+rem A word the parser does not know must not vanish. VulkanMode.h reports it as
+rem unrecognised, the plug-in reads that as auto and writes the raw word into the
+rem Device label, so a typo is visible in the host instead of quietly doing
+rem nothing - which is how a run that never left the device gets documented as
+rem a CPU test. The policy test proves the parser's half; this is the only run
+rem that proves the label's half, and it needs a process of its own because the
+rem mode is read once per process. It passes on both kinds of machine: with a
+rem device the label is the device's, without one it is the CPU label, and both
+rem append the sentence this run asks for.
+echo   host profile: resolve, OFXPLUGIN_VULKAN_MODE=gpux (unrecognised)
+set "OFXPLUGIN_VULKAN_MODE=gpux"
+"%CONTRACT%" "%OFX_FILE%" ^
+    --host-profile resolve ^
+    --id com.ofxplugindeveloper.vulkaingain ^
+    --version 1.0 ^
+    --param gain:double ^
+    --clip Source ^
+    --clip Output ^
+    --label-param device ^
+    --label-contains "device=OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+set "TYPO_STATUS=%ERRORLEVEL%"
+set "OFXPLUGIN_VULKAN_MODE="
+if not "%TYPO_STATUS%"=="0" goto :error
+
 rem ---- [5] install ---------------------------------------------------------
 rem The build tree is not an install: a host loads what is under OFX/Plugins, so
 rem `cmake --install` into a throwaway prefix is the move that exposes a path or a

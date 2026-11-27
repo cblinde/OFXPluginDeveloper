@@ -138,3 +138,24 @@ negative-controls         14.1s    223 check(s)  every fault detected, the patte
 # to the last, including the time between them:        119.5s
 # difference: 0.26s - the eight `date` calls and the shell between them.
 # Counts are this run's: 2,923 passing in the tree, 805 of them Vulkan.
+
+## Third pass, minutes later, after the unrecognised-mode run was added
+
+# Not a replacement for the table above and not a second measurement of the same
+# work: the Vulkan runner gained one more contract pass (94 checks) between the two,
+# and this pass ran while other work was using the machine. That shows in rows that
+# cannot have changed at all - docs +0.3s, provenance +0.8s, which are file reads -
+# and in the Vulkan row, which went *down* by 1.1s despite the extra pass. So the
+# numbers below are a record of this machine at that moment, not a comparison; the
+# document quotes the quieter pass, and the counts are the ones the tree has now.
+
+docs                       5.6s       0 check(s)  check-docs: 33 documents, 0 problems
+provenance                 9.2s       0 check(s)  check-provenance: 0 problems
+minimal-ofx               12.0s    562 check(s)  all Windows checks passed
+minimal-cuda-ofx          25.5s    486 check(s)  all Windows checks passed
+minimal-opencl-ofx        17.4s    392 check(s)  OK: the OpenCL template passed on this machine
+minimal-vulkan-ofx        21.7s    899 check(s)  all Windows checks passed
+onnx-inference-ofx        19.0s    678 check(s)  all checks passed
+negative-controls         15.0s    223 check(s)  every fault detected, the pattern still passes
+# sum of the eight rows, each stopped on its own:      125.3s
+# one stopwatch around the block:                      125.6s

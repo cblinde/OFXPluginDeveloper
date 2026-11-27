@@ -1025,3 +1025,11 @@ ok 94 - unload cycle completed
 contract_test: 94 checks, 0 failed
 
 all Windows checks passed
+
+# Late addition, 2026-11-27: the paragraph above counts the run in this file, which
+# is still 805. The runner has one more contract pass since - OFXPLUGIN_VULKAN_MODE=gpux,
+# a word the parser rejects, asserting that the Device label carries the sentence
+# that says so (94 checks), which is what makes the parser's verdict visible to a
+# user - so the template's total is 899 and the tree's 3,017. The proof is
+# vulkan-typo-label.log; the counts-per-route table in testing-layers.md §13 carries
+# the current figures and this file keeps the older one as the record of its run.
