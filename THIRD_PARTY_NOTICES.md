@@ -6,7 +6,11 @@ on the line after a shebang, after `@echo off` in a batch file (a `rem` above it
 would be printed on every run) and after `#version` in a GLSL shader. Two things
 hold that claim: `tools/check-provenance.py` fails on a tracked source file
 without the line, and it fails on a substantive line that also appears verbatim in
-the OpenFX SDK. The version scripts (`*.map`) and every workflow carry it too, in a `/* */` or
+the OpenFX SDK. The second half needs its allowlist to stay true, so the tool
+also checks that every allowlisted line still occurs in the corpus it was derived
+from - an SDK that respells one turns into a message instead of a stale entry -
+and `OFX_PROVENANCE_CORPUS` (paths separated by `:` on Linux, `;` on Windows)
+lets one run compare against more than one checkout. The version scripts (`*.map`) and every workflow carry it too, in a `/* */` or
 a `#` comment; `.gitignore` and the data fixtures are the exceptions the tool
 names, because a committed `.onnx` or `.bin` cannot hold a comment at all.
 

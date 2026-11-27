@@ -32,6 +32,7 @@ Exit status: 0 both claims hold or claim 2 was not answerable, 1 a problem,
 
 import argparse
 import re
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -61,8 +62,10 @@ ALLOWED_SHARED = {
         "the SDK's documented way to refuse an unsupported call",
     "OFX::throwSuiteStatusException(kOfxStatErrValue);":
         "the SDK's documented way to refuse a bad property value",
-    "OFX::throwSuiteStatusException(kOfxStatErrMissingHostFeature);":
-        "the SDK's documented way to refuse a missing host feature",
+    # No entry for kOfxStatErrMissingHostFeature: the SDK documents the status
+    # code (ofxCore.h) and never spells that exception line, so an entry would
+    # allow nothing. The new corpus check found it - see the comment above
+    # check_allowlist.
     "const OfxRectI& dstBounds = _dstImg->getBounds();":
         "a getter call with its return type; there is one way to write it",
     "desc.addSupportedContext(OFX::eContextFilter);":
@@ -76,6 +79,29 @@ ALLOWED_SHARED = {
 MIN_SHARED_LINE = 45
 REFERENCE_DIR = ".ofx-ref"
 REFERENCE_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".hpp", ".cxx"}
+
+# A checkout to compare against. More than one is allowed because a second SDK
+# version is the only way to know whether an allowlisted idiom is stable across
+# versions instead of true of the one tree that happens to be on disk: name them
+# in OFX_PROVENANCE_CORPUS, separated by os.pathsep (":" on Linux, ";" on
+# Windows), relative to the repository root or absolute. Unset means `.ofx-ref`,
+# and an absent checkout is reported rather than skipped silently.
+CORPUS_ENV = "OFX_PROVENANCE_CORPUS"
+
+
+def corpora(root):
+    raw = (os.environ.get(CORPUS_ENV) or "").strip()
+    names = [part.strip() for part in raw.split(os.pathsep) if part.strip()] or [REFERENCE_DIR]
+    found, missing = [], []
+    for name in names:
+        path = Path(name)
+        if not path.is_absolute():
+            path = root / name
+        if path.is_dir():
+            found.append((name, path))
+        else:
+            missing.append(name)
+    return found, missing
 
 
 def tracked_files(root):
@@ -106,22 +132,44 @@ def check_spdx(root, files, report):
     return checked
 
 
-def check_copied_lines(root, files, report):
-    reference = root / REFERENCE_DIR
-    if not reference.is_dir():
-        return None
+def check_allowlist(corpus, report):
+    """Every allowlisted line has to still occur in the corpus.
+
+    The list is a claim about the SDK's text, so it rots in the direction nobody
+    notices: an SDK that respells an idiom leaves an entry that allows nothing
+    (harmless-looking) or, once someone edits it to match, a list that agrees with
+    the code rather than with the corpus it was derived from. Checked here so the
+    failure is a message, not a habit.
+    """
+    lines = set()
+    for text in corpus.values():
+        lines.update(line.strip() for line in text.splitlines())
+    checked = 0
+    for idiom, why in sorted(ALLOWED_SHARED.items()):
+        checked += 1
+        if idiom not in lines:
+            report("error", "ALLOWED_SHARED",
+                   "allowlisted line no longer occurs in the corpus, so the entry "
+                   "allows nothing: %r (%s)" % (idiom[:70], why))
+    return checked
+
+
+def check_copied_lines(root, files, found, report):
     corpus = {}
-    for path in reference.rglob("*"):
-        if path.suffix.lower() in REFERENCE_SUFFIXES and path.is_file():
-            try:
-                corpus[path] = path.read_text(errors="ignore")
-            except OSError:
-                continue
+    for name, reference in found:
+        for path in reference.rglob("*"):
+            if path.suffix.lower() in REFERENCE_SUFFIXES and path.is_file():
+                try:
+                    corpus[path] = path.read_text(errors="ignore")
+                except OSError:
+                    continue
     if not corpus:
         return None
 
+    # A checkout inside the repository is not our code: its files are the corpus.
+    corpus_heads = {name.split("/")[0] for name, _ in found}
     ours = [rel for rel in files
-            if rel.split("/")[0] != REFERENCE_DIR
+            if rel.split("/")[0] not in corpus_heads
             and (root / rel).suffix.lower() in SOURCE_SUFFIXES
             and (root / rel).is_file()]
     compared = 0
@@ -148,7 +196,7 @@ def check_copied_lines(root, files, report):
                            "appears verbatim in %s and is not an allowed API idiom: %r"
                            % (path.relative_to(root).as_posix(), body[:70]))
                 break
-    return compared, allowed
+    return compared, allowed, check_allowlist(corpus, report)
 
 
 def self_test(root):
@@ -159,6 +207,15 @@ def self_test(root):
     body = sample.strip().lstrip("/#* \t").strip()
     if body not in ALLOWED_SHARED:
         failures.append("allowlist does not match a stripped line: %r" % body)
+    # A corpus that no longer spells an allowlisted line must be reported, not
+    # accepted: that is the rot the check exists for. An unrelated corpus has to
+    # produce one report per entry.
+    reported = []
+    check_allowlist({"unrelated": "int nothing_to_do_with_ofx = 0;"},
+                    lambda *a: reported.append(a))
+    if len(reported) != len(ALLOWED_SHARED):
+        failures.append("a corpus without the idioms reported %d of %d entries"
+                        % (len(reported), len(ALLOWED_SHARED)))
     # A copy of something that is not an idiom has to be reported.
     reported = []
     probe = "\tconst double gain = 1.0 * (some_long_expression_that_is_copied_here);"
@@ -199,7 +256,11 @@ def main():
         print("  %s: %s: %s" % (kind, where, message))
 
     spdx_checked = check_spdx(root, files, report)
-    copied = check_copied_lines(root, files, report)
+    found, missing = corpora(root)
+    for name in missing:
+        report("error", name, "named in %s but not a directory: a corpus that was "
+               "moved or deleted is not a corpus that passed" % CORPUS_ENV)
+    copied = check_copied_lines(root, files, found, report) if found else None
 
     print("check-provenance: %d source file(s) with an SPDX line" % spdx_checked)
     if copied is None:
@@ -207,10 +268,12 @@ def main():
               % REFERENCE_DIR)
         print("               (the OpenFX SDK is fetched at configure time)")
     else:
-        compared, allowed = copied
-        print("  %d line(s) of %d+ characters compared against the OpenFX SDK: %d allowed "
-              "API idiom(s), %d problem(s)"
-              % (compared, MIN_SHARED_LINE, allowed, len(problems)))
+        compared, allowed, allowlisted = copied
+        print("  %d line(s) of %d+ characters compared against %d checkout(s) (%s): "
+              "%d allowed API idiom(s) of %d allowlisted, %d problem(s)"
+              % (compared, MIN_SHARED_LINE, len(found),
+                 ", ".join(name for name, _ in found), allowed, allowlisted,
+                 len(problems)))
     if problems:
         print("check-provenance: %d problem(s)" % len(problems))
         return 1
