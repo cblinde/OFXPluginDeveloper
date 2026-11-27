@@ -23,7 +23,8 @@
 //   4. A frame needing more workgroups than maxComputeWorkGroupCount allows
 //      would be dispatched truncated - `vulkan_suite` shows the shader's tail
 //      guard keeps the part it sees correct, and nothing keeps the rest.
-//   5. `gpu` from the environment, with the gates above satisfied.
+//   5. `gpu` (or its synonym `vulkan`) from the environment, with the gates
+//      above satisfied.
 //   6. Auto, with the gates above satisfied.
 //
 // What the decision does NOT do is decide the memory arrangement: that is
@@ -52,10 +53,13 @@ inline const char* ModeName(Mode mode)
     return "AUTO";
 }
 
-/// Parses OFXPLUGIN_VULKAN_MODE. `recognised` is false for a word that is not
-/// one of the three, so a typo is reported instead of being read as Auto - an
-/// override that silently does nothing is how a "we tested the CPU path" claim
-/// gets made about a run that never left the device.
+/// Parses OFXPLUGIN_VULKAN_MODE. Four spellings are understood - `auto`, `cpu`,
+/// `gpu` and its synonym `vulkan` - and `recognised` is false for anything else,
+/// so a typo is reported instead of being read as Auto: an override that
+/// silently does nothing is how a "we tested the CPU path" claim gets made
+/// about a run that never left the device. `vulkan` is not a second behaviour,
+/// it is the same VULKAN_ONLY gate under the plug-in's own name, which is the
+/// word a reader of the label is most likely to type.
 inline Mode ParseModeOverride(const char* text, bool* recognised)
 {
     *recognised = true;
@@ -108,7 +112,8 @@ inline ModeDecision DecideMode(Mode requested, const FrameFacts& facts)
                  "the frame needs more workgroups than one dispatch covers" };
     }
     if (requested == Mode::VulkanOnly) {
-        return { Mode::VulkanOnly, "OFXPLUGIN_VULKAN_MODE=gpu was set" };
+        return { Mode::VulkanOnly,
+                 "OFXPLUGIN_VULKAN_MODE=gpu (or vulkan) was set" };
     }
     return { Mode::VulkanOnly, "a Vulkan device answered" };
 }

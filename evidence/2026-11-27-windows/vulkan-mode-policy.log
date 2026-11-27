@@ -21,6 +21,10 @@
 #
 #   [2/6] path policy      build/self-test/vulkan_mode_test.exe - the gate table
 #                          of src/VulkanMode.h, 29 checks, no device involved.
+#                          Includes the four spellings the override accepts:
+#                          auto, cpu, gpu and vulkan (a synonym of gpu, which is
+#                          why the reason reads "gpu (or vulkan) was set"), plus
+#                          two unrecognised words that have to read as auto.
 #   [4/6] host contract    four runs of 118 checks, plus the forced-CPU run: with
 #                          OFXPLUGIN_VULKAN_MODE=cpu the table answers CPU, the
 #                          plug-in writes that into its Device parameter after a
@@ -61,10 +65,13 @@ MSBuild-Version 18.4.0+6e61e96ac für .NET Framework
   Checking File Globs
   1>Checking Build System
   Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/CMakeLists.txt
+  Plugin.cpp
+     Bibliothek "Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/Release/VulkanGain.lib" und Objekt "Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/Release/VulkanGain.exp" werden erstellt.
   VulkanGain.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx
   Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/CMakeLists.txt
   Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/CMakeLists.txt
   vulkan_suite.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\self-test\vulkan_suite.exe
+  vulkan_mode_test.cpp
   vulkan_mode_test.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\self-test\vulkan_mode_test.exe
   Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/CMakeLists.txt
 
@@ -113,7 +120,7 @@ VulkanMode: the six gates, no device needed
   the reason names the dispatch limit            ok   the frame needs more workgroups than one dispatch covers
   gpu override cannot promote a truncated frame  ok   CPU_ONLY
   gpu override with a device dispatches          ok   VULKAN_ONLY
-  the override names itself in the reason        ok   OFXPLUGIN_VULKAN_MODE=gpu was set
+  the override names itself in the reason        ok   OFXPLUGIN_VULKAN_MODE=gpu (or vulkan) was set
   auto takes the device when it answers          ok   VULKAN_ONLY
   auto gives the device as its reason            ok   a Vulkan device answered
 vulkan_mode_test: 29 checks, 0 failed
@@ -774,7 +781,7 @@ ok 94 - unload cycle completed
 contract_test: 94 checks, 0 failed
 
 == [5/6] install and load the installed copy ==
-  C:\Users\cblinde\AppData\Local\Temp\ofx-install-1136824018\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx
+  C:\Users\cblinde\AppData\Local\Temp\ofx-install-2866112738\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx
 [stage] render
 [stage] thumbnail render
 [stage] concurrency
@@ -784,7 +791,7 @@ contract_test: 94 checks, 0 failed
 [stage] concurrency
 [stage] unload
 - host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
-ok 1 - dlopen(C:\Users\cblinde\AppData\Local\Temp\ofx-install-1136824018\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 1 - dlopen(C:\Users\cblinde\AppData\Local\Temp\ofx-install-2866112738\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
 ok 2 - OfxGetNumberOfPlugins is exported
 ok 3 - OfxGetPlugin is exported
 ok 4 - OfxGetNumberOfPlugins() >= 1
@@ -829,7 +836,7 @@ ok 42 - destroy instance 1
 ok 43 - kOfxActionDestroyInstance
 ok 44 - kOfxActionUnload
 ok 45 - unload cycle completed
-ok 46 - dlopen(C:\Users\cblinde\AppData\Local\Temp\ofx-install-1136824018\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 46 - dlopen(C:\Users\cblinde\AppData\Local\Temp\ofx-install-2866112738\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
 ok 47 - OfxGetNumberOfPlugins is exported
 ok 48 - OfxGetPlugin is exported
 ok 49 - OfxGetNumberOfPlugins() >= 1
@@ -907,9 +914,9 @@ memory: auto picks device-local storage + host-visible staging
   a null frame is refused            ok   nothing to dispatch
   a zero-pixel frame is refused      ok   nothing to dispatch
  through 1920x1080, 20 frames each:
-  host-visible   93.88 ms/frame total, dispatch 5.18, copies 88.65 (1 GB/s over both directions)
-  device-local   114.23 ms/frame total, dispatch 25.66, copies 88.51 (1 GB/s over both directions)
-  CPU            3.19 ms/frame (the loop render() falls back to)
+  host-visible   96.32 ms/frame total, dispatch 6.15, copies 90.14 (1 GB/s over both directions)
+  device-local   119.25 ms/frame total, dispatch 28.63, copies 90.56 (1 GB/s over both directions)
+  CPU            3.45 ms/frame (the loop render() falls back to)
 vulkan_suite: 26 checks, 0 failed
   device label
 [stage] render

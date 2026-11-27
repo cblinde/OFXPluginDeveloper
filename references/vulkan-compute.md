@@ -169,24 +169,29 @@ reason: the machine that has to trust the gates is the one without the hardware.
 | 2 | no instance, device or compute queue | CPU, with the engine's own reason appended to the label |
 | 3 | an empty render window | CPU |
 | 4 | more pixels than `maxPixels()` | CPU; the dispatch would be truncated |
-| 5 | the device, if gates 0-4 passed | VULKAN_ONLY - the reason says whether `gpu` asked for it or auto chose it |
+| 5 | the device, if gates 0-4 passed | VULKAN_ONLY - the reason says whether the override asked for it or auto chose it |
 
 The override is also the cheapest gate to take: `frameFacts()` in the plug-in asks
 it before it probes, so a forced-CPU instance never creates an instance, a device
 or a queue - which is what makes the switch usable on a machine whose device is
 busy, broken or simply not wanted, and not only on one without a driver.
 
-Gate 5 is the one that can answer with a request or with a default: `gpu` and
-auto both land there, and the reason string is what tells them apart - the
+Gate 5 is the one that can answer with a request or with a default: the override
+and auto both land there, and the reason string is what tells them apart - the
 policy test asserts both of those reasons, which is why the table has six gates
 and the decision has seven answers.
 
 **Every gate can only demote.** `gpu` on a machine without a driver renders on
 the CPU and the label says why, which is the rule the CUDA template states for
-its own override; `cpu` is the one gate no fact can override. A word that is not
-`auto`, `cpu` or `gpu` reads as auto and is named in the label - an override that
-silently does nothing is how a "the CPU path was tested" claim gets made about a
-run that never left the device.
+its own override; `cpu` is the one gate no fact can override. The override reads
+four spellings - `auto`, `cpu`, `gpu` and `vulkan`, the last as a synonym for
+`gpu` because it is the word a reader of the `Device` label is most likely to
+type; the label reports the gate, so both spellings read back as
+`OFXPLUGIN_VULKAN_MODE=gpu (or vulkan) was set`. Anything else - a typo, or an
+uppercase `CPU` - reads as auto **and** is named in the label as unrecognised:
+an override that silently does nothing is how a "the CPU path was tested" claim
+gets made about a run that never left the device. The policy test executes all
+four spellings plus two unrecognised words.
 
 **A CPU-only configure is the same gate, not a separate build.** With
 `-DOFXPLUGIN_VULKAN=OFF` the plug-in and this test compile without
