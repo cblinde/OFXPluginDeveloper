@@ -64,9 +64,10 @@ These are properties of one machine, not of the code, and they belong in a bug
 report rather than in a build instruction (**[V]**, same log):
 
 - GPU: NVIDIA GeForce RTX 3060, compute capability 8.6, 28 SMs, 12287 MiB.
-- Vulkan device: `Vulkan 1.4.357` - the driver's API version, four revisions
-  behind the headers the module was compiled against, which is legal and is why
-  the header version is not a requirement.
+- Vulkan device: `Vulkan 1.4.357` - the driver's API version, twelve patch
+  revisions behind the headers the module was compiled against. That is legal:
+  a driver negotiates the API version, not the header's patch revision, which
+  is why the header count is not a requirement for a bundle.
 - OpenCL: `OpenCL 3.0 CUDA` on the NVIDIA platform, through the host's loader;
   no OpenCL SDK is installed or needed.
 - ONNX Runtime 1.20.1's CUDA provider imports cuBLAS/cuBLASLt 12, cuFFT 11, the
