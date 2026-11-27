@@ -11,12 +11,20 @@ name: windows
 # wired), or valgrind (Linux only). Those keep their own rows and evidence.
 #
 # Before the first CI run this file was checked locally on 2026-11-26: actionlint
-# 1.7.12 clean, and every step below run as written - the three builds, all three
-# suites, the negative controls and the two tool steps, exit 0 each. The log is
+# 1.7.12 clean, and the steps as they stood that day run as written - the three
+# builds and three suites (reference, CUDA through its CPU shim, inference), the
+# negative controls and the two tool steps, exit 0 each. The log is
 # evidence/2026-11-26-windows/windows-job-local.log, and it says where this
-# machine differs from a runner (MSVC 14.50, Python 3.10.6, no 3.12). The
-# nvcc step added on 2026-11-27 has its own re-run record for the same reason:
-# evidence/2026-11-27-windows/windows-nvcc-step-local.log.
+# machine differs from a runner (MSVC 14.50, Python 3.10.6, no 3.12).
+#
+# The job has grown since that run: it builds all four templates (the CUDA one
+# twice, once through the shim and once under nvcc) and runs four suites. Two
+# steps were added afterwards and were not part of that transcript. The OpenCL
+# step's suite ran on this machine
+# (evidence/2026-11-26-windows/opencl-suite.log) and its `call`/errorlevel shape
+# was measured with a stub that exits 0/1/2/3, but the step itself has not been
+# replayed as a workflow step; the nvcc step on 2026-11-27 has its own re-run
+# record, evidence/2026-11-27-windows/windows-nvcc-step-local.log.
 
 on:
   push:
@@ -148,7 +156,9 @@ jobs:
         # bundle. Exit 2 becomes a notice, everything else is the verdict - the
         # same contract `run-tests.sh` applies on the Linux side.
         # No `nobuild` here: this template's Windows script builds in its first
-        # stage (unlike the other three), so it is called the way its own header
+        # stage, unlike the reference and CUDA steps above, which build first and
+        # then call their suite with `nobuild`. (The inference step also builds in
+        # its own script, stage [1/5].) So this one is called the way its header
         # documents and the exit code is read from that one run.
         #
         # `call`, and the code read in ranges, because neither is optional here.
