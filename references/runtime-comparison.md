@@ -46,11 +46,11 @@ long enough that a contributor would skip it.
 
 ## 2. How the counters add up
 
-**2,929** is 562 + 486 + (354 + 38) + (656 + 29 + 26) + 778, every one
-printed by the
-suite that ran it as `contract_test: N checks, 0 failed` or `opencl_suite:` /
-`vulkan_suite: N checks, 0 failed`. A check is one assertion: one struct field,
-one action answer, one pixel comparison, one label.
+**2,929** is 562 + 486 + (354 + 38) + (656 + 29 + 26) + 778, every one printed
+by the suite that ran it as `contract_test: N checks, 0 failed` or
+`opencl_suite:` / `vulkan_suite: N checks, 0 failed`. A check is one
+assertion: one struct field, one action answer, one pixel comparison, one
+label.
 
 **223** is the negative-control suite, which is not a count of passes: each of its
 eight runs drives a deliberately broken plug-in and asserts that the harness
@@ -163,14 +163,18 @@ template's one thread, 8.7x against a CPU that uses eight cores.
 9,216 values against 0.10 - kernel loading, once per process, on top of a session
 that itself cost 225-260 ms to create here. A host that times its first render
 measures that, not the steady state, which is what the two-round layout in the
-log exists to keep apart.
+log exists to keep apart. `onnx-and-tensorrt.md` §5 quotes 451 ms for a first
+inference at the same shape - a median of five runs, TF32 on and the large
+workspace permitted; this is one frame with the template's keys, so the two
+agree in magnitude without being the same measurement.
 
-**Still not measured:** a second GPU or driver, a pinned host buffer (the one
-change most likely to move the copy half of a CUDA frame), a multi-pass graph that
-keeps the frame on the device, and a 1.20.1 CUDA-12 row - the same bench built
-against that package crashed inside its CUDA session creation, so that pairing has
-no frame time here rather than a guessed one. The inference suite itself still
-asserts outputs, provider labels and fallbacks, not throughput.
+**Still not measured:** a 1.20.1 CUDA-12 row - the same bench built against that
+package crashed inside its CUDA session creation, so that pairing has no frame
+time here rather than a guessed one. The gaps this measurement shares with the
+rest of the document are the bullets in §6 rather than a second list here: a
+second GPU, a pinned host buffer, a multi-pass graph that keeps the frame on the
+device. The inference suite itself still asserts outputs, provider labels and
+fallbacks, not throughput.
 
 ## 6. What none of this proves
 

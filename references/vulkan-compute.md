@@ -167,8 +167,12 @@ reason: the machine that has to trust the gates is the one without the hardware.
 | 2 | no instance, device or compute queue | CPU, with the engine's own reason appended to the label |
 | 3 | an empty render window | CPU |
 | 4 | more pixels than `maxPixels()` | CPU; the dispatch would be truncated |
-| 5 | `OFXPLUGIN_VULKAN_MODE=gpu` | the device, if gates 1-4 passed |
-| 6 | auto | the device, if gates 1-4 passed |
+| 5 | the device, if gates 0-4 passed | VULKAN_ONLY - the reason says whether `gpu` asked for it or auto chose it |
+
+Gate 5 is the one that can answer with a request or with a default: `gpu` and
+auto both land there, and the reason string is what tells them apart - the
+policy test asserts both of those reasons, which is why the table has six gates
+and the decision has seven answers.
 
 **Every gate can only demote.** `gpu` on a machine without a driver renders on
 the CPU and the label says why, which is the rule the CUDA template states for
@@ -192,7 +196,9 @@ device always took the device and a machine without one always took the loop, so
 no single run could assert both. Both runners now render once with
 `OFXPLUGIN_VULKAN_MODE=cpu` and require the `Device` parameter to read `CPU - ...`
 after the render: one named check in the contract suite, on a machine whose
-device is present and working. The policy test prints **29 checks**, and they are
+device is present and working. The `.bat` run is the one in the log; the `.sh`
+has not been executed here (§8), so what is verified about it is that it parses
+and that its device branch is exercised against stubs. The policy test prints **29 checks**, and they are
 the gates rather than the pixels - parsing including the typo and the
 case-sensitivity, the empty window, `maxPixels` exactly and one past it, and that
 neither override can promote past a gate. That the dispatch agrees with the CPU

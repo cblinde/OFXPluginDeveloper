@@ -14,7 +14,8 @@
 // thing that sees a device.
 //
 // The GPU path is optional at build time (`-DOFXPLUGIN_VULKAN=OFF`) and at run
-// time (no driver, no device, a failed dispatch): the CPU loop below is the same
+// time (`OFXPLUGIN_VULKAN_MODE=cpu`, no driver, no device, a failed dispatch):
+// the decision is the table in VulkanMode.h, and the CPU loop below is the same
 // arithmetic, so a fallback is a slower frame and never a different one.
 #include <cmath>
 #include <cstdlib>
