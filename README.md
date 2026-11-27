@@ -47,7 +47,7 @@ Nuke and SCRATCH have run nothing. See
 | Path | What it is |
 | --- | --- |
 | `SKILL.md` | The entry point: ground rules, the build workflow, and the routing table |
-| `references/` | 24 single-subject documents - constants, lifecycle, streams, pixels, RoI, colour, host quirks, CMake, packaging, debugging, performance, ONNX, AI architectures, pattern index, testing, verification status, field evidence, reference projects, checklists, Resolve automation |
+| `references/` | 25 single-subject documents - constants, lifecycle, streams, pixels, RoI, colour, host quirks, CMake, packaging, debugging, performance, ONNX, AI architectures, pattern index, testing, verification status, field evidence, reference projects, checklists, Resolve automation, versions |
 | `templates/` | Five complete plug-ins: `minimal-ofx` (CPU), `minimal-cuda-ofx` (CUDA + fallback), `minimal-opencl-ofx` (OpenCL through the host's queue + fallback),
 `minimal-vulkan-ofx` (Vulkan compute the plug-in owns + fallback), `onnx-inference-ofx` (ONNX model per frame; CUDA execution provider first, CPU execution provider as the fallback) |
 | `testkit/` | The host harness: `dlopen` + contract checks, the official OFX host, and the headless Natron render |

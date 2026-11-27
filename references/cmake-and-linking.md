@@ -688,6 +688,8 @@ configure against a header-only copy with the option on stops with
 `OFXPLUGIN_REQUIRE_SDK_COMMIT=ON but ... has no .git to read a commit from`
 (**[V]**). What this does not do: put the commit *inside* the `.ofx` - the report
 lives in the build directory and the build log, so a shipper quotes it from there.
+The whole inventory - which version is pinned in the tree, which the machine
+supplies, which a run observed - is [`versions.md`](versions.md).
 
 ---
 

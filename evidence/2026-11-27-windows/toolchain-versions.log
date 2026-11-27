@@ -1,0 +1,128 @@
+# Versions read on the machine that ran the 2026-11-27 suites
+#
+# Windows 11 10.0.26300, RTX 3060 (sm_86, 28 SMs), Git Bash, MSVC, no POSIX
+# linker. Every block below is verbatim output, run in
+# Z:\Tools-DEV\OFXPluginDeveloper_Local on 2026-11-27. The table in
+# references/versions.md is these numbers, and nothing else.
+
+$ cmake --version
+cmake version 4.4.4
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+
+$ ninja --version
+1.10.2.git.kitware.jobserver-1
+
+$ nvcc --version
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Jul_16_20:06:48_Pacific_Daylight_Time_2025
+Cuda compilation tools, release 13.0, V13.0.48
+Build cuda_13.0.r13.0/compiler.36260728_0
+
+$ .venv\Scripts\python.exe --version
+Python 3.10.6
+
+$ .venv\Scripts\python.exe -m pip list
+Package           Version
+----------------- --------
+coloredlogs       15.0.1
+flatbuffers       25.12.19
+humanfriendly     10.0
+ml_dtypes         0.7.0
+mpmath            1.3.0
+numpy             2.2.6
+onnx              1.23.2
+onnxruntime       1.23.2
+packaging         26.4
+pip               22.2.1
+protobuf          7.36.2
+pyreadline3       3.5.6
+setuptools        63.2.0
+sympy             1.14.0
+typing_extensions 4.16.0
+
+[notice] A new release of pip available: 22.2.1 -> 26.3
+[notice] To update, run: Z:\Tools-DEV\OFXPluginDeveloper_Local\.venv\Scripts\python.exe -m pip install --upgrade pip
+
+$ C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe -products * -property catalog_productDisplayVersion
+18.4.0
+16.11.53
+16.11.53
+17.14.25 (January 2026)
+
+$ C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe -products * -property installationVersion
+18.4.11605.240
+16.11.36631.11
+16.11.36631.11
+17.14.36915.13
+
+# MSVC toolsets under each installation vswhere reports
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools -> 14.44.35207, 14.50.35717
+C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools -> 14.29.30133
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Community -> 14.29.30133
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools -> (no VC/Tools/MSVC)
+
+$ grep -m1 'VK_HEADER_VERSION ' .validation/vk/sdk/include/vulkan/vulkan_core.h
+#define VK_HEADER_VERSION 369
+#define VK_HEADER_VERSION_COMPLETE VK_MAKE_API_VERSION(0, 1, 4, VK_HEADER_VERSION)
+
+$ Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\vk\bin\glslang.exe --version
+Glslang Version: 11:16.6.0
+ESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.6.0
+GLSL Version: 4.60 glslang Khronos. 16.6.0
+SPIR-V Version 0x00010600, Revision 1
+GLSL.std.450 Version 100, Revision 1
+Khronos Tool ID 8
+SPIR-V Generator Version 11
+GL_KHR_vulkan_glsl version 100
+ARB_GL_gl_spirv version 100
+
+$ .venv\Scripts\python.exe tools\check-runtime.py .validation\ort-gpu-1.20.1
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\ort-gpu-1.20.1
+header: ORT_API_VERSION 20  (.validation\ort-gpu-1.20.1\include\onnxruntime_c_api.h)
+        missing: RegisterExecutionProviderLibrary (since 22)
+        missing: UnregisterExecutionProviderLibrary (since 22)
+        missing: GetEpDevices (since 22)
+        missing: SessionOptionsAppendExecutionProvider_V2 (since 22)
+        missing: EpDevice_EpName (since 22)
+core: onnxruntime.dll
+provider onnxruntime_providers_cuda.dll: 1 exports, built-in provider
+        imports: cuBLASLt 12, cuBLAS 12, cuFFT 11, CUDA runtime 12, cuDNN 9
+        imports the core by name: no
+        CUDA major: 12 (cuBLAS and the CUDA runtime agree; a host ships that major or refuses this provider)
+other providers: onnxruntime_providers_shared.dll
+verdict: inspection only, no gate asked for
+
+$ .venv\Scripts\python.exe tools\check-runtime.py .validation\ort-gpu-1.32.0
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\ort-gpu-1.32.0
+header: ORT_API_VERSION 32  (.validation\ort-gpu-1.32.0\include\onnxruntime_c_api.h)
+        every entry point this repository uses is declared
+core: onnxruntime-ofx.dll, onnxruntime.dll
+provider onnxruntime_providers_cuda.dll: 3 exports, plugin EP
+        exports: CreateEpFactories, ReleaseEpFactory
+        imports: cuBLASLt 13, cuBLAS 13
+        imports the core by name: no
+        CUDA major: 13 (cuBLAS and the CUDA runtime agree; a host ships that major or refuses this provider)
+provider onnxruntime_providers_tensorrt.dll: 1 exports, built-in provider
+        imports: cuBLAS 13, cuDNN 9
+        imports the core by name: no
+        CUDA major: 13 (cuBLAS and the CUDA runtime agree; a host ships that major or refuses this provider)
+other providers: onnxruntime_providers_shared.dll
+verdict: inspection only, no gate asked for
+
+$ git -C .ofx-ref describe --tags --exact-match
+OFX_Release_1.5.1
+
+$ git -C .ofx-ref rev-parse HEAD
+ab779510b2655b4d11a7e01e5c521f9aa8c88976
+
+# clipped from .validation/final-run.log (2026-11-27 full run)
+device 0: NVIDIA GeForce RTX 3060, compute capability 8.6, 28 SMs, 12287 MiB
+runtime : CUDA 13.5 (13050), unified addressing yes, host-mapped yes
+  platform: NVIDIA CUDA
+  device  : NVIDIA GeForce RTX 3060 (OpenCL 3.0 CUDA)
+
+# clipped from .validation/final-vulkan.log (2026-11-27 Vulkan runner)
+device: NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per dispatch)
+
