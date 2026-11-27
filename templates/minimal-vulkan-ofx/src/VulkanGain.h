@@ -35,6 +35,17 @@ namespace vkgain {
 /// directions. The frame still crosses PCIe - it arrives and leaves as CPU
 /// pixels - but the shader reads device memory, and the transfer is one
 /// contiguous copy instead of per-access traffic.
+///
+/// Measured, 2026-11-27, RTX 3060, 1920x1080 RGBA32F, 300 frames, two runs
+/// (evidence/2026-11-27-windows/vulkan-300-frames.log): host-visible 102.5
+/// ms/frame against device-local 117.2 ms/frame, CPU loop 3.0. The second
+/// arrangement is *slower* at this size, because staging moves the frame over
+/// PCIe twice (~89 ms of CPU copies either way, and dispatch 28 against 13 ms).
+/// So this header does not claim device-local is faster: it is the arrangement
+/// that wins when a frame stays resident across passes and the per-pixel work
+/// is large. `Auto` still selects it, because the template is where both are
+/// visible; a plug-in that knows its frames never stay resident should ask for
+/// `HostVisible`.
 enum class Memory {
     Auto,        ///< DeviceLocal when the device offers it, else HostVisible.
     HostVisible, ///< Never fails on a machine whose device has host-visible memory.

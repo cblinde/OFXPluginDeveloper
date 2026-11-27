@@ -36,6 +36,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -153,8 +154,30 @@ void compareCase(vkgain::Engine &engine, Memory mode, const char *name, unsigned
 
 } // namespace
 
-int main()
+int main(int argc, char **argv)
 {
+    // How many frames the throughput block measures. The default keeps the suite
+    // quick, and --frames makes the publication number reproducible from the
+    // command line instead of living in a constant: the documents quote a
+    // 300-frame run, and this is how to take it again.
+    int frames = 20;
+    for (int index = 1; index < argc; ++index) {
+        const std::string argument = argv[index];
+        if (argument == "--frames" && index + 1 < argc) {
+            frames = std::atoi(argv[++index]);
+        } else {
+            std::fprintf(stderr, "usage: vulkan_suite [--frames N]\n");
+            // 3, not 2: 2 is the suite's "no Vulkan device" and the runners
+            // turn it into NOT VERIFIED. A bad argument is a failure, not a
+            // missing device.
+            return 3;
+        }
+    }
+    if (frames < 1 || frames > 100000) {
+        std::fprintf(stderr, "vulkan_suite: --frames %d is out of range (1..100000)\n", frames);
+        return 3;
+    }
+
     vkgain::Engine engine;
     if (!engine.ready()) {
         std::printf("NOT VERIFIED no Vulkan device: %s\n", engine.reason().c_str());
@@ -275,7 +298,6 @@ int main()
     // Throughput, printed rather than asserted: device, both transfers, and the
     // CPU loop it replaces, on the same frame, measured here and now.
     {
-        const int frames = 20;
         const Frame source = makeFrame(full, 51);
         std::printf(" through 1920x1080, %d frames each:\n", frames);
         for (Memory mode : modes) {

@@ -1,0 +1,60 @@
+# Vulkan, both memory arrangements, 300 frames at 1920x1080, 2026-11-27
+#
+# Why this exists
+#   The template has two ways to get a frame to the shader - one host-visible
+#   buffer, or a device-local buffer with a host-visible staging copy - and
+#   vulkan-compute.md quoted a 20-frame run for them. Twenty frames is enough to
+#   see the shape and not enough to quote: the first runs of a day measure cold
+#   pages, and a 300-frame average is the number a reader can reproduce.
+#
+# Machine: Windows 11, NVIDIA GeForce RTX 3060, Vulkan 1.4.357 from the driver,
+# MSVC 14.50, Vulkan-Headers + glslang 16.6.0 in a VULKAN_SDK-shaped directory
+# (no LunarG SDK installed).
+#
+# Command (the suite grew --frames for exactly this; the default stays 20 so the
+# test step stays quick):
+#
+#   VULKAN_SDK=... templates\minimal-vulkan-ofx\build.bat Release
+#   build\self-test\vulkan_suite.exe --frames 300
+#
+# Frame: 1920x1080 RGBA32F, i.e. 2,073,600 pixels x 16 bytes = 33.18 MB one way,
+# 66.4 MB per frame both ways. Warm-up frame before each measurement; the run
+# reuses one buffer per size and per arrangement, so the per-frame path is a
+# memcpy, one submit and one fence wait.
+#
+# Run A:
+#   device: NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per dispatch)
+#     host-visible   102.49 ms/frame total, dispatch 13.40, copies 89.05 (1 GB/s over both directions)
+#     device-local   117.32 ms/frame total, dispatch 27.88, copies 89.39 (1 GB/s over both directions)
+#     CPU              3.02 ms/frame (the loop render() falls back to)
+#   vulkan_suite: 26 checks, 0 failed
+#
+# Run B (same binary, immediately after):
+#     host-visible   102.58 ms/frame total, dispatch 13.39, copies 89.15 (1 GB/s over both directions)
+#     device-local   117.17 ms/frame total, dispatch 28.11, copies 89.00 (1 GB/s over both directions)
+#     CPU              3.00 ms/frame (the loop render() falls back to)
+#   vulkan_suite: 26 checks, 0 failed
+#
+# What the before/after says, and it is not the answer the arrangement was added
+# for:
+#   - device-local + staging is 117.2-117.3 ms/frame against host-visible's
+#     102.5-102.6 ms/frame, i.e. ~14% SLOWER at this size on this machine;
+#   - the reason is visible in the columns: the CPU-side copies are ~89 ms in
+#     both (66.4 MB per frame through mapped memory, ~0.75 GB/s counting both
+#     directions), and device-local adds two vkCmdCopyBuffer trips over PCIe on
+#     top, which is why its dispatch column reads 27.9-28.1 ms against 13.4 ms;
+#   - so for ONE pass over a frame that must arrive and leave as CPU pixels,
+#     staging makes the frame cross PCIe twice instead of once. Device-local is
+#     the right arrangement when the frame stays resident and the per-pixel work
+#     is large - the case this template does not model;
+#   - both are 34x slower than the CPU loop (3.0 ms/frame), which is the number
+#     that decides whether a Vulkan gain belongs in a plug-in at all.
+#
+# What this does not say
+#   One GPU, one driver, one frame size, one frame per submit. No measurement of
+#   a sequence that keeps a frame resident across passes, of a larger frame where
+#   the dispatch would matter more, or of a second machine. The 20-frame run from
+#   earlier the same day measured host-visible at 96.6-98.5 and device-local at
+#   108.3-111.0 ms; the ordering is the same, the absolute numbers are ~5% lower,
+#   which is why the documents quote this one and keep the other in
+#   vulkan-suite.log.

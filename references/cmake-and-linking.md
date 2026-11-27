@@ -551,10 +551,17 @@ What that costs at build time, and what it does not:
   `vulkan-1.dll` there deadlocks: measured 2026-11-27, the contract suite hung at
   its unload stage until the engine became a process-lifetime object
   (`testing-layers.md` §13).
-- **One host-visible buffer is the smallest correct arrangement**, and the honest
-  starting point: the frame is written and read through mapped memory, which on a
-  discrete GPU is system RAM over PCIe. A device-local buffer plus a staging copy
-  is the next step, and it is measurable - the template does not claim it.
+- **One host-visible buffer is the smallest correct arrangement**, and on a
+  pointwise pass it is also the faster one: the frame is written and read through
+  mapped memory, which on a discrete GPU is system RAM over PCIe, and a
+  device-local buffer with a staging copy puts the same frame over PCIe twice.
+  Measured on one RTX 3060 at 1920×1080 over 300 frames: **102.5 ms/frame
+  host-visible against 117.2 ms/frame device-local**, with the CPU copies ~89 ms
+  in both and the difference entirely in the two extra `vkCmdCopyBuffer` trips
+  (**[V]**, [`../evidence/2026-11-27-windows/vulkan-300-frames.log`](../evidence/2026-11-27-windows/vulkan-300-frames.log),
+  table and reasoning in [`vulkan-compute.md`](vulkan-compute.md) §3). Staging
+  pays for itself when the frame stays resident across passes and the per-pixel
+  work is large - not here, and not by assumption.
 
 ### `nvcc` flags
 

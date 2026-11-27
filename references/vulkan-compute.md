@@ -57,29 +57,36 @@ to get the frame there, and the template builds both:
 | host-visible coherent | one buffer, `HOST_VISIBLE \| HOST_COHERENT`, mapped | `memcpy` in, dispatch, `memcpy` out | smallest correct arrangement; always available |
 | device-local + staging | `DEVICE_LOCAL` storage + host-visible staging, mapped | `memcpy` into staging, `vkCmdCopyBuffer` in, dispatch, `vkCmdCopyBuffer` out | the arrangement a real workload uses |
 
-**Measured on one RTX 3060, 1920×1080 RGBA32F, 20 frames each, in the device
-suite; four runs, last three in the table** (**[V]**,
-`evidence/2026-11-27-windows/vulkan-suite.log`):
+**Measured on one RTX 3060, 1920×1080 RGBA32F, 300 frames each, two runs
+back to back in the device suite** (**[V]**,
+[`../evidence/2026-11-27-windows/vulkan-300-frames.log`](../evidence/2026-11-27-windows/vulkan-300-frames.log)):
 
 | Path | ms/frame | of which dispatch (submit → fence) | of which CPU copies |
 |---|---|---|---|
-| host-visible | 96.6 - 98.5 | 5.5 - 7.1 | 90.3 - 93.0 |
-| device-local + staging | 108.3 - 111.0 | 16.7 - 18.2 | 91.5 - 92.8 |
-| CPU loop (`render()`'s fallback) | 3.5 - 4.0 | - | - |
+| host-visible | 102.5 - 102.6 | 13.4 - 13.5 | 89.0 - 89.2 |
+| device-local + staging | 117.2 - 117.3 | 27.9 - 28.1 | 89.0 - 89.4 |
+| CPU loop (`render()`'s fallback) | 3.0 | - | - |
+
+The arrangement that was added second is the slower one here, by ~14%, and the
+columns say why: the copies are ~89 ms either way, and staging puts the frame
+over PCIe twice instead of once (**[V]**).
 
 Read it as three facts and one consequence:
 
-- **For a pointwise multiply the GPU loses, and not by a little:** ~97-111 ms
-  against ~3.8 ms for the CPU loop, i.e. 25-30× slower at 1080p on this machine
+- **For a pointwise multiply the GPU loses, and not by a little:** ~102-117 ms
+  against 3.0 ms for the CPU loop, i.e. 34× slower at 1080p on this machine
   (**[V]**). A template that showed only the pretty number would be lying to
   whoever copies it.
-- The cost is the round trip, not the shader: 132.7 MB in and 132.7 MB out per
-  frame, and the CPU-side copies alone are ~90 ms, i.e. ~1.5 GB/s per direction
-  through the mapping (**[V]**).
+- The cost is the round trip, not the shader: 33.2 MB in and 33.2 MB out per
+  frame (2,073,600 pixels × 16 bytes), and the CPU-side copies alone are ~89 ms,
+  i.e. ~0.37 GB/s per direction through the mapping (**[V]**).
 - The device-local copies run *on the queue*, so they land in the dispatch
-  column instead of the copy column - which is why that column is 17-18 ms there
-  against 5-7 ms for host-visible, where the shader itself reads host memory and
-  the transfers are CPU `memcpy`s.
+  column instead of the copy column - which is why that column is 28 ms there
+  against 13 ms for host-visible, where the shader itself reads host memory and
+  the transfers are CPU `memcpy`s. Staging pays PCIe twice for the same frame,
+  and at this size that is the whole difference. Device-local earns its place
+  when a frame stays resident across passes and the per-pixel work is large; a
+  single pointwise pass is the worst case for it.
 - Consequence: a Vulkan path pays 265 MB of traffic per 1080p frame before the
   kernel does any work. It wins when the per-pixel work is large enough to make
   that traffic the cheap part - a network, a denoise, a resample, a warp - and it
@@ -91,7 +98,12 @@ Read it as three facts and one consequence:
 `Memory::Auto` picks device-local when the device has a device-local memory type
 without host visibility, and host-visible otherwise; `Engine::memory()` reports
 which one ran, because "the frames went through the GPU" is not the same claim as
-"the shader read device memory".
+"the shader read device memory". Note what the table above implies for that
+default: on this machine, for one pass over a frame that arrives and leaves as
+CPU pixels, `Auto` selects the arrangement that measures 14% slower. The plug-in
+keeps it because the arrangement is the one a real workload needs and the template
+is the place to see both; a plug-in that knows its frames never stay resident
+should ask for `HostVisible` explicitly.
 
 ## 4. The barriers are the part that is easy to get wrong
 
@@ -176,3 +188,9 @@ machine has Windows, and the repo's `run-tests.sh` sends the Windows path to the
 - **No in-flight pipelining.** One frame, one submit, one wait: no overlap of the
   upload of frame *n+1* with the dispatch of frame *n*, which is where further
   throughput would come from.
+- **No resident-frame sequence.** §3 says staging earns its place when a frame
+  stays in device memory across passes and the per-pixel work is large. That case
+  is reasoned from the measurement and not measured: every run here sends one
+  frame per submit and reads it back, which is the arrangement's worst case. A
+  suite that dispatches *k* passes on one upload is what would turn the sentence
+  into a number.
