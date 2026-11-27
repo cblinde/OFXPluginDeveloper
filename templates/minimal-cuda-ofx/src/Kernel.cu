@@ -424,7 +424,22 @@ extern "C" int LaunchGainRGBA8(void* hostStream,
     return kLaunchOK;
 }
 
-extern "C" int WaitForDefaultStream()
+extern "C" bool DeviceMemoryFreeBytes(std::int64_t* freeBytes, std::int64_t* totalBytes)
+{
+    if (freeBytes == nullptr || totalBytes == nullptr) {
+        return false;
+    }
+    std::size_t freeNow = 0;
+    std::size_t totalNow = 0;
+    if (cudaMemGetInfo(&freeNow, &totalNow) != cudaSuccess) {
+        return false;
+    }
+    *freeBytes = static_cast<std::int64_t>(freeNow);
+    *totalBytes = static_cast<std::int64_t>(totalNow);
+    return true;
+}
+
+int WaitForDefaultStream()
 {
     return static_cast<int>(cudaStreamSynchronize(nullptr));
 }

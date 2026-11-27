@@ -1,0 +1,16 @@
+# Execution-mode gates: CPU_ONLY / CUDA_ONLY / CPU_CUDA_HYBRID (2026-11-27, Windows)
+#
+# Gate truth table, no GPU needed (templates/minimal-cuda-ofx/test/execution_mode_test.cpp):
+execution_mode_test: 34 cases, 0 failed
+
+# The CUDA template's suite, which runs that table as step [4/4]:
+== [0/4] build (Release) ==
+== [1/4] artifact (exports, dependents, device code) ==
+== [2/4] GPU harness (real device code, not emulated) ==
+== [3/4] host contract (LoadLibraryExW + fake host) ==
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+== [4/4] execution-mode gates (no GPU needed) ==
+execution_mode_test: 34 cases, 0 failed
+all Windows checks passed

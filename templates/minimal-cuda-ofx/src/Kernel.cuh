@@ -141,6 +141,15 @@ extern "C" int LaunchGainRGBA8(void* hostStream,
                                std::int64_t dstPitch,
                                const float gain[4]);
 
+/// Free and total device memory, from cudaMemGetInfo().
+///
+/// Returns false when the query fails (no device, no context, a driver that
+/// will not answer), and the caller then treats the device as unusable: the
+/// execution-mode gates demote to CPU_ONLY rather than assume there is room.
+/// See src/ExecutionMode.h and references/cuda-streams-and-memory.md §4.
+extern "C" bool DeviceMemoryFreeBytes(std::int64_t* freeBytes,
+                                        std::int64_t* totalBytes);
+
 /// Blocks until the default stream is idle. Only call this when the host did NOT
 /// hand you a cudaStream_t: the OFX contract then requires the render action to
 /// return with its work complete. See references/ofx-lifecycle-and-threads.md.

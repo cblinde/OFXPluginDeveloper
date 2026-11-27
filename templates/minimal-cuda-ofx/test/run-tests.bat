@@ -8,12 +8,14 @@ rem
 rem Linux runs the whole story through g++, nm -D, readelf, dlopen and valgrind.
 rem None of those exist on Windows, so this script runs the equivalents that do:
 rem
-rem   [0/3] build     build.bat, which also verifies the artifact
-rem   [1/3] artifact  testkit\check-ofx-artifact.bat --strict  (dumpbin, cuobjdump)
-rem   [2/3] kernels   nvcc test\gpu-kernel-test.cu, executed on the real GPU -
+rem   [0/4] build     build.bat, which also verifies the artifact
+rem   [1/4] artifact  testkit\check-ofx-artifact.bat --strict  (dumpbin, cuobjdump)
+rem   [2/4] kernels   nvcc test\gpu-kernel-test.cu, executed on the real GPU -
 rem                   the only check in this repository that runs SASS
-rem   [3/3] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
+rem   [3/4] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
 rem                   checks as dlopen, against the built .ofx
+rem   [4/4] modes     execution_mode_test.exe: the four execution-mode gates, no
+rem                   GPU, host or kernel needed (src/ExecutionMode.h)
 rem
 rem What it does NOT do: the CPU-emulated equivalence suite (test\run-tests.sh,
 rem which needs g++ and the shim headers) and valgrind. Step 2 covers the same
@@ -44,12 +46,12 @@ set "OFX_FILE=%BUILD_DIR%\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\Minim
 
 rem ---- [0] build -----------------------------------------------------------
 if "%NOBUILD%"=="0" (
-  echo == [0/3] build ^(%CONFIG%^) ==
+  echo == [0/4] build ^(%CONFIG%^) ==
   rem A bare `build.bat` is not found when NoDefaultCurrentDirectoryInExePath=1
   rem is set, which is a common policy; the .\ prefix is load-bearing.
   call "%ROOT%\build.bat" %CONFIG% || goto :error
 ) else (
-  echo == [0/3] build skipped ^(nobuild^) ==
+  echo == [0/4] build skipped ^(nobuild^) ==
 )
 
 if not exist "%OFX_FILE%" (
@@ -63,7 +65,7 @@ rem ---- [1] artifact ---------------------------------------------------------
 rem Same checker build.bat runs; here it is the point of the step, not a side
 rem effect, so a failure names which of the three claims broke.
 echo.
-echo == [1/3] artifact (exports, dependents, device code) ==
+echo == [1/4] artifact (exports, dependents, device code) ==
 set "CUDA_CHECK="
 if not "%CPU_ONLY%"=="1" set "CUDA_CHECK=--cuda"
 rem Two levels and not one: this script lives in test\, so ROOT is the template
@@ -73,7 +75,7 @@ call "%ROOT%\..\..\testkit\check-ofx-artifact.bat" "%OFX_FILE%" %CUDA_CHECK% --s
 rem ---- [2] kernels on the GPU ----------------------------------------------
 echo.
 if "%CPU_ONLY%"=="1" (
-  echo == [2/3] GPU harness skipped ^(CPU_ONLY=1^) ==
+  echo == [2/4] GPU harness skipped ^(CPU_ONLY=1^) ==
   goto :contract
 )
 
@@ -87,7 +89,7 @@ if exist "%VSWHERE%" (
 )
 if defined VSROOT if exist "!VSROOT!\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=!VSROOT!\VC\Auxiliary\Build\vcvars64.bat"
 if not defined VCVARS (
-  echo == [2/3] GPU harness skipped: no vcvars64.bat ^(no MSVC C++ toolset^) ==
+  echo == [2/4] GPU harness skipped: no vcvars64.bat ^(no MSVC C++ toolset^) ==
   goto :contract
 )
 rem Same pin build.bat applies: nvcc 13 accepts MSVC up to 14.44, and the newest
@@ -107,7 +109,7 @@ if defined MSVC_PIN (
 )
 cl 2>&1 | findstr /C:"Version"
 
-echo == [2/3] GPU harness (real device code, not emulated) ==
+echo == [2/4] GPU harness (real device code, not emulated) ==
 set "ARCHS=%CUDA_ARCHS%"
 if not defined ARCHS (
   set "CAP="
@@ -154,7 +156,7 @@ if errorlevel 1 (
 :contract
 rem ---- [3] host contract ----------------------------------------------------
 echo.
-echo == [3/3] host contract (LoadLibraryExW + fake host) ==
+echo == [3/4] host contract (LoadLibraryExW + fake host) ==
 set "OFX_INC=%OFX_SOURCE_DIR%"
 if not defined OFX_INC if exist "%BUILD_DIR%\CMakeCache.txt" (
   for /f "usebackq tokens=1,* delims==" %%A in (`findstr /B /C:"OFX_SOURCE_DIR:PATH=" "%BUILD_DIR%\CMakeCache.txt"`) do set "OFX_INC=%%B"
@@ -198,8 +200,20 @@ for %%P in (nuke resolve natron) do (
     --concurrency-threads %THREADS% || goto :error
 )
 
+echo.rem ---- [4] execution mode --------------------------------------------------
+rem The four gates in src/ExecutionMode.h are a pure function over facts, so they
+rem are tested without a GPU, a host or a kernel: build.bat builds the target with
+rem the rest of the tree, and this step says what it decided at every boundary.
 echo.
+echo == [4/4] execution-mode gates (no GPU needed) ==
+if not exist "%BUILD_DIR%\execution_mode_test.exe" (
+  echo   skipped: no execution_mode_test.exe in "%BUILD_DIR%" ^(run build.bat first^)
+) else (
+  "%BUILD_DIR%\execution_mode_test.exe" || goto :error
+)
+
 echo all Windows checks passed
+
 exit /b 0
 
 :error

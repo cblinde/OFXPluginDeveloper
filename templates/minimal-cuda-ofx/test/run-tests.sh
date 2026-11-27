@@ -79,6 +79,13 @@ echo "== [1/5] host suite (${CXX_BIN}, sanitizer: ${SAN:-none}) =="
 build_harness "${TMP}/equiv"
 "${TMP}/equiv"
 
+# The execution-mode gates are a pure function over facts (src/ExecutionMode.h),
+# so they run here too: no GPU, no host, no kernel, just the decision at every
+# boundary the plug-in takes at render time. Same compiler, same flags.
+"${CXX_BIN}" -std=c++14 -O2 -I "${SRC}" \
+  "${HERE}/execution_mode_test.cpp" -o "${TMP}/execution_mode_test"
+"${TMP}/execution_mode_test"
+
 echo
 if command -v nvcc >/dev/null 2>&1; then
   echo "== [2/5] PTX instruction counts (nvcc, -arch=${ARCH}) =="

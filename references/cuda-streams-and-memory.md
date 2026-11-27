@@ -154,6 +154,126 @@ nvtxRangePop();
 
 ---
 
+## 4. Execution modes: CPU_ONLY, CUDA_ONLY, CPU_CUDA_HYBRID
+
+Not every question here is answered by a kernel. A render can run on the CPU, on
+the GPU, or with the two engines busy at once - and only one of those three is
+safe to pick by hardware detection alone. This repository answers it with four
+gates, one function, and a test that runs without a GPU.
+
+| Piece | Where it lives | Status |
+|---|---|---|
+| The four gates, override parser, decision reasons | `templates/minimal-cuda-ofx/src/ExecutionMode.h` | **[V]** - no CUDA headers, compiled into the plug-in and into the test |
+| The gate truth table, 34 cases | `templates/minimal-cuda-ofx/test/execution_mode_test.cpp`, run by both template runners | **[V]** 34 cases, 0 failed | - log: [`execution-modes.log`](../evidence/2026-11-27-windows/execution-modes.log)
+| Device memory query | `DeviceMemoryFreeBytes()` in `Kernel.cu`, `cudaMemGetInfo` under the hood | **[V]** compiled and linked; the value is read at render time |
+| The decision at render time | `Plugin.cpp`, `processImagesCuda()`, logged once per render with its reason | **[V]** the log line names mode, depth, size, stream and reason |
+| Override | `OFXPLUGIN_GPU_MODE=auto|cpu|cuda|hybrid`; an unknown word is reported, not silently ignored | **[V]** |
+| Overlapping CPU work with the kernel | none of the four templates has independent CPU work to overlap | **not implemented**; see below |
+
+### 4.1 The gates
+
+Each gate can only demote. A host that did not hand device pointers is not going
+to be argued into a CUDA render by an override: the pixels are host memory, and
+a kernel pointed at them is a crash or a silent corruption, not a bug to
+optimise.
+
+1. **Host and device.** `kOfxImageEffectPropCudaEnabled` for *this render* is the
+   only authority on where the pixels live - the descriptor's
+   `kOfxImageEffectPropCudaRenderSupported` is a capability, not a fact. No
+   property, or no device answering `cudaMemGetInfo`, means `CPU_ONLY`.
+2. **VRAM.** Two frames (source and destination) plus 256 MiB of headroom must be
+   free. Below that the render is either a `kOfxStatGPUOutOfMemory` or a driver
+   allocator that thrashes against the host's own allocations, and the CPU
+   fallback is the better answer. Exactly the requirement is enough; the rule is
+   strictly below.
+3. **Transfer balance.** With the pixels already on the device there is no copy,
+   and a copy estimate must not demote the render - that is the normal OFX GPU
+   path, where the host hands device pointers and the plug-in never touches
+   PCIe. The gate exists for an effect that has to upload: when the copy is
+   estimated at more than 1.25x the kernel, `CPU_ONLY`.
+4. **Independent CPU work.** `CPU_CUDA_HYBRID` needs work that can run while the
+   kernel does, and a kernel worth overlapping (>= 1 ms). Without both, the
+   answer is `CUDA_ONLY`.
+
+The thresholds are policy, not measurement: 256 MiB and 1.25x are stated so a
+reader can disagree with a number instead of with an adjective. The 1 ms floor
+comes from the same place as §2's stream rules - below that, launch and
+synchronisation overhead is the work.
+
+### 4.2 What hybrid means here, and what it does not
+
+It never means splitting one frame between CPU and GPU. OFX hands a render
+window to one process call, the Support library already bands the CPU path
+across `nCPUs` (`performance-model.md` §2.4), and the GPU path is one grid for
+the whole window (`performance-model.md` §2.2). Splitting a frame between the
+engines adds a synchronisation point per tile and loses - PCIe and event waits
+cost more than the divide saves at every size this repository has measured.
+
+The overlap is between the kernel and *independent* work: a LUT or curve
+precomputation, a histogram, tracking data, staging for the next frame. Three
+conditions, all of them from the specification and all of them cheap to check:
+the CUDA work goes on the stream the host supplied (§2 - a private stream that
+the host cannot order against is a correctness bug, not an optimisation); the
+CPU work touches no pixel the kernel is writing; and the result is joined before
+`render()` returns in the no-stream case, or enqueued on the host's stream when
+there is one.
+
+No template in this repository has such work. A gain is four multiplies per
+pixel and nothing else, so `hasIndependentCpuTask` is false in the CUDA template,
+auto never selects `CPU_CUDA_HYBRID` there, and the hybrid path is exercised by
+the policy test rather than by a render. Stated here rather than implied by the
+enum: the mode exists, the overlap does not, and no timing of it appears in any
+table in this repository.
+
+### 4.3 When each mode is the right one
+
+| Mode | Choose it when | In this repository |
+|---|---|---|
+| `CPU_ONLY` | no CUDA device or no host GPU path; not enough free VRAM; a copy that costs more than the kernel; a user who asked for the deterministic software path | every template without a GPU; any host with `kOfxImageEffectPropCudaEnabled` off |
+| `CUDA_ONLY` | pixels are device-resident (zero copy), the pipeline is GPU-bound, and there is no non-pixel work to overlap | `minimal-cuda-ofx` on a host with the GPU path on |
+| `CPU_CUDA_HYBRID` | the above, plus analysis or preparation work that is genuinely independent and a kernel of 1 ms or more | policy only - no template has such work yet |
+
+### 4.4 Benchmark protocol for the three modes
+
+The rules exist because three numbers produced differently are three numbers that
+cannot be compared. `tools/bench_ep.py` already implements the percentile and
+warmup parts for the inference providers; the same rules apply to a mode
+comparison:
+
+- **Matrix.** 1920x1080 and 3840x2160, at RGBA8, RGBA16F and RGBA32F, over three
+  workload shapes: compute-bound (gain), transfer-bound (a frame that must be
+  uploaded and read back), and GPU-plus-independent-CPU work.
+- **Warm-up and isolation.** Discard cold-start runs - context creation, module
+  load, JIT, model warm-up - and report cold and warm separately. Fix the clock,
+  close the host, and never compare a run taken while a Resolve render was in
+  flight with one taken on an idle machine.
+- **Metrics.** Wall-clock per frame (ms and FPS), p50/p95/p99 latency over at
+  least 100 frames, Host->Device and Device->Host time from `cudaEvent_t` pairs
+  around the copies, kernel time from an event pair around the launch, CPU thread
+  utilisation, and peak VRAM sampled with `cudaMemGetInfo` between frames.
+- **Parity, before timing.** Every mode must produce the same frame within 1 LSB
+  of the reference for the integer depths, and within the tolerance the reference
+  carries for float. A faster mode that changes the picture is not a mode; that
+  is what the contract suite's golden compares exist for.
+
+What has been measured here is one kernel on one device: the throughput figures
+in `performance-model.md` and the OpenCL/CUDA rows in `testing-layers.md` §13.
+No CPU-vs-GPU-vs-hybrid table exists for the same frame, and none is claimed.
+
+### 4.5 References
+
+- OFX GPU render properties and the host-stream contract: `ofxGPURender.h` in an
+  openfx checkout (`kOfxImageEffectPropCudaStream`, lines 608-617), quoted in §2.
+- CUDA Programming Guide, *Asynchronous Execution*:
+  <https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/asynchronous-execution.html>
+  - streams, events, and what may overlap.
+- CUDA Runtime API, *Memory Management* (`cudaMemGetInfo`, `cudaMallocHost`,
+  `cudaFreeHost`):
+  <https://docs.nvidia.com/cuda/cuda-runtime-api/cuda_runtime_api/group__CUDART__MEMORY.html>
+- CUDA C++ Best Practices Guide, *Asynchronous and Overlapping Transfers with
+  Computation* (pinned memory and `cudaMemcpyAsync`):
+  <https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html>
+
 ## Provenance labels
 
 Tags in this document mean exactly what they meant in the document it came from:

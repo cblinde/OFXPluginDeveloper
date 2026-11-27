@@ -102,6 +102,11 @@ else                             multiThread(nCPUs);   // CPU only
 render window — if you launch per band, or spawn your own threads around it, you
 multiply launches by the CPU count for no gain. The GPU is already parallel.
 
+What this rules out is multiplying the *pixel* path. Work that is not pixel work
+- a LUT, a histogram, tracking data - may run on the CPU while the kernel does,
+and `cuda-streams-and-memory.md` §4 states the gates and the preconditions that
+make that safe.
+
 ### 2.3 `supportsTiles` decides how big a window you get
 
 With `setSupportsTiles(false)` **[S]** in the template, the host should hand you

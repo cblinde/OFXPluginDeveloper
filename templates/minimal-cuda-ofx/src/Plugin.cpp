@@ -25,6 +25,7 @@
 // (kOfxStatGPURenderFailed, kOfxStatGPUOutOfMemory).
 #include "ofxGPURender.h"
 
+#include "ExecutionMode.h"
 #include "Kernel.cuh"
 
 namespace mcofx {
@@ -62,6 +63,44 @@ const char* const kParamGainAlpha = "gainAlpha";
 /// time and nothing the plug-in printed). So when MCOFX_PATH_LOG names a file,
 /// each render appends one line to it. Unset, which is the normal case, nothing
 /// is written and no file is created.
+// OFXPLUGIN_GPU_MODE=auto|cpu|cuda|hybrid. Read once per process: an env var
+// that changes mid-render would make the declaration line describe a different
+// render than the pixels. An unknown word is reported, not silently treated as
+// auto - a typo'd override is how a run gets reported as hybrid while it never
+// left CUDA_ONLY.
+// The facts the gates read, gathered once per render. inputOnDevice is true by
+// construction: kOfxImageEffectPropCudaEnabled is the host saying the image
+// pointers are device pointers, so this path never copies a frame.
+FrameFacts RenderFacts(int width, int height, std::int64_t bytesPerPixel)
+{
+    FrameFacts facts;
+    facts.hostHandedDevicePointers = true; // processImagesCuda() only runs then
+    facts.inputOnDevice = true;
+    facts.frameBytes = static_cast<std::int64_t>(width) * height * bytesPerPixel;
+    facts.hasIndependentCpuTask = false; // a gain has nothing else to compute
+    std::int64_t freeBytes = 0;
+    std::int64_t totalBytes = 0;
+    facts.deviceQueryable = DeviceMemoryFreeBytes(&freeBytes, &totalBytes);
+    facts.deviceFreeBytes = freeBytes;
+    return facts;
+}
+
+ExecutionMode RequestedMode()
+{
+    static const ExecutionMode requested = [] {
+        const char* text = std::getenv("OFXPLUGIN_GPU_MODE");
+        bool recognised = true;
+        const ExecutionMode mode = ParseModeOverride(text, &recognised);
+        if (!recognised && text != nullptr) {
+            OFX::Log::print("Minimal CUDA Gain: OFXPLUGIN_GPU_MODE='%s' is not "
+                            "auto|cpu|cuda|hybrid; using auto",
+                            text);
+        }
+        return mode;
+    }();
+    return requested;
+}
+
 void recordPath(const char* path, int width, int height)
 {
     const char* target = std::getenv("MCOFX_PATH_LOG");
@@ -234,6 +273,19 @@ void GainProcessor::processImagesCuda()
         OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
     }
 
+    // Execution-mode gates (src/ExecutionMode.h, references/cuda-streams-and-
+    // memory.md §4). This effect has no analysis pass, so no independent CPU work
+    // can overlap the kernel and auto never chooses CPU_CUDA_HYBRID here; the
+    // gates still matter, because a device without room for two frames is a
+    // render that would fail rather than the CPU fallback the user can see.
+    const ModeDecision decision = DecideMode(RequestedMode(), RenderFacts(
+        width, height, static_cast<std::int64_t>(bytesPerPixel)));
+    if (decision.mode == ExecutionMode::CpuOnly) {
+        OFX::Log::print("Minimal CUDA Gain: CPU_ONLY (%s)", decision.reason);
+        multiThreadProcessImages(_renderWindow);
+        return;
+    }
+
     const char* srcOrigin = static_cast<const char*>(_src->getPixelData())
                           + static_cast<std::int64_t>(window.y1 - srcBounds.y1) * srcPitch
                           + static_cast<std::int64_t>(window.x1 - srcBounds.x1) * bytesPerPixel;
@@ -274,8 +326,10 @@ void GainProcessor::processImagesCuda()
     const char* depthName = _depth == OFX::eBitDepthHalf     ? "RGBA16F"
                             : _depth == OFX::eBitDepthUByte ? "RGBA8"
                                                             : "RGBA32F";
-    OFX::Log::print("Minimal CUDA Gain: CUDA path, %s %dx%d, stream %s", depthName, width, height,
-                    _pCudaStream == nullptr ? "not supplied by the host" : "supplied by the host");
+    OFX::Log::print("Minimal CUDA Gain: %s, %s %dx%d, stream %s (%s)",
+                    ModeName(decision.mode), depthName, width, height,
+                    _pCudaStream == nullptr ? "not supplied by the host" : "supplied by the host",
+                    decision.reason);
     recordPath("CUDA", width, height);
 
     // The OFX contract is asymmetric and this branch is the whole contract:

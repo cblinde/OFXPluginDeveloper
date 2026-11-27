@@ -323,3 +323,9 @@ add_custom_target(install-bundle
 message(STATUS "Default gain: ${GAIN_DEFAULT}")
 message(STATUS "OFX plugin : ${PLUGIN_TARGET} (CUDA ${OFXPLUGIN_ENABLE_CUDA})")
 message(STATUS "Bundle     : ${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}")
+
+# The execution-mode policy (src/ExecutionMode.h) is a pure function over facts,
+# so it is tested on a machine with no GPU and no OFX checkout: this target needs
+# neither CUDA nor the Support library.
+add_executable(execution_mode_test test/execution_mode_test.cpp)
+target_include_directories(execution_mode_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
