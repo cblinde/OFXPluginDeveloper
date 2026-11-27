@@ -1,0 +1,139 @@
+# The 0xC0000409, read from the host's own crash reports, 2026-11-27
+#
+# The question (backlog row 13)
+#   A Resolve run ended the host with a render in flight and exception 0xC0000409.
+#   The plug-in's V2 append had already been cleared: every step of it returns in
+#   all three host profiles of the suite. So what is left, and where would one look?
+#
+# Where the answers were
+#   C:\ProgramData\Microsoft\Windows\WER\ReportArchive\AppCrash_Resolve.exe_*\Report.wer
+#   - four reports Windows kept - and the Application event log, which carries the
+#   same signature for the whole period. Each Report.wer is a signature plus a
+#   LoadedModule list: which module faulted, at which offset, and what else was in
+#   the process. No dump was retained (the archive holds Report.wer only, and
+#   LocalDumps has entries for other applications, not Resolve), so there is no
+#   stack - but the module list alone decides several questions.
+#
+# The four reports, oldest first (WER writes UTC; local time is UTC+1)
+#
+#   2026-11-22 20:36:36  cudnn64_9.dll 9.8.0.87    0xC0000409  offset 0x1586d
+#   2026-11-23 19:01:22  cudnn64_9.dll 9.8.0.87    0xC0000409  offset 0x1586d
+#   2026-11-23 20:50:53  fusionsystem.dll 21.2.0.3 0xC0000005  offset 0x30ddd0
+#   2026-11-27 17:17:43  ucrtbase.dll 10.0.26100   0xC0000409  offset 0xa527e
+#
+#   Two of the three 0xC0000409 fail-fasts are inside cuDNN, at the *same* offset in
+#   the same build - one internal site, reached twice, a week apart. The third is
+#   inside the C runtime (ucrtbase), which is where an abort() or a /GS cookie
+#   check lands. The fusionsystem one is an access violation in the host's own
+#   Fusion code and has nothing to do with a plug-in; it is listed so the four are
+#   not read as four of a kind.
+#
+# What was loaded, from the LoadedModule lines of the same four reports
+#
+#   every report:  E:\Program Files\Blackmagic Design\DaVinci Resolve\cudnn64_9.dll
+#                  E:\Program Files\Blackmagic Design\DaVinci Resolve\onnxruntime.dll
+#                  ...\OFX\Plugins\ColorGenius1OFX\...\PFCDynamicManagerOnnx.dll
+#   11-22:         ...\OFX\Plugins\YoloDetector.ofx.bundle\...\onnxruntime-yolo.dll
+#                  ...\YoloDetector.ofx.bundle\...\cudnn_*64_9.dll (seven parts)
+#   11-23 (both):  ...\OFX\Plugins\ONNXLoader.ofx.bundle\...\onnxruntime-ofx.dll
+#                  ...\ONNXLoader.ofx.bundle\...\cudnn64_9.dll, cublas64_12.dll,
+#                  cudart64_12.dll, onnxruntime_providers_shared.dll
+#
+#   Not in any of the four: our bundles. Neither OnnxInference.ofx.bundle nor
+#   MinimalCudaGain.ofx.bundle nor ReferenceGain.ofx.bundle appears in a single
+#   LoadedModule list, and the faulting module is never one of them.
+#
+#   what ONNXLoader.ofx.bundle is: a bundle still installed in the shared OFX
+#   directory (2026-11-24 21:05), whose plug-in identifier is
+#   com.cblinde.onnxloader - not the com.ofxplugindeveloper.onnxinference this
+#   repository builds. It is an older bundle under an older name, and the host
+#   loads it alongside the current one whenever both are installed.
+#
+#   The host's own ONNX Runtime and its own cuDNN are in every one of these
+#   processes. Resolve ships both, for its own AI features, and they are in the
+#   process whether or not a plug-in brings its own copy.
+#
+# The same signature outside the host
+#
+#   2026-11-25 18:50:08  ai_pipeline_test.exe (this repository's own console test)
+#                        ucrtbase.dll 0xC0000409 - the module of the 11-27 crash,
+#                        in a process with no OFX host and no GUI.
+#
+#   So the fail-fast is not a property of Resolve. Whatever raises it can raise it
+#   in a console binary, and there the command line is known and the environment
+#   is ours.
+#
+# A host run without the CUDA provider (the control the row asked for)
+#
+#   Bundle: .validation/build-cpu-only/bundle/OnnxInference.ofx.bundle, built from
+#   the CPU package (.validation/ort-1.32.0) with
+#   -DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=OFF, model.onnx copied into Contents\Resources.
+#   Contents\Win64 holds two files - OnnxInference.ofx and onnxruntime-ofx.dll -
+#   and no provider, no cuDNN, no cuBLAS.
+#
+#   env -u ONNX_MODEL_PATH ONNX_PROVIDER_LOG=<file> RESOLVE_EXE=<host> \
+#       python tests/resolve/poc.py --bundle <cpu-only bundle> --build-project \
+#         --source .validation/resolve-source.png --effect "ONNX Inference" \
+#         --timeline-name crash-cpu --expect 1920x1080 --gui
+#
+#   validate  pass   1 .ofx, decoders ['ffmpeg']
+#   install   pass   C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+#   launch    pass   pid 16684
+#   connect   pass   DaVinci Resolve Studio 21.2.0.5
+#   gpu       pass   Selected compute API: CUDA
+#   build     pass   crash-cpu: ONNX Inference on resolve-source.png
+#   render    pass   poc00108000.png
+#   check     pass   1920x1080 via ffmpeg
+#   quit      pass   API quit, then the recorded PID
+#   exit 0
+#
+#   $ONNX_PROVIDER_LOG, this run:
+#     CPU (1 thread) - fallback: CUDA execution provider is not enabled in this
+#     build. | ...\OnnxInference.ofx.bundle\Contents\Win64/../Resources/model.onnx
+#
+#   The host loads the plug-in, renders a 1920x1080 frame on the CPU path and quits
+#   cleanly with no provider in the bundle - no abort, no hang.
+#
+# The same shape with the provider present
+#
+#   evidence/2026-11-27-windows/row19-host-cuda-bundle.log is the measured run of
+#   today: the same effect, the same host, a provider-only bundle beside the .ofx,
+#   label "all nodes on CUDA", render 1920x1080, quit, exit 0. The provider being
+#   present is not by itself enough to end the host.
+#
+#   Two launches of that bundle while this was being written did not get as far:
+#   the host was running and the scripting API never answered within the 300 s
+#   timeout (poc reach `launch`, never `connect`), and both had to be ended by
+#   hand - no crash report, no exit code, no evidence of a fail-fast. One of the
+#   two was missing model.onnx in Contents\Resources, so it is not even a valid
+#   render. Recorded because it happened, not as a finding: two hangs, one cause
+#   unknown, and neither produced a WER report.
+#
+# What this narrows, and what it leaves
+#
+#   Ruled out by the module lists:
+#     - our .ofx files were not in the process when the host aborted, in any of the
+#       four reports;
+#     - our bundle's provider DLLs were not in the process either;
+#     - therefore the abort is not in this plug-in's code, its append sequence, or
+#       the provider it ships - for the runs that produced these reports.
+#     - the host does not need this plug-in to fail-fast: the 11-27 report has no
+#       bundle of ours loaded, and 0xC0000409 still arrived, in cuDNN's neighbour
+#       ucrtbase.
+#
+#   Left:
+#     - what makes the *host's own* cuDNN abort at offset 0x1586d, twice. That is
+#       Blackmagic's library and Blackmagic's ONNX Runtime doing something with
+#       this GPU, and no stack was kept;
+#     - what aborts in ucrtbase in the 11-27 case and in ai_pipeline_test.exe. The
+#       console case is the tractable one: it needs no host, and its command line
+#       and environment are ours;
+#     - whether the two hangs above are the same fault seen earlier, or something
+#       else. Neither left a report.
+#
+#   The instrument the next attempt needs, and did not have: a dump. LocalDumps has
+#   no entry for Resolve.exe, so WER archived a signature and the module list and
+#   threw the memory away. `HKLM\SOFTWARE\Microsoft\Windows\Windows Error
+#   Reporting\LocalDumps\Resolve.exe` with DumpType=2 (or procdump -ma -e) would
+#   turn the same crash into a stack in the host's own cuDNN - which is the only
+#   place the remaining question can be answered from.

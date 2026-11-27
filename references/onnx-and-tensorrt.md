@@ -1160,6 +1160,25 @@ suite exits 1 only because its CUDA gate refuses a CPU fallback. That is why the
 V2 stage line prints the whole status text: the label's shortened message stops at
 the path and never reaches the reason.
 
+**What the host's own crash reports said.** The abort of 2026-11-25 left no
+stack here, but Windows kept four reports for `Resolve.exe` in
+`C:\ProgramData\Microsoft\Windows\WER\ReportArchive`, and each one carries a
+signature and the `LoadedModule` list of the process that died. Three of them are
+`0xC0000409`: two inside the host's **own** `cudnn64_9.dll` 9.8.0.87, at the same
+offset `0x1586d` a week apart, one inside `ucrtbase.dll`. Our `.ofx` files and our
+bundle's provider DLLs appear in **none** of the four module lists — what was
+loaded beside the host's own ONNX Runtime and cuDNN were other vendors' ONNX
+plug-ins (`ColorGenius` `PFCDynamicManagerOnnx.dll` in all four, `YoloDetector`'s
+cuDNN in one, an older `ONNXLoader.ofx.bundle` under a different identifier in
+two). The same `ucrtbase` + `0xC0000409` signature also ended this repository's
+console `ai_pipeline_test.exe` on 2026-11-25, in a process with no OFX host at
+all. A host run with a CPU-only bundle — two files, no provider, no cuDNN — loads,
+renders 1920×1080 on the CPU path and quits cleanly (**[V]**,
+[`../evidence/2026-11-27-windows/resolve-crash-narrowing.log`](../evidence/2026-11-27-windows/resolve-crash-narrowing.log)).
+So the fail-fast is in the host's own AI stack, not in this plug-in's path, and
+the missing instrument is a dump: `LocalDumps` has no entry for `Resolve.exe`, so
+WER archived the signature and discarded the memory.
+
 **Two behaviour facts the run produced**, both now part of the path. A second
 registration in the same environment is an *error*, not a no-op: registering per
 session made the second of two identical instances fall back to the CPU, and the
