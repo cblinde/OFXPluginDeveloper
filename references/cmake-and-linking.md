@@ -674,6 +674,21 @@ The headers are the repository's pinned checkout of
 `AcademySoftwareFoundation/openfx` at tag `OFX_Release_1.5.1`; every `file:line`
 below refers to that tree (`.ofx-ref/`, created by the build if absent).
 
+**A tag is a name; the build records the commit behind it.** Each template's
+`CMakeLists.txt` reads `git -C ${OFX_SOURCE_DIR} rev-parse HEAD` after the fetch,
+prints `-- OpenFX SDK: <12 hex> from '<dir>'`, writes the same pair to
+`<build>/openfx-sdk-commit.txt`, and - with `-DOFXPLUGIN_REQUIRE_SDK_COMMIT=ON` -
+stops the configure when there is no `.git` to read (a release has to say which
+headers it was built against; a build directory copied without its checkout is
+exactly the case that option refuses). Without the option an unknown commit is a
+status line, not an error, because an offline build from `OFX_SOURCE_DIR` may be a
+header copy. Measured 2026-11-27: all five templates configure and print
+`ab779510b265` for `.ofx-ref`, the file holds `ab779510b265 <dir>`, and the same
+configure against a header-only copy with the option on stops with
+`OFXPLUGIN_REQUIRE_SDK_COMMIT=ON but ... has no .git to read a commit from`
+(**[V]**). What this does not do: put the commit *inside* the `.ofx` - the report
+lives in the build directory and the build log, so a shipper quotes it from there.
+
 ---
 
 ## Provenance labels

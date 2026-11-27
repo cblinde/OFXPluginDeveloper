@@ -11,6 +11,8 @@ option(OFXPLUGIN_BUNDLE_ONNX_RUNTIME
 # ---------------------------------------------------------------------------
 # 1. OpenFX headers + Support library (same policy as the CUDA template)
 # ---------------------------------------------------------------------------
+option(OFXPLUGIN_REQUIRE_SDK_COMMIT
+  "Fail the configure when the OpenFX SDK checkout has no readable commit (release builds)" OFF)
 set(OFX_SOURCE_DIR "" CACHE PATH "Existing openfx checkout; leave empty to fetch OFX_Release_1.5.1")
 
 if(NOT OFX_SOURCE_DIR)
@@ -33,6 +35,39 @@ if(NOT EXISTS "${OFX_SOURCE_DIR}/include/ofxImageEffect.h")
   message(FATAL_ERROR
     "OFX_SOURCE_DIR='${OFX_SOURCE_DIR}' is not an openfx checkout "
     "(include/ofxImageEffect.h not found).")
+endif()
+
+# ---- which SDK commit is this, exactly? -------------------------------------
+# The fetch asks for tag `OFX_Release_1.5.1`, and a tag is a name, not a commit:
+# it can be moved, and a shallow fetch records nothing about it. The headers and
+# the Support sources that end up inside the .ofx are the thing a bug report has
+# to be reproducible against, so the commit is read here, printed, written beside
+# the build output and handed to a release configure that refuses to guess.
+set(OFX_SDK_COMMIT "")
+if(EXISTS "${OFX_SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND git -C "${OFX_SOURCE_DIR}" rev-parse HEAD
+    OUTPUT_VARIABLE _ofx_sdk_commit
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE _ofx_sdk_result)
+  if(_ofx_sdk_result EQUAL 0 AND _ofx_sdk_commit MATCHES "^[0-9a-f]+$")
+    string(SUBSTRING "${_ofx_sdk_commit}" 0 12 OFX_SDK_COMMIT)
+  endif()
+endif()
+if(OFX_SDK_COMMIT)
+  message(STATUS "OpenFX SDK: ${OFX_SDK_COMMIT} from '${OFX_SOURCE_DIR}'")
+  file(WRITE "${CMAKE_BINARY_DIR}/openfx-sdk-commit.txt"
+       "${OFX_SDK_COMMIT} ${OFX_SOURCE_DIR}\n")
+elseif(OFXPLUGIN_REQUIRE_SDK_COMMIT)
+  message(FATAL_ERROR
+    "OFXPLUGIN_REQUIRE_SDK_COMMIT=ON but '${OFX_SOURCE_DIR}' has no .git to read a "
+    "commit from. A release has to say which SDK it was built against: use a "
+    "checkout, or drop the option for a build that only has to compile.")
+else()
+  message(STATUS
+    "OpenFX SDK: commit unknown - '${OFX_SOURCE_DIR}' is not a git checkout. The "
+    "build is fine; a bug report against it cannot name the headers it used.")
 endif()
 
 file(GLOB OFX_SUPPORT_SOURCES CONFIGURE_DEPENDS
