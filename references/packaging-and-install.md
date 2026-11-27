@@ -130,9 +130,10 @@ message. Two host-facing facts:
   family has to be shipped, and a provider-only Resolve package (four files, no
   runtime of ours) would stay slim. That package is measured and it works; what
   this repository ships is still the full bundle, and deliberately: a host that
-  brings no CUDA stack has nothing to bind to, and whether Nuke or SCRATCH bring
-  one is unmeasured here (neither has rendered anything,
-  `verification-status.md`). So cuDNN, cuBLAS/cuBLASLt, cuFFT and cudart 12 travel
+  brings no CUDA stack has nothing to bind to, and the secondary hosts do not settle
+  that question either: Nuke documents a CUDA 12 stack of its own, SCRATCH
+  publishes no CUDA version at all (both below). So cuDNN, cuBLAS/cuBLASLt,
+  cuFFT and cudart 12 travel
   beside the provider, and the slim arrangement stays a per-deliverable option
   (`-DOFXPLUGIN_CUDA_FROM_HOST=ON` against a 1.20.1 package), to be taken up when a
   Resolve-only deliverable is commissioned.
@@ -143,7 +144,35 @@ message. Two host-facing facts:
   ([`onnx-provider-cuda13-deps.log`](../evidence/2026-11-27-windows/onnx-provider-cuda13-deps.log)). The CUDA major is a load-time constraint, not what separated the
   two 2026-11-26 packages: both failed before a provider could load, because
   `describe()` threw on the 1.5.1 property (measured 2026-11-27).
-  The frame in that run is a **pass-through** because no instance was created,
+
+  **What the two secondary hosts document about their own CUDA stack ([B]).**
+  Foundry lists CUDA and cuDNN among "third-party libraries included in the
+  application": Nuke 17.1 carries CUDA 12.8.1 on Linux and Windows (N/A on macOS)
+  and cuDNN 9.7.1, beside OpenCL 2021.7.1 and Vulkan 1.2.176.1
+  ([Foundry, third-party libraries](https://learn.foundry.com/nuke/current/content/resources/index.html)).
+  Its release notes ask only for an NVIDIA driver "capable of running CUDA 11.8,
+  or above" - the CUDA driver ships with the NVIDIA driver, no toolkit install is
+  named
+  ([Nuke 17.0v2 release notes](https://learn.foundry.com/nuke/content/release_notes/17.0/nuke_17.0v2_releasenotes.html)).
+  So a CUDA 12 stack is already in the Nuke process, and 12 is the major a 1.20.1
+  provider imports.
+  SCRATCH publishes the other shape. Its system requirements name OpenGL, OpenCL
+  and the tested graphics cards, and the recommended-driver chart lists AJA,
+  Bluefish, Blackmagic and RED - no CUDA toolkit anywhere; the installation page
+  describes a plain MSI that puts "the SCRATCH executable application and all
+  supporting .dll files" into `C:\Program Files\Assimilate\Bin64`
+  ([system requirements](https://www.assimilatesupport.com/akb/KnowledgebaseArticle50921.aspx),
+  [recommended drivers](https://www.assimilatesupport.com/akb/Print51023.aspx)). It
+  does use CUDA - RED decompression and debayer moved onto it in 9.0
+  ([Assimilate, 2019](https://www.assimilateinc.com/red-8k-realtime/)) - but which
+  CUDA major it carries is not published, so nothing here says whether a
+  provider-only bundle would bind in it.
+  That is what keeps the full bundle: it covers SCRATCH, whose stack cannot be
+  predicted, and costs Nuke only bytes it already has. Two limits on the claim:
+  this is documentation, not a filesystem check - neither host is installed on
+  this machine - and neither Nuke nor SCRATCH has loaded this plug-in, so
+  `verification-status.md` still records no run for them.
+  Back to the scripting run: its frame is a **pass-through** because no instance was created,
   not for want of a parameter: Resolve hands a script an OFX effect object with
   `GetInfo`, `GetIndex`, `GetIsEnabled`, `SetIndex` and `SetIsEnabled` and nothing
   else, so nothing can be set from the script - which this plug-in does not need,
