@@ -17,6 +17,9 @@ rem What it cannot do on Windows: valgrind. The POSIX script runs both binaries
 rem under memcheck; there is no equivalent here, so the stage is named as skipped
 rem rather than quietly dropped.
 rem
+rem Environment:
+rem   SUITE_THREADS  4 (default) | random - concurrent render threads
+rem
 rem Exit status: 0 both paths passed, 1 a check failed, 2 no OpenCL device on this
 rem machine, so the suite did not run - 2 is not a pass and the log says so.
 rem ---------------------------------------------------------------------------
@@ -74,6 +77,15 @@ call "%VCVARS%" >nul || exit /b 2
 
 echo.
 echo [3/5] the host protocol, on the CPU path (3 profiles)
+rem SUITE_THREADS=random picks a different concurrent-render count per run, the
+rem way FATE's threads=randomN does: not for determinism, but so that a race has
+rem to show up in some run instead of in the one configuration someone hard-coded.
+set "THREADS=4"
+if defined SUITE_THREADS set "THREADS=%SUITE_THREADS%"
+if /i "!THREADS!"=="random" (
+  set /a THREADS=!RANDOM! %% 4 + 1
+  echo   SUITE_THREADS=random: !THREADS! concurrent render threads this run
+)
 rem The same protocol every other template certifies, with the host never
 rem offering a device: kOfxImageEffectPropOpenCLEnabled stays 0, which is the CPU
 rem path this plug-in keeps for hosts that have no OpenCL at all.
@@ -83,7 +95,7 @@ for %%P in (nuke resolve natron) do (
     --id com.ofxplugindeveloper.openclgain --version 1.0 ^
     --param gain:double --clip Source --clip Output ^
     --byte-dst-rejected --src-bounds-inset 2 --dst-bounds-inset 2 ^
-    --negative-pitch --concurrency-param gain --concurrency-threads 4
+    --negative-pitch --concurrency-param gain --concurrency-threads !THREADS!
   if errorlevel 1 set "FAILED=1"
 )
 if "!FAILED!"=="1" (

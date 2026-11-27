@@ -1,0 +1,46 @@
+# The OpenCL template's suite, default and SUITE_THREADS=random, 2026-11-27.
+#
+# Why this file exists: `references/testing-layers.md` says every suite passes
+# `--concurrency-threads` to the harness and that `SUITE_THREADS=random` draws a
+# different count per run. Three of the four templates did; the OpenCL one
+# hard-coded 4 in both scripts, so the sentence described something that was not
+# true here. The scripts now resolve the count the same way the others do, and
+# this log is the run that says so on a real device.
+
+## 1. what ran
+
+    templates/minimal-opencl-ofx/test/run-tests.bat                  exit 0
+    SUITE_THREADS=random templates/minimal-opencl-ofx/test/run-tests.bat
+                                                                    exit 0
+    run 1: 4 concurrent render threads (the default)
+    run 2: "SUITE_THREADS=random: 4 concurrent render threads this run"
+
+Both runs, in order: build + `dumpbin` artifact check (2 exports, the DLLs the
+CRT needs), the shared contract harness over three host profiles with no device
+offered (118 checks each, 0 failed), then the OpenCL suite against the driver.
+
+## 2. the device is real, and the pixel check is exact
+
+    [2/8] opening an OpenCL device for the host to hand over
+      platform: NVIDIA CUDA
+      device  : NVIDIA GeForce RTX 3060 (OpenCL 3.0 CUDA)
+    [3/8] the CPU path, with the host offering no device
+      ok 13 - no device buffer was written while OpenCL was off
+    [4/8] the same render with the device enabled
+      ok 17 - the device frame is the source times two, bit for bit (max delta 0.000000)
+    opencl_suite: 38 checks, 0 failed
+    OK: the OpenCL template passed on this machine
+
+The CPU path and the device path are the same run, so a plug-in that quietly
+ignores the queue cannot pass by falling back.
+
+## 3. what this run does not cover
+
+- valgrind: there is none on Windows. The script prints the stage as skipped;
+  the POSIX script runs both binaries under memcheck and `linux.yml` gates it
+  (`RUN_VALGRIND=1`, `ERROR SUMMARY: 0 errors from 0 contexts`).
+- a host that hands over a queue: this is the fake host with a real device. No
+  host has given this plug-in a queue yet - the 2026-11-27 Resolve session
+  arrived with `opencl=0` and a null `pOpenCLCmdQ` (`opencl-host-resolve.log`),
+  which is backlog row 45, not a gap in this run.
+- a second OpenCL implementation: one driver, one platform.

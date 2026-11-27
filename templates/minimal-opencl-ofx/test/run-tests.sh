@@ -15,6 +15,7 @@
 # Environment:
 #   OPENCL_LOADER_LIB  the loader to dlopen        (default: the one below)
 #   RUN_VALGRIND       1 = require memcheck, 0 = skip it, unset = run if installed
+#   SUITE_THREADS      4 (default) | random - concurrent render threads
 #
 # The device is PoCL on this machine - a CPU implementation, reached through the
 # ICD loader, with no vendor SDK and no CL headers installed. That is the point:
@@ -62,6 +63,16 @@ echo "[2/6] compiling the shared contract harness"
 # a device: kOfxImageEffectPropOpenCLEnabled stays 0, which is the CPU path this
 # plug-in keeps for hosts that have no OpenCL at all.
 echo "[3/6] the host protocol, on the CPU path (3 profiles)"
+
+# SUITE_THREADS=random picks a different concurrent-render count per run, the way
+# FATE's threads=randomN does: not for determinism, but so that a race has to
+# show up in some run instead of in the one configuration someone hard-coded.
+THREADS="${SUITE_THREADS:-4}"
+if [[ "${THREADS}" == "random" ]]; then
+  THREADS=$(( (RANDOM % 4) + 1 ))
+  echo "  SUITE_THREADS=random: ${THREADS} concurrent render thread(s) this run"
+fi
+
 CONTRACT_ARGS=(
   --id com.ofxplugindeveloper.openclgain
   --version 1.0
@@ -72,7 +83,7 @@ CONTRACT_ARGS=(
   --src-bounds-inset 2 --dst-bounds-inset 2
   --negative-pitch
   --concurrency-param gain
-  --concurrency-threads 4
+  --concurrency-threads "${THREADS}"
 )
 for profile in nuke resolve natron; do
   echo "  host profile: ${profile}"
