@@ -121,11 +121,27 @@ message. Two host-facing facts:
   `OFX::Exception::Suite` with `kOfxStatErrMissingHostFeature` as well as
   `PropertyUnknownToHost` (this host did not answer ErrUnknown for the write),
   and the template appends its provider label to `$ONNX_PROVIDER_LOG` because
-  the host's script API cannot read a parameter. That the provider imports a
-  specific CUDA major remains a constraint to design for (**[B]**, ONNX Runtime's
-  provider requirements), but it is not what separated these two packages: both
-  failed before a provider could load, for the reason measured on 2026-11-27
-  below.
+  the host's script API cannot read a parameter.
+  **Decision (2026-11-27): CUDA 12 stays, and the bundle stays full.** Resolve
+  Studio 21.2.0.5 is the primary target, and the package that matches it is ONNX
+  Runtime 1.20.1: its provider imports cuBLAS/cuBLASLt 12, cuFFT 11, cudart 12 and
+  cuDNN 9 - every one a major the host already carries - so nothing of the CUDA 13
+  family has to be shipped, and a provider-only Resolve package (four files, no
+  runtime of ours) would stay slim. That package is measured and it works; what
+  this repository ships is still the full bundle, and deliberately: a host that
+  brings no CUDA stack has nothing to bind to, and whether Nuke or SCRATCH bring
+  one is unmeasured here (neither has rendered anything,
+  `verification-status.md`). So cuDNN, cuBLAS/cuBLASLt, cuFFT and cudart 12 travel
+  beside the provider, and the slim arrangement stays a per-deliverable option
+  (`-DOFXPLUGIN_CUDA_FROM_HOST=ON` against a 1.20.1 package), to be taken up when a
+  Resolve-only deliverable is commissioned.
+  The 1.32.0 package is a test case, not a ship target: its provider needs
+  `cublas64_13.dll` and `cublasLt64_13.dll` resolved by the process, Resolve ships
+  CUDA 12, and the one run where it loaded did so because that machine had the
+  CUDA 13.0 toolkit on `PATH`
+  ([`onnx-provider-cuda13-deps.log`](../evidence/2026-11-27-windows/onnx-provider-cuda13-deps.log)). The CUDA major is a load-time constraint, not what separated the
+  two 2026-11-26 packages: both failed before a provider could load, because
+  `describe()` threw on the 1.5.1 property (measured 2026-11-27).
   The frame in that run is a **pass-through** because no instance was created,
   not for want of a parameter: Resolve hands a script an OFX effect object with
   `GetInfo`, `GetIndex`, `GetIsEnabled`, `SetIndex` and `SetIsEnabled` and nothing

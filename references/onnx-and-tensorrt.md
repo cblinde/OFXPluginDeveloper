@@ -460,6 +460,12 @@ make the choice visible — and the consequence is packaging, not a second build
   `DllMain` needs the mailbox that only the ORT core sets; ORT finds the provider
   beside the core by itself. Preload only what the provider imports — cuDNN,
   cuBLAS/cuBLASLt, cuFFT, cudart — or the load fails with **126** (**B**).
+  **Which package to ship is a decision, not a version number** (2026-11-27): the
+  1.20.1 package is the one that pairs with Resolve 21.2, since its provider imports
+  cuBLAS 12 and ships no CUDA 13 DLL; the 1.32.0 package is a test case whose
+  provider needs `cublas64_13.dll` from the process. The full bundle is kept for
+  hosts that carry no CUDA stack of their own; `packaging-and-install.md` section 2
+  records the reasoning and the condition to revisit it.
   `cufftw*` is **not** in that list, even though it shares the cuFFT prefix: the
   provider never imports cuFFTW, and it is the file whose 127 cost a whole GPU
   path (below).
