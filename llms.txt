@@ -52,6 +52,8 @@
 - `tools/_model_shape.py`
 - `tools/_ort_common.py`
 - `tools/aot-compile-model.sh`
+- `tools/bench-ep-frame.bat`
+- `tools/bench-ep-frame.sh`
 - `tools/bench_ep.py`
 - `tools/check-docs.py`
 - `tools/check-glibc.sh`

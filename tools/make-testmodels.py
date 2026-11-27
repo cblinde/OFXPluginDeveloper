@@ -4,7 +4,7 @@
 
     python3 tools/make-testmodels.py --out build/testmodels
 
-Four models, each a real graph rather than a `Constant`, because a graph that
+Six models, each a real graph rather than a `Constant`, because a graph that
 does nothing passes every test that only asks "did it run":
 
     id_1x_1ch.onnx   one channel, 1x1 AveragePool: output == input
@@ -16,6 +16,9 @@ does nothing passes every test that only asks "did it run":
                      does not implement, so the provider label has to admit that
                      a node was left on the CPU EP - the half of the label a
                      one-node Conv (which the provider covers) can never produce
+    conv_chain_3ch_64.onnx  RGB to 64 channels through three 3x3 convs, H and W
+                     dynamic: the graph tools/bench-ep-frame.* times, and the one
+                     shape where a GPU execution provider is worth its setup cost
 
 Why `AveragePool` and not `Identity`: with a real node, a channel or plane-order
 mistake produces a large deviation instead of a green check on a copy. Why
@@ -138,6 +141,75 @@ def cpu_only_node_model(channels):
     return _finish(graph)
 
 
+def _weights(name, shape, seed):
+    """Deterministic pseudo-random weights, without numpy.
+
+    The generator runs with `onnx` alone - numpy is only needed for the
+    self-test - so the numbers come from a small LCG. What matters is that the
+    graph carries real weights of the right shape: a Constant-filled conv would
+    let a provider optimise the multiply away and time that instead.
+    """
+    total = 1
+    for extent in shape:
+        total *= extent
+    values = []
+    state = seed & 0xFFFFFFFF
+    for _ in range(total):
+        state = (1103515245 * state + 12345) & 0x7FFFFFFF
+        values.append((state / 0x7FFFFFFF - 0.5) * 0.2)
+    return helper.make_tensor(name, TensorProto.FLOAT, list(shape), values)
+
+
+def conv_chain_model(in_channels=3, channels=64, layers=3):
+    """An H/W-dynamic 3x3 conv chain: what a frame costs, not what a tile costs.
+
+    tools/bench-ep-frame.cpp times this graph at 640x480 and 1920x1080, which is
+    where references/runtime-comparison.md section 5 gets its CPU-against-CUDA
+    frame times. The first conv lifts `in_channels` to `channels`, the rest stay
+    at `channels`, every one is padded "same" and followed by a ReLU - so the
+    output is a picture of the input's size with 64 channels, and the work per
+    frame is the three convolutions and nothing else.
+    """
+    nodes = []
+    initializers = []
+    source = "input"
+    for layer in range(layers):
+        weight = _weights(
+            "c{}_w".format(layer),
+            [channels, in_channels if layer == 0 else channels, 3, 3],
+            seed=101 + layer,
+        )
+        bias = _weights("c{}_b".format(layer), [channels], seed=201 + layer)
+        initializers.extend([weight, bias])
+        nodes.append(
+            helper.make_node(
+                "Conv",
+                [source, weight.name, bias.name],
+                ["r{}".format(layer)],
+                kernel_shape=[3, 3],
+                pads=[1, 1, 1, 1],
+            )
+        )
+        nodes.append(
+            helper.make_node(
+                "Relu",
+                ["r{}".format(layer)],
+                ["a{}".format(layer) if layer + 1 < layers else "output"],
+            )
+        )
+        source = "r{}".format(layer)
+    graph = helper.make_graph(
+        nodes,
+        "conv_chain_{}ch_{}x3x3".format(in_channels, channels),
+        [_input_info(in_channels)],
+        [helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, ["batch", channels, "height", "width"]
+        )],
+        initializer=initializers,
+    )
+    return _finish(graph)
+
+
 MODELS = [
     ("id_1x_1ch.onnx", identity_model(1), "identity, 1 channel", "identity", 1),
     ("id_1x_3ch.onnx", identity_model(3), "identity, RGB", "identity", 3),
@@ -148,6 +220,13 @@ MODELS = [
         cpu_only_node_model(3),
         "Hardmax: the CUDA EP does not implement it, so the label must say so",
         "hardmax",
+        3,
+    ),
+    (
+        "conv_chain_3ch_64.onnx",
+        conv_chain_model(3, 64, 3),
+        "three 3x3 convs, RGB to 64 channels: the graph the frame-time probe times",
+        "conv_chain",
         3,
     ),
 ]
@@ -182,6 +261,23 @@ def self_test(out_dir):
             except Exception as exc:  # noqa: BLE001 - the message is the result
                 print("  FAIL {} at {}x{}: {}".format(name, width, height, exc))
                 failures += 1
+                continue
+            if kind == "conv_chain":
+                # The weights are pseudo-random, so there is no closed form to
+                # compare against: what is asserted is the shape contract the
+                # probe and the plug-in rely on - same H/W, 64 channels, finite
+                # values - at both frame sizes, which is what proves H and W are
+                # dynamic.
+                want = (1, 64, height, width)
+                if y.shape != want or not np.isfinite(y).all():
+                    print(
+                        "  FAIL {} at {}x{}: shape {} (expected {}), finite {}".format(
+                            name, width, height, y.shape, want, bool(np.isfinite(y).all())
+                        )
+                    )
+                    failures += 1
+                else:
+                    print("  ok   {} at {}x{} -> {}".format(name, width, height, y.shape))
                 continue
             if kind == "identity":
                 expected = x
