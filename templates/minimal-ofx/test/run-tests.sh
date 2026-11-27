@@ -20,7 +20,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPL="$(cd "${HERE}/.." && pwd)"
 ROOT="$(cd "${TPL}/../.." && pwd)"
 
-echo "[1/4] building the reference plug-in (and verifying the artifact)"
+echo "[1/5] building the reference plug-in (and verifying the artifact)"
 "${TPL}/build.sh"
 
 OFX_FILE="$(find "${TPL}/build/bundle" -name '*.ofx' -type f | head -1)"
@@ -30,7 +30,7 @@ HARNESS="${TPL}/build/contract_test"
 # The sanitizer is named in the log, like the other two suites do: a run whose
 # header says "none" must not be mistaken for an instrumented one, and the CI
 # job greps this line to prove the build it credits was built that way.
-echo "[2/4] compiling the shared contract harness (sanitizer: ${SANITIZE:-none})"
+echo "[2/5] compiling the shared contract harness (sanitizer: ${SANITIZE:-none})"
 SANITIZE="${SANITIZE:-}" "${ROOT}/testkit/build-contract-test.sh" "${HARNESS}" "${OFX_DIR}"
 
 # One process holds one host - OfxSetHost ignores every call after the first -
@@ -67,7 +67,7 @@ HARNESS_ARGS=(
   --concurrency-threads "${THREADS}"
 )
 
-echo "[3/4] running the host protocol against ${OFX_FILE}"
+echo "[3/5] running the host protocol against ${OFX_FILE}"
 for profile in "${HOST_PROFILES[@]}"; do
   echo "  host profile: ${profile}"
   "${HARNESS}" "${OFX_FILE}" --host-profile "${profile}" "${HARNESS_ARGS[@]}"
@@ -85,7 +85,30 @@ echo "  host profile: resolve, refusing both capability writes"
   "${HARNESS_ARGS[@]}"
 
 echo
-echo "== [4/4] valgrind memcheck =="
+# The build tree is not an install: a host loads what is under OFX/Plugins, so
+# `cmake --install` into a throwaway prefix is the move that exposes a path or a
+# dependency that only ever resolved inside the build directory (an $ORIGIN RPATH
+# that pointed back at build/, a resource only the build wrote there). The harness
+# then renders one frame from the installed copy.
+echo "== [4/5] install and load the installed copy =="
+INSTALL_PREFIX="$(mktemp -d)"
+cmake --install "${ROOT}/build" --prefix "${INSTALL_PREFIX}" > "${INSTALL_PREFIX}/install.log" 2>&1 || {
+  cat "${INSTALL_PREFIX}/install.log" >&2
+  exit 1
+}
+INSTALLED="$(find "${INSTALL_PREFIX}/OFX/Plugins" -name "*.ofx" -type f | head -1)"
+if [[ -z "${INSTALLED}" ]]; then
+  echo "  FAIL: cmake --install wrote no .ofx under ${INSTALL_PREFIX}/OFX/Plugins" >&2
+  exit 1
+fi
+echo "  ${INSTALLED}"
+"${HARNESS}" "${INSTALLED}" --host-profile resolve \
+  --id com.ofxplugindeveloper.referencegain --version 1.0 --param gain:double \
+  --clip Source --clip Output
+rm -rf "${INSTALL_PREFIX}"
+
+echo
+echo "== [5/5] valgrind memcheck =="
 WANT="${RUN_VALGRIND:-auto}"
 if [[ "${WANT}" == "0" ]]; then
   echo "  skipped: RUN_VALGRIND=0"

@@ -9,9 +9,9 @@ rem Linux runs this through g++, nm -D, readelf, dlopen and valgrind. None of
 rem those exist in a Windows developer shell, so the same checks are expressed
 rem with the tools that do:
 rem
-rem   [1/3] build     build.bat, then the artifact check it already runs
-rem   [2/3] artifact  testkit\check-ofx-artifact.bat --strict (dumpbin, cuobjdump)
-rem   [3/3] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
+rem   [1/4] build     build.bat, then the artifact check it already runs
+rem   [2/4] artifact  testkit\check-ofx-artifact.bat --strict (dumpbin, cuobjdump)
+rem   [3/4] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
 rem                   host protocol as dlopen: load, describe, create, render,
 rem                   destroy, unload, twice, with the negative cases
 rem
@@ -35,12 +35,12 @@ set "OFX_FILE=%BUILD_DIR%\bundle\ReferenceGain.ofx.bundle\Contents\Win64\Referen
 
 rem ---- [1] build ------------------------------------------------------------
 if "%NOBUILD%"=="0" (
-  echo == [1/3] build ^(%CONFIG%^) ==
+  echo == [1/4] build ^(%CONFIG%^) ==
   rem The .\ prefix is load-bearing: a bare build.bat is not found when
   rem NoDefaultCurrentDirectoryInExePath=1 is set.
   call "%ROOT%\build.bat" %CONFIG% || goto :error
 ) else (
-  echo == [1/3] build skipped ^(nobuild^)
+  echo == [1/4] build skipped ^(nobuild^)
 )
 
 if not exist "%OFX_FILE%" (
@@ -54,12 +54,12 @@ rem ---- [2] artifact ----------------------------------------------------------
 rem Same checker build.bat runs; here it is the point of the step, not a side
 rem effect, so a failure names which claim broke.
 echo.
-echo == [2/3] artifact (exports, dependents) ==
+echo == [2/4] artifact (exports, dependents) ==
 call "%ROOT%\..\..\testkit\check-ofx-artifact.bat" "%OFX_FILE%" --strict || goto :error
 
 rem ---- [3] host contract -----------------------------------------------------
 echo.
-echo == [3/3] host contract (LoadLibraryExW + fake host) ==
+echo == [3/4] host contract (LoadLibraryExW + fake host) ==
 set "OFX_INC=%OFX_SOURCE_DIR%"
 if not defined OFX_INC if exist "%BUILD_DIR%\CMakeCache.txt" (
   for /f "usebackq tokens=1,* delims==" %%A in (`findstr /B /C:"OFX_SOURCE_DIR:PATH=" "%BUILD_DIR%\CMakeCache.txt"`) do set "OFX_INC=%%B"
@@ -124,6 +124,35 @@ echo   host profile: resolve, refusing both capability writes
     --negative-pitch ^
     --concurrency-param gain ^
     --concurrency-threads %THREADS% || goto :error
+
+rem ---- [4] install ---------------------------------------------------------
+rem The build tree is not an install: a host loads what is under OFX/Plugins, so
+rem `cmake --install` into a throwaway prefix is the move that exposes a path or a
+rem dependency that only ever resolved inside build\. The harness then renders one
+rem frame from the installed copy - the same contract run, one directory over.
+echo.
+echo == [4/4] install and load the installed copy ==
+set "PREFIX=%TEMP%\ofx-install-%RANDOM%%RANDOM%"
+cmake --install "%BUILD_DIR%" --prefix "%PREFIX%" --config %CONFIG% > "%PREFIX%.log" 2>&1
+if errorlevel 1 (
+  type "%PREFIX%.log"
+  goto :error
+)
+set "INSTALLED="
+for /r "%PREFIX%\OFX\Plugins" %%F in (*.ofx) do if not defined INSTALLED set "INSTALLED=%%F"
+if not defined INSTALLED (
+  echo   FAIL: cmake --install wrote no .ofx under "%PREFIX%\OFX\Plugins"
+  goto :error
+)
+echo   %INSTALLED%
+"%CONTRACT%" "%INSTALLED%" ^
+    --host-profile resolve ^
+    --id com.ofxplugindeveloper.referencegain ^
+    --version 1.0 ^
+    --param gain:double ^
+    --clip Source ^
+    --clip Output || goto :error
+rmdir /s /q "%PREFIX%" 2>nul
 
 echo.
 echo all Windows checks passed

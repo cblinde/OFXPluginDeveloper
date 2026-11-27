@@ -1,0 +1,11 @@
+# cmake --install, then load and render from the installed copy (2026-11-27, Windows)
+#
+# templates/minimal-ofx/test/run-tests.bat, step [4/4], MSVC 14.50.
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+== [4/4] install and load the installed copy ==
+  C:\Users\cblinde\AppData\Local\Temp\ofx-install-2248426533\OFX\Plugins\ReferenceGain.ofx.bundle\Contents\Win64\ReferenceGain.ofx
+contract_test: 90 checks, 0 failed
+all Windows checks passed

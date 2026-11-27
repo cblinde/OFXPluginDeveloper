@@ -408,6 +408,29 @@ the binary; CMake propagates it. Do not hand-add `-Xcompiler /MD` to a Debug bui
 **Separable compilation.** Only when device functions cross `.cu` files; then also
 set `CUDA_RESOLVE_DEVICE_SYMBOLS ON`.
 
+**`cmake --install` writes the layout the host scans.** The reference template
+carries an `install(TARGETS ...)` rule, so `cmake --install build --prefix P`
+writes `P/OFX/Plugins/ReferenceGain.ofx.bundle/Contents/<arch>/ReferenceGain.ofx`
+- the same path a host looks along in §1, whether `P` is `/usr`, `/Library` or
+`%COMMONPROGRAMFILES%`. Both `RUNTIME` and `LIBRARY DESTINATION` are given on
+every platform because a `MODULE` target is a `RUNTIME` artefact under MSVC and a
+`LIBRARY` artefact elsewhere: a Windows-only `RUNTIME` line configures and then
+fails with `install TARGETS given no LIBRARY DESTINATION for module target`, and
+an `if(WIN32)`/`else()` pair that names one each is the same mistake with more
+lines.
+
+The rule exists because the build tree is not an install, and the test exists
+because nothing said so. `templates/minimal-ofx/test/run-tests.sh` (step `[4/5]`)
+and `run-tests.bat` (step `[4/4]`) install into a throwaway prefix, then load and
+render from the installed copy: a resource that only the build directory wrote, a
+path relative to the build tree, or an RPATH that still points into `build/` all
+survive a build-tree run and fail this one. Measured on Windows, 2026-11-27
+([`install-load.log`](../evidence/2026-11-27-windows/install-load.log)): the
+installed copy loads, renders and passes **90 checks, 0 failed**, and the runner
+deletes the prefix afterwards. The other templates have no install rule yet, so
+their bundles are still copied by hand - stated here rather than implied by the
+rule existing in one place.
+
 ---
 
 ## Provenance labels

@@ -138,3 +138,17 @@ file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resour
 message(STATUS "Default gain: ${REFERENCE_GAIN_DEFAULT}")
 message(STATUS "OFX plugin : ${PLUGIN_TARGET}")
 message(STATUS "Bundle     : ${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}")
+
+# An install rule, because a bundle that only exists in the build tree is not
+# an installed plug-in: a host scans OFX/Plugins, and the move is what exposes a
+# path or a library that was only ever found relative to the build directory.
+# `cmake --install build --prefix P` writes
+# P/OFX/Plugins/<bundle>/Contents/<arch>/<name>.ofx, the layout every host
+# scans, and the test runners install into a temporary prefix and load that
+# copy instead of assuming the build tree is one.
+# Both destinations are given on every platform: a MODULE target is a RUNTIME
+# artefact on Windows and a LIBRARY artefact elsewhere, and CMake rejects a
+# MODULE install that names only one of the two even where the other is unused.
+install(TARGETS ${PLUGIN_TARGET}
+        RUNTIME DESTINATION "OFX/Plugins/${PLUGIN_BUNDLE}/Contents/${_ofx_arch_dir}"
+        LIBRARY DESTINATION "OFX/Plugins/${PLUGIN_BUNDLE}/Contents/${_ofx_arch_dir}")
