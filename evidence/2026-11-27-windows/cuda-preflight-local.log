@@ -1,0 +1,42 @@
+# The CUDA sub-package preflight in .github/workflows/windows.yml, 2026-11-27.
+#
+# Why: the windows job installs CUDA through Jimver/cuda-toolkit with
+# method: network, and the action turns each sub-package name into
+# `<name>_<major>.<minor>` for NVIDIA's silent installer
+# (src/installer.ts at v0.2.36). A component that was never installed and a
+# name that does not exist are indistinguishable from inside the job, so the
+# step before the build names each artefact and the sub-package that provides
+# it. `cuobjdump` is the one that would have bitten: it is its own NVIDIA
+# sub-package (installation guide, subpackage table), not part of `nvcc`, and
+# check-ofx-artifact.bat --cuda --strict exits 3 with "cuobjdump not found"
+# without it.
+#
+# What ran here: the step's cmd body, verbatim, as .validation/cuda-preflight.cmd
+# on a machine that has CUDA 13.0 in PATH (CUDA_PATH unset, which is why the
+# body derives the toolkit root from `where nvcc`), then the same body called
+# with CUDA_PATH cleared and PATH reduced to C:\Windows\System32;C:\Windows.
+# No GPU involvement and no configure: this is the step's own exit code.
+
+== positive: the toolkit this machine has (nvcc 13.0, cuobjdump, cudart) ==
+exit: 0
+
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Jul_16_20:06:48_Pacific_Daylight_Time_2025
+Cuda compilation tools, release 13.0, V13.0.48
+Build cuda_13.0.r13.0/compiler.36260728_0
+cuobjdump: NVIDIA (R) fat binary listing tool
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Jul__2_10:47:13_Pacific_Daylight_Time_2025
+Cuda compilation tools, release 13.0, V13.0.39
+Build cuda_13.0.r13.0/compiler.36195134_0
+CUDA sub-packages ok: nvcc, cudart, cuobjdump
+
+== negative: no CUDA_PATH, PATH without the toolkit ==
+exit: 1
+
+::error::nvcc.exe not found - add "nvcc" to sub-packages
+::error::cuobjdump.exe not found - add "cuobjdump" to sub-packages
+::error::cuda_runtime.h not found - add "cudart" to sub-packages
+::error::cudart.lib not found - add "cudart" to sub-packages
+negative exit=1

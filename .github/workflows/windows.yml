@@ -87,16 +87,52 @@ jobs:
       - name: CUDA toolkit
         # windows-latest ships no CUDA toolkit, which is why the step above only
         # reaches the CPU shim. `network` fetches the sub-packages named here
-        # instead of the ~3 GB local installer: nvcc to compile Kernel.cu, and
-        # cudart for the runtime the bundle links. No
-        # `visual_studio_integration`, because the next step builds with Ninja and
-        # reaches the .cu through nvcc directly. Pinned by commit like every other
-        # action in this tree.
+        # instead of the ~3 GB local installer. The names are NVIDIA's own, from
+        # the installation guide's subpackage table ("Subpackage names use the
+        # format <component>_<major>.<minor>"); this action appends the version
+        # itself, so a bare name is what goes in the list.
+        #
+        #   nvcc       compiles Kernel.cu
+        #   cudart     cuda_runtime.h and cudart.lib, which the plug-in links
+        #   cuobjdump  its own subpackage, not part of nvcc, and the step below
+        #              needs it: check-ofx-artifact.bat --cuda --strict exits 3
+        #              with "cuobjdump not found" without it
+        #
+        # No `visual_studio_integration` (Ninja reaches the .cu through nvcc
+        # directly) and no `crt`/`nvvm` unless the preflight below says so: no
+        # separable compilation here, and the kernel uses no libdevice maths.
+        # Pinned by commit like every other action in this tree.
         uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d  # v0.2.36
         with:
           cuda: "12.9.1"
           method: network
-          sub-packages: '["nvcc", "cudart"]'
+          sub-packages: '["nvcc", "cudart", "cuobjdump"]'
+
+      - name: The CUDA sub-packages arrived
+        # A component that was never installed and a name that does not exist
+        # look the same three steps later: nvcc compiles, then the artifact
+        # check cannot find cuobjdump, and the log blames the plug-in. So each
+        # artefact the build actually uses is checked here and named with the
+        # subpackage that provides it, so a partial toolkit stops before the
+        # configure instead of inside it.
+        #
+        # No smoke compile: nvcc refuses to run without cl.exe, and the vcvars
+        # call that provides it belongs to build.bat. The first compile is the
+        # real one; if it fails naming libdevice, the missing subpackage is
+        # `nvvm`, and that is the one line this step cannot check.
+        shell: cmd
+        run: |
+          set "FAIL=0"
+          set "ROOT=%CUDA_PATH%"
+          if not defined ROOT for /f "delims=" %%D in ('where nvcc 2^>nul') do if not defined ROOT set "ROOT=%%~dpD.."
+          where nvcc >nul 2>&1 || (echo ::error::nvcc.exe not found - add "nvcc" to sub-packages& set FAIL=1)
+          where cuobjdump >nul 2>&1 || (echo ::error::cuobjdump.exe not found - add "cuobjdump" to sub-packages& set FAIL=1)
+          if not exist "%ROOT%\include\cuda_runtime.h" (echo ::error::cuda_runtime.h not found - add "cudart" to sub-packages& set FAIL=1)
+          if not exist "%ROOT%\lib\x64\cudart.lib" (echo ::error::cudart.lib not found - add "cudart" to sub-packages& set FAIL=1)
+          if "%FAIL%"=="1" exit /b 1
+          nvcc --version
+          cuobjdump --version
+          echo CUDA sub-packages ok: nvcc, cudart, cuobjdump
 
       - name: CUDA template compiled with nvcc
         # What this step proves: MSVC plus the toolkit's nvcc compile the
