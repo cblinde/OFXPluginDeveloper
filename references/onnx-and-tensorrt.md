@@ -235,7 +235,16 @@ without a single host-side synchronise.
    stream before returning when the host gave you none. See §2.
 7. **Ship the model as a bundle resource.** `NAME.ofx.bundle/Contents/Resources/`
    is the documented place for non-code assets; resolve it from the plugin's own
-   path, never from an absolute path on the build machine.
+   path, never from an absolute path on the build machine. The template resolves
+   `../Resources/model.onnx` relative to the loaded module, which is what makes a
+   copied or symlinked install work - and what a test has to exercise by copying
+   the bundle, not by pointing at `build/`. Since 2026-11-27 both suites do: a
+   temporary copy of the bundle, the fixture written to
+   `Contents/Resources/model.onnx`, `ONNX_MODEL_PATH` removed from the
+   environment, the same golden compared, and `--non-identity` asserted because a
+   model that loads leaves nothing to short-circuit. The control is the same run
+   against a bundle with no model, which answers `kOfxStatOK` to `isIdentity` and
+   fails the check (`evidence/2026-11-27-windows/onnx-shipped-model.log`).
 
 ---
 

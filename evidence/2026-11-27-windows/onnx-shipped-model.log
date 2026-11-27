@@ -1,0 +1,59 @@
+# The model a bundle ships: Contents/Resources/model.onnx, 2026-11-27 (Windows)
+#
+# Why this run exists
+#   The plug-in resolves ONNX_MODEL_PATH first and Contents/Resources/model.onnx
+#   second, relative to the module it was loaded from. Every suite run until
+#   today drove the variable or removed it; the branch a packaged install uses -
+#   the one the reference host actually took - had only ever been executed by a
+#   host (improvement-backlog row 48). test\test.bat now copies the built bundle
+#   into %TEMP%, writes models\test_conv.onnx to Contents\Resources\model.onnx,
+#   clears the variable and renders the same golden.
+#
+# Machine and inputs
+#   Windows 11, RTX 3060, ONNX Runtime 1.20.1 with the CUDA provider
+#   (ONNXRUNTIME_ROOT=.validation\ort-gpu-1.20.1), bundle built with
+#   OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON. Bundle: build\bundle\OnnxInference.ofx.bundle
+#   (Contents\Resources empty before this run), models\test_conv.onnx,
+#   models\test_input.bin, models\test_golden.bin (+ .cuda.fuzz = 1e-05).
+#
+# Command (Git Bash, repository root):
+#   export ONNXRUNTIME_ROOT=Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\ort-gpu-1.20.1
+#   export OFX_SOURCE_DIR=Z:\Tools-DEV\OFXPluginDeveloper_Local\.ofx-ref
+#   MSYS2_ARG_CONV_EXCL='*' cmd /c '...\templates\onnx-inference-ofx\test\test.bat Release nobuild'
+#   exit 0
+
+== [3/6] host contract (LoadLibraryExW + fake host), exact golden ==
+  host profile: natron
+ok 108 - read golden ...\models\test_golden.bin
+ok 110 - render matches the golden within 0.000010
+== [4/6] the model the bundle ships (Contents\Resources, no ONNX_MODEL_PATH) ==
+  C:\Users\...\AppData\Local\Temp\onnx-shipped-<n>\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx
+ok 26 - kOfxActionCreateInstance
+ok 27 - isIdentity is false (the plug-in has work to do)
+  reference: ...\models\test_golden.bin (generic: no ...-windows.bin beside it)
+  tolerance: 1e-05 (from ...\models\test_golden.cuda.fuzz)
+ok 35 - read golden ...\models\test_golden.bin
+ok 37 - render matches the golden within 0.000010
+ok 102 - isIdentity is false (the plug-in has work to do)
+ok 112 - render matches the golden within 0.000010
+== [5/6] host contract with the plug-in's own tiling (tileSize=16) ==
+== [6/6] fixtures and artifact ==
+all checks passed
+
+# Negative control: is the new check worth anything?
+#   Same harness, same arguments, against the built bundle whose Contents\Resources
+#   holds no model - so neither the variable nor the shipped file exists, and the
+#   plug-in is in its pass-through branch. --non-identity must fail there:
+FAIL isIdentity is false (the plug-in has work to do): kOfxStatOK
+contract_test: 27 checks, 1 failed
+#   and the same bundle asked for the claim it actually makes (-identity, no
+#   golden) passes: exit 0. So the failure above is the identity answer, not a
+#   descriptor, parameter or pixel difference.
+
+# What this does not cover
+#   run-tests.sh carries the same step (as [3/6]) and was syntax-checked here
+#   (bash -n); no Linux machine was available to execute it. The path arithmetic
+#   is a copy of the bundle into mktemp -d and the fixture into its
+#   Contents/Resources, which is the same shape; the Windows run above is the
+#   evidence that the branch works. Nothing here proves a host serves a bundle
+#   with a model from an arbitrary install location beyond the one copy in %TEMP%.

@@ -200,6 +200,10 @@ struct Spec {
   int width = 64;
   int height = 48;
   bool expectIdentity = false;
+  // --non-identity: the plug-in has work to do and must say so. The other flag
+  // is the short circuit; this one is the absence of it, which is what a plug-in
+  // with a model to run owes a host that asks before it spends a frame.
+  bool expectNonIdentity = false;
   bool expectNotIdentityAfterSet = false;
   bool byteDstRejected = false;
   // --depth half|byte: hand the plug-in source and destination images of that
@@ -1091,6 +1095,15 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
 
   const OfxRectI window = {0, 0, spec.width, spec.height};
 
+  if (spec.expectNonIdentity) {
+    std::string identityClip;
+    const OfxStatus st = host.isIdentity(0.0, window, &identityClip);
+    if (!check("isIdentity is false (the plug-in has work to do)",
+               st == kOfxStatReplyDefault, statusName(st))) {
+      return failCycle(host);
+    }
+  }
+
   if (spec.expectIdentity) {
     std::string identityClip;
     const OfxStatus st = host.isIdentity(0.0, window, &identityClip);
@@ -1720,7 +1733,8 @@ int main(int argc, char** argv) {
     std::fprintf(stderr,
                  "usage: contract_test <plugin.ofx> --id <identifier> [--param name:type]...\n"
                  "       [--clip name]... [--set name=value]... [--context <context>]\n"
-                 "       [--identity] [--not-identity-after-set] [--byte-dst-rejected]\n"
+                 "       [--identity] [--non-identity] [--not-identity-after-set]\n"
+                 "       [--byte-dst-rejected]\n"
                  "       [--depth float|half|byte]...\n"
                  "       [--negative-pitch] [--image-origin top|bottom] [--mark X,Y] [--set-status-only]\n"
                  "       [--src file --golden file --size WxH] [--src-bounds-inset N]\n"
@@ -1839,6 +1853,8 @@ int main(int argc, char** argv) {
       spec.height = std::atoi(v.substr(x + 1).c_str());
     } else if (a == "--identity") {
       spec.expectIdentity = true;
+    } else if (a == "--non-identity") {
+      spec.expectNonIdentity = true;
     } else if (a == "--not-identity-after-set") {
       spec.expectNotIdentityAfterSet = true;
     } else if (a == "--depth") {

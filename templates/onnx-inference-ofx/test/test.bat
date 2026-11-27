@@ -1,8 +1,8 @@
 @echo off
 rem SPDX-License-Identifier: BSD-3-Clause
 rem ---------------------------------------------------------------------------
-rem Windows counterpart of test\run-tests.sh: the same five steps, in the same
-rem order, for the ONNX inference template.
+rem Windows counterpart of test\run-tests.sh: the same six steps, for the ONNX
+rem inference template.
 rem
 rem   set ONNXRUNTIME_ROOT=C:\onnxruntime-win-x64-1.32.0
 rem                     the suite's runtime; for a bundle that must load in
@@ -27,8 +27,10 @@ rem Steps, matching run-tests.sh:
 rem   1. build (build.bat, which also runs check-ofx-artifact.bat --strict)
 rem   2. ai_pipeline_test models  - packing, whole-frame and tiled inference
 rem   3. host contract, exact golden, through the OFX API
-rem   4. host contract with the plug-in's own tiling (tileSize=16), tolerance
-rem   5. artifact and fixture presence, then check-ofx-artifact.bat --strict
+rem   4. the model a bundle ships: a copy of the bundle with the fixture written
+rem      to Contents\Resources\model.onnx, ONNX_MODEL_PATH cleared, same golden
+rem   5. host contract with the plug-in's own tiling (tileSize=16), tolerance
+rem   6. artifact and fixture presence, then check-ofx-artifact.bat --strict
 rem
 rem What test.bat cannot do that run-tests.sh can: step 5's nm/readelf counts are
 rem dumpbin's job here (the checker does them), and there is no valgrind.
@@ -96,7 +98,7 @@ set "GPU_PROVIDER="
 if exist "%ONNXRUNTIME_ROOT%\bin\onnxruntime_providers_cuda.dll" set "GPU_PROVIDER=%ONNXRUNTIME_ROOT%\bin\onnxruntime_providers_cuda.dll"
 if not defined GPU_PROVIDER if exist "%ONNXRUNTIME_ROOT%\lib\onnxruntime_providers_cuda.dll" set "GPU_PROVIDER=%ONNXRUNTIME_ROOT%\lib\onnxruntime_providers_cuda.dll"
 
-echo == [1/5] build (%CONFIG%) ==
+echo == [1/6] build (%CONFIG%) ==
 if "%NOBUILD%"=="1" (
   if not exist "%BUILD%\CMakeCache.txt" (
     echo error: nobuild was asked for but %BUILD%\CMakeCache.txt does not exist
@@ -108,7 +110,7 @@ if "%NOBUILD%"=="1" (
 )
 
 echo.
-echo == [2/5] inference pipeline (ai_pipeline_test) ==
+echo == [2/6] inference pipeline (ai_pipeline_test) ==
 set "AI=%BUILD%\ai_pipeline_test.exe"
 if not exist "%AI%" set "AI=%BUILD%\%CONFIG%\ai_pipeline_test.exe"
 if not exist "%AI%" (
@@ -120,7 +122,7 @@ if not exist "%AI%" (
 "%AI%" "%ROOT%\models" || goto :error
 
 echo.
-echo == [3/5] host contract (LoadLibraryExW + fake host), exact golden ==
+echo == [3/6] host contract (LoadLibraryExW + fake host), exact golden ==
 set "OFX_INC="
 if exist "%BUILD%\CMakeCache.txt" (
   for /f "usebackq tokens=1,* delims==" %%A in (`findstr /B /C:"OFX_SOURCE_DIR:PATH=" "%BUILD%\CMakeCache.txt"`) do set "OFX_INC=%%B"
@@ -215,7 +217,43 @@ for %%P in (nuke resolve natron) do (
 
 
 echo.
-echo == [4/5] host contract with the plug-in's own tiling (tileSize=16) ==
+echo.
+echo == [4/6] the model the bundle ships (Contents\Resources, no ONNX_MODEL_PATH) ==
+rem The branch a user relies on, and the one no run above reaches: those set the
+rem variable or clear it, never ship a model. A packaging step puts the .onnx in
+rem Contents\Resources beside Win64, and the plug-in resolves it relative to the
+rem module it was loaded from - the part a copied or symlinked install breaks. So
+rem this copies the built bundle into the temp directory, writes the fixture where
+rem the packager would, clears the variable and compares the same golden.
+rem Non-identity, because a model that loads leaves nothing to short-circuit: if
+rem the copy is not found, isIdentity() answers true and the frame is passed
+rem through, which --non-identity fails.
+set "SHIPPED=%TEMP%\onnx-shipped-%RANDOM%%RANDOM%"
+xcopy /E /I /Q /Y "%BUILD%\bundle\OnnxInference.ofx.bundle" "%SHIPPED%\OnnxInference.ofx.bundle\" >nul || goto :error
+copy /Y "%MODEL%" "%SHIPPED%\OnnxInference.ofx.bundle\Contents\Resources\model.onnx" >nul || goto :error
+set "SHIPPED_OFX=%SHIPPED%\OnnxInference.ofx.bundle\Contents\Win64\OnnxInference.ofx"
+if not exist "%SHIPPED_OFX%" (
+  echo   FAIL: the copied bundle has no Contents\Win64\OnnxInference.ofx
+  goto :error
+)
+echo   %SHIPPED_OFX%
+set "ONNX_MODEL_PATH="
+"%HARNESS%" "%SHIPPED_OFX%" %ARGS% --non-identity --fuzz %FUZZ% --host-profile resolve > "%LOG%" 2>&1
+if errorlevel 1 (
+  type "%LOG%"
+  goto :contractfailure
+)
+type "%LOG%"
+findstr /C:"label parameter 'provider' = " "%LOG%" >nul
+if errorlevel 1 (
+  echo   FAIL: a bundle that ships its model still has no execution provider
+  goto :contractfailure
+)
+call :checkgpulabel "shipped model"
+if errorlevel 1 goto :contractfailure
+rmdir /S /Q "%SHIPPED%"
+
+echo == [5/6] host contract with the plug-in's own tiling (tileSize=16) ==
 echo   tolerance 0.02: feathered overlap is exact only at halo ^>= radius
 set "ONNX_MODEL_PATH=%MODEL%"
 "%HARNESS%" "%PLUGIN%" ^
@@ -226,7 +264,7 @@ set "ONNX_MODEL_PATH=%MODEL%"
   --set-status-only --concurrency-threads 0 --roi-context-tolerance 0.02 || goto :error
 
 echo.
-echo == [5/5] fixtures and artifact ==
+echo == [6/6] fixtures and artifact ==
 for %%F in (test_conv.onnx test_input.bin test_golden.bin test_shape.txt) do (
   if not exist "%ROOT%\models\%%F" (
     echo   FAIL: models\%%F is missing

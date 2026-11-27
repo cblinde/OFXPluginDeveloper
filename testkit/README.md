@@ -131,7 +131,8 @@ mismatch that reads like a plug-in defect),
 `--clip name` (repeatable),
 `--set name=value` before render (`rgb` values are `r,g,b`, `rgba` values
 `r,g,b,a`), `--identity` (expect `kOfxStatOK` and the
-source clip), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
+source clip), `--non-identity` (expect `kOfxStatReplyDefault`: the plug-in has
+work to do and must not short-circuit), `--not-identity-after-set`, `--byte-dst-rejected` (the plug-in must
 answer `kOfxStatErrUnsupported` for an 8-bit destination), `--depth float|half|byte`
 (repeatable: source and destination at that depth, and the frame must be the source
 times the gain quantised to it — for a plug-in that declares the depth; use

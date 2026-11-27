@@ -10,8 +10,11 @@
 #      (testkit/), once per host shape (nuke, resolve, natron) - the render is
 #      compared against the same golden, but through the OFX API instead of
 #      AiCore directly
-#   4. bundle hygiene, when a build/ tree exists
-#   5. valgrind memcheck of the contract harness, whole-frame and tiled, when
+#   4. the model a bundle ships: a copy of the built bundle, models/test_conv.onnx
+#      written to Contents/Resources/model.onnx, ONNX_MODEL_PATH unset, the same
+#      golden compared - the branch the reference host actually used
+#   5. bundle hygiene, when a build/ tree exists
+#   6. valgrind memcheck of the contract harness, whole-frame and tiled, when
 #      valgrind is installed
 #
 # Environment:
@@ -214,7 +217,42 @@ else
 fi
 
 echo
-echo "== [3/5] model fixtures =="
+echo "== [3/6] the model the bundle ships (Contents/Resources, no ONNX_MODEL_PATH) =="
+# The branch a user relies on, and the one no run above reaches: those set the
+# variable or unset it, never ship a model. A packaging step would put the .onnx
+# in Contents/Resources beside the arch directory, and the plug-in resolves it
+# relative to the module it was loaded from - the part a copied or symlinked
+# install breaks. So this copies the built bundle into the temp directory, writes
+# the fixture where the packager would, removes the variable from the environment
+# and compares the same golden. Non-identity, because a model that loads leaves
+# nothing to short-circuit: if the copy is not found, isIdentity() answers true
+# and the plug-in passes the frame through, which `--non-identity` fails.
+ARCH_DIR="$(basename "$(dirname "${BUNDLE_OFX}")")"
+BUNDLE_ROOT="${BUNDLE_OFX%/Contents/*}"
+SHIPPED_ROOT="${TMP}/shipped"
+cp -a "${BUNDLE_ROOT}" "${SHIPPED_ROOT}"
+SHIPPED_OFX="${SHIPPED_ROOT}/Contents/${ARCH_DIR}/$(basename "${BUNDLE_OFX}")"
+cp "${MODEL_ENV}" "${SHIPPED_ROOT}/Contents/Resources/model.onnx"
+if [[ ! -f "${SHIPPED_OFX}" ]]; then
+  echo "  FAIL: the copied bundle has no ${ARCH_DIR}/$(basename "${BUNDLE_OFX}")" >&2
+  exit 1
+fi
+echo "  ${SHIPPED_OFX#"${TMP}"/} (model from Contents/Resources, ONNX_MODEL_PATH unset)"
+env -u ONNX_MODEL_PATH "${TMP}/contract_test" "${SHIPPED_OFX}" \
+  --id com.ofxplugindeveloper.onnxinference \
+  --param tileSize:int --param halo:int \
+  --clip Source --clip Output --size 64x48 \
+  --src "${ROOT}/models/test_input.bin" --golden "${ROOT}/models/test_golden.bin" \
+  --set halo=2 --non-identity --label-param provider --fuzz "${FUZZ}" \
+  --host-profile resolve 2>&1 | tee "${TMP}/shipped.log"
+if ! grep -qE "label parameter 'provider' = \"(CUDA \(device 0, 1 thread, .*tf32 off|CPU)" "${TMP}/shipped.log"; then
+  echo "  FAIL: a bundle that ships its model still has no execution provider" >&2
+  exit 1
+fi
+require_gpu_label "${TMP}/shipped.log" "shipped model"
+
+echo
+echo "== [4/6] model fixtures =="
 for f in test_conv.onnx test_input.bin test_golden.bin test_shape.txt; do
   if [[ -f "${ROOT}/models/${f}" ]]; then
     echo "  ${f}: $(stat -c%s "${ROOT}/models/${f}") bytes"
@@ -225,7 +263,7 @@ for f in test_conv.onnx test_input.bin test_golden.bin test_shape.txt; do
 done
 
 echo
-echo "== [4/5] bundle hygiene =="
+echo "== [5/6] bundle hygiene =="
 BUNDLE_OFX="$(find "${ROOT}/build/bundle" -type f -name '*.ofx' 2>/dev/null | head -1 || true)"
 if [[ -n "${BUNDLE_OFX}" ]]; then
   EXPORTS="$(nm -D --defined-only "${BUNDLE_OFX}" | grep -c ' T ' || true)"
@@ -245,7 +283,7 @@ else
 fi
 
 echo
-echo "== [5/5] valgrind memcheck (contract harness, whole frame and tiled) =="
+echo "== [6/6] valgrind memcheck (contract harness, whole frame and tiled) =="
 WANT="${RUN_VALGRIND:-auto}"
 if [[ "${WANT}" == "0" ]]; then
   echo "  skipped: RUN_VALGRIND=0"
