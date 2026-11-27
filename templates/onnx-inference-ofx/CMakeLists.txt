@@ -297,9 +297,11 @@ endif()
 # host process resolves those imports there and nowhere else. This option copies
 # them; leave it OFF for a CPU-only bundle.
 #
-# Cost, measured on one RTX 3060 / CUDA 12 machine (**B** - no GPU in this
-# repository, so nothing here is timed or loaded here):
-#   * onnxruntime_providers_cuda alone: 643 MB;
+# Cost, measured on one RTX 3060 / CUDA 12 machine (**[V]** since 2026-11-27, the
+# sizes and the renders alike):
+#   * onnxruntime_providers_cuda alone: 642.5 MiB, and 597 MiB of that is
+#     .nv_fatbin - 775 kernels (155 each for sm_60/61/70/75/80) plus PTX, so the
+#     number is NVIDIA's fat binary, not this plug-in's code (10.6 MiB of .text);
 #   * with cuDNN 9 + cuBLAS/cuBLASLt 12 + cuFFT + cudart: a 2.4-2.7 GB bundle.
 # That is a product decision - one download for everyone - not a build trick.
 #

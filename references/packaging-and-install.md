@@ -309,6 +309,45 @@ behind them. Both numbers are true of their pair, so quote the pair:
 | ONNX Runtime 1.20.1, cuDNN 9 + cuBLAS 12 + cuFFT | 16 | 2686 MB | [`testing-layers.md`](testing-layers.md) §13, [`onnx-inference-cuda.log`](../evidence/2026-11-25-windows/onnx-inference-cuda.log) **[V]** |
 | ONNX Runtime 1.32.0, cuDNN 9 + cuBLAS 13 + cuFFT 12 + cudart 13 | 16 | 1540 MB | [`testing-layers.md`](testing-layers.md) §13, [`onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log), re-measured 2026-11-26 **[V]** |
 
+Where the provider-only bundle's 642 MB sits (**[V]**, measured 2026-11-27). The
+configure line reports "CUDA provider bundle: 2 file(s), 642 MB", and both halves of
+that sentence are the provider itself: `onnxruntime_providers_cuda.dll` is
+673,741,344 bytes and `onnxruntime_providers_shared.dll` 22,072, so 673,763,416
+bytes integer-divided by 1048576 is 642. `Contents/Win64` holds exactly three DLLs -
+those two plus `onnxruntime-ofx.dll`, which section 3 copies and this message does not
+count - so there is no leftover CUDA runtime and no stale copy in the build directory
+inflating it.
+
+The weight is NVIDIA's fat binary, not this repository's code. The PE section table
+of the shipped provider:
+
+| Section | Bytes | Share |
+|---|---|---|
+| `.nv_fatbin` | 625,908,736 (596.9 MiB) | 93% |
+| `.data` | 33,148,416 (31.6 MiB) | 5% |
+| `.text` | 11,063,296 (10.6 MiB) | 1.6% |
+| `.rdata` | 3,205,120 (3.1 MiB) | 0.5% |
+| the rest (`.pdata`, `.reloc`, `.nvFatBin`, `.rsrc`) | 409,472 | 0.06% |
+
+Inside that section sit 775 precompiled kernels - 155 each for `sm_60`, `sm_61`,
+`sm_70`, `sm_75` and `sm_80`, from `cuobjdump -lelf` - plus their PTX. The same
+provider file in the upstream 1.20.1 package has the same SHA-1
+(`17cdf926...`, [`onnx-provider-size.log`](../evidence/2026-11-27-windows/onnx-provider-size.log)),
+so the copy step adds nothing; 642 MiB is what ONNX Runtime ships for five
+architectures.
+
+That also explains the size gap to the 1.32.0 package, which is not a packaging
+choice either: its provider is 186.5 MiB with 128.8 MiB of fatbin, because it carries
+119 kernels for `sm_75`, `sm_80`, `sm_86`, `sm_89` and `sm_120` instead. Fewer
+images, newer targets.
+
+So the slim Resolve package is slim only against the 2.4-2.7 GB full bundle: 642 MiB
+of provider, 21 KB of shared provider and 12 MB of ONNX Runtime core
+(`onnxruntime-ofx.dll`, upstream's too). Nothing
+in it can be dropped without giving up either an architecture or the CUDA path
+itself; a genuinely small Resolve deliverable would have to come from an ONNX Runtime
+built for fewer `sm_` targets, which is not what the vendor publishes.
+
 What grows between them is NVIDIA's, not this repository's: in the 1.32.0 bundle
 cuDNN's ten components are 575 MB, cuBLASLt 458 MB and cuFFT 271 MB, while ONNX
 Runtime's own provider is 187 MB and its shared provider 0.02 MB. The 2.4-2.7 GB

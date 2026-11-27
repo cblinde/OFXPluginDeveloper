@@ -1,0 +1,78 @@
+== Why the provider-only bundle reports 2 file(s), 642 MB ==
+# measured 2026-11-27 on the RTX 3060 machine, ONNX Runtime 1.20.1 GPU package
+# (.validation/ort-gpu-1.20.1) against the ORT 1.32.0 package beside it.
+
+$ sha1sum the shipped provider against the upstream package file
+17cdf92693575e1351d92cce9f70cf1b08a7ad0a *.validation/ort-gpu-1.20.1/bin/onnxruntime_providers_cuda.dll
+17cdf92693575e1351d92cce9f70cf1b08a7ad0a *templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Win64/onnxruntime_providers_cuda.dll
+
+$ ls -l the two files CMake counts, and the core it does not
+        209408  OnnxInference.ofx
+      12400160  onnxruntime-ofx.dll
+     673741344  onnxruntime_providers_cuda.dll
+         22072  onnxruntime_providers_shared.dll
+
+  provider + shared = 673763416 B = 642 MiB (integer division by 1048576)
+  -> the '642 MB' is the provider itself; no CUDA runtime, no stale copy.
+
+$ .validation/pe-sections.py <shipped provider>
+file: templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle/Contents/Win64/onnxruntime_providers_cuda.dll
+size: 673,741,344 B = 642.5 MiB
+machine: 0x8664  sections: 8  pe32+: True
+sum of section raw sizes: 673,730,048 B (642.5 MiB)
+  .nv_fatb    625,908,736 B    596.9 MiB
+  .data        33,148,416 B     31.6 MiB
+  .text        11,063,296 B     10.6 MiB
+  .rdata        3,205,120 B      3.1 MiB
+  .pdata          374,272 B      0.4 MiB
+  .reloc           25,600 B      0.0 MiB
+  .nvFatBi          4,096 B      0.0 MiB
+  .rsrc               512 B      0.0 MiB
+ELF magic occurrences (embedded cubins): 964
+PTX '.version' occurrences: 931
+contains b'.pdb': 1
+contains b'RSDS': 1
+contains b'__cudaparm': 0
+contains b'cudnn': 329
+1 MiB all-zero blocks in the first 64 MiB: 0
+
+$ cuobjdump -lelf <shipped provider> | arch histogram
+    155 sm_60
+    155 sm_61
+    155 sm_70
+    155 sm_75
+    155 sm_80
+
+== the same measurement on the CUDA 13 (1.32.0) provider, for scale ==
+$ .validation/pe-sections.py .validation/ort-gpu-1.32.0/bin/onnxruntime_providers_cuda.dll
+file: .validation/ort-gpu-1.32.0/bin/onnxruntime_providers_cuda.dll
+size: 195,548,512 B = 186.5 MiB
+machine: 0x8664  sections: 8  pe32+: True
+sum of section raw sizes: 195,537,408 B (186.5 MiB)
+  .nv_fatb    135,082,496 B    128.8 MiB
+  .text        31,433,728 B     30.0 MiB
+  .rdata       27,940,864 B     26.6 MiB
+  .pdata          787,968 B      0.8 MiB
+  .data           233,472 B      0.2 MiB
+  .reloc           49,152 B      0.0 MiB
+  .nvFatBi          8,192 B      0.0 MiB
+  .rsrc             1,536 B      0.0 MiB
+ELF magic occurrences (embedded cubins): 119
+PTX '.version' occurrences: 86
+contains b'.pdb': 1
+contains b'RSDS': 1
+contains b'__cudaparm': 0
+contains b'cudnn': 530
+1 MiB all-zero blocks in the first 64 MiB: 0
+
+$ cuobjdump -lelf <1.32.0 provider> | arch histogram
+    295 sm_120
+    229 sm_75
+    325 sm_80
+    277 sm_86
+    277 sm_89
+
+# Read: 93% of the 642 MiB is .nv_fatbin - precompiled cubins for five
+# compute capabilities plus their PTX. The code is 10.6 MiB. The 1.32.0
+# provider is 186.5 MiB with 128.8 MiB of fatbin because it targets five
+# newer architectures (sm_75/80/86/89/120) instead of sm_60..sm_80.

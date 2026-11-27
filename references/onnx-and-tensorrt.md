@@ -515,8 +515,11 @@ make the choice visible — and the consequence is packaging, not a second build
   measured 2686 MB, and the same 16 files against 1.32.0 and CUDA 13 measure
   1540 MB (**[V]**, both pairs side by side in
   [`packaging-and-install.md`](packaging-and-install.md) §2). The 2.4–2.7 GB
-  budget this paragraph used to quote is the older pair, whose provider alone was
-  643 MB (**B**). That is a product decision — one download for everyone, no
+  budget this paragraph used to quote is the older pair, whose provider alone is
+  642.5 MiB — 597 MiB of that `.nv_fatbin`, 155 kernels each for `sm_60` through
+  `sm_80`, so the weight is NVIDIA's fat binary and not the plug-in
+  (**[V]**, [`packaging-and-install.md`](packaging-and-install.md) §2). That is a
+  product decision — one download for everyone, no
   separate GPU build.
 - **The copy is a switch, not a script.** `templates/onnx-inference-ofx` ships
   `-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` (off by default) plus
