@@ -6,6 +6,13 @@
 # around each command, so they carry the process spawn and the suite, not only
 # the suite. A cold checkout additionally compiles four templates and the
 # inference plug-in, which is the larger cost and depends on the toolchain.
+#
+# Not every row is from the same invocation. The seven suites and gates above
+# `negative-controls` were timed in one pass, the one that also printed the
+# throughput section below; `negative-controls` was timed in a second pass that
+# started about a minute after the first had finished. So `total` is the sum of
+# eight separately stopped commands, not one stopwatch around one run, and the
+# roughly one minute of orchestration between the two passes is not in it.
 
 ## Wall clock
 
@@ -17,6 +24,8 @@ minimal-opencl-ofx      15s    392 check(s)  OK: the OpenCL template passed on t
 minimal-vulkan-ofx      18s    588 check(s)  all Windows checks passed
 onnx-inference-ofx      26s    778 check(s)  all checks passed
 negative-controls       12s    223 check(s)  8 control(s) caught, every one expected
+# total: sum of the rows above, not one continuous run - the negative controls
+# were a separate invocation about a minute later (see the header).
 total                  116s
 
 ## The device suites' own throughput, as printed in this run

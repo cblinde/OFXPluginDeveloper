@@ -27,6 +27,16 @@ below is the checks, not the compiler.
 | negative controls: `testkit/run-negative-controls.bat` | 12 s | 223 in 8 runs | 8 caught, every one expected |
 | **total** | **116 s** | **2,806 passing + 223 deliberately failing** | - |
 
+**The total is a sum, not one stopwatch.** The eight rows are eight separately
+timed commands, and 116 s is what they add up to. Seven of them - the two
+documentation gates and the five template suites - ran in one pass; the
+negative controls ran in a second pass about a minute later, which is where the
+223 checks of the eight deliberately failing runs come from. The minute of
+orchestration between the two passes is not in the total, so it is the work
+rather than the elapsed sitting (**[V]**, the header of
+[`../evidence/2026-11-27-windows/suite-timings.log`](../evidence/2026-11-27-windows/suite-timings.log)
+says the same).
+
 A cold checkout is a different number, and the difference is the compiler: this
 table was taken after the run that built all five templates, which is the larger
 cost and depends on the toolchain rather than on the tests. What the table is
