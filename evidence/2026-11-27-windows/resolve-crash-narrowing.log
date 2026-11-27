@@ -118,8 +118,8 @@
 #     - therefore the abort is not in this plug-in's code, its append sequence, or
 #       the provider it ships - for the runs that produced these reports.
 #     - the host does not need this plug-in to fail-fast: the 11-27 report has no
-#       bundle of ours loaded, and 0xC0000409 still arrived, in cuDNN's neighbour
-#       ucrtbase.
+#       bundle of ours loaded, and 0xC0000409 still arrived - a fail-fast inside
+#       the C runtime, not inside any plug-in.
 #
 #   Left:
 #     - what makes the *host's own* cuDNN abort at offset 0x1586d, twice. That is
