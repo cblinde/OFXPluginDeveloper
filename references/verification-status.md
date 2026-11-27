@@ -211,7 +211,8 @@ throughput block, 1080p / 4K / 8K: vec4 **0.314 / 1.037 / 3.416 ms** (211 / 256 
 133.617 ms. Same conclusions as the field test and not the same numbers - a 1080p
 kernel at 211 GB/s instead of 317 says what else was running on the card, which
 is why both records exist (**[V]**,
-[`cuda-suite.log`](../evidence/2026-11-27-windows/cuda-suite.log)).
+[`cuda-suite.log`](../evidence/2026-11-27-windows/cuda-suite.log) and
+[`cuda-suite-rebuild.log`](../evidence/2026-11-27-windows/cuda-suite-rebuild.log)).
 
 Three things this settles that were previously argued from PTX and arithmetic:
 both kernel forms are **bandwidth-bound**, so the vec4 form's 4× instruction

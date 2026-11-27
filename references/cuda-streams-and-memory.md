@@ -164,7 +164,7 @@ gates, one function, and a test that runs without a GPU.
 | Piece | Where it lives | Status |
 |---|---|---|
 | The four gates, override parser, decision reasons | `templates/minimal-cuda-ofx/src/ExecutionMode.h` | **[V]** - no CUDA headers, compiled into the plug-in and into the test |
-| The gate truth table, 34 cases | `templates/minimal-cuda-ofx/test/execution_mode_test.cpp`, run by both template runners | **[V]** 34 cases, 0 failed | - log: [`execution-modes.log`](../evidence/2026-11-27-windows/execution-modes.log), and at the end of a full suite run [`cuda-suite.log`](../evidence/2026-11-27-windows/cuda-suite.log)
+| The gate truth table, 34 cases | `templates/minimal-cuda-ofx/test/execution_mode_test.cpp`, run by both template runners | **[V]** 34 cases, 0 failed | - log: [`execution-modes.log`](../evidence/2026-11-27-windows/execution-modes.log), and at the end of a full suite run [`cuda-suite.log`](../evidence/2026-11-27-windows/cuda-suite.log) and [`cuda-suite-rebuild.log`](../evidence/2026-11-27-windows/cuda-suite-rebuild.log)
 | Device memory query | `DeviceMemoryFreeBytes()` in `Kernel.cu`, `cudaMemGetInfo` under the hood | **[V]** compiled and linked; the value is read at render time |
 | The decision at render time | `Plugin.cpp`, `processImagesCuda()`, logged once per render with its reason | **[V]** the log line names mode, depth, size, stream and reason |
 | Override | `OFXPLUGIN_GPU_MODE=auto|cpu|cuda|hybrid`; an unknown word is reported, not silently ignored | **[V]** |
