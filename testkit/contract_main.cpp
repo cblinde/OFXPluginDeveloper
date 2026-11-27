@@ -241,6 +241,14 @@ struct Spec {
   // a run asserts what the plug-in read rather than only that it read something.
   std::string labelParam;
   std::string labelExpected;
+  // --label-contains NAME=TEXT (repeatable): the same parameter, read after the
+  // first render, has to contain TEXT. The runners used to grep the harness
+  // output for a phrase - one `findstr` in the .bat, one `grep` in the .sh - to
+  // assert "nodes left on CPU" and "fallback: ". Two implementations of one
+  // assertion, and neither could print the value it read. Here it is one check
+  // with the label in its name, and NAME must be the parameter --label-param
+  // chose, because a second label would be a second read nobody asserted.
+  std::vector<std::pair<std::string, std::string>> labelContains;
   // --clip-prop NAME=VALUE: a string property on the source clip's property set,
   // the way a host names the media a clip currently carries. Repeatable.
   std::vector<std::pair<std::string, std::string>> clipProps;
@@ -1222,6 +1230,16 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
                                         : "expected \"" + flatValue(spec.labelExpected) + "\"")) {
       return failCycle(host);
     }
+    // Substrings come after the value is known to exist: a run that asks for
+    // both gets two named checks instead of one that covers the other.
+    for (const auto& want : spec.labelContains) {
+      if (!check("label parameter '" + spec.labelParam + "' contains \"" +
+                     flatValue(want.second) + "\"",
+                 value.find(want.second) != std::string::npos,
+                 "the label reads \"" + flatValue(value) + "\"")) {
+        return failCycle(host);
+      }
+    }
   }
 
   if (spec.hasClipPropChange) {
@@ -1749,6 +1767,8 @@ int main(int argc, char** argv) {
                  "        instead of a plug-in; DIR is where the lookup cases are\n"
                  "        written)\n"
                  "       [--label-param NAME[=VALUE]] (a string the plug-in sets itself)\n"
+                 "       [--label-contains NAME=TEXT] (repeatable: that parameter has to\n"
+                 "        contain TEXT, for a label whose text is evidence)\n"
                  "       [--clip-prop NAME=VALUE] [--clip-prop-change NAME=VALUE]\n"
                  "         (string properties on the source clip; the change is written\n"
                  "          after the first render and rendered again, so a plug-in\n"
@@ -1888,6 +1908,14 @@ int main(int argc, char** argv) {
       const size_t eq = v.find('=');
       spec.labelParam = v.substr(0, eq);
       if (eq != std::string::npos) spec.labelExpected = v.substr(eq + 1);
+    } else if (a == "--label-contains") {
+      const std::string v = next("--label-contains");
+      const size_t eq = v.find('=');
+      if (eq == std::string::npos || eq == 0 || eq + 1 >= v.size()) {
+        std::fprintf(stderr, "error: --label-contains wants NAME=TEXT\n");
+        return 2;
+      }
+      spec.labelContains.emplace_back(v.substr(0, eq), v.substr(eq + 1));
     } else if (a == "--clip-prop" || a == "--clip-prop-change") {
       const std::string v = next(a.c_str());
       const size_t eq = v.find('=');
@@ -1940,6 +1968,20 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "error: --clip-prop-change needs --label-param to read what the "
                          "plug-in saw\n");
     return 2;
+  }
+  if (!spec.labelContains.empty() && spec.labelParam.empty()) {
+    std::fprintf(stderr, "error: --label-contains reads a label parameter, so it needs "
+                         "--label-param NAME as well\n");
+    return 2;
+  }
+  for (const auto& want : spec.labelContains) {
+    if (want.first != spec.labelParam) {
+      std::fprintf(stderr,
+                   "error: --label-contains names '%s' but --label-param reads '%s'; "
+                   "one run reads one label\n",
+                   want.first.c_str(), spec.labelParam.c_str());
+      return 2;
+    }
   }
 
   std::printf("- host profile: %s (%s)\n", testkit::hostProfileName(spec.profile),

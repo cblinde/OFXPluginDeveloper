@@ -231,20 +231,12 @@ rem previous configure may have left there, which is what the build's stale-file
 rem removal exists to prevent.
 if defined GPU_PROVIDER (
   echo   cpu-node label: models\cpu_node.onnx - Hardmax, which the CUDA EP does not implement
-  "%HARNESS%" "%PLUGIN%" --id com.ofxplugindeveloper.onnxinference --param tileSize:int --param halo:int --clip Source --clip Output --size 64x48 --label-param provider --host-profile resolve > "%CPUNODE%" 2>&1
+  rem The two phrases are asserted by the harness, not by a findstr over its
+  rem output: one implementation instead of one per platform, and a failure that
+  rem prints the label it read. --label-contains is repeatable and needs
+  rem --label-param, which this line already passes.
+  "%HARNESS%" "%PLUGIN%" --id com.ofxplugindeveloper.onnxinference --param tileSize:int --param halo:int --clip Source --clip Output --size 64x48 --label-param provider --label-contains "provider=nodes left on CPU" --label-contains "provider=fallback: " --host-profile resolve > "%CPUNODE%" 2>&1
   if errorlevel 1 (
-    type "%CPUNODE%"
-    goto :contractfailure
-  )
-  findstr /C:"nodes left on CPU" "%CPUNODE%" >nul
-  if errorlevel 1 (
-    echo   FAIL: the label did not admit the node the CUDA EP cannot run
-    type "%CPUNODE%"
-    goto :contractfailure
-  )
-  findstr /C:"fallback: " "%CPUNODE%" >nul
-  if errorlevel 1 (
-    echo   FAIL: the label admits the CPU node but carries no reason for it
     type "%CPUNODE%"
     goto :contractfailure
   )

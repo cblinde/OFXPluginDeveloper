@@ -1030,6 +1030,10 @@ from the environment so the switch cannot be dropped on the way to CMake
 suite with `error 126`, the same root without one passes, and the real 1.20.1
 tree bundles the provider and reports `all nodes on CUDA`).
 
+The runners assert those phrases with the harness's own `--label-contains`
+(`testkit/contract_main.cpp`), not by grepping its output: one implementation for
+both platforms, and a failure that prints the label it read.
+
 **Both halves of the second row are now produced, not just described.** Until
 2026-11-27 the only fixture in the tree was a one-node Conv, which the provider
 covers, so every run could only print `all nodes on CUDA` - the answer a real

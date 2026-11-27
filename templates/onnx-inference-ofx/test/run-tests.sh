@@ -197,17 +197,18 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
   # question does not arise - printed as NOT VERIFIED rather than skipped.
   if [[ -f "$(dirname "${BUNDLE_OFX}")/onnxruntime_providers_cuda.so" ]]; then
     echo "  cpu-node label: models/cpu_node.onnx - Hardmax, which the CUDA EP does not implement"
+    # The phrases are asserted by the harness (--label-contains), so this script
+    # and the .bat ask the same question and a failure names the label it read.
     ONNX_MODEL_PATH="${ROOT}/models/cpu_node.onnx" "${TMP}/contract_test" "${BUNDLE_OFX}" \
       --id com.ofxplugindeveloper.onnxinference \
       --param tileSize:int --param halo:int \
       --clip Source --clip Output --size 64x48 \
-      --label-param provider --host-profile resolve 2>&1 | tee "${TMP}/cpunode.log"
-    if ! grep -q "nodes left on CPU" "${TMP}/cpunode.log"; then
-      echo "  FAIL: the label did not admit the node the CUDA EP cannot run" >&2
-      exit 1
-    fi
-    if ! grep -q "fallback: " "${TMP}/cpunode.log"; then
-      echo "  FAIL: the label admits the CPU node but carries no reason for it" >&2
+      --label-param provider \
+      --label-contains "provider=nodes left on CPU" \
+      --label-contains "provider=fallback: " \
+      --host-profile resolve 2>&1 | tee "${TMP}/cpunode.log"
+    if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+      echo "  FAIL: the CPU-node label run failed" >&2
       exit 1
     fi
   else
