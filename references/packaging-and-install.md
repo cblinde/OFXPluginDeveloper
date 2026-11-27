@@ -199,8 +199,9 @@ message. Two host-facing facts:
   creates the filter context and renders the model's output
   (**[V]**, [`onnx-describe-resolve.log`](../evidence/2026-11-27-windows/onnx-describe-resolve.log)).
   The model path itself no longer needs the project - `ONNX_MODEL_PATH` or a
-  `Contents/Resources/model.onnx` beside the binary ([`improvement-backlog.md`](improvement-backlog.md)
-  row 19) - and "uses Resolve's own cuDNN" is not claimed here. Neither does a module
+  `Contents/Resources/model.onnx` beside the binary, which a host render then
+  reports in its own label (`onnx-and-tensorrt.md` §4) - and "uses Resolve's own
+  cuDNN" is not claimed here. Neither does a module
   list help settle it on its own: the host loads its own `onnxruntime.dll`, so
   `tasklist /M` names a runtime whether or not the plug-in ever created a session.
 

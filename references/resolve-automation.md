@@ -151,22 +151,30 @@ What follows from that, and what does not:
   no `"<name>.Cfg"` - and `LoadProject(<base name>)` reopens it with the effect on
   the item. The model path no longer needs the container at all: the plug-in reads
   `ONNX_MODEL_PATH`, else `Contents/Resources/model.onnx`, once at instance
-  creation ([`improvement-backlog.md`](improvement-backlog.md) row 19). What kept
-  the frame out of that route is the host refusing the plug-in - `describe failed
-  … error code 4`, never an instance - and that refusal is one write in
-  `describe()`, `kOfxImageEffectPropCPURenderSupported`, guarded since commit
-  be06bc4; with the guard the same host renders the model's output
+  creation (§7 of this document). What kept the frame out of that route is the
+  host refusing the plug-in - `describe failed … error code 4`, never an instance
+  - and that refusal is one write in `describe()`,
+  `kOfxImageEffectPropCPURenderSupported`, guarded since commit be06bc4; with the
+  guard the same host renders the model's output
   (**[V]**, [`onnx-describe-resolve.log`](../evidence/2026-11-27-windows/onnx-describe-resolve.log)).
-  The imported-project route itself has not been re-rendered since.
+  **The route now renders end to end** (`poc.py --import-project`, **[V]**,
+  [`row19-imported-project.log`](../evidence/2026-11-27-windows/row19-imported-project.log)):
+  `ImportProject` → `True`, `LoadProject(<base name>)` → the project, one frame at
+  1920×1080 with `JobStatus Complete` in 808 ms, differing from the source by
+  `mae 94.873` - the figure the same bundle's CPU path gave for the same source -
+  and `$ONNX_PROVIDER_LOG` reading `CUDA (device 0, …, all nodes on CUDA) | …/Contents/Resources/model.onnx`,
+  so the project carried the effect and the bundle carried the model.
 - Loading one is what `poc.py --project` does, and that mode ran for the first
   time on 2026-11-26: four defects fell out of it - an undefined `render_size`, a
   `KeyError` without `--resolve`, a `connect()` that demanded an open project, and
   a `LoadProject` that refused a relative path. All four are fixed, and the path
   question turned out to be the smaller half: `LoadProject(path)` answers **None**
   even for an absolute path (`***[V]***`), the archive comes back only through
-  `ImportProject(path)`, which answers `True` and leaves a project whose stored
-  name is `"<name>.Cfg"` - still to be opened by that name. Opening it by name is
-  the one step in this chain nobody has completed.
+  `ImportProject(path)`, which answers `True` and leaves a project under the
+  file's base name - no `"<name>.Cfg"`, measured 2026-11-27 - which
+  `LoadProject` then opens (measured, §5 above). `ImportProject` answering
+  `False` is a third case worth knowing: it means a project of that name is
+  already in the folder, and the file was skipped, not refused.
 - The consequence for a prepared project: it is a GUI artefact twice over - the
   value has to be typed in the inspector, and the file that carries it has to be
   imported rather than loaded - and the first half is the one that has no file:
@@ -532,9 +540,10 @@ schema moves between versions.
 
 This table is a plan, not a measurement: the "applied" and "parameters set" halves
 are exactly what no export from this host has carried (§5 measured an empty
-`<EffectFiltersBA/>`), and `improvement-backlog.md` row 19 now carries the delivery
-route that would make such a file workable - a model path from the environment or
-from a sidecar beside the bundle rather than from the parameter.
+`<EffectFiltersBA/>`), and the delivery route that makes such a file workable is
+outside the project: a model path from the environment or from a sidecar beside
+the bundle rather than from the parameter, and the `.drp` only has to carry the
+effect (§5, `packaging-and-install.md` §2).
 
 | Project | Test | Purpose |
 |---|---|---|

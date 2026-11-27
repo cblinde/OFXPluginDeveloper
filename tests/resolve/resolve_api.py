@@ -6,12 +6,12 @@ behind those markers is `evidence/2026-11-25-windows/resolve-poc.log`.
 
 `load_project` did get its run on 2026-11-26 and answered worse than expected:
 `LoadProject` refuses a `.drp` by path - relative and absolute alike - while
-`ImportProject` takes the file and leaves a project named `<name>.Cfg` behind
+`ImportProject` takes the file
 ([`resolve-project-route.log`](../evidence/2026-11-26-windows/resolve-project-route.log)).
-The import-then-open-by-name sequence is written down there and in
-`references/resolve-automation.md` §5, not implemented here yet: it was never run
-end to end, and a fallback that has never answered is the thing this file exists
-to avoid.
+That log left the name question open - it expected `<name>.Cfg` - and
+`import_project` is that call run: the file lands under its own base name, no
+suffix, and `LoadProject(<base name>)` opens it. Both halves answered on
+2026-11-27 ([`row19-imported-project.log`](../evidence/2026-11-27-windows/row19-imported-project.log)).
 
 The split is deliberate: `decode.py` and `checks.py` run anywhere, `poc.py`
 orchestrates both, and this file is the only place that can be wrong in a way no
@@ -196,6 +196,38 @@ def load_project(resolve, project_path):
             f"on 21.2.0.5; ImportProject takes the file, see "
             f"references/resolve-automation.md section 5)")
     return project
+
+
+def import_project(resolve, project_path):
+    """Open a `.drp` the way this host allows: import it, then open it by name.
+
+    `LoadProject` takes a name, not a file, on 21.2.0.5 - by path it answers None
+    for a project this host exported itself. `ImportProject` takes the file and
+    answers True; the project then sits in the current folder under the file's
+    base name, which is what `LoadProject` accepts.
+
+    The name is the trap this function exists for: the earlier note expected
+    `"<name>.Cfg"` and the file's base name is what the folder holds (RUN
+    2026-11-27).
+
+    A second trap, measured the same day: `ImportProject` answers False when a
+    project of that name is already in the folder - the file was not refused, the
+    import was skipped. So False is not the end of the route: the name is opened
+    if it exists, and the caller can tell the two cases apart by
+    `project["imported"]`.
+    """
+    manager = project_manager(resolve)
+    path = Path(project_path).resolve()
+    name = path.stem
+    imported = manager.ImportProject(str(path))             # RUN 2026-11-27: True
+    project = manager.LoadProject(name)                     # RUN 2026-11-27: project
+    if project:
+        return project, imported
+    folder = manager.GetProjectListInCurrentFolder() if not imported else []
+    raise RuntimeError(
+        f"ImportProject({path.name}) answered {imported} and LoadProject({name!r}) "
+        f"answered None; the current folder holds {len(folder)} projects"
+        + (f" and not {name!r}" if folder else ""))
 
 
 def find_effect(resolve, name):

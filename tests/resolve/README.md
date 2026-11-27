@@ -86,11 +86,22 @@ GPU with a display attached. `RESOLVE_SCRIPT_LIB` can be omitted: it is derived
 from the executable's directory, which is what makes an install on a drive other
 than `C:` work at all.
 
-`--project some.drp` loads a prepared project instead, and the path is now
-measured up to the host's own answer, not past it: on 2026-11-26 a `.drp` was
-exported and loaded, and `LoadProject` refused it until the path was absolute -
-after which the two runs did not get a scriptable host again, so no render came out
-of this mode yet. It needed four fixes first - an undefined `render_size`, a
+`--import-project some.drp` is the mode that renders a project this host
+exported itself, and it is the one that now reaches a frame
+([`row19-imported-project.log`](../../evidence/2026-11-27-windows/row19-imported-project.log)):
+`ImportProject` takes the file, the project lands under the file's base name, and
+`LoadProject(<base name>)` opens it. `ImportProject` answering `False` means a
+project of that name is already in the folder - the import was skipped, and the
+existing one opens. Use a fresh file name for a fresh import measurement.
+
+`--gui` starts the host with its UI. That is not a preference: on this machine the
+`-nogui` start reached a live scripting API on some sessions and timed out at
+300 s on others, while the UI start connected in 23 s, so a run that only worked
+on the second kind of start says which one it used.
+
+`--project some.drp` loads a prepared project by path, and the path is measured up
+to the host's own answer, not past it: `LoadProject` refuses a `.drp` by path on
+21.2.0.5, relative and absolute alike, which is why the mode above exists. It needed four fixes first - an undefined `render_size`, a
 `KeyError: 'resolve'` when `--resolve` was omitted, a `connect()` that waited for a
 project the caller was about to load itself, and a relative path `LoadProject`
 refuses. An export taken before the host has saved the project writes an empty

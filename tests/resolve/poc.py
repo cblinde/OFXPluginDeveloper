@@ -19,6 +19,11 @@ Three modes, and the difference matters:
   be applied in it already. A project exported here cannot carry the effect, so
   that file is a GUI artefact; see references/resolve-automation.md §5 for what
   the export and the two loading calls were measured to do.
+* `--import-project some.drp` is the same idea for a project this host exported
+  itself and now refuses by path: `ImportProject` takes the file, the project
+  lands under the file's base name, and `LoadProject(<base name>)` opens it. The
+  route exists because a `.drp` is the only way an effect arrives with a value
+  nobody can set through the API.
 
 A started Resolve is not a pass, and a `Complete` render job is not a pass: the
 pass condition is a decoded file whose size and pixels survive `checks.py`.
@@ -160,13 +165,18 @@ def validate(args):
             problems.append(f"no still to build the timeline from at {source}")
         if not args.effect:
             problems.append("--effect is required with --build-project")
-    elif args.project:
-        project = Path(args.project)
+    elif args.project or args.import_project:
+        project = Path(args.project or args.import_project)
         facts["project"] = str(project)
+        facts["import"] = bool(args.import_project)
         if not project.is_file():
             problems.append(f"no project at {project}")
         elif project.suffix.lower() != ".drp":
             problems.append(f"{project} is not a .drp")
+
+    if args.project and args.import_project:
+        problems.append("--project and --import-project are alternatives: the "
+                        "first refuses a .drp by path on 21.2.0.5")
 
     facts["decoders"] = decode.available_decoders()
     if not facts["decoders"]:
@@ -338,7 +348,11 @@ def run(args, report):
             environment = dict(os.environ,
                                MCOFX_PATH_LOG=str(declared_path.resolve()))
         log_mark = datetime.now() - timedelta(seconds=5)
-        process = resolve_api.launch(facts["resolve"], nogui=True,
+        # `--gui` is not a preference: on this machine the `-nogui` start reached a
+        # live scripting API on some sessions and timed out at 300 s on others
+        # (2026-11-27), while the same binary with its UI connected in 23 s. A
+        # measurement that only ran on the second kind of start says so.
+        process = resolve_api.launch(facts["resolve"], nogui=not args.gui,
                                      environment=environment)
         step(report, "launch", "pass", f"pid {process.pid}", time.monotonic() - started)
 
@@ -381,9 +395,19 @@ def run(args, report):
             step(report, "build", "pass",
                  f"{project.GetName()}: {placed.get('name')} on {item.GetName()}",
                  time.monotonic() - started)
-        elif args.project:
+        elif args.project or args.import_project:
             started = time.monotonic()
-            project = resolve_api.load_project(resolve, args.project)
+            if args.import_project:
+                project, imported = resolve_api.import_project(resolve, args.import_project)
+                report["import"] = {"file": str(Path(args.import_project).resolve()),
+                                   "imported": bool(imported)}
+                opened = Path(args.import_project).name
+                if not imported:
+                    # False is "skipped, the name is already there", not "refused".
+                    opened += " (already in the library, import skipped)"
+            else:
+                project = resolve_api.load_project(resolve, args.project)
+                opened = Path(args.project).name
             # The size comes from the project, not from a still this run read. When
             # the host will not state it, `size` stays None and the render uses the
             # project's own format - the alternative, an undefined name, is what
@@ -396,7 +420,7 @@ def run(args, report):
             except Exception:                       # noqa: BLE001
                 render_size = None
             step(report, "load", "pass",
-                 f"{Path(args.project).name} {render_size or 'project format'}",
+                 f"{opened} {render_size or 'project format'}",
                  time.monotonic() - started)
 
         started = time.monotonic()
@@ -505,6 +529,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="one frame through Resolve")
     parser.add_argument("--bundle", required=True, help="the .ofx.bundle to install")
     parser.add_argument("--project", help="a prepared .drp to load instead of building one")
+    parser.add_argument("--import-project", metavar="DRP",
+                        help="a .drp this host exported: ImportProject it, then open "
+                             "the project it lands as, then render")
     parser.add_argument("--build-project", action="store_true",
                         help="build the project, timeline and effect through the API")
     parser.add_argument("--source", help="the still image --build-project imports")
@@ -527,6 +554,9 @@ def main(argv=None):
     parser.add_argument("--kill-render-after", type=float, metavar="SECONDS",
                         help="kill the host once the job has been rendering this "
                              "long, to prove the harness fails instead of hanging")
+    parser.add_argument("--gui", action="store_true",
+                        help="start the host with its UI instead of -nogui; the "
+                             "-nogui start does not always answer on every machine")
     parser.add_argument("--plan", action="store_true", help="run only what needs no host")
     parser.add_argument("--keep", action="store_true", help="leave the installed bundle in place")
     args = parser.parse_args(argv)

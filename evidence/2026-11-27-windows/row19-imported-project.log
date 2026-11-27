@@ -1,0 +1,134 @@
+# Row 19's imported-project route, re-rendered with the CPU-property guard in
+#
+# What was unmeasured: `ImportProject(file)` then `LoadProject(<name>)` then a
+# frame. 2026-11-26 got as far as opening the imported project with the effect on
+# the item, and the frame was the source pixel for pixel because the host refused
+# the plug-in (`describe failed ... error code 4`, `plugin is not available`).
+# That refusal was one write in `describe()`, `kOfxImageEffectPropCPURenderSupported`,
+# guarded since commit be06bc4. This is the same route on a bundle built after it.
+
+## 1. the first attempt ran a bundle older than the guard, and reproduced the old failure
+
+Bundle: `.validation/build-provider-only`, provider-only (ONNX Runtime 1.20.1, no
+CUDA runtime of its own), `OnnxInference.ofx` 193,024 bytes, 2026-11-26 22:25.
+
+  test/run-tests.bat is not involved here; the host is:
+  python tests/resolve/poc.py --bundle … --import-project .validation/drp/row19-recheck.drp \
+      --reference .validation/resolve-source.png --expect 1920x1080
+
+  import    pass   ImportProject -> True, LoadProject('row19-recheck') -> project
+  render    pass   Complete, 100%, row19_00108000.png, 1920x1080
+  image             mae 0.0, max_pixel 0, compared_bytes 8294400 - identical to the source
+  ONNX_PROVIDER_LOG absent: no instance was ever created
+
+Host log, that session (19:55):
+
+  Plugin [com.ofxplugindeveloper.onnxinference] is not available!!!!        many
+  Create context [OfxImageEffectContextFilter_ae417e8d-…] failed for plugin […]
+                                                                            dozens
+
+So the frame was the source because the host skipped the effect, exactly as on
+2026-11-26: the bundle predates the guard, and the run proves the route and
+nothing about the plug-in.
+
+## 2. rebuilt from the tree that has the guard
+
+  cmake --build .validation/build-provider-only --config Release --parallel   -> 0
+  OnnxInference.ofx 209,408 bytes, 2026-11-27 19:56
+
+## 3. what ImportProject answers when the name is already in the library
+
+`ImportProject` does not say "the file is bad" when it answers False. From a host
+that already holds `row19-import` in its current folder:
+
+  LoadProject('row19-import') before any import          -> True
+  ImportProject('…/row19-import.drp')                    -> False
+  GetProjectListInCurrentFolder() after it               -> … 'row19', 'row19-import' …
+  LoadProject('row19-import') after it                   -> project
+  project.GetName()                                      -> 'row19-import'
+  project.GetCurrentTimeline().GetName()                 -> 'row19'
+  timeline items on video 1                              -> 1
+  item.GetEffects('ofx')                                 -> 1
+  item.GetName()                                         -> 'resolve-source.png'
+
+False is "skipped, a project of that name exists", so a re-import of the same
+file name is not a re-import. `resolve_api.import_project` returns the pair
+`(project, imported)` for that reason and `poc.py` reports which one happened.
+
+## 4. the start: -nogui was not answering, the UI was
+
+Four `-nogui` launches in a row on 2026-11-27: two wrote
+
+  Failed to connect to script server
+  801.703 [ 4076] Incoming connection
+  801.703 [ 4076] HostApp create
+  801.703 [ 4076] RemoteApp::Connect (00000000000002AC) - ioctlsocket(block) err 1
+  801.812 [ 4076] HostApp destroy
+
+and two reached `TimeoutError: no Resolve after 300s`. The same executable with
+its UI (`poc.py --gui`, launched 20:31:12) connected in 23 s. `-nogui` had
+answered 40 minutes earlier on the same build, so this is the start the notes
+already call unreliable, not a property of the bundle.
+
+## 5. the route, end to end, on the guarded bundle
+
+  python tests/resolve/poc.py \
+      --bundle .validation/build-provider-only/bundle/OnnxInference.ofx.bundle \
+      --import-project .validation/drp/row19-final.drp \
+      --reference .validation/resolve-source.png --expect 1920x1080 \
+      --out .validation/frames-row19-final --gui
+
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+  launch    pass     pid 16312
+  connect   pass     DaVinci Resolve Studio 21.2.0.5
+  gpu       pass     Compute API set to automatic, defaulting to CUDA; Selected compute API: CUDA
+  load      pass     row19-final.drp project format
+  render    pass     poc00108000.png
+  check     fail     mae 94.873 > 0.0; max pixel error 255 > 0.0
+  quit      pass     API quit, then the recorded PID
+
+  report: tests/resolve/reports/poc-2026-11-27T19-31-12+00-00.json
+  image: 1920x1080, 4 channels, decoder ffmpeg, mae 94.872843, max_pixel 255
+
+`check` fails because `--reference` demands identity and this plug-in is not an
+identity: the model's output differs from the source by mae 94.873, which is the
+figure the CPU-path run of the same bundle produced against the same source
+earlier that day (94.87, `resolve-onnx-host-report.json`). A frame that differs
+from the source by the model's own error is what a render looks like; an
+identical frame is what a skipped effect looks like.
+
+The plug-in's own label, read from `$ONNX_PROVIDER_LOG`:
+
+  CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all
+  nodes on CUDA) | C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle\Contents\Win64/../Resources/model.onnx
+
+Two things there are not incidental: the session is on CUDA with every node on
+it, and the model came from `Contents/Resources/model.onnx` - the second branch,
+not `ONNX_MODEL_PATH` - because this run set no variable. The imported project
+carried the effect; the bundle carried the model.
+
+Host log, same session:
+
+  OFX: loading com.ofxplugindeveloper.onnxinference             20:14:49 (earlier run), 20:31
+  Create context … onnxinference failed                         0 occurrences
+
+`timeline.GetSetting("timelineFrameWidth")` and `…Height` both answer `''` on a
+project opened this way, so the render keeps the project's format; the frame came
+out 1920x1080, the timeline's size.
+
+## 6. what this closes, and what it does not
+
+Closes: the imported-project half of row 19. With the guard in, a `.drp` exported
+by this host is imported, opened by its base name, and renders the plug-in's
+output - no parameter setter, no GUI click, no model path in the project.
+
+Does not close, and is not claimed here:
+
+  - the `-nogui` start: no attempt reached a scriptable host on this machine today,
+    so the route is measured on a UI start only;
+  - a second GPU or a machine without the CUDA 12 runtime the provider needs;
+  - a `.drp` that carries a *non-default* parameter: the exported project carries
+    the effect with its defaults, and there is still no setter;
+  - repeatability of the import: the second import of the same file name is
+    skipped, so a fresh measurement needs a fresh file name.
