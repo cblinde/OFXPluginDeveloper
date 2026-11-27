@@ -1,18 +1,21 @@
-# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-27 (excerpt of 4800 lines)
+# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-27 (excerpt of 4880 lines)
 #
 # Environment: ONNXRUNTIME_ROOT=.validation\ort-1.32.0 (the version the pin in
 # .github/actions/onnx-runtime names), VULKAN_SDK=.validation\vk\sdk,
 # OFX_SOURCE_DIR resolved to ./.ofx-ref, nvcc from CUDA 13.0 on PATH, no
 # CPU_ONLY, no SANITIZE, no RUN_VALGRIND. Windows route: the .bat runners, one per
-# template - and the fifth one is in this run, which is what changed: the Vulkan
-# template used to be absent from this route and the summary did not name it.
+# template - all five of them, minimal-vulkan-ofx included.
+#
+# This is the run after the Vulkan device step grew its label pass: the contract
+# suite is now rendered once more, after the device suite has answered, and asked
+# for the other side of the `Device` parameter - the adapter and its Vulkan
+# version, checked as `contains "Vulkan"`. That is what took the Vulkan template
+# from 711 to 805 and the total from 2,829 to 2,923; nothing else in the tree
+# changed.
 #
 # This file keeps the section headers, the per-suite counts, every skip line and
-# the summary block; the full log (4800 lines) stays in .validation/, which is
-# not tracked. Nothing below was edited by hand. The counts: 562 reference, 486
-# CUDA, 354 + 38 OpenCL, 656 + 29 + 26 Vulkan, 678 inference = 2,829 - the
-# inference row is 148 x 3 + 150 + 84, and the totals in runtime-comparison.md
-# were 100 higher than this log until this run was read against them.
+# the summary block; the full log (4880 lines) stays in .validation/, which is
+# not tracked. Nothing below was edited by hand.
 
 == docs: check-docs ==
 == docs ==
@@ -49,7 +52,7 @@ all Windows checks passed
 -- Default gain: 1.0
 -- OFX plugin : MinimalCudaGain (CUDA ON)
 -- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle
--- Configuring done (3.0s)
+-- Configuring done (2.6s)
 -- Generating done (0.2s)
 -- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build
 [0/2] Re-checking globbed directories...
@@ -96,9 +99,6 @@ opencl_suite: 38 checks, 0 failed
 == build + test: onnx-inference-ofx ==
 -- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
 -- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
--- Dropping cached ONNXRUNTIME_INCLUDE_DIR: it is not under ONNXRUNTIME_ROOT
--- Dropping cached ONNXRUNTIME_LIBRARY: it is not under ONNXRUNTIME_ROOT
--- Dropping cached ONNXRUNTIME_DLL: it is not under ONNXRUNTIME_ROOT
 -- ONNX Runtime include: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/ort-1.32.0/include
 -- ONNX Runtime library: not linked (loaded from beside the .ofx)
 -- CUDA provider bundle: the provider imports cuBLAS 12. A host must resolve CUDA 12 or it refuses the plug-in at load (error 1114, the DLL initialisation routine failed). Pairs measured here: 1.20.1 -> cuBLAS 12, which Resolve 21.2.0.5 ships; 1.32.0 -> cuBLAS 13, which it does not - that one loads only if CUDA 13 is on the search path. Check a built bundle with tools/check-runtime.py <root> --require-cuda-major <host major>.
@@ -107,7 +107,7 @@ opencl_suite: 38 checks, 0 failed
 -- Licence texts in Contents/Resources: none found beside the runtime. Add ONNX Runtime's LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before shipping (packaging-and-install.md section 2).
 -- OFX plugin : OnnxInference
 -- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
--- Configuring done (0.6s)
+-- Configuring done (0.5s)
 -- Generating done (0.1s)
 -- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
 == [1/6] build (Release) ==
@@ -165,6 +165,7 @@ contract_test: 94 checks, 0 failed
 contract_test: 90 checks, 0 failed
 == [6/6] device suite (Vulkan vs CPU) ==
 vulkan_suite: 26 checks, 0 failed
+contract_test: 94 checks, 0 failed
 all Windows checks passed
 == negative controls: broken plug-ins must fail, the pattern must pass ==
 == [0/4] MSVC environment ==

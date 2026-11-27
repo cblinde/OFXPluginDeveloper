@@ -251,7 +251,19 @@ run_device_suite() {
   local status=0
   "${suite}" || status=$?
   case "${status}" in
-    0) return 0 ;;
+    0)
+      # The device path's own label, the direction the forced run in step 4
+      # cannot cover: a machine whose device answered has to name that device in
+      # the parameter a host reads. This is the only step that knows a device
+      # answered, which is why the assertion lives here and not in the contract
+      # step, where a machine without one would fail it.
+      if ! "${HARNESS}" "${OFX_FILE}" "${HARNESS_ARGS[@]}" \
+             --label-param device --label-contains device=Vulkan; then
+        echo "  FAIL: the device path did not name its device in the label" >&2
+        return 1
+      fi
+      return 0
+      ;;
     2)
       echo "  NOT VERIFIED the suite found no Vulkan device on this machine"
       return 0

@@ -22,10 +22,10 @@ below is the checks, not the compiler.
 | `minimal-ofx`: build, artifact, contract ×5, install/load | 11 s | 562 | `all Windows checks passed` |
 | `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 25 s | 486 | `all Windows checks passed` |
 | `minimal-opencl-ofx`: build, artifact, contract ×3, `opencl_suite` | 16 s | 354 + 38 | `OK: the OpenCL template passed on this machine` |
-| `minimal-vulkan-ofx`: build, path policy, artifact, contract ×6, install, `vulkan_suite` | 20 s | 656 + 29 + 26 | `all Windows checks passed` |
+| `minimal-vulkan-ofx`: build, path policy, artifact, contract ×6 + device label, install, `vulkan_suite` | 20 s | 656 + 29 + 26 + 94 | `all Windows checks passed` |
 | `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 22 s | 678 | `all checks passed` |
 | negative controls: `testkit/run-negative-controls.bat` | 14 s | 223 in 8 runs | 8 caught, every one expected |
-| **total** | **121.1 s** (one stopwatch; the rows add up to 120.9 s) | **2,829 passing + 223 deliberately failing** | - |
+| **total** | **121.1 s** (one stopwatch; the rows add up to 120.9 s) | **2,923 passing + 223 deliberately failing** | - |
 
 **Two numbers, and which one is which.** The eight rows are eight stages of one
 pass, each stopped on its own: they add up to **120.9 s**. One stopwatch around
@@ -49,7 +49,7 @@ long enough that a contributor would skip it.
 
 ## 2. How the counters add up
 
-**2,829** is 562 + 486 + (354 + 38) + (656 + 29 + 26) + 678, every one printed
+**2,923** is 562 + 486 + (354 + 38) + (656 + 29 + 26 + 94) + 678, every one printed
 by the suite that ran it as `contract_test: N checks, 0 failed` or
 `opencl_suite:` / `vulkan_suite:` / `vulkan_mode_test: N checks, 0 failed`. The
 inference row is 148 x 3 + 150 + 84: three host profiles, the step that renders

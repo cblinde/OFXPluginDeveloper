@@ -214,8 +214,24 @@ set "SELFTEST=%BUILD_DIR%\self-test\vulkan_suite.exe"
 if not exist "%SELFTEST%" goto :selftest_absent
 "%SELFTEST%"
 set "SELFTEST_STATUS=%ERRORLEVEL%"
-if "%SELFTEST_STATUS%"=="0" goto :selftest_done
+if "%SELFTEST_STATUS%"=="0" goto :selftest_label
 if "%SELFTEST_STATUS%"=="2" goto :selftest_nodevice
+:selftest_label
+rem The device path's own label - the direction the forced run in [4/6] cannot
+rem cover. A machine whose device answered has to name that device in the
+rem parameter a host reads; until this ran, only the CPU side of the decision
+rem was asserted anywhere.
+echo   device label
+"%CONTRACT%" "%OFX_FILE%" ^
+    --host-profile resolve ^
+    --id com.ofxplugindeveloper.vulkaingain ^
+    --version 1.0 ^
+    --param gain:double ^
+    --clip Source ^
+    --clip Output ^
+    --label-param device ^
+    --label-contains device=Vulkan || goto :error
+goto :selftest_done
 goto :error
 :selftest_absent
 echo   NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF

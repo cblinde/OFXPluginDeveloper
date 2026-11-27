@@ -98,7 +98,7 @@ if [[ "${DRY_RUN}" == "1" ]]; then
     echo "  NOT RUN: onnx-inference-ofx                ONNXRUNTIME_ROOT is unset"
   fi
   if [[ "$(plan_vulkan)" == "ran" ]]; then
-    echo "  minimal-vulkan-ofx                         six steps: path policy, contract x6, vulkan_suite"
+    echo "  minimal-vulkan-ofx                         six steps: path policy, contract x6 + device label, vulkan_suite"
   else
     echo "  NOT RUN: minimal-vulkan-ofx                no VULKAN_SDK or VULKAN_INCLUDE_DIR, and OFXPLUGIN_VULKAN is not OFF"
   fi
