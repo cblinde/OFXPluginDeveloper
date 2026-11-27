@@ -92,16 +92,42 @@ CORPUS_ENV = "OFX_PROVENANCE_CORPUS"
 def corpora(root):
     raw = (os.environ.get(CORPUS_ENV) or "").strip()
     names = [part.strip() for part in raw.split(os.pathsep) if part.strip()] or [REFERENCE_DIR]
-    found, missing = [], []
+    found, missing, seen = [], [], set()
     for name in names:
         path = Path(name)
         if not path.is_absolute():
             path = root / name
-        if path.is_dir():
-            found.append((name, path))
-        else:
+        if not path.is_dir():
             missing.append(name)
+            continue
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        found.append((name, path))
     return found, missing
+
+
+def within(path, reference):
+    """Is `path` inside `reference`? By name, not by first path component."""
+    try:
+        Path(path).resolve().relative_to(Path(reference).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def shown(root, path):
+    """A corpus path for messages: relative when it is inside the repository.
+
+    A corpus named absolutely (a second SDK checkout outside the tree) has no
+    relative form, and `relative_to` raising there used to be a crash waiting for
+    the first copied line.
+    """
+    try:
+        return Path(path).resolve().relative_to(root).as_posix()
+    except (ValueError, OSError):
+        return str(path)
 
 
 def tracked_files(root):
@@ -111,11 +137,11 @@ def tracked_files(root):
     return [line for line in out.stdout.splitlines() if line.strip()]
 
 
-def check_spdx(root, files, report):
+def check_spdx(root, files, found, report):
     checked = 0
     for rel in files:
         path = root / rel
-        if rel.startswith(REFERENCE_DIR + "/") or not path.is_file():
+        if not path.is_file() or any(within(path, reference) for _, reference in found):
             continue
         if path.name in EXEMPT_NAMES:
             continue
@@ -164,14 +190,15 @@ def check_copied_lines(root, files, found, report):
                 except OSError:
                     continue
     if not corpus:
-        return None
+        return "empty"
 
     # A checkout inside the repository is not our code: its files are the corpus.
-    corpus_heads = {name.split("/")[0] for name, _ in found}
+    # Decided by containment, so a corpus at a nested path excludes itself and
+    # nothing else.
     ours = [rel for rel in files
-            if rel.split("/")[0] not in corpus_heads
-            and (root / rel).suffix.lower() in SOURCE_SUFFIXES
-            and (root / rel).is_file()]
+            if (root / rel).suffix.lower() in SOURCE_SUFFIXES
+            and (root / rel).is_file()
+            and not any(within(root / rel, reference) for _, reference in found)]
     compared = 0
     allowed = 0
     for rel in ours:
@@ -194,7 +221,7 @@ def check_copied_lines(root, files, found, report):
                 else:
                     report("error", "%s:%d" % (rel, number),
                            "appears verbatim in %s and is not an allowed API idiom: %r"
-                           % (path.relative_to(root).as_posix(), body[:70]))
+                           % (shown(root, path), body[:70]))
                 break
     return compared, allowed, check_allowlist(corpus, report)
 
@@ -225,7 +252,7 @@ def self_test(root):
     if len(body) < MIN_SHARED_LINE - 5:
         failures.append("self-test line is too short to exercise the scan")
     result = check_spdx(Path(__file__).resolve().parent.parent,
-                        ["tools/check-provenance.py"], lambda *a: reported.append(a))
+                        ["tools/check-provenance.py"], [], lambda *a: reported.append(a))
     if result != 1 or reported:
         failures.append("this tool's own file did not pass the SPDX check")
     for line in failures:
@@ -255,8 +282,8 @@ def main():
         problems.append((kind, where, message))
         print("  %s: %s: %s" % (kind, where, message))
 
-    spdx_checked = check_spdx(root, files, report)
     found, missing = corpora(root)
+    spdx_checked = check_spdx(root, files, found, report)
     for name in missing:
         report("error", name, "named in %s but not a directory: a corpus that was "
                "moved or deleted is not a corpus that passed" % CORPUS_ENV)
@@ -267,6 +294,9 @@ def main():
         print("  NOT VERIFIED: no %s/ checkout, so the copied-line scan did not run"
               % REFERENCE_DIR)
         print("               (the OpenFX SDK is fetched at configure time)")
+    elif copied == "empty":
+        print("  NOT VERIFIED: %s holds no C/C++ source, so the copied-line scan "
+              "found nothing to compare against" % ", ".join(name for name, _ in found))
     else:
         compared, allowed, allowlisted = copied
         print("  %d line(s) of %d+ characters compared against %d checkout(s) (%s): "

@@ -314,7 +314,9 @@ root rather than in the unpacked directories. Measured on such a tree:
 
 Two gates hold that, and they differ on purpose. The configure **fails** when a
 build that links ONNX Runtime ends with no `ONNXRuntime-` text, because the
-committed file makes that impossible unless the tree lost it. NVIDIA's EULA and
+committed file makes that impossible unless the tree lost it - measured by
+moving `licenses/LICENSE` aside: exit 1 with `ONNX Runtime binaries are in this
+build but no licence text reached Contents/Resources`, exit 0 with it back. NVIDIA's EULA and
 the cuDNN SLA come with the toolkit installer, not beside the libraries, and no
 repository may commit them, so the configure prints a warning naming the
 directories it searched and `testkit/check-ofx-artifact.bat --strict` **fails the

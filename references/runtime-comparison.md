@@ -18,7 +18,7 @@ below is the checks, not the compiler.
 | Suite | Wall clock | Assertions | Verdict |
 |---|---|---|---|
 | docs: `check-docs.py` + its `--selftest`, `check-workflows.py`, `check-shell.sh` | 5 s | 33 documents, 4 workflows, 26 scripts | 0 problems |
-| provenance: `check-provenance.py --self-test`, then the scan | 8 s | 109 files with an SPDX line, 13,386 long lines against the SDK, six allowlisted idioms re-checked against it | 0 problems |
+| provenance: `check-provenance.py --self-test`, then the scan | 8 s | 109 files with an SPDX line, every line of 45+ characters compared against the SDK, six allowlisted idioms re-checked against it | 0 problems |
 | `minimal-ofx`: build, artifact, contract ×5, install/load | 11 s | 562 | `all Windows checks passed` |
 | `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 25 s | 486 | `all Windows checks passed` |
 | `minimal-opencl-ofx`: build, artifact, contract ×3, `opencl_suite` | 16 s | 354 + 38 | `OK: the OpenCL template passed on this machine` |

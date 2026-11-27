@@ -216,6 +216,7 @@ if not exist "%SELFTEST%" goto :selftest_absent
 set "SELFTEST_STATUS=%ERRORLEVEL%"
 if "%SELFTEST_STATUS%"=="0" goto :selftest_label
 if "%SELFTEST_STATUS%"=="2" goto :selftest_nodevice
+goto :error
 :selftest_label
 rem The device path's own label - the direction the forced run in [4/6] cannot
 rem cover. A machine whose device answered has to name that device in the
@@ -232,7 +233,6 @@ echo   device label
     --label-param device ^
     --label-contains device=Vulkan || goto :error
 goto :selftest_done
-goto :error
 :selftest_absent
 echo   NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF
 goto :selftest_done

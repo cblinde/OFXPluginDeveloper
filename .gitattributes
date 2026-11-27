@@ -1,0 +1,4 @@
+# The committed notice's byte count is quoted as evidence (1095 bytes, in
+# packaging-and-install.md section 2). A CRLF checkout would change it, so this
+# text keeps LF everywhere and the number stays reproducible.
+templates/onnx-inference-ofx/licenses/LICENSE text eol=lf

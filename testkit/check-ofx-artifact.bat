@@ -123,6 +123,10 @@ rem file and the counting is `set /a` over `for /f`, for the TOOL SHADOWING reas
 rem above.
 set "TMPART=%TEMP%\ofx-artifact-%RANDOM%%RANDOM%.txt"
 dir /b /s /a-d "%BUNDLE_ROOT%\Contents" > "%TMPART%" 2>nul
+if not exist "%TMPART%" (
+  echo FAIL: could not list %BUNDLE_ROOT%\Contents, so the notices were not checked
+  exit /b 1
+)
 set "N_RUNTIME=0"
 for /f "delims=" %%L in ('findstr /i /c:"onnxruntime" "%TMPART%"') do set /a N_RUNTIME+=1
 set "N_PROVIDER=0"
