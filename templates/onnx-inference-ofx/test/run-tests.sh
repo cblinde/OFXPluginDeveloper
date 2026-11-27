@@ -190,6 +190,31 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     require_gpu_label "${TMP}/${profile}.log" "${profile} profile"
   done
 
+  # The half of the provider label that a one-node Conv cannot produce: "all
+  # nodes on CUDA" is what a covered model gives, "nodes left on CPU" needs a
+  # node the CUDA EP does not implement, and models/cpu_node.onnx is Hardmax for
+  # that reason. Without a CUDA provider in the bundle the label is CPU and the
+  # question does not arise - printed as NOT VERIFIED rather than skipped.
+  if [[ -f "$(dirname "${BUNDLE_OFX}")/onnxruntime_providers_cuda.so" ]]; then
+    echo "  cpu-node label: models/cpu_node.onnx - Hardmax, which the CUDA EP does not implement"
+    ONNX_MODEL_PATH="${ROOT}/models/cpu_node.onnx" "${TMP}/contract_test" "${BUNDLE_OFX}" \
+      --id com.ofxplugindeveloper.onnxinference \
+      --param tileSize:int --param halo:int \
+      --clip Source --clip Output --size 64x48 \
+      --label-param provider --host-profile resolve 2>&1 | tee "${TMP}/cpunode.log"
+    if ! grep -q "nodes left on CPU" "${TMP}/cpunode.log"; then
+      echo "  FAIL: the label did not admit the node the CUDA EP cannot run" >&2
+      exit 1
+    fi
+    if ! grep -q "fallback: " "${TMP}/cpunode.log"; then
+      echo "  FAIL: the label admits the CPU node but carries no reason for it" >&2
+      exit 1
+    fi
+  else
+    echo "  NOT VERIFIED: no CUDA provider beside the .ofx, so the CPU-node half of"
+    echo "    the label cannot be produced here"
+  fi
+
   # The same pixel comparison with the plug-in's own tiling engaged: tileSize=16
   # makes the 64x48 window go through RunTiled, so the frame is assembled from
   # overlapping, feathered tiles. There the comparison is a bound rather than

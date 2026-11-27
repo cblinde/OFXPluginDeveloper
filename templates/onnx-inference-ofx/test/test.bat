@@ -215,6 +215,46 @@ for %%P in (nuke resolve natron) do (
   if errorlevel 1 goto :contractfailure
 )
 
+rem ---- the half of the provider label that a one-node Conv cannot produce ----
+rem "all nodes on CUDA" is what a model the provider covers produces. "nodes left
+rem on CPU" needs a node the CUDA EP does not implement, and models\cpu_node.onnx
+rem is Hardmax for that reason - no CUDA kernel in onnxruntime 1.20.1. With a CPU
+rem package the label is CPU and the question does not arise; that prints NOT
+rem VERIFIED instead of a pass, because a skip nobody sees is a claim nobody
+rem checked. The render checks are the ones the profile loop above already
+rem passed, so this run asserts the label and nothing else.
+set "ONNX_MODEL_PATH=%ROOT%\models\cpu_node.onnx"
+set "CPUNODE=%LOG%-cpunode"
+rem GPU_PROVIDER is the same answer the rest of this script uses: the runtime
+rem root ships a provider. Reading the bundle instead would trust a file a
+rem previous configure may have left there, which is what the build's stale-file
+rem removal exists to prevent.
+if defined GPU_PROVIDER (
+  echo   cpu-node label: models\cpu_node.onnx - Hardmax, which the CUDA EP does not implement
+  "%HARNESS%" "%PLUGIN%" --id com.ofxplugindeveloper.onnxinference --param tileSize:int --param halo:int --clip Source --clip Output --size 64x48 --label-param provider --host-profile resolve > "%CPUNODE%" 2>&1
+  if errorlevel 1 (
+    type "%CPUNODE%"
+    goto :contractfailure
+  )
+  findstr /C:"nodes left on CPU" "%CPUNODE%" >nul
+  if errorlevel 1 (
+    echo   FAIL: the label did not admit the node the CUDA EP cannot run
+    type "%CPUNODE%"
+    goto :contractfailure
+  )
+  findstr /C:"fallback: " "%CPUNODE%" >nul
+  if errorlevel 1 (
+    echo   FAIL: the label admits the CPU node but carries no reason for it
+    type "%CPUNODE%"
+    goto :contractfailure
+  )
+  type "%CPUNODE%"
+) else (
+  echo   NOT VERIFIED: no CUDA provider beside the .ofx, so the CPU-node half of
+  echo     the label cannot be produced here - point ONNXRUNTIME_ROOT at the CUDA
+  echo     package to run this step.
+)
+
 
 echo.
 echo.

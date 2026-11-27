@@ -1030,6 +1030,23 @@ from the environment so the switch cannot be dropped on the way to CMake
 suite with `error 126`, the same root without one passes, and the real 1.20.1
 tree bundles the provider and reports `all nodes on CUDA`).
 
+**Both halves of the second row are now produced, not just described.** Until
+2026-11-27 the only fixture in the tree was a one-node Conv, which the provider
+covers, so every run could only print `all nodes on CUDA` - the answer a real
+model trips had never been observed here. `models/cpu_node.onnx` is `Hardmax`,
+which the CUDA EP of ONNX Runtime 1.20.1 does not implement; both runners feed
+it to the contract harness without a golden, and the label reads
+`CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested,
+nodes left on CPU) - fallback: This session contains graph nodes that are
+assigned to …` while the frame still passes all 96 contract checks (**[V]**,
+[`../evidence/2026-11-27-windows/onnx-cpu-node-label.log`](../evidence/2026-11-27-windows/onnx-cpu-node-label.log)).
+Two candidate operators did not survive the experiment and are worth knowing
+about: `RandomNormalLike` and `MeanVarianceNormalization` fail *session
+creation* on this runtime, so they never reach the question the label answers.
+Without a CUDA provider in the runtime root the step prints `NOT VERIFIED` and
+why, instead of passing on a `CPU (1 thread)` label that says nothing about
+node coverage.
+
 **Reading a failed GPU run.** The expensive mistake is to treat a mismatch as a
 numbers problem when it is a configuration one: with TF32 on, a convolution
 rounds at `4.5e-4` (§5), so a golden comparison at `1e-5` fails for a reason that

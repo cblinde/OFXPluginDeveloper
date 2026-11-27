@@ -1,0 +1,57 @@
+# The provider label's CPU-node half, 2026-11-27
+#
+# Why this exists
+#   Backlog row 55: the label says "all nodes on CUDA" or "nodes left on CPU",
+#   read from a throw-away session built with session.disable_cpu_ep_fallback=1.
+#   The only fixture in the tree was a one-node Conv, which the CUDA EP covers,
+#   so only the first half had ever been produced - the half a real model trips
+#   was documented and never observed.
+#
+# Machine: Windows 11, NVIDIA GeForce RTX 3060, MSVC 14.50, onnxruntime 1.20.1
+# GPU package (CUDA 12 provider) at .validation/ort-gpu-1.20.1, contract harness
+# built from testkit/, template built with OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON.
+#
+# Which operator lands on the CPU EP - the experiment that chose the fixture.
+# Three candidates, each one node, each shaped like its input, measured through
+# the contract harness with --label-param provider and no golden:
+#
+#   Hardmax                    -> "nodes left on CPU", 96 checks, 0 failed
+#   RandomNormalLike           -> session creation fails: 30 checks, 1 failed
+#   MeanVarianceNormalization  -> session creation fails: 30 checks, 1 failed
+#
+# The last two prove nothing about the label: a model that cannot load never
+# reaches the question. Hardmax has no CUDA kernel in 1.20.1, is deterministic
+# (one-hot along the width axis) and keeps the frame image-shaped, so it is the
+# fixture: tools/make-testmodels.py writes it, and the identical bytes are
+# committed as templates/onnx-inference-ofx/models/cpu_node.onnx.
+#
+# Hardmax, verbatim - two label reads per run, instance creation and render:
+#   ok 31 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, nodes left on CPU) - fallback: This session contains graph nodes that are assigned to ..."
+#   ok 79 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, nodes left on CPU) - fallback: This session contains graph nodes that are assigned to ..."
+#   contract_test: 96 checks, 0 failed
+#
+# The same run inside the suite (test.bat, GPU runtime root) - the step both
+# runners now carry, where the label is asserted and not merely printed:
+#   cpu-node label: models\cpu_node.onnx - Hardmax, which the CUDA EP does not implement
+#   ok 31 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, nodes left on CPU) - fallback: This session contains graph nodes that are assigned to ..."
+#   ok 79 - label parameter 'provider' = "CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, nodes left on CPU) - fallback: This session contains graph nodes that are assigned to ..."
+#   all checks passed
+# (148 x 3 host profiles, then this run's 96, then 150, then 84.)
+#
+# The control: the one-node Conv, same bundle and arguments, label reads
+# "all nodes on CUDA" - what the suite produced before this change, so the new
+# step tells the two answers apart instead of printing the same one.
+#
+# Without a CUDA provider in the runtime root (CPU package, the CI shape) the
+# step prints the reason and moves on:
+#   NOT VERIFIED: no CUDA provider beside the .ofx, so the CPU-node half of
+#     the label cannot be produced here - point ONNXRUNTIME_ROOT at the CUDA
+#     package to run this step.
+#   all checks passed
+#
+# What this proves: on this runtime, with this fixture, the label admits a node
+# the CUDA EP cannot run and carries the runtime's own reason, and the assertion
+# lives in both runners instead of in a document. What it does not prove: which
+# node a real model leaves behind - the reason is the runtime's sentence, not a
+# node name, which needs the verbose log (onnx-and-tensorrt.md section 6) - and
+# nothing about a provider other than 1.20.1's CUDA EP.

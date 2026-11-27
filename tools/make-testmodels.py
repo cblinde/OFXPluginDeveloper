@@ -11,6 +11,10 @@ does nothing passes every test that only asks "did it run":
     id_1x_4ch.onnx   RGBA, same; the fourth channel is where an alpha mistake
                      shows up, so a pass-through test that forgets it stays green
     up_2x_3ch.onnx   RGB, Resize nearest x2: output is twice the input in H and W
+    cpu_node_1x_3ch.onnx  RGB, Hardmax: an operator the CUDA execution provider
+                     does not implement, so the provider label has to admit that
+                     a node was left on the CPU EP - the half of the label a
+                     one-node Conv (which the provider covers) can never produce
 
 Why `AveragePool` and not `Identity`: with a real node, a channel or plane-order
 mistake produces a large deviation instead of a green check on a copy. Why
@@ -112,11 +116,39 @@ def upscale_2x_model(channels):
     return _finish(graph)
 
 
+def cpu_only_node_model(channels):
+    """One node the CUDA execution provider does not implement.
+
+    `Hardmax` has no CUDA kernel in ONNX Runtime 1.20.1 (probed 2026-11-27: the
+    label reads "nodes left on CPU" with the runtime's reason, and the other
+    candidates - `RandomNormalLike`, `MeanVarianceNormalization` - failed session
+    creation instead, which proves nothing about the label). Shape-preserving, so
+    a runner that expects an image gets one, and deterministic: the expected
+    output in the self-test is a one-hot along the width axis.
+    """
+    graph = helper.make_graph(
+        [helper.make_node("Hardmax", ["input"], ["output"], axis=-1)],
+        "cpu_node_1x_{}ch".format(channels),
+        [_input_info(channels)],
+        [helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, ["batch", channels, "height", "width"]
+        )],
+    )
+    return _finish(graph)
+
+
 MODELS = [
     ("id_1x_1ch.onnx", identity_model(1), "identity, 1 channel", "identity", 1),
     ("id_1x_3ch.onnx", identity_model(3), "identity, RGB", "identity", 3),
     ("id_1x_4ch.onnx", identity_model(4), "identity, RGBA (alpha survives)", "identity", 4),
     ("up_2x_3ch.onnx", upscale_2x_model(3), "2x factor, RGB", "upscale", 3),
+    (
+        "cpu_node_1x_3ch.onnx",
+        cpu_only_node_model(3),
+        "Hardmax: the CUDA EP does not implement it, so the label must say so",
+        "hardmax",
+        3,
+    ),
 ]
 
 
@@ -152,6 +184,11 @@ def self_test(out_dir):
                 continue
             if kind == "identity":
                 expected = x
+            elif kind == "hardmax":
+                # ONNX Hardmax along the last axis: 1 at the first maximum, 0
+                # elsewhere. Exact, so the fixture has one right output.
+                expected = np.zeros_like(x)
+                np.put_along_axis(expected, x.argmax(axis=3)[..., None], 1.0, axis=3)
             else:
                 expected = np.repeat(np.repeat(x, 2, axis=2), 2, axis=3)
             if y.shape != expected.shape or not np.array_equal(y, expected):
