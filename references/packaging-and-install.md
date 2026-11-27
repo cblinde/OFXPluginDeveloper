@@ -90,7 +90,11 @@ message. Two host-facing facts:
   `cudnn64_9.dll` beside Resolve's creates a second module of the same name and
   mixes two minor versions in one process. Skip **cuFFTW** entirely: the provider
   never imports it and it fails 127 next to a newer host cuFFT. Compare the loaded
-  module's *path*, not its name, and report `host CUDA stack` vs `bundled CUDA`.
+  module's *path*, not its name, and report `host CUDA stack` vs `bundled CUDA` -
+    remembering that both words describe what the preload saw, not where the
+    provider ended up binding: a host that keeps cuDNN beside its executable
+    (Resolve does) feeds a bundle that carries none
+    (`../evidence/2026-11-27-windows/row19-host-cuda-bundle.log`).
 - **`-DOFXPLUGIN_CUDA_FROM_HOST=ON` is the packaging answer for a host that brings
   its own CUDA**: provider and shared library only, no cuDNN/cuBLAS/cuFFT/cudart
   of ours to collide (2.8 GB → 1.1 GB in the reporter's bundle **[B]**). It needs a

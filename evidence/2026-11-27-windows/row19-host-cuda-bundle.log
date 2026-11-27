@@ -1,0 +1,103 @@
+# Host render with the CUDA stack beside the .ofx: CUDA session or CPU fallback?
+# 2026-11-27 20:55-20:56, Windows 11, Resolve Studio 21.2.0.5, RTX 3060
+#
+# Question
+#   The last successful host render shipped a provider-only bundle - four files
+#   in Contents/Win64 (OnnxInference.ofx, onnxruntime-ofx.dll,
+#   onnxruntime_providers_cuda.dll, onnxruntime_providers_shared.dll) - and its
+#   label still read CUDA. So: does Resolve get a CUDA session when the CUDA
+#   stack really is beside the .ofx, and what does the label prove either way?
+#
+# A. Building that bundle (self-contained: runtime + provider + CUDA imports)
+#
+#   cmake -S templates/onnx-inference-ofx -B .validation/build-gpu-selfcontained \
+#     -G "Visual Studio 18 2026" -A x64 \
+#     -DONNXRUNTIME_ROOT=.../.validation/ort-gpu-1.20.1 \
+#     -DOFXPLUGIN_BUNDLE_ONNX_RUNTIME=ON -DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON \
+#     -DOFXPLUGIN_CUDA_RUNTIME_DIRS=.../.validation/ort-gpu-1.20.1/bin
+#   -> configure exit 0: "CUDA provider bundle: 16 file(s), 2686 MB"
+#   cmake --build ... --config Release --parallel -> exit 0
+#
+#   Contents/Win64 (17 entries): OnnxInference.ofx 209,408;
+#   onnxruntime-ofx.dll 12,400,160; onnxruntime_providers_cuda.dll 673,741,344;
+#   onnxruntime_providers_shared.dll 22,072; cublas64_12.dll; cublasLt64_12.dll;
+#   cudart64_12.dll; cufft64_11.dll; cudnn64_9.dll; cudnn_adv64_9.dll;
+#   cudnn_cnn64_9.dll; cudnn_engines_precompiled64_9.dll;
+#   cudnn_engines_runtime_compiled64_9.dll; cudnn_engines_tensor_ir64_9.dll;
+#   cudnn_ext64_9.dll; cudnn_graph64_9.dll; cudnn_heuristic64_9.dll;
+#   cudnn_ops64_9.dll
+#   The runtime is the GPU package's: sha256(onnxruntime-ofx.dll) =
+#   1fabf449edd2957326e0db1d123939c63a9a9e5588050fea9548501578c5e1b4 =
+#   sha256(.validation/ort-gpu-1.20.1/bin/onnxruntime.dll).
+#   Contents/Resources/model.onnx = models/test_conv.onnx (the plug-in's shipped
+#   model branch; ONNX_MODEL_PATH is unset for every run below).
+#
+# B. The run, with every CUDA toolkit directory removed from PATH
+#
+#   FILTERED=$(echo "$PATH" | tr ':' '\n' | grep -vi cuda | grep -vi "nvidia gpu computing" | paste -sd: -)
+#   -> "toolkit dirs left on PATH: 0"   (nvcc was on PATH before; CUDA v13.0)
+#
+#   env -u ONNX_MODEL_PATH PATH="$FILTERED" ONNX_PROVIDER_LOG=<fresh file> \
+#       RESOLVE_EXE='E:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe' \
+#       python tests/resolve/poc.py --bundle .validation/build-gpu-selfcontained/bundle/OnnxInference.ofx.bundle \
+#         --import-project .validation/drp/row19-gpu.drp \
+#         --reference .validation/resolve-source.png --expect 1920x1080 --gui
+#
+#   validate  pass   1 .ofx, decoders ['ffmpeg']
+#   install   pass   C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+#   launch    pass   pid 20260
+#   connect   pass   DaVinci Resolve Studio 21.2.0.5
+#   gpu       pass   Compute API set to automatic, defaulting to CUDA.; Selected compute API: CUDA
+#   load      pass   row19-gpu.drp project format
+#   render    pass   poc00108000.png
+#   check     fail   mae 94.873 > 0.0; max pixel error 255 > 0.0   (reference = the source)
+#   quit      pass   API quit, then the recorded PID
+#
+#   $ONNX_PROVIDER_LOG, this run:
+#     CUDA (device 0, 1 thread, host CUDA stack, tf32 off, arena kSameAsRequested,
+#     all nodes on CUDA) | C:\Program Files\Common Files\OFX\Plugins\
+#     OnnxInference.ofx.bundle\Contents\Win64/../Resources/model.onnx
+#
+#   A device session: device 0, one thread, tf32 off, every node on CUDA.
+#
+# C. Control: the provider-only bundle (no cuDNN/cuBLAS/cudart of its own), same
+#    stripped PATH, fresh project name
+#
+#   label:
+#     CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested,
+#     all nodes on CUDA) | ...\Contents\Win64/../Resources/model.onnx
+#
+#   Also a device session - from a bundle that carries no CUDA DLL at all. So the
+#   CUDA stack came from somewhere else, and the label cannot be what says where.
+#
+# D. Where it came from
+#
+#   E:\Program Files\Blackmagic Design\DaVinci Resolve contains, beside
+#   Resolve.exe: cublas64_12.dll, cublasLt64_12.dll, cudart64_12.dll,
+#   cudnn64_9.dll, cudnn_adv64_9.dll, cudnn_cnn64_9.dll,
+#   cudnn_engines_precompiled64_9.dll, ... - Resolve 21.2 ships the CUDA 12 /
+#   cuDNN 9 stack it renders with. Windows resolves the provider's imports by
+#   base name through the process search order, which starts at the executable's
+#   directory, so both bundles bound to Resolve's copies. The preload in the
+#   plug-in only looks at modules that are *already loaded* when it runs.
+#
+# What the two words mean, then
+#   "host CUDA stack" = at preload time one of the four groups (cuDNN, cuBLAS,
+#   cuFFT, cudart) was already loaded from a folder other than the plug-in's.
+#   "bundled CUDA"   = none was; the sentence says nothing about where the
+#   provider finally bound, and run C is the counter-example (four-file bundle,
+#   "bundled CUDA", zero CUDA DLLs in it).
+#
+# Answer to the question asked
+#   Resolve gets a CUDA session with the GPU runtime and the provider beside the
+#   .ofx - device 0, one thread, tf32 off, all nodes on CUDA - with the CUDA
+#   toolkit off PATH, and the frame is the model's output (mae 94.873 against the
+#   source, the same number as the earlier round trip). It also gets one from a
+#   provider-only bundle, because the host brings its own stack.
+#
+# What this does not prove
+#   Which module path each group actually bound to: neither label names a folder,
+#   and which group was already loaded at preload time is not named by either label. One host, one GPU, one
+#   model. Nothing here exercises a machine whose host has no CUDA stack at all
+#   (that is the case `-DOFXPLUGIN_CUDA_RUNTIME_DIRS` exists for, and it would
+#   need a host without cuDNN beside its exe).

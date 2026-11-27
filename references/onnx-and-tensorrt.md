@@ -502,6 +502,17 @@ make the choice visible — and the consequence is packaging, not a second build
     (host 9.8.0.87, bundle 9.1.0.70) in one process, and the 9.1 components
     failing 127 against the 9.8 dispatcher (**B**). "A module with that name
     exists" is the wrong test — after your own preload it is true for your copy.
+    The two words are also a statement about *timing*, not about origin: the
+    preload only sees modules that are already loaded when it runs, and Windows
+    then resolves the provider's imports through the process search order, which
+    starts at the host's executable. Resolve 21.2 keeps `cudnn64_9.dll`,
+    `cublas64_12.dll` and `cudart64_12.dll` beside `Resolve.exe`, so a
+    provider-only bundle with **no** CUDA DLL in it also labels
+    `bundled CUDA` - and a self-contained 16-file bundle with the toolkit off
+    `PATH` labels `host CUDA stack`, while both run `all nodes on CUDA`
+    (**[V]**, [`../evidence/2026-11-27-windows/row19-host-cuda-bundle.log`](../evidence/2026-11-27-windows/row19-host-cuda-bundle.log)).
+    Read the label as "which stack the preload saw", never as "my bundle's
+    copies are the ones in use".
   * **One unneeded file must not end the GPU attempt.** Keep loading the rest, let
     the session decide, and name the file that failed in the label if the provider
     then fails. The template records skipped and failed names and appends them to
