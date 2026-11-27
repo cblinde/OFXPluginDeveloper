@@ -115,7 +115,8 @@ message. Two host-facing facts:
   compute API on CUDA, and the plug-in's `provider` label read
   `CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested,
   all nodes on CUDA)` - a CUDA session with every node on CUDA, not the CPU
-  fallback (**[V]**,
+  fallback, and the same label again from a clean build directory of the final
+  artifact (**[V]**,
   [`resolve-onnx-provider.log`](../evidence/2026-11-27-windows/resolve-onnx-provider.log)).
   Two changes were needed: the 1.5.1 guard has to catch
   `OFX::Exception::Suite` with `kOfxStatErrMissingHostFeature` as well as

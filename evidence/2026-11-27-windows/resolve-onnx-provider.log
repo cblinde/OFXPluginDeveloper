@@ -55,3 +55,27 @@ CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all no
 # AMD/Intel host, or the 1.32.0 package - that provider imports cublas64_13 and
 # Resolve ships CUDA 12, which is error 1114 at load, a different measurement.
 # One host version, one model (611 bytes), one session.
+
+
+== Second run, same day, from a clean build directory (the final artifact) ==
+#
+# Why: the run above was made before the decision paragraph and the CMake
+# wording changed, and the bundle had been rebuilt in between. This is the
+# artifact the tree produces now: a clean build directory, ONNXRUNTIME_ROOT =
+# .validation/ort-gpu-1.20.1, OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON,
+# OFXPLUGIN_CUDA_FROM_HOST=ON, four files, provider CUDA major 12, gate at 12
+# passed ("verdict: every gate asked for passed"), build exit 0.
+
+resolve proof of concept (run)
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+  launch    pass     pid 19336
+  connect   pass     DaVinci Resolve Studio 21.2.0.5
+  gpu       pass     2026-11-27 19:10:34,930 | Compute API set to automatic, defaulting to CUDA.; 2026-11-27 19:10:34,930 | Selected compute API: CUDA
+  build     pass     poc: ONNX Inference on source.png
+  render    pass     poc00108000.png
+  check     pass     1920x1080 via ffmpeg
+  quit      pass     API quit, then the recorded PID
+report: Z:\Tools-DEV\OFXPluginDeveloper_Local\tests\resolve\reports\poc-2026-11-27T18-10-33+00-00.json
+
+CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA) | Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_conv.onnx
