@@ -137,7 +137,27 @@ SPIR-V is produced at build time by `glslc`/`glslang` and embedded as a header
 (`cmake/spv-header.cmake`), so the bundle carries no `.spv`, nothing resolves a
 shader path at run time, and the shader compiler is a build dependency only.
 
-## 7. What has not been measured here
+## 7. The two runners, and the one step that decides the template
+
+`test/run-tests.bat` and `test/run-tests.sh` run the same five steps in the same
+order - build and artifact, the host contract through the fake host, the install
+round trip, and the device self-test - and they decide the last one the same way:
+**exit 0 is a pass, exit 2 is the suite's "no Vulkan device on this machine" and
+reports `NOT VERIFIED`, anything else fails the run**. `NOT VERIFIED` is the
+answer for a CPU-only configure as well (`OFXPLUGIN_VULKAN=OFF`, which the shell
+runner passes to `build.sh` explicitly), so a machine without the SDK never sees
+a green step it did not earn. The .sh additionally runs valgrind memcheck per host
+profile, which the .bat cannot and does not claim.
+
+The shell runner's device branch is exercised without a device - stubs that exit
+0, 2 and 7, a missing binary, a non-executable file, a directory and
+`OFXPLUGIN_VULKAN=OFF` - in
+[`../evidence/2026-11-27-windows/vulkan-device-step-guard.log`](../evidence/2026-11-27-windows/vulkan-device-step-guard.log)
+(**V**). The runner itself has not been executed end to end on Linux here: this
+machine has Windows, and the repo's `run-tests.sh` sends the Windows path to the
+`.bat`.
+
+## 8. What has not been measured here
 
 - **No host render.** No host has loaded the Vulkan template and rendered a
   frame; the device suite and the host contract suite are the two halves that

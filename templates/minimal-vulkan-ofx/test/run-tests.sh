@@ -1,21 +1,43 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# The reference plug-in's test: build it (which already inspects the artifact),
-# then drive the shared contract harness through the whole host protocol -
-# load, describe, describeInContext, createInstance, render, destroy, unload -
-# twice - once per host profile, and once more with both capability writes
-# refused, which is the only run that executes the guard around them. Then
-# cmake --install into a temporary prefix and the same contract against the
-# installed copy, because the build tree is not an install. When valgrind is
-# installed the harness runs under memcheck, once per host profile, because
-# the reference plug-in is the one every other template is compared against
-# and a leak there would be copied.
+# The Vulkan template's test, and the Linux counterpart of test/run-tests.bat.
+# Both run the same five steps in the same order, and both decide the device
+# step the same way:
+#
+#   [1/5] build     build.sh, which inspects the artifact as it goes (nm,
+#                   readelf) - the same inspection the .bat runs as its step 2
+#   [2/5] artifact  the two claims read again, here as the point of the step
+#                   rather than as a side effect: exactly the two OFX exports
+#                   and no undefined OFX symbol. The .bat gets the same answer
+#                   from testkit/check-ofx-artifact.bat; the tools differ, the
+#                   claims do not.
+#   [3/5] contract  build-contract-test.sh, then the host protocol - load,
+#                   describe, describeInContext, createInstance, render,
+#                   destroy, unload - once per host shape, and once more with
+#                   both capability writes refused, which is the only run that
+#                   executes the guard around them
+#   [4/5] install   cmake --install into a temporary prefix and the same
+#                   contract against the installed copy, because the build tree
+#                   is not an install
+#   [5/5] device    the device self-test: the shader, the descriptor set, the
+#                   dispatch, both memory arrangements and the two refusals.
+#                   Exit 0 is a pass, exit 2 is the suite's "no Vulkan device on
+#                   this machine" and reports NOT VERIFIED, anything else is a
+#                   failure. The .bat maps exactly those three cases.
+#
+# What this script does and the .bat does not: valgrind memcheck, once per host
+# profile, because the reference plug-in is the one every other template is
+# compared against and a leak there would be copied. It is not a numbered step -
+# the .bat has none, and says so.
 #
 #   ./run-tests.sh
+#   ./run-tests.sh nobuild                 # reuse build/ instead of build.sh
+#   OFXPLUGIN_VULKAN=OFF ./run-tests.sh    # CPU-only bundle: the device step
+#                                          # reports NOT VERIFIED, not a pass
 #   SANITIZE=address,undefined ./run-tests.sh
-#   RUN_VALGRIND=0 ./run-tests.sh      # skip memcheck
-#   RUN_VALGRIND=1 ./run-tests.sh      # require it
+#   RUN_VALGRIND=0 ./run-tests.sh          # skip memcheck
+#   RUN_VALGRIND=1 ./run-tests.sh          # require it
 #
 # The harness lives in testkit/ so both templates certify the same behaviour.
 set -euo pipefail
@@ -24,17 +46,72 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPL="$(cd "${HERE}/.." && pwd)"
 ROOT="$(cd "${TPL}/../.." && pwd)"
 
-echo "[1/6] building the reference plug-in (and verifying the artifact)"
-"${TPL}/build.sh"
+# The Vulkan half can be configured away - CMake needs the SDK and glslc for it -
+# and then there is no device suite to run. The switch is honoured here and
+# passed to build.sh explicitly, so `OFXPLUGIN_VULKAN=OFF ./run-tests.sh` and an
+# exported variable mean the same thing.
+VULKAN="${OFXPLUGIN_VULKAN:-ON}"
+NOBUILD=0
+for argument in "$@"; do
+  case "${argument}" in
+    nobuild) NOBUILD=1 ;;
+    *)
+      echo "error: unknown argument '${argument}' (the only one is: nobuild)" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "${NOBUILD}" == "1" ]]; then
+  echo "== [1/5] build skipped (nobuild; OFXPLUGIN_VULKAN=${VULKAN}) =="
+else
+  echo "== [1/5] build (artifact checks run inside build.sh; OFXPLUGIN_VULKAN=${VULKAN}) =="
+  OFXPLUGIN_VULKAN="${VULKAN}" "${TPL}/build.sh"
+fi
 
 OFX_FILE="$(find "${TPL}/build/bundle" -name '*.ofx' -type f | head -1)"
+if [[ -z "${OFX_FILE}" ]]; then
+  echo "error: no .ofx under ${TPL}/build/bundle" >&2
+  echo "       run this without 'nobuild' first, or point it at a built tree." >&2
+  exit 1
+fi
 OFX_DIR="${OFX_SOURCE_DIR:-${ROOT}/.ofx-ref}"
 HARNESS="${TPL}/build/contract_test"
+
+echo
+# The build already read these two claims; a pass there and a failure here would
+# mean the artifact changed between the two reads, which is worth a step of its
+# own - and it is the step the .bat has (its [2/5]) with a different reader.
+echo "== [2/5] artifact (exports, undefined OFX symbols) =="
+if ! command -v nm >/dev/null 2>&1; then
+  echo "  FAIL: nm is not on PATH, so the artifact cannot be read here" >&2
+  exit 1
+fi
+exports="$(nm -D --defined-only "${OFX_FILE}" | awk '$2 == "T" {print $3}' | sort)"
+expected="$(printf 'OfxGetNumberOfPlugins\nOfxGetPlugin' | sort)"
+if [[ "${exports}" != "${expected}" ]]; then
+  echo "  FAIL: the dynamic exports are not the two the OFX loader looks for" >&2
+  while IFS= read -r symbol; do
+    [[ -n "${symbol}" ]] && echo "    ${symbol}" >&2
+  done <<< "${exports:-<none>}"
+  exit 1
+fi
+echo "  exports: $(echo "${exports}" | tr '\n' ' ')"
+undefined="$(nm -D -u "${OFX_FILE}" | awk '{print $NF}' | grep -E '^(Ofx|OFX)' || true)"
+if [[ -n "${undefined}" ]]; then
+  echo "  FAIL: undefined OFX symbols - the host must have to resolve none of them" >&2
+  while IFS= read -r symbol; do
+    echo "    ${symbol}" >&2
+  done <<< "${undefined}"
+  exit 1
+fi
+echo "  undefined OFX symbols: none"
 
 # The sanitizer is named in the log, like the other two suites do: a run whose
 # header says "none" must not be mistaken for an instrumented one, and the CI
 # job greps this line to prove the build it credits was built that way.
-echo "[2/6] compiling the shared contract harness (sanitizer: ${SANITIZE:-none})"
+echo
+echo "== [3/5] host contract (dlopen + fake host; sanitizer: ${SANITIZE:-none}) =="
 SANITIZE="${SANITIZE:-}" "${ROOT}/testkit/build-contract-test.sh" "${HARNESS}" "${OFX_DIR}"
 
 # One process holds one host - OfxSetHost ignores every call after the first -
@@ -71,7 +148,6 @@ HARNESS_ARGS=(
   --concurrency-threads "${THREADS}"
 )
 
-echo "[3/5] running the host protocol against ${OFX_FILE}"
 for profile in "${HOST_PROFILES[@]}"; do
   echo "  host profile: ${profile}"
   "${HARNESS}" "${OFX_FILE}" --host-profile "${profile}" "${HARNESS_ARGS[@]}"
@@ -94,7 +170,7 @@ echo
 # dependency that only ever resolved inside the build directory (an $ORIGIN RPATH
 # that pointed back at build/, a resource only the build wrote there). The harness
 # then renders one frame from the installed copy.
-echo "== [4/6] install and load the installed copy =="
+echo "== [4/5] install and load the installed copy =="
 INSTALL_PREFIX="$(mktemp -d)"
 cmake --install "${TPL}/build" --prefix "${INSTALL_PREFIX}" > "${INSTALL_PREFIX}/install.log" 2>&1 || {
   cat "${INSTALL_PREFIX}/install.log" >&2
@@ -112,28 +188,53 @@ echo "  ${INSTALLED}"
 rm -rf "${INSTALL_PREFIX}"
 
 echo
-echo "== [5/6] device suite (Vulkan vs CPU) =="
+echo "== [5/5] device suite (Vulkan vs CPU) =="
 # The half a host run cannot prove cheaply: the shader, the descriptor set, the
 # dispatch, both memory arrangements and the two refusals. Guarded rather than
 # assumed - a machine with no Vulkan device, or a CPU-only configure, reports
 # NOT VERIFIED instead of a green step, because a pass on hardware that is not
-# there would be a lie. Exit 2 is the suite's "no device", per its header.
-SUITE="${TPL}/build/self-test/vulkan_suite"
-if [[ ! -x "${SUITE}" ]]; then
-  echo "  NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF"
-else
-  suite_status=0
-  "${SUITE}" || suite_status=$?
-  if [[ "${suite_status}" == 2 ]]; then
-    echo "  NOT VERIFIED the suite found no Vulkan device on this machine"
-  elif [[ "${suite_status}" != 0 ]]; then
-    echo "  FAIL: the device suite reported a failure (exit ${suite_status})" >&2
-    exit 1
+# there would be a lie. The suite's own header defines its exit codes: 0 pass,
+# 2 no device, anything else a failure.
+#
+# Returns 0 for a pass or a named NOT VERIFIED and 1 for a failure, so the three
+# cases of the .bat map onto the same three here.
+run_device_suite() {
+  local suite="$1"
+  if [[ "${VULKAN}" == "OFF" ]]; then
+    echo "  NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF"
+    return 0
   fi
-fi
+  if [[ ! -e "${suite}" ]]; then
+    echo "  NOT VERIFIED no device suite binary at ${suite} - the configure did not build it"
+    return 0
+  fi
+  if [[ ! -f "${suite}" ]]; then
+    echo "  FAIL: ${suite} exists but is not a regular file" >&2
+    return 1
+  fi
+  if [[ ! -x "${suite}" ]]; then
+    echo "  FAIL: ${suite} exists but is not executable" >&2
+    return 1
+  fi
+  local status=0
+  "${suite}" || status=$?
+  case "${status}" in
+    0) return 0 ;;
+    2)
+      echo "  NOT VERIFIED the suite found no Vulkan device on this machine"
+      return 0
+      ;;
+    *)
+      echo "  FAIL: the device suite reported a failure (exit ${status})" >&2
+      return 1
+      ;;
+  esac
+}
+
+run_device_suite "${TPL}/build/self-test/vulkan_suite" || exit 1
 
 echo
-echo "== [6/6] valgrind memcheck =="
+echo "== memcheck (Linux only; the .bat has no step for it) =="
 WANT="${RUN_VALGRIND:-auto}"
 if [[ "${WANT}" == "0" ]]; then
   echo "  skipped: RUN_VALGRIND=0"
@@ -169,3 +270,6 @@ else
       "${TPL}/build/vg-${profile}.log" | sed 's/^==[0-9]*== /  /'
   done
 fi
+
+echo
+echo "all Linux checks passed"

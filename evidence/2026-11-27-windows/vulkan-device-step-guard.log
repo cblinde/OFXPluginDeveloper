@@ -1,0 +1,30 @@
+# The Vulkan runner's device step, exercised without a Vulkan device, 2026-11-27
+#
+# Why this exists
+#   test/run-tests.sh and test/run-tests.bat must decide the fifth step the same
+#   way: exit 0 is a pass, exit 2 is the suite's "no Vulkan device on this
+#   machine" and reports NOT VERIFIED, anything else fails the run. On Windows
+#   the .bat implements that in three branches; a shell script can get it wrong
+#   in ways `bash -n` cannot see - `set -e` killing the script on the status 2
+#   it is supposed to interpret, a missing binary read as a pass, a directory
+#   read as a suite.
+#
+# How it was exercised
+#   The function run_device_suite() is lifted out of the runner with awk and
+#   called against stub binaries that exit 0, 2 and 7, against a missing path,
+#   a non-executable file and a directory, and once with OFXPLUGIN_VULKAN=OFF.
+#   No Vulkan device, no build, no host: this is the guard, not the suite.
+#
+# Machine: Windows 11, Git Bash (bash 5.x), 2026-11-27.
+# Command: bash .validation/test-vulkan-device-step.sh
+#
+# Output, verbatim:
+#
+ok exit 0 is a pass (rc=0)
+ok exit 2 is NOT VERIFIED (rc=0)
+ok exit 7 is a failure (rc=1)
+ok OFXPLUGIN_VULKAN=OFF (rc=0)
+ok absent binary (rc=0)
+ok non-executable binary (rc=1)
+ok a directory is not a suite (rc=1)
+ok the switch is passed to build.sh explicitly
