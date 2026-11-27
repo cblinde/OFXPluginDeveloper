@@ -11,7 +11,7 @@ Pages, the GPU switch, absent streams, odd sizes, crash blacklisting, Free vs St
 | --- | --- | --- | --- | --- |
 | OFX host quality | Broad, some proprietary extensions | Close to spec, strict | Close to spec | Reference-ish, incomplete |
 | CUDA buffer path (`kOfxImageEffectPropCudaEnabled`) | Yes, when GPU mode = CUDA **(B)** | Not offered to OFX plugins; CPU images **(C)** | Version-dependent **(C)** | No; CPU only **(C)** |
-| CUDA stream (`kOfxImageEffectPropCudaStream`) | Not supplied — plugin must complete work before returning **(C)** | N/A | Unknown **(C)** | N/A |
+| CUDA stream (`kOfxImageEffectPropCudaStream`) | **Supplied** on every render measured: one non-null `cudaStream_t` for the session, at 1920×1080 and at a 288×162 thumbnail **[V]**, 2026-11-27 | N/A | Unknown **(C)** | N/A |
 | OpenCL path | Only on an OpenCL-mode host (AMD/Intel): a CUDA-mode 21.2.0.5 passed this plug-in no queue - `opencl=0`, null `pOpenCLCmdQ` - and it rendered on the CPU (**[V]**, 2026-11-27) | No | Yes in some builds **(C)** | No |
 | Metal path | No (macOS uses Metal for Resolve itself, not exposed to OFX) **(C)** | No | No | No |
 | Render threading | Multiple instances in parallel; per-instance serial **(B)** | Concurrent `render` on one instance — needs `FullySafe` **(C)** | Parallel frames **(C)** | Worker pool, concurrent tiles **(C)** |
@@ -98,21 +98,32 @@ bundle that preloads `cudnn64_9.dll` or `cudart64_12.dll` by path puts a second
 module of that name into this process. What to ship instead is in
 [`packaging-and-install.md`](packaging-and-install.md).
 
-### 2.3 Streams: expect none
+### 2.3 Streams: supplied, and the host does the ordering
 
-Resolve is not observed to populate `kOfxImageEffectPropCudaStream` **(C)**.
-The practical consequence is that the *mode 2* branch in
-[`ofx-lifecycle-and-threads.md`](ofx-lifecycle-and-threads.md) §5 is the
-one that runs in Resolve almost all the time: you must complete your launch before
-`render()` returns.
+Resolve **does** populate `kOfxImageEffectPropCudaStream`. Measured on Studio
+21.2.0.5 on 2026-11-27, with the CUDA template writing one line per render into
+`$MCOFX_PATH_LOG`: eight renders, every one on the CUDA path, all carrying a
+non-null pointer — the same one for the whole session
+(`00000261F457B1A0`), at 1920×1080 and at the 288×162 thumbnail — and the frame
+was the source times two to the byte (**[V]**,
+[`resolve-cuda-stream.log`](../evidence/2026-11-27-windows/resolve-cuda-stream.log)).
+An earlier revision of this page said the opposite, graded **(C)**; nothing had
+read the property back before, because `OFX::Log::print` does not reach Resolve's
+log and nothing wrote it anywhere else.
 
-This is why the template synchronises the default stream when
-`_pCudaStream == nullptr`, and why "never synchronise" is wrong advice. The
-correct instruction is "never synchronise *when the host gave you a stream*".
+What follows, in the order it matters:
 
-If you advertise `setSupportsCudaStream(true)` and Resolve never uses it, nothing
-breaks — but the flag buys nothing there either. Advertise it for hosts that do
-use it; keep the no-stream branch correct for Resolve.
+- The branch that runs in Resolve is "enqueue on the host's stream and return".
+  The `_pCudaStream == nullptr` branch — synchronise before returning — is the
+  one Resolve does **not** take, and it stays for hosts that supply nothing.
+- Advertise `setSupportsCudaStream(true)`: it is what lets the host hand the
+  stream over, and here it demonstrably does.
+- "Never synchronise" is still wrong advice, for the opposite reason than before:
+  right for the branch Resolve takes, wrong for a host that passes no stream. The
+  template implements both.
+- Still unproven: ordering under load. An exact frame says the host waited for the
+  result, not that the plug-in survives a host that enqueues further work on that
+  stream before reading it.
 
 ### 2.4 Odd render sizes and row-byte alignment
 

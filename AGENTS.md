@@ -35,7 +35,7 @@ arguments, and the `ONNXRUNTIME_ROOT`, `CPU_ONLY` and `.venv/` rules:
 1. **Never claim a host render is verified beyond what ran.** Resolve Studio 21.2
    ran `tests/resolve/poc.py` for the reference template (CPU gain and the doubled
    gain), killed the host with a job in flight, loaded the OpenCL template (which
-   arrives with `opencl=0`), and loaded the inference template on its CPU path and,
+   arrives with `opencl=0`), supplied a CUDA stream on all eight CUDA-template renders, and loaded the inference template on its CPU path and,
    from a four-file provider-only bundle, on the CUDA path with `all nodes on CUDA`;
    a CUDA-13 provider loaded there too, because that machine has the toolkit on
    `PATH`. `testkit/verify-bundle.bat` took the reference bundle through tier 3 on

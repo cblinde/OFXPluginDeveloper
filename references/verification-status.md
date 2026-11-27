@@ -121,6 +121,7 @@ not the console transcript.
 | `Resolve Studio 21.2.0.5` | ONNX Inference | GPU | 2026-11-27 | [`resolve-onnx-provider-cuda13.log`](../evidence/2026-11-27-windows/resolve-onnx-provider-cuda13.log) |
 | `Resolve Studio 21.2.0.5` | ONNX Inference | CPU | 2026-11-27 | [`resolve-onnx-host-report.json`](../evidence/2026-11-27-windows/resolve-onnx-host-report.json) |
 | `Resolve Studio 21.2.0.5` | ONNX Inference | GPU | 2026-11-27 | [`row19-imported-project.log`](../evidence/2026-11-27-windows/row19-imported-project.log) |
+| `Resolve Studio 21.2.0.5` | CUDA gain, host stream | GPU | 2026-11-27 | [`resolve-cuda-stream.log`](../evidence/2026-11-27-windows/resolve-cuda-stream.log) |
 | `Resolve Studio 21.2.0.5` | reference | kill | 2026-11-25 | [`resolve-poc-kill-report.json`](../evidence/2026-11-25-windows/resolve-poc-kill-report.json) |
 | `NatronRenderer` | reference | CPU | 2026-11-24 | [`report.txt`](../evidence/2026-11-24-windows/report.txt) |
 

@@ -148,7 +148,7 @@ HOST_COMPATIBILITY_MATRIX.md	1. Master table	references/host-resolve.md
 HOST_COMPATIBILITY_MATRIX.md	2. DaVinci Resolve Studio	references/host-resolve.md	
 HOST_COMPATIBILITY_MATRIX.md	2.1 Pages behave differently	references/host-resolve.md	
 HOST_COMPATIBILITY_MATRIX.md	2.2 The GPU mode switch is user-controlled and can be "Auto"	references/host-resolve.md	
-HOST_COMPATIBILITY_MATRIX.md	2.3 Streams: expect none	references/host-resolve.md	
+HOST_COMPATIBILITY_MATRIX.md	2.3 Streams: expect none	references/host-resolve.md	2.3 Streams: supplied, and the host does the ordering
 HOST_COMPATIBILITY_MATRIX.md	2.4 Odd render sizes and row-byte alignment	references/host-resolve.md	
 HOST_COMPATIBILITY_MATRIX.md	2.5 Crashing or hanging plugins are blacklisted	references/host-resolve.md	
 HOST_COMPATIBILITY_MATRIX.md	2.6 Free vs Studio	references/host-resolve.md	

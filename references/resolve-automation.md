@@ -243,7 +243,11 @@ paths, and the declaration has to come from the plug-in, not from the harness.
 not reach Resolve's log - the host log names the bundle at load time and nothing
 the plug-in printed - so the CUDA template appends one line per render to the file
 named by `$MCOFX_PATH_LOG`, and `tests/resolve/poc.py --path-log <file>` sets that
-variable for the host it launches. In the Resolve run all eight render invocations
+variable for the host it launches. A line is
+`<path> <width>x<height> stream=<pointer|none|n/a>`, so the same run answers which
+path ran and whether `kOfxImageEffectPropCudaStream` arrived — and the pointer it
+carried is what turned "Resolve supplies no stream" from an assumption into a
+measured "it supplies one". In the Resolve run all eight render invocations
 declared `CUDA`, so the frame that matched the reference times two was produced by
 the kernel, not by the fallback
 (`../evidence/2026-11-26-windows/resolve-poc-cuda-gain.log`). The ONNX template

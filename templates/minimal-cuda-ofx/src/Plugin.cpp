@@ -12,6 +12,7 @@
 #include "Plugin.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -101,16 +102,34 @@ ExecutionMode RequestedMode()
     return requested;
 }
 
-void recordPath(const char* path, int width, int height)
+/// One line per render into $MCOFX_PATH_LOG, so a host run can be read back
+/// afterwards. Pixels cannot answer two questions a host run is asked: which
+/// path produced the frame, and whether the host supplied
+/// kOfxImageEffectPropCudaStream. OFX::Log::print does not survive Resolve's own
+/// log (measured 2026-11-26), and a claim about a stream nobody can see is an
+/// assumption - so the stream is recorded here, per render, with its address or
+/// the word "none".
+void recordPath(const char* path, int width, int height, const void* stream, bool cudaPath)
 {
     const char* target = std::getenv("MCOFX_PATH_LOG");
     if (target == nullptr || *target == '\0') {
         return;
     }
     std::ofstream log(target, std::ios::app);
-    if (log) {
-        log << path << ' ' << width << 'x' << height << '\n';
+    if (!log) {
+        return;
     }
+    log << path << ' ' << width << 'x' << height << " stream=";
+    if (!cudaPath) {
+        log << "n/a";  // the CPU path has no CUDA stream to ask about
+    } else if (stream == nullptr) {
+        log << "none";  // kOfxImageEffectPropCudaStream was not supplied
+    } else {
+        char address[32] = {0};
+        std::snprintf(address, sizeof address, "%p", stream);
+        log << address;
+    }
+    log << '\n';
 }
 
 /// Bytes per pixel for each depth the plug-in declares. Every pointer offset in
@@ -330,7 +349,7 @@ void GainProcessor::processImagesCuda()
                     ModeName(decision.mode), depthName, width, height,
                     _pCudaStream == nullptr ? "not supplied by the host" : "supplied by the host",
                     decision.reason);
-    recordPath("CUDA", width, height);
+    recordPath("CUDA", width, height, _pCudaStream, true);
 
     // The OFX contract is asymmetric and this branch is the whole contract:
     //   * host supplied kOfxImageEffectPropCudaStream -> return immediately,
@@ -356,7 +375,7 @@ void GainProcessor::multiThreadProcessImages(OfxRectI window)
     // neither line rendered pixels somewhere this code does not know about. No
     // OFX::Log::print here - a tiled or multithreaded host would call this once
     // per window, and the file is the channel the harness can read.
-    recordPath("CPU", window.x2 - window.x1, window.y2 - window.y1);
+    recordPath("CPU", window.x2 - window.x1, window.y2 - window.y1, nullptr, false);
 
     for (int y = window.y1; y < window.y2; ++y) {
         if (_effect.abort()) {

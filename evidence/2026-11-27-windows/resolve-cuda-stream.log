@@ -1,0 +1,71 @@
+# Does Resolve supply kOfxImageEffectPropCudaStream? 2026-11-27 21:07, Windows 11
+#
+# The claim under test
+#   references/host-resolve.md said "Resolve is not observed to populate
+#   kOfxImageEffectPropCudaStream (C)" - grade C, an assumption - and the
+#   template's sync branch (no stream -> wait for the default stream) was
+#   described as the one that runs in Resolve "almost all the time". Nothing had
+#   ever read the property back from a host run.
+#
+# The instrument
+#   minimal-cuda-ofx now writes one line per render into $MCOFX_PATH_LOG
+#   (Plugin.cpp, recordPath): path, size, and "stream=none" or the pointer the
+#   host passed in kOfxImageEffectPropCudaStream. OFX::Log::print does not survive
+#   Resolve's log, and poc.py --path-log sets the variable for the host process.
+#   The CPU path writes "stream=n/a": it has no CUDA stream to ask about.
+#
+# Build
+#   GAIN_DEFAULT=2.0 OFX_SOURCE_DIR=...\.ofx-ref build.bat Release
+#   -> "Default gain: 2.0", 0 warnings, exit 0. The gain matters: at the default
+#   1.0 the plug-in reports identity and the host may skip render() entirely, so
+#   a default-gain run could have had no lines to read.
+#
+# Run
+#   set RESOLVE_EXE=E:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe
+#   python tests/resolve/poc.py \
+#     --bundle templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle \
+#     --build-project --source .validation/resolve-source.png \
+#     --effect "Minimal CUDA Gain" --timeline-name cuda-stream \
+#     --path-log .validation/cuda-path.log \
+#     --reference .validation/resolve-source.png --expect-gain 2 --gui
+#
+#   validate  pass   1 .ofx, decoders ['ffmpeg']
+#   install   pass   C:\Program Files\Common Files\OFX\Plugins\MinimalCudaGain.ofx.bundle
+#   launch    pass   pid 24420
+#   connect   pass   DaVinci Resolve Studio 21.2.0.5
+#   gpu       pass   Compute API set to automatic, defaulting to CUDA.; Selected compute API: CUDA
+#   build     pass   cuda-stream: Minimal CUDA Gain on resolve-source.png
+#   render    pass   poc00108000.png
+#   check     pass   1920x1080 via ffmpeg, x2 mae 0.0 max 0
+#   path      pass   CUDA 1920x1080 stream=00000261F457B1A0; ... CUDA 288x162 stream=00000261F457B1A0; ...
+#   quit      pass   API quit, then the recorded PID
+#   exit 0
+#
+#   $MCOFX_PATH_LOG, verbatim, eight renders:
+#
+CUDA 1920x1080 stream=00000261F457B1A0
+CUDA 1920x1080 stream=00000261F457B1A0
+CUDA 288x162 stream=00000261F457B1A0
+CUDA 1920x1080 stream=00000261F457B1A0
+CUDA 1920x1080 stream=00000261F457B1A0
+CUDA 1920x1080 stream=00000261F457B1A0
+CUDA 1920x1080 stream=00000261F457B1A0
+CUDA 1920x1080 stream=00000261F457B1A0
+#
+# What this proves
+#   Resolve 21.2.0.5 DOES set kOfxImageEffectPropCudaStream: every render carries
+#   a non-null pointer, the same one for the whole session (one stream, not one
+#   per frame), for the full frame and for the 288x162 thumbnail. The plug-in took
+#   its CUDA path on each of them (the path column says CUDA, not CPU), enqueued
+#   on the host's stream and returned without waiting - and the frame is the
+#   source times two to the byte (mae 0.0, max 0), which is what "the host ordered
+#   its own read after the stream" looks like from here.
+#
+# What this does not prove
+#   That the *other* branch works in a real host: no host measured here passes a
+#   null stream, so "no stream -> synchronise before returning" is still exercised
+#   only by the fake host and the launcher harness (gpu-kernel-test's stream
+#   stage). And a pointer in the property is not a proof of ordering under load:
+#   the frame being exact says the host waited for the result, not that the
+#   plug-in would survive a host that enqueues further work on the same stream
+#   before reading. One host, one GPU, one session.
