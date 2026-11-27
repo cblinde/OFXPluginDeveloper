@@ -771,6 +771,27 @@ def check_counts(root, files, texts, report):
                              f"says 'both templates' but there are {template_count} templates "
                              f"(templates/*/CMakeLists.txt)")
 
+            # "both" and "two" were the only words this rule knew, so "All four
+            # templates guard the write" survived the fifth template in two
+            # documents. Two phrasings claim the whole set and nothing else, so
+            # those are the ones checked: a sentence-initial "All N templates"
+            # and "none of the N templates". A subset ("the three templates that
+            # carry SANITIZE") and a dated record ("all three templates" in a
+            # 2026-11-26 row, true of the tree then) stay legal - which is why
+            # the match is case-sensitive and the qualifier forms are out.
+            for match in re.finditer(
+                    r"\bAll (three|four|five|six|seven|eight|nine|ten|\d+) templates\b"
+                    r"|\bnone of the (three|four|five|six|seven|eight|nine|ten|\d+) templates\b",
+                    plain):
+                try:
+                    stated = num(match.group(1) or match.group(2))
+                except KeyError:
+                    continue
+                if stated != template_count:
+                    report.error(path, line_number,
+                                 f"says '{match.group(0)}', but there are {template_count} "
+                                 f"templates (templates/*/CMakeLists.txt)")
+
             for match in re.finditer(r"\b([A-Za-z]+|\d+) layers?\b", plain):
                 try:
                     stated = num(match.group(1))
@@ -793,6 +814,79 @@ def check_counts(root, files, texts, report):
                     report.error(path, line_number,
                                  f"says {match.group(1)} shipped projects but "
                                  f"references/ai-architectures-and-runtimes.md §1 lists {ai_rows} repositories")
+
+
+def check_suite_totals(root, files, texts, report):
+    """The suite table in runtime-comparison.md against the run it summarises.
+
+    That table is where a reader takes a count from, and nothing compared it to
+    the log: the inference template's 778 and the 2,929 total survived every gate
+    while the log printed 148 x 3 + 150 + 84 = 678. The excerpt committed under
+    evidence/ keeps the section headers and every `contract_test: N checks` line,
+    which is enough to add the counts up per template - so the numbers the prose
+    quotes are checked against the numbers the suites printed, not against each
+    other.
+    """
+    relative = "references/runtime-comparison.md"
+    text = texts.get(relative)
+    if text is None:
+        return
+    evidence = os.path.join(root, "evidence")
+    logs = sorted(
+        os.path.join(evidence, name, "run-tests-full.log")
+        for name in (os.listdir(evidence) if os.path.isdir(evidence) else [])
+        if os.path.exists(os.path.join(evidence, name, "run-tests-full.log"))
+    )
+    if not logs:
+        # A checkout that never took a full run has nothing to compare against;
+        # saying so would be noise on every clone, so the check stays silent.
+        return
+    log = read(logs[-1])
+
+    templates = [d for d in os.listdir(os.path.join(root, "templates"))
+                 if os.path.exists(os.path.join(root, "templates", d, "CMakeLists.txt"))]
+    counted = {}
+    section = None
+    for line in log.splitlines():
+        if line.startswith("== ") and not line.startswith("== ["):
+            section = next((name for name in templates if name in line), None)
+            continue
+        match = re.match(r"^(?:contract_test|opencl_suite|vulkan_suite|vulkan_mode_test): "
+                         r"(\d+) checks", line)
+        if match and section:
+            counted[section] = counted.get(section, 0) + int(match.group(1))
+
+    totals = {}
+    for line_number, line in enumerate(text.splitlines(), 1):
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) < 5:
+            continue
+        label, count_cell = cells[1], cells[3]
+        owner = next((name for name in templates if name in label), None)
+        if owner is None:
+            total = re.match(r"^\*\*(\d[\d,]*)\b", count_cell)
+            if total:
+                totals["stated"] = int(total.group(1).replace(",", ""))
+                totals["line"] = line_number
+            continue
+        numbers = [int(value) for value in re.findall(r"\d+", count_cell)]
+        if not numbers:
+            continue
+        stated = sum(numbers)
+        if owner not in counted:
+            continue
+        if stated != counted[owner]:
+            report.error(relative, line_number,
+                         f"{owner} is {stated} checks here but the log adds up to "
+                         f"{counted[owner]} ({os.path.relpath(logs[-1], root)})")
+    if "stated" in totals and counted:
+        actual = sum(counted[name] for name in counted if name in templates)
+        if totals["stated"] != actual:
+            report.error(relative, totals["line"],
+                         f"total says {totals['stated']} passing but the per-template rows of "
+                         f"{os.path.relpath(logs[-1], root)} add up to {actual}")
 
 
 def check_measurements(root, files, texts, report):
@@ -1619,6 +1713,7 @@ def main():
     check_section_numbering(root, files, texts, report)
     check_section_refs(root, files, texts, report)
     check_counts(root, files, texts, report)
+    check_suite_totals(root, files, texts, report)
     check_measurements(root, files, texts, report)
     check_labels(root, files, texts, report)
     check_anchors(root, files, texts, report)

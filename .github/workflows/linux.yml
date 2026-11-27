@@ -294,7 +294,7 @@ jobs:
           valgrind --error-exitcode=1 --leak-check=full /bin/true
           cppcheck --version
 
-      - name: cppcheck and shellcheck, all four templates
+      - name: cppcheck and shellcheck, every template that has a runner
         # REQUIRE_ANALYSIS=1 turns a missing tool into a failure instead of a skip,
         # and the grep refuses a run that never printed its summary - the four
         # templates had their own analysis entry points so that a finding names the
@@ -303,7 +303,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for template in minimal-ofx minimal-cuda-ofx minimal-opencl-ofx onnx-inference-ofx; do
+          for template in minimal-ofx minimal-cuda-ofx minimal-opencl-ofx \
+                          onnx-inference-ofx minimal-vulkan-ofx; do
             echo "== ${template}"
             REQUIRE_ANALYSIS=1 "./templates/${template}/test/run-analysis.sh" 2>&1 \
               | tee "analysis-${template}.log"

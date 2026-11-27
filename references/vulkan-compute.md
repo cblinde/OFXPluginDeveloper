@@ -70,7 +70,9 @@ back to back in the device suite** (**[V]**,
 
 The arrangement that was added second is the slower one here, by ~14%, and the
 columns say why: the copies are ~89 ms either way, and staging puts the frame
-over PCIe twice instead of once (**[V]**).
+over PCIe twice instead of once (**[V]**). The block drops one warm-up frame
+before it times (`vulkan_suite.cpp`), so the 4% between two 300-frame runs is
+not a cold start - which is why the table above is a range and not a number.
 
 Read it as three facts and one consequence:
 

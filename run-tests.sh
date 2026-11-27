@@ -37,6 +37,75 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# The three decisions the plan and the run share. A second copy of these
+# conditions would drift from the run, and --dry-run would then describe a run
+# that does not exist.
+plan_onnx() {
+  if [[ -n "${ONNXRUNTIME_ROOT:-}" ]]; then echo 1; else echo 0; fi
+}
+
+plan_vulkan() {
+  if [[ -n "${VULKAN_SDK:-}${VULKAN_INCLUDE_DIR:-}" || "${OFXPLUGIN_VULKAN:-ON}" == "OFF" ]]; then
+    echo "ran"
+  else
+    echo "no-sdk"
+  fi
+}
+
+plan_gpu() {
+  if [[ "${CPU_ONLY:-0}" == "1" ]]; then
+    echo "CPU_ONLY"
+  elif ! command -v nvcc >/dev/null 2>&1; then
+    echo "CPU_ONLY (no nvcc)"
+  else
+    echo "CUDA"
+  fi
+}
+
+DRY_RUN=0
+for argument in "$@"; do
+  case "${argument}" in
+    --dry-run) DRY_RUN=1 ;;
+    --help|-h)
+      echo "usage: ./run-tests.sh [--dry-run]"
+      echo "  --dry-run  print the plan - which template runs in which mode, and"
+      echo "             which hole the summary will name - and stop before the"
+      echo "             first build. The environment is read exactly as a real run"
+      echo "             reads it (ONNXRUNTIME_ROOT, VULKAN_SDK, OFXPLUGIN_VULKAN,"
+      echo "             CPU_ONLY, nvcc on PATH)."
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument '${argument}'; try --dry-run or --help" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# The plan exists because the skip conditions are otherwise reachable only by
+# installing or uninstalling a toolchain: the branch a machine does not have is
+# never the one that gets checked by hand, and CI reaches only the branch its
+# image has. This prints both from one machine, in a second, with no build.
+if [[ "${DRY_RUN}" == "1" ]]; then
+  echo "plan (nothing built, nothing run):"
+  echo "  docs drift, provenance, shell, workflows   check-docs.py, check-provenance.py, check-shell.sh, check-workflows.py"
+  echo "  minimal-ofx                                build, artifact, contract, install"
+  echo "  minimal-cuda-ofx                           build, artifact, contract ($(plan_gpu))"
+  echo "  minimal-opencl-ofx                         build, artifact, contract, opencl_suite (a device, or NOT RUN)"
+  if [[ "$(plan_onnx)" == "1" ]]; then
+    echo "  onnx-inference-ofx                         build, contract x3, shipped model, tiling"
+  else
+    echo "  NOT RUN: onnx-inference-ofx                ONNXRUNTIME_ROOT is unset"
+  fi
+  if [[ "$(plan_vulkan)" == "ran" ]]; then
+    echo "  minimal-vulkan-ofx                         six steps: path policy, contract x6, vulkan_suite"
+  else
+    echo "  NOT RUN: minimal-vulkan-ofx                no VULKAN_SDK or VULKAN_INCLUDE_DIR, and OFXPLUGIN_VULKAN is not OFF"
+  fi
+  echo "  negative controls, tool self-tests, comparator self-test"
+  exit 0
+fi
+
 # Documentation is part of the deliverable: fail the run when the prose drifts
 # from the tree (links, anchors, counts, duplicated measurements, provenance).
 echo
@@ -112,7 +181,7 @@ fi
 # never counted as a suite that passed.
 opencl="ran"
 onnx=1
-if [[ -z "${ONNXRUNTIME_ROOT:-}" ]]; then
+if [[ "$(plan_onnx)" == "0" ]]; then
   onnx=0
   echo "[onnx] ONNXRUNTIME_ROOT is unset: templates/onnx-inference-ofx will NOT be built or tested"
   echo "       Point it at a directory with include/onnxruntime_cxx_api.h and"
@@ -126,7 +195,7 @@ fi
 # the template. It is not enforced in CI the way ONNX and OpenCL are, because the
 # workflow builds it in a job that installs the SDK.
 vulkan="ran"
-if [[ -z "${VULKAN_SDK:-}${VULKAN_INCLUDE_DIR:-}" && "${OFXPLUGIN_VULKAN:-ON}" != "OFF" ]]; then
+if [[ "$(plan_vulkan)" == "no-sdk" ]]; then
   vulkan="no-sdk"
   echo "[vulkan] no VULKAN_SDK or VULKAN_INCLUDE_DIR: templates/minimal-vulkan-ofx"
   echo "         will NOT be built. Set VULKAN_SDK, or OFXPLUGIN_VULKAN=OFF to"
@@ -138,11 +207,8 @@ fi
 # ends up there anyway; in neither case does a kernel run, so no summary line may
 # claim one did. Same rule as the ONNX skip above: a hole is named, not rounded up
 # to "passed".
-gpu_mode="CUDA"
-if [[ "${CPU_ONLY:-0}" == "1" ]]; then
-  gpu_mode="CPU_ONLY"
-elif ! command -v nvcc >/dev/null 2>&1; then
-  gpu_mode="CPU_ONLY (no nvcc)"
+gpu_mode="$(plan_gpu)"
+if [[ "${gpu_mode}" == "CPU_ONLY (no nvcc)" ]]; then
   # build.sh exits 2 when asked for CUDA and there is no nvcc, by design; the
   # single command must still work on a machine without a toolkit.
   export CPU_ONLY=1

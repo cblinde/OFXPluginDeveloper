@@ -1,0 +1,37 @@
+# ./run-tests.sh --dry-run, Windows 11 + RTX 3060, 2026-11-27.
+#
+# Why this log exists: the skip conditions in run-tests.sh - ONNXRUNTIME_ROOT,
+# VULKAN_SDK (or VULKAN_INCLUDE_DIR, or OFXPLUGIN_VULKAN=OFF), nvcc on PATH -
+# were reachable only by installing or uninstalling a toolchain, so the branch a
+# machine does not have was never the one that got checked by hand. --dry-run
+# prints the plan from the same three functions the run itself calls
+# (plan_onnx, plan_vulkan, plan_gpu), so one machine can show both branches.
+#
+# Machine: Windows 11 10.0.26300, RTX 3060, nvcc from CUDA 13.0 on PATH, no
+# CPU_ONLY, no SANITIZE. Nothing was built for any line below.
+#
+# $ env -u VULKAN_SDK -u ONNXRUNTIME_ROOT -u OFXPLUGIN_VULKAN ./run-tests.sh --dry-run
+plan (nothing built, nothing run):
+  docs drift, provenance, shell, workflows   check-docs.py, check-provenance.py, check-shell.sh, check-workflows.py
+  minimal-ofx                                build, artifact, contract, install
+  minimal-cuda-ofx                           build, artifact, contract (CUDA)
+  minimal-opencl-ofx                         build, artifact, contract, opencl_suite (a device, or NOT RUN)
+  NOT RUN: onnx-inference-ofx                ONNXRUNTIME_ROOT is unset
+  NOT RUN: minimal-vulkan-ofx                no VULKAN_SDK or VULKAN_INCLUDE_DIR, and OFXPLUGIN_VULKAN is not OFF
+  negative controls, tool self-tests, comparator self-test
+exit=0
+#
+# $ VULKAN_SDK=<repo>/.validation/vk/sdk ONNXRUNTIME_ROOT=<repo>/.validation/ort-1.32.0 ./run-tests.sh --dry-run
+plan (nothing built, nothing run):
+  docs drift, provenance, shell, workflows   check-docs.py, check-provenance.py, check-shell.sh, check-workflows.py
+  minimal-ofx                                build, artifact, contract, install
+  minimal-cuda-ofx                           build, artifact, contract (CUDA)
+  minimal-opencl-ofx                         build, artifact, contract, opencl_suite (a device, or NOT RUN)
+  onnx-inference-ofx                         build, contract x3, shipped model, tiling
+  minimal-vulkan-ofx                         six steps: path policy, contract x6, vulkan_suite
+  negative controls, tool self-tests, comparator self-test
+exit=0
+#
+# $ ./run-tests.sh --nope
+error: unknown argument '--nope'; try --dry-run or --help
+exit=2
