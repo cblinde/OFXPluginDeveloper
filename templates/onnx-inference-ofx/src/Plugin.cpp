@@ -78,6 +78,25 @@ const char* const kParamHalo = "halo";
 // Label, not a setting: the plug-in writes it when the session is created.
 const char* const kParamProvider = "provider";
 
+/// Resolve writes its own OFX lines to its log but not what a plug-in passes to
+/// OFX::Log::print (measured 2026-11-26 on the CUDA template). The provider
+/// label is the only place that says whether the session got CUDA or fell back
+/// to the CPU, and the host's script API cannot read a parameter, so the label
+/// is not observable from a test run. When ONNX_PROVIDER_LOG names a file, each
+/// instance appends one line: the label, then the model it was created for.
+/// Unset, which is the normal case, nothing is written and no file is created.
+void recordProvider(const std::string& label, const char* modelPath)
+{
+    const char* target = std::getenv("ONNX_PROVIDER_LOG");
+    if (target == nullptr || *target == '\0') {
+        return;
+    }
+    std::ofstream log(target, std::ios::app);
+    if (log) {
+        log << label << " | " << (modelPath == nullptr ? "" : modelPath) << '\n';
+    }
+}
+
 constexpr std::int64_t kPixelBytes = 4 * sizeof(float); // RGBA float
 
 // Alpha only: the model has three channels and alpha is not its business.
@@ -275,6 +294,7 @@ std::shared_ptr<ModelRunner> InferencePlugin::AcquireRunner(const std::string& p
             label += " - fallback: " + fresh->ProviderReason();
         }
         _provider->setValue(label);
+        recordProvider(label, path.c_str());
         OFX::Log::print("%s: execution provider %s", kPluginName, label.c_str());
         return fresh;
     } catch (const std::exception& e) {
@@ -532,6 +552,16 @@ void InferencePluginFactory::describe(OFX::ImageEffectDescriptor& desc)
     try {
         desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
     } catch (const OFX::Exception::PropertyUnknownToHost&) {
+    } catch (const OFX::Exception::Suite& e) {
+        // Resolve 21.2 answers kOfxStatErrMissingHostFeature (4) for this
+        // write, not ErrUnknown: the support library maps the first two
+        // statuses to PropertyUnknownToHost and everything else to Suite, so
+        // catching only the first left describe() throwing and the host never
+        // listed the plug-in (measured 2026-11-27). The property's default is
+        // already "true"; a status that is not this one is a real failure.
+        if (e.status() != kOfxStatErrMissingHostFeature) {
+            throw;
+        }
     }
     // A host that has never heard of the property answers with an unknown
     // status, and the support library turns that into a failed describe - the
@@ -539,6 +569,16 @@ void InferencePluginFactory::describe(OFX::ImageEffectDescriptor& desc)
     try {
         desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
     } catch (const OFX::Exception::PropertyUnknownToHost&) {
+    } catch (const OFX::Exception::Suite& e) {
+        // Resolve 21.2 answers kOfxStatErrMissingHostFeature (4) for this
+        // write, not ErrUnknown: the support library maps the first two
+        // statuses to PropertyUnknownToHost and everything else to Suite, so
+        // catching only the first left describe() throwing and the host never
+        // listed the plug-in (measured 2026-11-27). The property's default is
+        // already "true"; a status that is not this one is a real failure.
+        if (e.status() != kOfxStatErrMissingHostFeature) {
+            throw;
+        }
     }
 
     // No CUDA capability is advertised: the template links the CPU execution

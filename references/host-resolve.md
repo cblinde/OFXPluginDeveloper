@@ -273,14 +273,19 @@ splits the action per write:
   `HostInadequate` and `PropertyUnknownToHost` to 4; that is the "error code 4" in
   the host log. Status 3 (`kOfxStatErrUnknown`) never reaches the host here: the
   property wrapper turns it into the exception first
-  (`Support/Library/ofxsProperty.cpp:8-40`).
+  (`Support/Library/ofxsProperty.cpp:8-40`). On 2026-11-27 the same write in the ONNX template came back differently: the
+  wrapper raised `OFX::Exception::Suite` with `kOfxStatErrMissingHostFeature`
+  instead, so a guard naming only `PropertyUnknownToHost` still let
+  `describe()` throw and the host listed no effect. Catch both, and re-throw
+  any status that is not 4.
 
 What follows for a plug-in that wants a frame out of this host: a capability
 write is a claim, not a question, and a host that does not know the property can
 fail the whole action. Guard the 1.5.1 additions - `try`/`catch` around the
 write, or ask `propGet` first - and the rest of `describe()` is cheap. With the
 guard the host instantiated the effect, created the filter context and rendered
-1920x1080; the frame is the model's output, not the source (`mae 94.87` against
+1920x1080 - and with the provider-only CUDA bundle beside it the ONNX session
+came up on CUDA with every node there (`resolve-onnx-provider.log`); the frame is the model's output, not the source (`mae 94.87` against
 the source, and half an 8-bit level from the same model run on the CPU, which
 also pins the pixels the host hands over to 0..1).
 

@@ -1,0 +1,57 @@
+# The provider-only ONNX bundle inside Resolve Studio 21.2.0.5, 2026-11-27.
+#
+# Backlog row 19, the half the 2026-11-26 runs left open: those measured the
+# packaging (four files, no cuDNN/cuBLAS/cuFFT/cudart of our own, the host
+# carrying its own cudnn64_9.dll) but the plug-in never got an instance, so no
+# session ever loaded a provider. The question here: with the CUDA execution
+# provider beside the .ofx, does the host get a CUDA session or fall back to
+# the CPU?
+#
+# Bundle: ONNXPLUGIN_BUNDLE_CUDA_PROVIDER=ON, OFXPLUGIN_CUDA_FROM_HOST=ON,
+# ONNXRUNTIME_ROOT=.validation/ort-gpu-1.20.1 (provider CUDA major 12, the
+# major Resolve 21.2 ships). Contents/Win64 holds four files:
+#   OnnxInference.ofx, onnxruntime-ofx.dll,
+#   onnxruntime_providers_cuda.dll, onnxruntime_providers_shared.dll
+# and no cuDNN, cuBLAS, cuFFT or cudart of its own.
+#
+# Two fixes were needed before the host would run it. (1) describe() writes
+# kOfxImageEffectPropCPURenderSupported and kOfxImageEffectPropNoSpatialAwareness;
+# Resolve answers kOfxStatErrMissingHostFeature (4), and the support library
+# maps ErrUnknown/ErrUnsupported to PropertyUnknownToHost but everything else
+# to OFX::Exception::Suite - so the catch that only named
+# PropertyUnknownToHost left describe throwing and the host never listed the
+# plug-in. All four templates now swallow Suite only when the status is 4.
+# (2) the provider label is the only place that says which EP the session got,
+# and the host's script API cannot read a parameter, so the template appends it
+# to $ONNX_PROVIDER_LOG when that variable names a file.
+
+== poc.py: install, launch, one frame, quit ==
+
+resolve proof of concept (run)
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\OnnxInference.ofx.bundle
+  launch    pass     pid 23196
+  connect   pass     DaVinci Resolve Studio 21.2.0.5
+  gpu       pass     2026-11-27 18:49:31,194 | Compute API set to automatic, defaulting to CUDA.; 2026-11-27 18:49:31,194 | Selected compute API: CUDA
+  build     pass     poc: ONNX Inference on source.png
+  render    pass     poc00108000.png
+  check     pass     1920x1080 via ffmpeg
+  quit      pass     API quit, then the recorded PID
+report: Z:\Tools-DEV\OFXPluginDeveloper_Local\tests\resolve\reports\poc-2026-11-27T17-49-30+00-00.json
+
+== $ONNX_PROVIDER_LOG, written by the plug-in after the session existed ==
+
+CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA) | Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\models\test_conv.onnx
+
+== What this proves, and what it does not ==
+#
+# Proves: the host created the filter context, instantiated the plug-in, built
+# the ONNX session with the bundled CUDA provider and rendered one 1920x1080
+# frame with the host's compute API on CUDA. The label reports every node on
+# CUDA, so this is not the CPU fallback: it is the branch the fallback reason
+# string exists for and it stayed empty.
+#
+# Does not prove: throughput (one frame, no timing), a second GPU or driver, an
+# AMD/Intel host, or the 1.32.0 package - that provider imports cublas64_13 and
+# Resolve ships CUDA 12, which is error 1114 at load, a different measurement.
+# One host version, one model (611 bytes), one session.

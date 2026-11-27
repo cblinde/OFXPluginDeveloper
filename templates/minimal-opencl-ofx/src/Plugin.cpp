@@ -337,6 +337,13 @@ public:
         try {
             desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
         } catch (const OFX::Exception::PropertyUnknownToHost&) {
+        } catch (const OFX::Exception::Suite& e) {
+            // MissingHostFeature: the host does not implement the property at
+            // all. The support library maps only ErrUnknown/ErrUnsupported to
+            // PropertyUnknownToHost, so this status arrives as Suite.
+            if (e.status() != kOfxStatErrMissingHostFeature) {
+                throw;
+            }
         }
         // A host that has never heard of the property answers with an unknown
         // status, and the support library turns that into a failed describe - the
@@ -344,6 +351,13 @@ public:
         try {
             desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
         } catch (const OFX::Exception::PropertyUnknownToHost&) {
+        } catch (const OFX::Exception::Suite& e) {
+            // MissingHostFeature: the host does not implement the property at
+            // all. The support library maps only ErrUnknown/ErrUnsupported to
+            // PropertyUnknownToHost, so this status arrives as Suite.
+            if (e.status() != kOfxStatErrMissingHostFeature) {
+                throw;
+            }
         }
     }
 

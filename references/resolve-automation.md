@@ -230,7 +230,13 @@ named by `$MCOFX_PATH_LOG`, and `tests/resolve/poc.py --path-log <file>` sets th
 variable for the host it launches. In the Resolve run all eight render invocations
 declared `CUDA`, so the frame that matched the reference times two was produced by
 the kernel, not by the fallback
-(`../evidence/2026-11-26-windows/resolve-poc-cuda-gain.log`).
+(`../evidence/2026-11-26-windows/resolve-poc-cuda-gain.log`). The ONNX template
+uses the same channel for a different question: it appends its `provider` label - the
+one thing that says whether the session got CUDA or fell back - to the file named by
+`$ONNX_PROVIDER_LOG`, which `poc.py` inherits from the caller's environment. With a
+provider-only bundle beside it, Resolve reported
+`CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA)`
+(`../evidence/2026-11-27-windows/resolve-onnx-provider.log`).
 
 ### What the declaration can and cannot say
 
@@ -1250,7 +1256,7 @@ the edition is evidence of the edition.
 |---|---|
 | set or read an OFX parameter | nothing. `Effect` has six methods (§14.10), there is no `SetParameter` in 21.2's `.pyi`, and `FusionComp` is declared as `class FusionComp: ...` - a bare stub without methods, so the Fusion route does not exist either. The lever that does work is the **default**: rebuild with `-DREFERENCE_GAIN_DEFAULT=2.0` and the host cannot skip `render()` (§14.10) |
 | read a frame's pixels | no. Pixels leave only as a file or an encoded string, through a render job or `ExportFrame` |
-| learn which backend the plug-in took | no. Not in the API, and Resolve logs nothing a plug-in prints through `OFX::Log::print`; the plug-in has to declare it, which the CUDA template does through `$MCOFX_PATH_LOG` (§8, §14.13) |
+| learn which backend the plug-in took | no. Not in the API, and Resolve logs nothing a plug-in prints through `OFX::Log::print`; the plug-in has to declare it, which the CUDA template does through `$MCOFX_PATH_LOG` and the inference template through `$ONNX_PROVIDER_LOG` (§8, §14.13) |
 | learn the OFX identifier from the host | no. `GetEffectsList` answers the host's id; the bundle's own id is in its `OFX` support XML |
 | set a parameter with a click instead | no. The scripting API has no UI automation |
 

@@ -109,7 +109,19 @@ message. Two host-facing facts:
   frame is the source (`mae 0.0`) even with `ONNX_MODEL_PATH` pointing at a
   model. So the run establishes the first half of the claim - the host supplies
   the CUDA stack, our bundle adds no second copy of a base name - and nothing
-  about our provider, which no session loaded. That the provider imports a
+  about our provider, which no session loaded.
+  On 2026-11-27 the session half closed, with the same four-file bundle and a
+  provider built for CUDA 12: `poc.py` rendered 1920x1080 with the host's
+  compute API on CUDA, and the plug-in's `provider` label read
+  `CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested,
+  all nodes on CUDA)` - a CUDA session with every node on CUDA, not the CPU
+  fallback (**[V]**,
+  [`resolve-onnx-provider.log`](../evidence/2026-11-27-windows/resolve-onnx-provider.log)).
+  Two changes were needed: the 1.5.1 guard has to catch
+  `OFX::Exception::Suite` with `kOfxStatErrMissingHostFeature` as well as
+  `PropertyUnknownToHost` (this host did not answer ErrUnknown for the write),
+  and the template appends its provider label to `$ONNX_PROVIDER_LOG` because
+  the host's script API cannot read a parameter. That the provider imports a
   specific CUDA major remains a constraint to design for (**[B]**, ONNX Runtime's
   provider requirements), but it is not what separated these two packages: both
   failed before a provider could load, for the reason measured on 2026-11-27
