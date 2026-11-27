@@ -1,0 +1,207 @@
+# One frame through the inference template's two providers, Windows, 2026-11-27.
+#
+# This is the number references/runtime-comparison.md section 5 had written down
+# as a gap: a wall-clock CUDA-EP-against-CPU-EP frame time on this machine. The
+# wheel in .venv has no CUDA provider (its list is AzureExecutionProvider and
+# CPUExecutionProvider), so the measurement is taken with the bundled package's
+# own DLLs, by a program that links the same onnxruntime.lib and loads the same
+# onnxruntime.dll / onnxruntime_providers_cuda.dll a bundle ships:
+#
+#   .validation/ort-gpu-1.32.0/bin/bench-ep-frame.exe <model.onnx> <W> <H> \
+#       [--iterations 10] [--warmup 3] [--threads N]
+#
+# Scratch, like the other probes in .validation: bench-ep-frame.cpp is built by
+# .validation/build-bench.bat <ort-root> into that package's bin directory, so
+# the DLL search finds the packaged runtime before anything on PATH. It creates
+# a CPU session, then a CUDA session with the template's six provider keys -
+# device_id=0, use_tf32=0, cudnn_conv_algo_search=HEURISTIC,
+# cudnn_conv_use_max_workspace=0, do_copy_in_default_stream=1,
+# arena_extend_strategy=kSameAsRequested - and prints the provider's own
+# serialisation of them (below, once; the later runs print the same string).
+#
+# A frame is ModelRunner::Run()'s per-frame path and nothing else: wrap the
+# caller's host buffer as an OrtValue (no copy, no allocation), Run() with
+# default RunOptions, memcpy the output back into a host buffer. With host
+# pointers and do_copy_in_default_stream=1 that Run() synchronises, so a sample
+# is the whole round trip a host waits for, not a launch.
+#
+# Machine: Windows 11 10.0.26300, RTX 3060, CUDA 13.5 UMD, toolkit 13.0.48, the
+# same machine every other number in that document came from. Runtime: ONNX
+# Runtime 1.32.0, API 32 - the version .github/actions/onnx-runtime pins, and
+# the package templates/onnx-inference-ofx bundles.
+#
+# The 1.20.1 CUDA-12 package in .validation/ort-gpu-1.20.1 was tried and is not
+# in this log: the same bench built against it printed the CPU row and then
+# crashed while creating the CUDA session (no output after that line, exit 139
+# in the shell), so there is no 1.20.1 row to report. That failure is a fact
+# about this scratch harness on this machine and nothing in the plug-in is
+# inferred from it.
+#
+# Models: the template's own models/test_conv.onnx at 3x48x64 - 9,216 values,
+# the shape its suite runs - and .validation/big_conv.onnx, the graph section
+# 5's TF32 numbers were measured on (Conv 3->64 3x3, Relu, Conv 64->64 3x3,
+# Relu, dynamic H/W, checked with onnx.checker, seed 1234), at 640x480 and
+# 1920x1080.
+#
+# Reading rules, all of them visible per run: the first frame is printed apart
+# from the warm ones because it pays kernel loading; the warm-up frames are not
+# in the samples; each run measures two rounds in opposite order, so a clock or
+# thermal ramp would show up as a difference between them; every sample is
+# printed rather than just the median; and "CUDA against CPU on the same frame"
+# is ORT's output minus ours, which is 1e-7-ish with TF32 off and would read
+# 0.000e+00 if the CUDA row had silently fallen back to the CPU.
+#
+# Threads: 1 is what the template asks for (ModelRunner.cpp, SessionThreads, and
+# the label prints "1 thread"). The 8-thread run is the CPU provider's best case
+# at 1080p, measured because a reader will ask what the CPU could do with the
+# cores the host has.
+
+
+== 1. The template's own model, 3x48x64, 1 thread (the suite's shape) ==
+
+model: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/models/test_conv.onnx  64x48, 3 channel(s), 9216 values per frame
+runtime: ONNX Runtime 1.32.0, API 32, linking the onnxruntime.dll beside this exe
+intra-op threads 1, ORT_ENABLE_ALL, per-frame OrtValue over the host buffer
+
+CPU session created in 6.2 ms, input 'input' output 'output'
+CPU first frame (untimed run): 0.28 ms
+CUDA session created in 241.7 ms, input 'input' output 'output'
+CUDA provider options: external_data_loader_chunk_bytes=2097152;cudnn_conv_use_max_workspace=0;enable_cudnn=1;do_copy_in_default_stream=1;cudnn_conv_algo_search=HEURISTIC;device_id=0;cudnn_conv1d_pad_to_nc1d=0;has_user_compute_stream=0;user_compute_stream=0;gpu_mem_limit=18446744073709551615;arena_extend_strategy=kSameAsRequested;min_num_runs_before_cuda_graph_capture=2;tunable_op_enable=0;tunable_op_tuning_enable=0;tunable_op_max_tuning_duration_ms=0;prefer_nhwc=0;use_ep_level_unified_stream=0;use_tf32=0;fuse_conv_bias=0;sdpa_kernel=0;external_data_loader_reading_threads=4;external_data_loader_pinned_memory_bytes=33554432
+CUDA first frame (untimed run): 136.58 ms
+
+CUDA against CPU on the same frame: max |d| = 2.980e-08
+
+== round 1: CPU then CUDA ==
+CPU  10 frame(s), ms/frame:
+  0.05 0.05 0.05 0.05 0.05 0.07 0.06 0.05 0.05 0.05
+  min 0.05  median 0.05  p90 0.06  max 0.07  mean 0.05  (20833.33 fps at the median)
+CUDA 10 frame(s), ms/frame:
+  0.43 0.33 0.24 0.11 0.09 0.12 0.23 0.11 0.10 0.10
+  min 0.09  median 0.12  p90 0.33  max 0.43  mean 0.18  (8453.09 fps at the median)
+
+== round 2: CUDA then CPU ==
+CUDA 10 frame(s), ms/frame:
+  0.10 0.09 0.10 0.10 0.09 0.10 0.10 0.09 0.10 0.10
+  min 0.09  median 0.10  p90 0.10  max 0.10  mean 0.10  (10111.22 fps at the median)
+CPU  10 frame(s), ms/frame:
+  0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05
+  min 0.05  median 0.05  p90 0.05  max 0.05  mean 0.05  (21008.40 fps at the median)
+
+# the same options string is printed by every run below; dropped there
+
+== 2. big_conv at 640x480, 1 thread ==
+
+model: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/big_conv.onnx  640x480, 3 channel(s), 921600 values per frame
+runtime: ONNX Runtime 1.32.0, API 32, linking the onnxruntime.dll beside this exe
+intra-op threads 1, ORT_ENABLE_ALL, per-frame OrtValue over the host buffer
+
+CPU session created in 8.0 ms, input 'data' output 'out'
+CPU first frame (untimed run): 499.90 ms
+CUDA session created in 224.8 ms, input 'data' output 'out'
+CUDA first frame (untimed run): 199.99 ms
+
+CUDA against CPU on the same frame: max |d| = 3.278e-07
+
+== round 1: CPU then CUDA ==
+CPU  10 frame(s), ms/frame:
+  456.06 464.13 465.73 465.89 459.26 456.42 458.94 456.64 459.81 467.73
+  min 456.06  median 459.81  p90 465.89  max 467.73  mean 461.06  (2.17 fps at the median)
+CUDA 10 frame(s), ms/frame:
+  16.87 16.72 16.47 17.10 16.61 16.46 16.53 16.61 16.44 16.74
+  min 16.44  median 16.61  p90 16.87  max 17.10  mean 16.65  (60.20 fps at the median)
+
+== round 2: CUDA then CPU ==
+CUDA 10 frame(s), ms/frame:
+  16.54 16.19 16.48 16.17 16.33 15.58 20.16 19.84 17.61 17.97
+  min 15.58  median 16.54  p90 19.84  max 20.16  mean 17.29  (60.47 fps at the median)
+CPU  10 frame(s), ms/frame:
+  468.47 465.90 465.64 456.47 460.32 459.50 489.08 456.22 463.49 461.60
+  min 456.22  median 463.49  p90 468.47  max 489.08  mean 464.67  (2.16 fps at the median)
+
+== 3. big_conv at 1920x1080, 1 thread ==
+
+model: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/big_conv.onnx  1920x1080, 3 channel(s), 6220800 values per frame
+runtime: ONNX Runtime 1.32.0, API 32, linking the onnxruntime.dll beside this exe
+intra-op threads 1, ORT_ENABLE_ALL, per-frame OrtValue over the host buffer
+
+CPU session created in 9.9 ms, input 'data' output 'out'
+CPU first frame (untimed run): 3209.97 ms
+CUDA session created in 238.5 ms, input 'data' output 'out'
+CUDA first frame (untimed run): 410.19 ms
+
+CUDA against CPU on the same frame: max |d| = 3.874e-07
+
+== round 1: CPU then CUDA ==
+CPU  10 frame(s), ms/frame:
+  2964.20 3017.03 2990.38 2964.05 3056.79 2955.72 2973.78 3039.06 2967.81 2996.03
+  min 2955.72  median 2990.38  p90 3039.06  max 3056.79  mean 2992.48  (0.33 fps at the median)
+CUDA 10 frame(s), ms/frame:
+  114.96 108.65 111.62 113.71 111.71 111.89 110.33 111.13 109.20 112.20
+  min 108.65  median 111.71  p90 113.71  max 114.96  mean 111.54  (8.95 fps at the median)
+
+== round 2: CUDA then CPU ==
+CUDA 10 frame(s), ms/frame:
+  110.47 112.36 111.37 112.10 112.80 118.30 111.33 112.58 113.45 110.38
+  min 110.38  median 112.36  p90 113.45  max 118.30  mean 112.51  (8.90 fps at the median)
+CPU  10 frame(s), ms/frame:
+  3018.65 3103.91 3122.50 3190.99 3001.88 3018.01 2982.13 2991.43 3027.99 3025.44
+  min 2982.13  median 3025.44  p90 3122.50  max 3190.99  mean 3048.29  (0.33 fps at the median)
+
+== 4. big_conv at 1920x1080, 8 threads (the CPU provider's best case) ==
+
+model: Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/big_conv.onnx  1920x1080, 3 channel(s), 6220800 values per frame
+runtime: ONNX Runtime 1.32.0, API 32, linking the onnxruntime.dll beside this exe
+intra-op threads 8, ORT_ENABLE_ALL, per-frame OrtValue over the host buffer
+
+CPU session created in 10.3 ms, input 'data' output 'out'
+CPU first frame (untimed run): 963.91 ms
+CUDA session created in 259.7 ms, input 'data' output 'out'
+CUDA first frame (untimed run): 377.37 ms
+
+CUDA against CPU on the same frame: max |d| = 3.874e-07
+
+== round 1: CPU then CUDA ==
+CPU  10 frame(s), ms/frame:
+  995.58 995.76 991.73 955.05 987.87 1049.81 988.56 1054.49 964.15 934.89
+  min 934.89  median 991.73  p90 1049.81  max 1054.49  mean 991.79  (1.01 fps at the median)
+CUDA 10 frame(s), ms/frame:
+  115.91 113.51 113.88 114.58 114.44 114.35 113.17 114.54 111.88 115.36
+  min 111.88  median 114.44  p90 115.36  max 115.91  mean 114.16  (8.74 fps at the median)
+
+== round 2: CUDA then CPU ==
+CUDA 10 frame(s), ms/frame:
+  113.17 113.17 113.19 112.97 112.17 117.29 114.97 113.91 120.05 114.09
+  min 112.17  median 113.91  p90 117.29  max 120.05  mean 114.50  (8.78 fps at the median)
+CPU  10 frame(s), ms/frame:
+  944.10 944.63 942.96 946.56 941.95 1005.30 1003.61 1009.84 1002.30 987.61
+  min 941.95  median 987.61  p90 1005.30  max 1009.84  mean 972.89  (1.01 fps at the median)
+
+# What the four runs say, read off the lines above (medians of the two rounds,
+# every sample printed above them):
+#
+#   3x48x64      CPU 0.05 ms      CUDA 0.12 / 0.10 ms   - the GPU is 2.0-2.4x
+#                                                     slower on 9,216 values
+#   640x480      CPU 460 / 463 ms  CUDA 16.6 / 16.5 ms   - 27.7x / 28.0x faster
+#   1920x1080    CPU 2,990 / 3,025 ms   CUDA 111.7 / 112.4 ms - 26.8x / 26.9x
+#   1920x1080,   CPU 992 / 988 ms       CUDA 114.4 / 113.9 ms - 8.7x
+#   8 threads
+#
+# Three things follow from the lines rather than from arithmetic:
+#
+#   - The GPU earns its place at 640x480 and above, and loses at the suite's own
+#     shape. At 9,216 values the frame is smaller than the launch and the
+#     synchronisation it takes to get an answer back, which is the same fact the
+#     Vulkan section states for its 95 ms host round trip: a GPU pass on a tiny
+#     frame is a transfer with a kernel inside it.
+#   - Threads do not move the GPU row (114.4 with 8 against 111.7 with 1, inside
+#     the round-to-round spread) and move the CPU row by 2.6-3.1x, so the 26-27x
+#     at one thread is the template's own configuration and the 8.7x is what a
+#     CPU that uses the cores can close it to. Neither run makes the CPU
+#     competitive at 1080p on this graph.
+#   - The first frame is not the frame: 410 ms at 1080p against 112 warm, and
+#     137 ms at 3x48x64 against 0.10 - kernel loading, once per process. A host
+#     that times its first render measures that, not the steady state.
+#
+# Not measured here: a second GPU, a second driver, a tiled host, a pinned host
+# buffer, a multi-pass graph, and any model outside these two. Each frame above
+# is one inference of one graph with a host buffer on both ends.

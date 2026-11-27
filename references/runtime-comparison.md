@@ -110,8 +110,10 @@ what is inside its number, because that is the whole argument.
 ## 5. Inference runtimes: compared where they were measured
 
 The AI path is a different comparison - an inference session's latency depends on
-the model, the shape and the provider's plan - so it stays in the documents that
-measured it rather than being folded into the table above:
+the model, the shape and the provider's plan - so its accuracy rows stay in the
+documents that measured them rather than being folded into the table above. The
+one thing that belonged here and was missing is the frame time, and the four rows
+below are that measurement:
 
 - **CUDA EP against the CPU session, for arithmetic:** `use_tf32=1` differs from
   the CPU session by 4.472e-04 and `use_tf32=0` by 5.364e-07 on a 1080p 64-channel
@@ -121,13 +123,53 @@ measured it rather than being folded into the table above:
   [`performance-model.md`](performance-model.md) owns that table.
 - **DirectML against the CPU provider** on a 1080p convolution, one machine:
   [`../evidence/2026-11-26-windows/directml-vs-cpu.log`](../evidence/2026-11-26-windows/directml-vs-cpu.log).
-- **Not measured anywhere in this tree: a wall-clock CUDA-EP-against-CPU-EP frame
-  time on this machine.** The inference suite asserts outputs, provider labels and
-  fallbacks, not throughput. `tools/bench_ep.py` measures whatever runtime the
-  installed wheel provides, and the wheel in `.venv` is CPU-only (its provider
-  list is `AzureExecutionProvider`, `CPUExecutionProvider`), so a CUDA number has
-  to come from the package's own DLLs - which is a run nobody has done yet, and
-  is written down here as a gap rather than guessed at.
+### The CUDA-EP frame time, measured instead of named
+
+The wheel in `.venv` has no CUDA provider (its list is `AzureExecutionProvider`,
+`CPUExecutionProvider`), so `tools/bench_ep.py` can time the CPU and nothing
+else. This measurement links the bundled package's `onnxruntime.lib` and lets the
+loader find the `onnxruntime.dll` and `onnxruntime_providers_cuda.dll` beside the
+program - ONNX Runtime 1.32.0, the version the action pins and the template
+bundles. A frame is `ModelRunner::Run`'s per-frame path and nothing else: wrap the
+caller's host buffer as an `OrtValue`, `Run`, `memcpy` the output back, with the
+template's six provider keys (`use_tf32=0` among them). Ten warm frames per
+round, two rounds per run in opposite order, every sample in the log (**[V]**,
+[`../evidence/2026-11-27-windows/onnx-ep-frame-timings.log`](../evidence/2026-11-27-windows/onnx-ep-frame-timings.log)):
+
+| Frame (3-channel input, 64-channel 3×3 conv pair) | CPU EP, median of 2 rounds | CUDA EP, median of 2 rounds | CUDA, first frame |
+|---|---|---|---|
+| the suite's own model, 3×48×64 (9,216 values) | 0.05 ms | 0.12 / 0.10 ms | 137 ms |
+| 640×480 (921,600 values) | 460 / 463 ms | 16.6 / 16.5 ms | 200 ms |
+| 1920×1080, 1 thread (6.2 M values) | 2,990 / 3,025 ms | 111.7 / 112.4 ms | 410 ms |
+| 1920×1080, 8 threads | 992 / 988 ms | 114.4 / 113.9 ms | 377 ms |
+
+**At 1080p and 640×480 the GPU wins by 27x and 27.7x, and at the suite's own
+shape it loses.** 112 ms against 2,990 ms is what a host that leaves the template
+at its default `1 thread` waits for; at the suite's 9,216 values the CUDA frame
+takes 0.10-0.12 ms against the CPU's 0.05,
+because the frame is smaller than the launch and the synchronisation that brings
+the answer back. That is the same shape of result as the Vulkan section's 95 ms
+host round trip, and it is why a GPU path is a claim about a frame size, not about
+a provider.
+
+**Threads close the gap to 8.7x and no further.** The same 1080p graph on the CPU
+with eight intra-op threads takes 988-992 ms, so the CPU row is a function of the
+thread count while the GPU row is not (114.4 against 111.7, inside the
+round-to-round spread). The honest statement is therefore two-sided: 27x at the
+template's one thread, 8.7x against a CPU that uses eight cores.
+
+**The first frame is not the frame.** 410 ms at 1080p against 112 warm, 137 ms at
+9,216 values against 0.10 - kernel loading, once per process, on top of a session
+that itself cost 225-260 ms to create here. A host that times its first render
+measures that, not the steady state, which is what the two-round layout in the
+log exists to keep apart.
+
+**Still not measured:** a second GPU or driver, a pinned host buffer (the one
+change most likely to move the copy half of a CUDA frame), a multi-pass graph that
+keeps the frame on the device, and a 1.20.1 CUDA-12 row - the same bench built
+against that package crashed inside its CUDA session creation, so that pairing has
+no frame time here rather than a guessed one. The inference suite itself still
+asserts outputs, provider labels and fallbacks, not throughput.
 
 ## 6. What none of this proves
 
@@ -142,6 +184,9 @@ measured it rather than being folded into the table above:
   arrangement where device-local and a persistent buffer win.
 - **Wall clock here is a warm checkout.** It says what a contributor waits for
   after the first build, not what CI waits for on a cold runner.
+- **A frame time on two graphs.** The §5 table is a convolution pair at three
+  sizes; a detector, a decoder or a graph with control flow has no row, and its
+  transfer-to-compute ratio is a different number.
 
 ## Provenance labels
 
