@@ -242,7 +242,17 @@ public:
         // awareness. This is the CPU reference, so both answers are "true".
         // The second is a promise the plug-in keeps by having no spatial
         // parameters to disable - a host only uses it as a hint.
-        desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+        // OFX 1.5.1 added this, and a host is not required to know it: the write
+        // then throws, and an unguarded one takes the whole descriptor down with
+        // it. Resolve Studio 21.2 does exactly that - every context creation fails
+        // and the plug-in never renders (2026-11-27,
+        // evidence/2026-11-27-windows/opencl-host-resolve.log). The property's
+        // default is already "true", so a host that ignores the write sees the
+        // same answer.
+        try {
+            desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+        } catch (const OFX::Exception::PropertyUnknownToHost&) {
+        }
         desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
     }
 

@@ -327,7 +327,17 @@ public:
         // host that offers only one gets the one it offers.
         desc.setSupportsOpenCLBuffersRender(true);
         desc.setSupportsOpenCLImagesRender(true);
-        desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+        // OFX 1.5.1 added this, and a host is not required to know it: the write
+        // then throws, and an unguarded one takes the whole descriptor down with
+        // it. Resolve Studio 21.2 does exactly that - every context creation fails
+        // and the plug-in never renders (2026-11-27,
+        // evidence/2026-11-27-windows/opencl-host-resolve.log). The property's
+        // default is already "true", so a host that ignores the write sees the
+        // same answer.
+        try {
+            desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+        } catch (const OFX::Exception::PropertyUnknownToHost&) {
+        }
         desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
     }
 

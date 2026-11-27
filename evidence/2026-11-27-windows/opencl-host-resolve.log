@@ -1,0 +1,136 @@
+# The OpenCL template in Resolve Studio 21.2.0.5, 2026-11-27 (backlog row 45).
+#
+# Two levels, kept apart because they answer different questions:
+#
+#   device level  the plug-in's OpenCL kernels on this machine's RTX 3060,
+#                 through the fake host: 118 contract checks x 3 host profiles
+#                 and 38 suite checks, all passing
+#                 (evidence/2026-11-26-windows/opencl-suite.log). Not re-run here.
+#   host level    this file: a real host launched the bundle, applied the effect
+#                 and rendered one 1920x1080 frame. The question was what that
+#                 host passed into render().
+
+## 1. how the host's answer was made observable
+
+`OFX::Log` writes nothing in a release build (the `fopen` sits behind `#ifdef
+DEBUG` in `Support/Library/ofxsLog.cpp`), and a CPU render and a refused GPU
+render produce the same pixels. So the measurement is a probe inside a scratch
+copy of the template (`.validation/opencl-probe/`, built against `.ofx-ref`,
+never committed). The probe appends one line per call to the file named in
+`$OFXCL_PROBE`:
+
+    describe opencl_property=accepted|rejected [reason=...]
+    describe cpu_property=... / describe nosa_property=...
+    describeInContext begin|end
+    render t=... opencl=0|1 queue=null|non-null cuda=0|1 metal=0|1 srcRowBytes=... window=WxH
+    path=opencl|path=cpu
+
+The line is written before the plug-in branches, so a render that is refused
+afterwards still leaves its arguments behind.
+
+## 2. the run
+
+    tests/resolve/poc.py --build-project --source build/resolve/source.png
+        --effect "OpenCL Gain" --out .validation/frames-opencl4
+
+    bundle      .validation/opencl-probe/build/bundle/OpenCLGain.ofx.bundle
+                (scratch build, -DOPENCL_GAIN_DEFAULT=2.0; the build prints
+                "-- Default gain: 2.0" and the bundle exports
+                OfxGetNumberOfPlugins/OfxGetPlugin, no other dependency than
+                KERNEL32, MSVCP140, VCRUNTIME140, VCRUNTIME140_1, the UCRT)
+    host        E:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe
+    connect     DaVinci Resolve Studio 21.2.0.5
+    gpu         2026-11-27 16:56:51,702 | Compute API set to automatic, defaulting to CUDA.
+                2026-11-27 16:56:51,702 | Selected compute API: CUDA
+    build       poc: OpenCL Gain on source.png
+    render      poc00108000.png
+    check       1920x1080 via ffmpeg
+    quit        API quit, then the recorded PID
+    report      evidence/2026-11-27-windows/resolve-opencl-host-report.json (result: pass)
+    Resolve log OFX: loading com.ofxplugindeveloper.openclgain
+                0 x "Create context ... failed" for the plug-in in this window
+
+## 3. what the host handed over: no queue
+
+    count  line
+        2  describe begin
+        2  describe opencl_property=accepted
+        2  describe cpu_property=rejected reason=OfxImageEffectPropCPURenderSupported
+        2  describe nosa_property=accepted
+        2  describe end
+        1  describeInContext begin
+        1  describeInContext end
+        8  render t=108000.000 opencl=0 queue=null cuda=0 metal=0 srcRowBytes=30720 window=1920x1080
+        1  render t=108000.000 opencl=0 queue=null cuda=0 metal=0 srcRowBytes=3328 window=208x117
+        9  path=cpu
+
+The answer to the row's question is **no**: `kOfxImageEffectPropOpenCLEnabled`
+never arrives set on this host, `pOpenCLCmdQ` is null in every call, so the
+plug-in takes its CPU path. That is consistent with the compute API the host
+selected two lines above: a CUDA-mode Resolve offers CUDA buffers, not an OpenCL
+queue, and `cuda=0` says it did not offer those either. The run also renders
+twice in shapes the tile-free contract does not produce: eight full frames at
+1920x1080 and one 208x117 preview window (`srcRowBytes` 3328 = 208 x 16), both
+doubled correctly.
+
+## 4. the pixels, as the second opinion
+
+    against the source     mae 2.313, max 127   (a gain of 2 is expected to differ)
+    against source x 2.0   mae 0.0,   max 0, 8294400 bytes compared
+
+So `render()` really ran and returned the source times two to the byte; the
+identity shortcut is not what produced the frame.
+
+## 5. what an unguarded descriptor does on the same host
+
+The first run of this bundle had `describe()` exactly as the template had it,
+and the host refused every context:
+
+    11528: OpenFX | WARN | 2026-11-27 16:37:24,496 | Create context
+           [OfxImageEffectContextFilter_69300553-...] failed for plugin
+           [com.ofxplugindeveloper.openclgain]!!!!
+    11529: OpenFX | WARN | ... | Plugin [com.ofxplugindeveloper.openclgain] is not
+           available!!!!
+
+76 of those pairs in 20 s, `render()` never called (the probe log holds 153
+`describe` lines and no `render`/`path` line at all), and the "render" job still
+ends Complete with a frame that is the source to the byte (mae 0.0, max 0) -
+a silent bypass, not a failure.
+
+The property that throws is `kOfxImageEffectPropCPURenderSupported`:
+
+    describe cpu_property=rejected reason=OfxImageEffectPropCPURenderSupported
+
+`PropertySet::propSetString` turns any non-OK status from the host into
+`OFX::Exception::PropertyUnknownToHost` (ofxsProperty.cpp:95-105), the exception
+leaves `describe()` through the support library's catch (ofxsImageEffect.cpp
+2833-2891), and Resolve treats the failed descriptor as an unavailable plug-in.
+
+A control build with the OpenCL claims removed (`setSupportsOpenCLBuffersRender/
+ImagesRender(false)`, no `kOfxImageEffectPropOpenCLRenderSupported` write) failed
+the same way - 76 context failures in the 16:54/16:55 window, no `render` line,
+frame identical to the source - so the OpenCL claim is not what the host refuses;
+the unguarded 1.5.1 property write is.
+
+## 6. what this proves, and what it does not
+
+Proved here **[V]**:
+
+- Resolve Studio 21.2.0.5 loads this bundle, applies the effect, and calls
+  `render()` nine times with `opencl=0` and a null queue; the host does not hand
+  this plug-in an OpenCL queue on a machine whose compute API is CUDA.
+- The pixel path that ran is the CPU one, and it is exact (mae 0.0 against
+  source x 2.0).
+- An unguarded `kOfxImageEffectPropCPURenderSupported` write makes the same host
+  refuse every context and render the source unchanged, which is why the four
+  templates now guard it.
+
+Not proved here:
+
+- Any host that *does* hand over an OpenCL queue. That needs an AMD or Intel GPU
+  in Resolve; this machine has an RTX 3060, and the row stays open for that.
+- Whether the kernes on the device would agree with the CPU path in a host. The
+  device path itself is the fake-host suite's subject, not this run's.
+- Why Resolve rejects the property (unknown name or read-only), only that the
+  status it returns is not OK: the support library maps every such status to the
+  same exception type.

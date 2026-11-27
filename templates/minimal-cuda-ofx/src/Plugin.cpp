@@ -540,7 +540,17 @@ void GainPluginFactory::describe(OFX::ImageEffectDescriptor& desc)
     // OFX 1.5.1: the CPU fallback is a supported path, not a debugging mode, so
     // a host may fall back to it; and there is no spatial parameter to disable
     // when a host wants a spatial-free render, so both answers are "true".
-    desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+    // OFX 1.5.1 added this, and a host is not required to know it: the write
+    // then throws, and an unguarded one takes the whole descriptor down with
+    // it. Resolve Studio 21.2 does exactly that - every context creation fails
+    // and the plug-in never renders (2026-11-27,
+    // evidence/2026-11-27-windows/opencl-host-resolve.log). The property's
+    // default is already "true", so a host that ignores the write sees the
+    // same answer.
+    try {
+        desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+    } catch (const OFX::Exception::PropertyUnknownToHost&) {
+    }
     desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
 
 #ifdef OFXPLUGIN_WITH_CUDA

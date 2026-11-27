@@ -33,6 +33,16 @@ templates also declare `kOfxImageEffectPropNoSpatialAwareness` as `"true"`, and
 `kOfxImageEffectPropThumbnailRender` and `kOfxImageEffectPropNoSpatialAwareness`
 set on the in-args, requiring the same frame as a full render.
 
+**A host that does not know the property makes the write throw**, and an
+unguarded write takes the whole descriptor with it. Resolve Studio 21.2.0.5
+returns a status that `PropertySet::propSetString` turns into
+`OFX::Exception::PropertyUnknownToHost`, logs `Create context ... failed` 76
+times and never calls `render()`, while the render job still ends `Complete`
+with the source unchanged (**[V]**, 2026-11-27,
+[`opencl-host-resolve.log`](../evidence/2026-11-27-windows/opencl-host-resolve.log)).
+All four templates guard the write, so a host that ignores it sees the
+property's default (`"true"`) rather than an unavailable plug-in.
+
 Four traps follow from this table:
 
 - **The per-render flags are ints; these are strings.** `...CudaEnabled`,

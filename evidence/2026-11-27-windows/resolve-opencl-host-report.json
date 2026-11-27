@@ -1,0 +1,93 @@
+{
+  "started": "2026-11-27T15:56:51+00:00",
+  "mode": "run",
+  "steps": [
+    {
+      "name": "validate",
+      "status": "pass",
+      "detail": "1 .ofx, decoders ['ffmpeg']",
+      "seconds": 0.02
+    },
+    {
+      "name": "install",
+      "status": "pass",
+      "detail": "C:\\Program Files\\Common Files\\OFX\\Plugins\\OpenCLGain.ofx.bundle",
+      "seconds": 0.03
+    },
+    {
+      "name": "launch",
+      "status": "pass",
+      "detail": "pid 10928",
+      "seconds": 0.0
+    },
+    {
+      "name": "connect",
+      "status": "pass",
+      "detail": "DaVinci Resolve Studio 21.2.0.5",
+      "seconds": 39.25
+    },
+    {
+      "name": "gpu",
+      "status": "pass",
+      "detail": "2026-11-27 16:56:51,702 | Compute API set to automatic, defaulting to CUDA.; 2026-11-27 16:56:51,702 | Selected compute API: CUDA",
+      "seconds": 0.02
+    },
+    {
+      "name": "build",
+      "status": "pass",
+      "detail": "poc: OpenCL Gain on source.png",
+      "seconds": 1.98
+    },
+    {
+      "name": "render",
+      "status": "pass",
+      "detail": "poc00108000.png",
+      "seconds": 7.44
+    },
+    {
+      "name": "check",
+      "status": "pass",
+      "detail": "1920x1080 via ffmpeg",
+      "seconds": 0.95
+    },
+    {
+      "name": "quit",
+      "status": "pass",
+      "detail": "API quit, then the recorded PID",
+      "seconds": 12.59
+    }
+  ],
+  "facts": {
+    "ofx": [
+      ".validation\\opencl-probe\\build\\bundle\\OpenCLGain.ofx.bundle\\Contents\\Win64\\OpenCLGain.ofx"
+    ],
+    "source": "build\\resolve\\source.png",
+    "effect": "OpenCL Gain",
+    "decoders": [
+      "ffmpeg"
+    ],
+    "ofx_dir": "C:\\Program Files\\Common Files\\OFX\\Plugins",
+    "resolve": "E:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\Resolve.exe"
+  },
+  "gpu": {
+    "compute_api_automatic": true,
+    "lines": [
+      "2026-11-27 16:56:51,702 | Compute API set to automatic, defaulting to CUDA.",
+      "2026-11-27 16:56:51,702 | Selected compute API: CUDA"
+    ]
+  },
+  "effect": {
+    "id": "Open FX/OFX Plugin Developer/OpenCL Gain",
+    "applied": "OpenCL Gain",
+    "on_item": 1,
+    "timeline": "poc"
+  },
+  "image": {
+    "width": 1920,
+    "height": 1080,
+    "channels": 4,
+    "decoder": "ffmpeg",
+    "source_format": "rgb24"
+  },
+  "result": "pass"
+}

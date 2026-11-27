@@ -522,7 +522,17 @@ void InferencePluginFactory::describe(OFX::ImageEffectDescriptor& desc)
     // OFX 1.5.1: rendering on the CPU execution provider is a supported path
     // here, and the graph has no spatial parameter to disable, so both answers
     // a host may branch on are "true".
-    desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+    // OFX 1.5.1 added this, and a host is not required to know it: the write
+    // then throws, and an unguarded one takes the whole descriptor down with
+    // it. Resolve Studio 21.2 does exactly that - every context creation fails
+    // and the plug-in never renders (2026-11-27,
+    // evidence/2026-11-27-windows/opencl-host-resolve.log). The property's
+    // default is already "true", so a host that ignores the write sees the
+    // same answer.
+    try {
+        desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
+    } catch (const OFX::Exception::PropertyUnknownToHost&) {
+    }
     desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
 
     // No CUDA capability is advertised: the template links the CPU execution

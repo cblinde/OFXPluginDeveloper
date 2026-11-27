@@ -12,7 +12,7 @@ Pages, the GPU switch, absent streams, odd sizes, crash blacklisting, Free vs St
 | OFX host quality | Broad, some proprietary extensions | Close to spec, strict | Close to spec | Reference-ish, incomplete |
 | CUDA buffer path (`kOfxImageEffectPropCudaEnabled`) | Yes, when GPU mode = CUDA **(B)** | Not offered to OFX plugins; CPU images **(C)** | Version-dependent **(C)** | No; CPU only **(C)** |
 | CUDA stream (`kOfxImageEffectPropCudaStream`) | Not supplied — plugin must complete work before returning **(C)** | N/A | Unknown **(C)** | N/A |
-| OpenCL path | Yes | No | Yes in some builds **(C)** | No |
+| OpenCL path | Only on an OpenCL-mode host (AMD/Intel): a CUDA-mode 21.2.0.5 passed this plug-in no queue - `opencl=0`, null `pOpenCLCmdQ` - and it rendered on the CPU (**[V]**, 2026-11-27) | No | Yes in some builds **(C)** | No |
 | Metal path | No (macOS uses Metal for Resolve itself, not exposed to OFX) **(C)** | No | No | No |
 | Render threading | Multiple instances in parallel; per-instance serial **(B)** | Concurrent `render` on one instance — needs `FullySafe` **(C)** | Parallel frames **(C)** | Worker pool, concurrent tiles **(C)** |
 | Tiling (`kOfxImageEffectPropSupportsTiles`) | Yes; plugin may opt out | Yes; Nuke tiles aggressively **(C)** | Yes **(C)** | Yes |
@@ -200,7 +200,13 @@ and 21.0.3 notes). Two consequences for a plug-in author:
   `kOfxImageEffectPropNoSpatialAwareness`, `kOfxImageEffectPropThumbnailRender`)
   are separate optional properties, and no public Resolve note was found that
   names them **(C)**. Set them only on the plugin descriptor, keep the default
-  behaviour correct without them, and treat their absence as normal.
+  behaviour correct without them, and treat their absence as normal -
+  and expect the write to throw. Measured 2026-11-27: 21.2.0.5 returns a
+  status the support library turns into `PropertyUnknownToHost` for
+  `kOfxImageEffectPropCPURenderSupported`, then logs `Create context ...
+  failed` and never renders the plug-in, so the write has to be guarded
+  rather than merely optional in intent (**[V]**, 2026-11-27,
+  [`opencl-host-resolve.log`](../evidence/2026-11-27-windows/opencl-host-resolve.log)).
 
 A GPU-mode regression fixed in a point release is also the reason the matrix
 separates "the host offers CUDA" from "your kernel ran": a Resolve update can
