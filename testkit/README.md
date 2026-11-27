@@ -42,7 +42,14 @@ contract once per profile because a process holds one host. `--golden
 `--fuzz cpu|cuda` reads the bound from `<name>.<fuzz>.fuzz` - so a reference
 carries its own tolerance instead of a global flag. `--concurrency-threads N`
 is what `SUITE_THREADS=random` varies per run, 1-4, to give a race a chance to
-show up in some run rather than the one a developer fixed.
+show up in some run rather than the one a developer fixed. `--reject-property
+NAME` (repeatable) turns the profile from "what does this host declare" into
+"what does it accept": every write of that property answers `kOfxStatErrUnknown`,
+which is what Resolve 21.2.0.5 answers `kOfxImageEffectPropCPURenderSupported`.
+The run prints each name it will refuse before the plug-in loads, so a typo is a
+loud no-op rather than a green run that proves nothing, and the reference
+template's suite passes it once to execute the guard around the capability
+writes (`../references/testing-layers.md` §5).
 
 ## 2. Two-tier host verification
 

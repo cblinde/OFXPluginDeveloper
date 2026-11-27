@@ -909,7 +909,7 @@ bool runCycle(const Spec& spec, const std::string& firstIdentifier) {
   testkit::FakeHost host;
   host.setHostProfile(spec.profile);
   for (const std::string& rejected : spec.rejectedProperties) {
-    std::fprintf(stderr, "host refuses a write of %s\n", rejected.c_str());
+    std::printf("host refuses a write of %s\n", rejected.c_str());
     host.rejectProperty(rejected.c_str());
   }
   Module module;
@@ -1742,6 +1742,10 @@ int main(int argc, char** argv) {
                  "       [--concurrency-param name] [--concurrency-threads N]\n"
                  "       [--host-profile nuke|resolve|natron] (tiles + multi-resolution;\n"
                  "        neither; or tiles as a background renderer)\n"
+                 "       [--reject-property NAME]... (this host answers a write of that\n"
+                 "        property with kOfxStatErrUnknown, the way Resolve 21.2.0.5\n"
+                 "        answers kOfxImageEffectPropCPURenderSupported; both the kOfx\n"
+                 "        and the Ofx spelling are accepted)\n"
                  "       [--concurrency-iterations N] (threads=0 skips the checks)\n"
                  "\n"
                  "--set without --set-status-only assumes the parameter scales RGB by\n"

@@ -242,30 +242,21 @@ public:
         // awareness. This is the CPU reference, so both answers are "true".
         // The second is a promise the plug-in keeps by having no spatial
         // parameters to disable - a host only uses it as a hint.
-        // OFX 1.5.1 added this, and a host is not required to know it: the write
-        // then throws, and an unguarded one takes the whole descriptor down with
-        // it. Resolve Studio 21.2 does exactly that - every context creation fails
-        // and the plug-in never renders (2026-11-27,
-        // evidence/2026-11-27-windows/opencl-host-resolve.log). The property's
-        // default is already "true", so a host that ignores the write sees the
-        // same answer.
+        //
+        // A host is not required to know either property. The write then throws,
+        // and an unguarded write takes the whole descriptor down with it: Resolve
+        // Studio 21.2.0.5 answers kOfxStatErrUnknown, the support library raises,
+        // describe fails with kOfxStatErrMissingHostFeature and the plug-in never
+        // loads ("error code 4", measured 2026-11-27). Both defaults are already
+        // what the writes ask for, so a host that refuses them behaves the same.
         try {
             desc.getPropertySet().propSetString(kOfxImageEffectPropCPURenderSupported, "true");
         } catch (const OFX::Exception::PropertyUnknownToHost&) {
         }
-    // A host that has never heard of the property answers with an unknown
-    // status, and the support library turns that into a failed describe - the
-    // whole plug-in then never loads (Resolve 21.2.0.5, measured 2026-11-27).
-    try {
-        // A host that has never heard of the property answers with an unknown
-        // status, and the support library turns that into a failed describe - the
-        // whole plug-in then never loads (Resolve 21.2.0.5, measured 2026-11-27).
         try {
             desc.getPropertySet().propSetString(kOfxImageEffectPropNoSpatialAwareness, "true");
         } catch (const OFX::Exception::PropertyUnknownToHost&) {
         }
-    } catch (const OFX::Exception::PropertyUnknownToHost&) {
-    }
     }
 
     void describeInContext(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum context) override

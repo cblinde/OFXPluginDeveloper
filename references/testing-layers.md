@@ -191,7 +191,10 @@ in the tiled-context run (`tileSize=16`, `--roi-context-tolerance 0.02`). Each o
 those runs happens once per host profile (§5), and the counts are identical:
 the profile changes what the plug-in is told about the host, not what the harness
 asks it to do. Three profiles, so the totals are **354** (118 × 3), **486**
-(162 × 3) and **504 + 90** (168 × 3). The 162 belong to the CUDA template's
+(162 × 3) and **504 + 90** (168 × 3). The reference template's runner adds one
+more 118-check pass with both capability writes refused (the strict-host
+paragraph below), so that template reports **472**; the other three keep their
+three-profile totals because they have no strict pass yet. The 162 belong to the CUDA template's
 contract, which now also renders RGBA16F and RGBA8; with `nvcc` on `PATH` the
 same suite runs against a CUDA-enabled bundle and still passes 162 × 3, because
 the harness enables no device and the plug-in takes its CPU path. On a
