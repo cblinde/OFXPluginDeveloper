@@ -82,8 +82,37 @@ def poll_delay(attempt, ceiling=2.0):
     return min(ceiling, 0.1 * (2 ** min(attempt, 6)))
 
 
+def host_log_tail(path, lines=15):
+    """The last `lines` non-empty lines of the host's own log, or [].
+
+    The host writes why it is not answering there - still loading, a window
+    waiting for a click, an OFX scan that failed - and none of it reaches the
+    scripting API. A timeout that prints only "no Resolve after Ns" leaves the
+    reader to guess, which is what the 2026-11-27 sessions did.
+    """
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path, "rb") as handle:
+            text = handle.read().decode("utf-8", "replace")
+    except OSError:
+        return []
+    return [line for line in text.splitlines() if line.strip()][-lines:]
+
+
+def describe_timeout(seconds, last_error, host_log=None):
+    """The timeout message, with the host's own account when it is available."""
+    message = f"no Resolve after {seconds}s (last error: {last_error})"
+    tail = host_log_tail(host_log)
+    if tail:
+        message += "\n  the host log ends with:\n" + "\n".join("    " + line for line in tail)
+    elif host_log:
+        message += f"\n  no host log at {host_log}"
+    return message
+
+
 def connect(timeout=120, poll=2.0, executable=None, process=None,
-            require_project=True):
+            require_project=True, host_log=None):
     """Return a Resolve object, with a project open unless `require_project` is off.
 
     `process` is the host this run started, if any. With it, a host that exits
@@ -130,7 +159,7 @@ def connect(timeout=120, poll=2.0, executable=None, process=None,
                 f"the scripting API; last error: {last_error}")
         time.sleep(poll_delay(attempt, poll))
         attempt += 1
-    raise TimeoutError(f"no Resolve after {timeout}s (last error: {last_error})")
+    raise TimeoutError(describe_timeout(timeout, last_error, host_log))
 
 
 def launch(executable, nogui=True, environment=None):

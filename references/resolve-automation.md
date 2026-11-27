@@ -390,6 +390,14 @@ A started process that never initialises is the failure this split exists to mak
 visible; a timeout kept here as well would only be a second number to keep in
 step.
 
+**A timeout has to say why.** The host writes the answer to its own log - still
+loading, a window waiting for a click, an OFX scan that failed - and none of it
+reaches the scripting API, so `connect()` takes the log path and appends its last
+lines to the `TimeoutError` (`host_log_tail()` in `resolve_api.py`, called by
+`poc.py` with `host_log_path()`). Two sessions on 2026-11-27 sat at `connect()`
+for ten minutes with a host that was up; the log would have named the reason in
+one line.
+
 ### 13.2 B - connection (`runner/resolve_api.py`)
 
 ```python

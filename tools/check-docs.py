@@ -1513,14 +1513,95 @@ def selftest():
     return 0
 
 
+LLMS_TXT = "llms.txt"
+
+
+def title_of(path):
+    """The document's first H1, without the `# `."""
+    for line in read(path).splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return os.path.basename(path)
+
+
+def llms_txt_text(root):
+    """The router in the form an agent tool reads.
+
+    Generated rather than written: `SKILL.md` already carries this index in
+    prose, and a second hand-kept copy drifts the way every second copy here has
+    (see the count checks above). The order is the reading order - router, then
+    the reference documents, then what can be built and run.
+    """
+    out = [
+        "# OFX Plugin Developer",
+        "",
+        "> A plan library and four buildable OpenFX plug-ins: a minimal filter, an",
+        "> OpenCL effect, a CUDA template and an ONNX inference template, with the",
+        "> evidence for every claim they make about a host.",
+        "",
+        "## Start here",
+        "",
+    ]
+    for name in ("README.md", "AGENTS.md", "SKILL.md"):
+        out.append(f"- [{title_of(os.path.join(root, name))}]({name})")
+    out += ["", "## Reference documents", ""]
+    references = sorted(
+        os.path.relpath(os.path.join(dirpath, name), root).replace(os.sep, "/")
+        for dirpath, _, names in os.walk(os.path.join(root, "references"))
+        for name in names if name.endswith(".md"))
+    for rel in references:
+        out.append(f"- [{title_of(os.path.join(root, rel))}]({rel})")
+    out += ["", "## Templates", ""]
+    for name in sorted(os.listdir(os.path.join(root, "templates"))):
+        if os.path.isdir(os.path.join(root, "templates", name)):
+            out.append(f"- `templates/{name}/`")
+    out += ["", "## Optional", ""]
+    for name in sorted(os.listdir(os.path.join(root, "tools"))):
+        if name.endswith((".py", ".sh", ".bat")):
+            out.append(f"- `tools/{name}`")
+    return "\n".join(out) + "\n"
+
+
+def check_llms_txt(root, report):
+    """The generated router, committed and compared - not described twice.
+
+    `llms.txt` is the same index `SKILL.md` keeps in prose, in the form an agent
+    tool reads. Hand-maintaining it would be a second source of truth, so the
+    check regenerates it and fails when the committed file differs; `--write-llms`
+    is the one command that updates it.
+    """
+    path = os.path.join(root, LLMS_TXT)
+    expected = llms_txt_text(root).splitlines()
+    if not os.path.exists(path):
+        report.error(LLMS_TXT, 1,
+                     "missing: it is generated from the tree - run `python3 tools/check-docs.py --write-llms`")
+        return
+    actual = read(path).splitlines()
+    if actual != expected:
+        first = next((i for i, (a, b) in enumerate(zip(actual, expected)) if a != b),
+                     min(len(actual), len(expected)))
+        report.error(LLMS_TXT, first + 1,
+                     "out of date with the tree (regenerate: `python3 tools/check-docs.py --write-llms`)")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     parser.add_argument("--selftest", action="store_true",
                         help="check the inventory checks against two synthetic trees")
+    parser.add_argument("--write-llms", action="store_true",
+                        help="regenerate llms.txt from the tree and exit")
     args = parser.parse_args()
     if args.selftest:
         return selftest()
+    if args.write_llms:
+        # CRLF, like every text file here; the comparison is by line, so a
+        # checkout that normalises line endings still passes.
+        with open(os.path.join(os.path.abspath(args.root), LLMS_TXT), "w",
+                  encoding="utf-8", newline="\r\n") as handle:
+            handle.write(llms_txt_text(os.path.abspath(args.root)))
+        print("llms.txt written")
+        return 0
 
     root = os.path.abspath(args.root)
 
@@ -1550,6 +1631,7 @@ def main():
     check_ci_template_coverage(root, files, texts, report)
     check_tool_inventory(root, files, texts, report)
     check_ort_pin(root, files, texts, report)
+    check_llms_txt(root, report)
     check_agents(root, report)
 
     status = report.show()

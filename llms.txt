@@ -1,0 +1,64 @@
+# OFX Plugin Developer
+
+> A plan library and four buildable OpenFX plug-ins: a minimal filter, an
+> OpenCL effect, a CUDA template and an ONNX inference template, with the
+> evidence for every claim they make about a host.
+
+## Start here
+
+- [OFXPluginDeveloper](README.md)
+- [AGENTS.md](AGENTS.md)
+- [OFX + CUDA plugin development](SKILL.md)
+
+## Reference documents
+
+- [AI architectures, language runtimes and when CUDA pays](references/ai-architectures-and-runtimes.md)
+- [Checklists: pre-flight review and sign-off](references/checklists.md)
+- [CMake, linking, flags and the toolchain](references/cmake-and-linking.md)
+- [Colour space and alpha](references/colour-and-alpha.md)
+- [CUDA streams, zero-copy and GPU memory ownership](references/cuda-streams-and-memory.md)
+- [Debugging: symptoms, causes, anti-patterns](references/debugging-and-symptoms.md)
+- [Field evidence: the archived Windows GPU runs](references/field-evidence.md)
+- [Feature detection and the host acceptance run](references/host-detection-and-acceptance.md)
+- [Nuke, SCRATCH and Natron](references/host-nuke-scratch-natron.md)
+- [DaVinci Resolve: behaviour, quirks and blacklisting](references/host-resolve.md)
+- [Improvement backlog](references/improvement-backlog.md)
+- [OFX API constants and verified header quirks](references/ofx-api-constants.md)
+- [OFX lifecycle, the layer contract and thread safety](references/ofx-lifecycle-and-threads.md)
+- [ONNX Runtime and TensorRT inside a plug-in](references/onnx-and-tensorrt.md)
+- [Packaging, bundle layout and install](references/packaging-and-install.md)
+- [Pattern index: task and property routes](references/pattern-index.md)
+- [The performance model](references/performance-model.md)
+- [Pixel formats, pitch and image properties](references/pixel-formats-and-pitch.md)
+- [Reference projects and the reading plan](references/reference-projects.md)
+- [Driving Resolve as a test host: what the API can do, and the first milestone](references/resolve-automation.md)
+- [Region of definition, region of interest and the 1.5.1 render hints](references/roi-tiling-and-render-hints.md)
+- [Testing: the layers, cheapest first](references/testing-layers.md)
+- [Verification status](references/verification-status.md)
+
+## Templates
+
+- `templates/minimal-cuda-ofx/`
+- `templates/minimal-ofx/`
+- `templates/minimal-opencl-ofx/`
+- `templates/onnx-inference-ofx/`
+
+## Optional
+
+- `tools/_model_shape.py`
+- `tools/_ort_common.py`
+- `tools/aot-compile-model.sh`
+- `tools/bench_ep.py`
+- `tools/check-docs.py`
+- `tools/check-glibc.sh`
+- `tools/check-model-canary.py`
+- `tools/check-runtime.py`
+- `tools/check-shell.sh`
+- `tools/check-workflows.py`
+- `tools/coverage-check.py`
+- `tools/make-testmodels.py`
+- `tools/measure-halo.sh`
+- `tools/model_probe.py`
+- `tools/opencl-spike.sh`
+- `tools/probe-env.py`
+- `tools/sweep-vram.sh`

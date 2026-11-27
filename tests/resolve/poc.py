@@ -347,6 +347,7 @@ def run(args, report):
         # nothing while it waits on the project manager; --build-project creates
         # one and does not care whether one was open.
         resolve = resolve_api.connect(timeout=args.timeout, executable=facts["resolve"],
+                                      host_log=host_log_path(),
                                       process=process,
                                       require_project=bool(args.build_project))
         step(report, "connect", "pass",
