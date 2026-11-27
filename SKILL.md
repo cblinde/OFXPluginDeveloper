@@ -175,6 +175,9 @@ probe is choosing between.
 | ONNX model per frame | `templates/onnx-inference-ofx/` | session, packing, tiling, goldens; CUDA EP first, CPU fallback (`references/onnx-and-tensorrt.md` §4) |
 | Model whose output is not an image | `templates/onnx-inference-ofx/` for session and packaging only | `ModelRunner` requires out shape == in shape; the head decoder is yours |
 
+The same choice, with what each template is *not* for and what it costs, is in
+README's "What each template is for"; this table is the short form.
+
 When generating a new plugin, copy a template's structure instead of re-deriving
 it. `templates/minimal-cuda-ofx/` is the reference for the CUDA layer split and
 the stream/pitch/device code; `templates/onnx-inference-ofx/` is the reference for

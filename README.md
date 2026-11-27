@@ -57,6 +57,84 @@ Nuke and SCRATCH have run nothing. See
 | `evidence/` | Raw logs of every run the documents cite |
 | `LICENSE`, `THIRD_PARTY_NOTICES.md` | BSD-3-Clause, and what the fetched dependencies oblige |
 
+### What each template is for
+
+Five plug-ins, one per way a host can hand work to a GPU (or to none). They are
+not five variants of the same effect: each one exists because a different layer
+decides whether the plug-in works - the OFX lifecycle, a CUDA stream, a host-owned
+OpenCL queue, the plug-in's own Vulkan device, or a model session. Copy the one
+whose layer you need; the pixel maths in all five is a gain, and every one of them
+is meant to be replaced.
+
+| If the effect is … | Copy | Because |
+|---|---|---|
+| per-pixel maths a CPU does in a few passes, or the first plug-in from this repository | `templates/minimal-ofx/` | nothing to install, nothing to fall back from, and the smallest module a host will load |
+| per-pixel maths that only a GPU wins at, on a host that supplies a CUDA stream | `templates/minimal-cuda-ofx/` | the stream contract, pitch arithmetic, `DeviceGuard` and the CPU fallback are already correct |
+| per-pixel maths on a host that owns an OpenCL queue (Nuke and Resolve on AMD/Intel) | `templates/minimal-opencl-ofx/` | `cl_mem`/image2d lifetime, queue ordering and the no-device path are written; no vendor SDK is linked |
+| per-pixel maths where no host property exists, or the plug-in must own its GPU path | `templates/minimal-vulkan-ofx/` | own instance, device, queue and pipeline; SPIR-V inside the `.ofx` |
+| a model, one inference per frame | `templates/onnx-inference-ofx/` | session, packing, tiling with halo, goldens and the provider label are written |
+
+**`templates/minimal-ofx/` - the smallest host-loadable plug-in (CPU).** One
+source file, two exported symbols ([`templates/minimal-ofx/exports.map`](templates/minimal-ofx/exports.map)),
+one pass over the frame, no GPU and no runtime dependency. It is the reference for
+the OFX lifecycle - describe, create, render, destroy, and nothing else - and the
+one to start from when the answer is "a CPU does this in 3 ms". Adding CUDA later
+is a copy of the layer split from `minimal-cuda-ofx`, not a rewrite. It does not
+tile, does not touch colour management, and has no fallback because it has nothing
+to fall back from.
+
+**`templates/minimal-cuda-ofx/` - the CUDA path with a CPU fallback.** This is the
+reference for the layer split (`Plugin.cpp` is the host wrapper, `Kernel.cu` is
+device code with one launcher per pixel format), for the host's CUDA stream
+contract, for pitch arithmetic on 8/16/32-bit images, and for `DeviceGuard` - the
+RAII that restores the host's device after every launch. Three pixel paths travel
+with it (vec4 RGBA32F, 16F and 8-bit), each with a CPU twin, so a difference
+between them is a bug in one path and not in the effect. Copy it when the effect
+is worth a GPU and the host gives you a stream; do not copy it to avoid deciding
+whether a GPU helps - the throughput documents measure where that line falls
+([`references/performance-model.md`](references/performance-model.md)).
+
+**`templates/minimal-opencl-ofx/` - the host's OpenCL queue, without linking
+OpenCL.** The loader is `dlopen`ed, the kernels are source built by the host's own
+driver, and both handovers the OFX spec defines are implemented: `cl_mem` buffers
+and `image2d_t` images. The point is the path where the host owns the context: the
+plug-in must not create one, must not link `libOpenCL`, and must degrade to the CPU
+loop when the property is null. That last case is measured rather than assumed -
+Resolve in CUDA mode applies the effect and calls render with `opencl=0`
+([`references/testing-layers.md`](references/testing-layers.md) §13). Copy it when
+your target host is in OpenCL mode; there is no device here that hands over a
+queue, which is the one verification this template does not have.
+
+**`templates/minimal-vulkan-ofx/` - Vulkan compute the plug-in owns.** No host
+property supplies a queue, so this plug-in creates its own instance, device and
+command buffer, compiles one shader to SPIR-V at build time and carries it inside
+the `.ofx`. It exists to show what that costs: the device is the plug-in's, so the
+VRAM budget, the barriers, the fence wait and both memory arrangements (one
+host-visible buffer, or device-local with a staging copy) are the plug-in's too -
+and both arrangements are measured on this machine, including the case where the
+second one is slower at 1080p
+([`references/vulkan-compute.md`](references/vulkan-compute.md) §3). Copy it when
+no host property exists or the effect needs a modern API; do not copy it for a
+pointwise multiply, which the CPU wins.
+
+**`templates/onnx-inference-ofx/` - a model, one inference per frame.** Four
+layers, each one a document: `ModelRunner` owns the ONNX Runtime session and the
+provider label, `AiCore` packs planar frames into NCHW and back, the plug-in
+computes the frame a model actually sees (window plus halo) and tiles when the
+model's receptive field needs it, and the bundle carries the runtime the plug-in
+loads privately. It is the only template with a golden tensor, a negative control
+and a tiling comparison, because a model is the one case where "it looks plausible"
+is not a test. Copy it for inference; the model must keep the frame's shape - an
+output that is not an image needs a new plug-in around `ModelRunner`, not a copy of
+`Plugin.cpp` ([`references/onnx-and-tensorrt.md`](references/onnx-and-tensorrt.md)).
+
+**What all five share.** A bundle layout a host will load, an export list of
+exactly two symbols, a `build.sh`/`build.bat` that inspects the artifact it
+produced, and a `test/` that runs the host contract with the same harness
+(`testkit/`) - so a template that stops building, or a contract that changes,
+fails on the machine that changed it. The per-template detail below is the file
+inventory; `SKILL.md` §3 is the same choice as a routing table.
+
 ### What is inside each template
 
 `templates/` carries no README of its own - this is the map.
