@@ -17,31 +17,34 @@ below is the checks, not the compiler.
 
 | Suite | Wall clock | Assertions | Verdict |
 |---|---|---|---|
-| docs: `check-docs.py` + its `--selftest`, `check-workflows.py`, `check-shell.sh` | 5 s | every document (32 on the day of the run, 33 with this one), 4 workflows, 26 scripts | 0 problems |
-| provenance: `check-provenance.py --self-test`, then the scan | 7 s | 99 files with an SPDX line, 12,506 long lines against the SDK | 0 problems |
-| `minimal-ofx`: build, artifact, contract ×5, install/load | 10 s | 562 | `all Windows checks passed` |
-| `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 23 s | 486 | `all Windows checks passed` |
-| `minimal-opencl-ofx`: build, artifact, contract ×3, `opencl_suite` | 15 s | 354 + 38 | `OK: the OpenCL template passed on this machine` |
+| docs: `check-docs.py` + its `--selftest`, `check-workflows.py`, `check-shell.sh` | 5 s | 33 documents, 4 workflows, 26 scripts | 0 problems |
+| provenance: `check-provenance.py --self-test`, then the scan | 8 s | 101 files with an SPDX line, 12,506 long lines against the SDK | 0 problems |
+| `minimal-ofx`: build, artifact, contract ×5, install/load | 11 s | 562 | `all Windows checks passed` |
+| `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 25 s | 486 | `all Windows checks passed` |
+| `minimal-opencl-ofx`: build, artifact, contract ×3, `opencl_suite` | 16 s | 354 + 38 | `OK: the OpenCL template passed on this machine` |
 | `minimal-vulkan-ofx`: build, path policy, artifact, contract ×6, install, `vulkan_suite` | 20 s | 656 + 29 + 26 | `all Windows checks passed` |
-| `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 26 s | 678 | `all checks passed` |
-| negative controls: `testkit/run-negative-controls.bat` | 12 s | 223 in 8 runs | 8 caught, every one expected |
-| **total** | **118 s** | **2,829 passing + 223 deliberately failing** | - |
+| `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 22 s | 678 | `all checks passed` |
+| negative controls: `testkit/run-negative-controls.bat` | 14 s | 223 in 8 runs | 8 caught, every one expected |
+| **total** | **121.1 s** (one stopwatch; the rows add up to 120.9 s) | **2,829 passing + 223 deliberately failing** | - |
 
-**The total is a sum, not one stopwatch.** The eight rows are eight separately
-timed commands, and 118 s is what they add up to. Seven of them - the two
-documentation gates and the five template suites - ran in one pass; the
-negative controls ran in a second pass about a minute later, which is where the
-223 checks of the eight deliberately failing runs come from. The minute of
-orchestration between the two passes is not in the total, so it is the work
-rather than the elapsed sitting (**[V]**, the header of
-[`../evidence/2026-11-27-windows/suite-timings.log`](../evidence/2026-11-27-windows/suite-timings.log)
-says the same).
+**Two numbers, and which one is which.** The eight rows are eight stages of one
+pass, each stopped on its own: they add up to **120.9 s**. One stopwatch around
+the same pass, from the first stage to the last, reads **121.1 s** - the 0.27 s
+between them is the eight `date` calls and the shell that starts each stage, so
+the sum of the rows is the work and the stopwatch is the sitting. Both are
+recorded in
+[`../evidence/2026-11-27-windows/suite-timings.log`](../evidence/2026-11-27-windows/suite-timings.log),
+which keeps the earlier measurement beside them: eight separately stopped
+commands that summed to 116 s, with the negative controls in a second pass about
+a minute later, so that total left the minute of orchestration out. The table
+quotes the stopwatch number because it is elapsed wall clock for the whole set
+(**V**).
 
 A cold checkout is a different number, and the difference is the compiler: this
 table was taken after the run that built all five templates, which is the larger
 cost and depends on the toolchain rather than on the tests. What the table is
-good for is the shape: the five template suites are 94 s of the 118, the two
-documentation gates 12 s, the negative controls 12 s - and no single suite needs
+good for is the shape: the five template suites are 93 s of the 121, the two
+documentation gates 14 s, the negative controls 14 s - and no single suite needs
 long enough that a contributor would skip it.
 
 ## 2. How the counters add up

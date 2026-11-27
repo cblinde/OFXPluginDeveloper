@@ -60,3 +60,54 @@ total                  116s
   device-local   115.13 ms/frame total, dispatch 26.37, copies 88.70 (1 GB/s over both directions)
   CPU            3.25 ms/frame (the loop render() falls back to)
 
+## One pass, one stopwatch, 2026-11-27
+
+# The section above is eight separately stopped commands, and its own header says
+# so. This one is a single invocation of .validation/eight-suites-timed.sh: the
+# same eight stages, back to back, with `date +%s%N` around each stage and one
+# pair of readings around the whole block. Nothing else ran in between, and no
+# stage failed (every exit status 0). Counts are this run's - 2,829 passing, not
+# the 2,929 the wall-clock table above still carried, which was 100 high in the
+# inference row (runtime-comparison.md section 2).
+
+docs                       5.3s       0 check(s)  check-docs: 33 documents, 0 problems
+provenance                 8.3s       0 check(s)  check-provenance: 0 problems
+minimal-ofx               11.2s    562 check(s)  all Windows checks passed
+minimal-cuda-ofx          24.7s    486 check(s)  all Windows checks passed
+minimal-opencl-ofx        16.2s    392 check(s)  OK: the OpenCL template passed on this machine
+minimal-vulkan-ofx        19.7s    711 check(s)  all Windows checks passed
+onnx-inference-ofx        21.6s    678 check(s)  all checks passed
+negative-controls         13.9s    223 check(s)  every fault detected, the pattern still passes
+# sum of the eight rows, each stopped on its own:      120.9s
+# one stopwatch around the block, from the first stage
+# to the last, including the time between them:        121.1s
+# difference: 0.27s - the eight `date` calls and the shell between them.
+
+## The device suites' throughput, as printed in that same pass
+
+# minimal-cuda-ofx
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
+  1080p 1920x1080 (pitch 30720, pad 0): 2.1 MPix, 33.2 MB per buffer
+    vec4      0.213 ms/frame    312.0 GB/s effective
+    scalar    0.213 ms/frame    311.1 GB/s effective
+    CPU       3.550 ms/frame     16.7x slower than vec4
+    copy      7.255 ms/frame      9.1 GB/s over PCIe (H2D+D2H, pageable)
+  4K 3840x2160 (pitch 61440, pad 0): 8.3 MPix, 132.7 MB per buffer
+    vec4      0.836 ms/frame    317.5 GB/s effective
+    scalar    0.858 ms/frame    309.3 GB/s effective
+    CPU      14.580 ms/frame     17.4x slower than vec4
+    copy     35.134 ms/frame      7.6 GB/s over PCIe (H2D+D2H, pageable)
+  8K 7680x4320 (pitch 122880, pad 0): 33.2 MPix, 530.8 MB per buffer
+    vec4      3.373 ms/frame    314.8 GB/s effective
+    scalar    3.459 ms/frame    307.0 GB/s effective
+    CPU      62.509 ms/frame     18.5x slower than vec4
+    copy    115.655 ms/frame      9.2 GB/s over PCIe (H2D+D2H, pageable)
+  1919x1081 1919x1081 (pitch 30704, pad 0): 2.1 MPix, 33.2 MB per buffer
+    vec4      0.214 ms/frame    310.3 GB/s effective
+
+# minimal-vulkan-ofx
+ through 1920x1080, 20 frames each:
+  host-visible   97.27 ms/frame total, dispatch 6.51, copies 90.72 (1 GB/s over both directions)
+  device-local   108.00 ms/frame total, dispatch 16.34, copies 91.60 (1 GB/s over both directions)
+  CPU            4.59 ms/frame (the loop render() falls back to)
+vulkan_suite: 26 checks, 0 failed
