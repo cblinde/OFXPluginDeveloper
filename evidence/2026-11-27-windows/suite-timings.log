@@ -1,0 +1,53 @@
+# What the exhaustive run costs: wall clock per suite, and the throughput the
+# two device suites printed in the same run.
+#
+# Windows 11 10.0.26300, RTX 3060, warm build directories (every template had
+# been built already), 2026-11-27. `date`-free: the seconds are bash $SECONDS
+# around each command, so they carry the process spawn and the suite, not only
+# the suite. A cold checkout additionally compiles four templates and the
+# inference plug-in, which is the larger cost and depends on the toolchain.
+
+## Wall clock
+
+docs                     5s      0 check(s)  check-docs: 32 documents, 0 problems
+provenance               7s      0 check(s)  check-provenance: 0 problems
+minimal-ofx             10s    562 check(s)  all Windows checks passed
+minimal-cuda-ofx        23s    486 check(s)  all Windows checks passed
+minimal-opencl-ofx      15s    392 check(s)  OK: the OpenCL template passed on this machine
+minimal-vulkan-ofx      18s    588 check(s)  all Windows checks passed
+onnx-inference-ofx      26s    778 check(s)  all checks passed
+negative-controls       12s    223 check(s)  8 control(s) caught, every one expected
+total                  116s
+
+## The device suites' own throughput, as printed in this run
+
+# minimal-cuda-ofx
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
+  1080p 1920x1080 (pitch 30720, pad 0): 2.1 MPix, 33.2 MB per buffer
+    vec4      0.202 ms/frame    329.2 GB/s effective
+    scalar    0.201 ms/frame    329.4 GB/s effective
+    CPU       3.361 ms/frame     16.7x slower than vec4
+    copy      6.513 ms/frame     10.2 GB/s over PCIe (H2D+D2H, pageable)
+  4K 3840x2160 (pitch 61440, pad 0): 8.3 MPix, 132.7 MB per buffer
+    vec4      0.800 ms/frame    331.7 GB/s effective
+    scalar    0.799 ms/frame    332.3 GB/s effective
+    CPU      13.401 ms/frame     16.7x slower than vec4
+    copy     26.424 ms/frame     10.0 GB/s over PCIe (H2D+D2H, pageable)
+  8K 7680x4320 (pitch 122880, pad 0): 33.2 MPix, 530.8 MB per buffer
+    vec4      3.213 ms/frame    330.5 GB/s effective
+    scalar    3.211 ms/frame    330.6 GB/s effective
+    CPU      62.132 ms/frame     19.3x slower than vec4
+    copy    110.538 ms/frame      9.6 GB/s over PCIe (H2D+D2H, pageable)
+  1919x1081 1919x1081 (pitch 30704, pad 0): 2.1 MPix, 33.2 MB per buffer
+    vec4      0.201 ms/frame    329.6 GB/s effective
+    scalar    0.201 ms/frame    329.7 GB/s effective
+    CPU       3.262 ms/frame     16.2x slower than vec4
+    copy      6.325 ms/frame     10.5 GB/s over PCIe (H2D+D2H, pageable)
+  1919+64 1919x1081 (pitch 30768, pad 64): 2.1 MPix, 33.3 MB per buffer
+
+# minimal-vulkan-ofx
+ through 1920x1080, 20 frames each:
+  host-visible   95.42 ms/frame total, dispatch 7.04, copies 88.34 (1 GB/s over both directions)
+  device-local   115.13 ms/frame total, dispatch 26.37, copies 88.70 (1 GB/s over both directions)
+  CPU            3.25 ms/frame (the loop render() falls back to)
+

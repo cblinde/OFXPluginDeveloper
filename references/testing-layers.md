@@ -881,7 +881,9 @@ does *not* prove; §2–§4 are the questions a reviewer signs off.
 
 ## 13. What this repository actually runs
 
-Reproduce all of it from a clean checkout; nothing needs a GPU or a host.
+Reproduce all of it from a clean checkout; nothing needs a GPU or a host. What
+the run costs, and how the four GPU paths compare on the same frame, is
+[`runtime-comparison.md`](runtime-comparison.md).
 
 ```bash
 # Everything, every template: reference build, unit, image, artifact, fake host, memcheck

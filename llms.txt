@@ -33,6 +33,7 @@
 - [Reference projects and the reading plan](references/reference-projects.md)
 - [Driving Resolve as a test host: what the API can do, and the first milestone](references/resolve-automation.md)
 - [Region of definition, region of interest and the 1.5.1 render hints](references/roi-tiling-and-render-hints.md)
+- [Runtime comparison: what the exhaustive suite costs, and the same frame in four runtimes](references/runtime-comparison.md)
 - [Testing: the layers, cheapest first](references/testing-layers.md)
 - [Verification status](references/verification-status.md)
 - [Versions: what is pinned, what the machine supplies, what a run observed](references/versions.md)
