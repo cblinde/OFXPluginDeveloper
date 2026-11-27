@@ -87,7 +87,7 @@ if [[ -n "${SAN}" ]]; then
   esac
 fi
 
-echo "== [1/5] inference pipeline (cmake target ai_pipeline_test, sanitizer: ${SAN:-none}) =="
+echo "== [1/6] inference pipeline (cmake target ai_pipeline_test, sanitizer: ${SAN:-none}) =="
 # Built by the CMake target, not by a second hard-coded compiler line: the
 # source list and the ONNX Runtime flags live in CMakeLists.txt once. A
 # sanitizer needs its own tree because the flags are baked in at configure time,
@@ -115,7 +115,7 @@ fi
 "${TEST_BIN}" "${ROOT}/models"
 
 echo
-echo "== [2/5] host contract (dlopen + fake host) =="
+echo "== [2/6] host contract (dlopen + fake host) =="
 BUNDLE_OFX="$(find "${ROOT}/build/bundle" -type f -name '*.ofx' 2>/dev/null | head -1 || true)"
 if [[ -n "${BUNDLE_OFX}" ]]; then
   OFX_CHECKOUT="$(sed -n 's/^OFX_SOURCE_DIR:PATH=//p' "${ROOT}/build/CMakeCache.txt" 2>/dev/null | head -1 || true)"

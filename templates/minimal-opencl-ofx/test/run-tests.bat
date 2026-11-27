@@ -30,7 +30,7 @@ set "ROOT=%TPL%\..\.."
 set "BUILD=%TPL%\build"
 set "FAILED=0"
 
-echo [1/5] building the OpenCL plug-in (and verifying the artifact)
+echo [1/6] building the OpenCL plug-in (and verifying the artifact)
 call "%TPL%\build.bat" || exit /b 1
 
 set "OFX_FILE="
@@ -56,7 +56,7 @@ set "HARNESS=%BUILD%\contract_test.exe"
 set "SUITE=%BUILD%\opencl_suite.exe"
 
 echo.
-echo [2/5] compiling the shared contract harness
+echo [2/6] compiling the shared contract harness
 call "%ROOT%\testkit\build-contract-test.bat" "%HARNESS%" "%OFX_DIR%" || exit /b 1
 
 rem ---- MSVC environment, needed for the suite's own compile ------------------
@@ -76,7 +76,7 @@ if not defined VCVARS (
 call "%VCVARS%" >nul || exit /b 2
 
 echo.
-echo [3/5] the host protocol, on the CPU path (3 profiles)
+echo [3/6] the host protocol, on the CPU path (3 profiles)
 rem SUITE_THREADS=random picks a different concurrent-render count per run, the
 rem way FATE's threads=randomN does: not for determinism, but so that a race has
 rem to show up in some run instead of in the one configuration someone hard-coded.
@@ -104,7 +104,7 @@ if "!FAILED!"=="1" (
 )
 
 echo.
-echo [4/5] compiling the suite against the shared fake host
+echo [4/6] compiling the suite against the shared fake host
 rem /D_CRT_SECURE_NO_WARNINGS: the shared fake host parses with sscanf, which MSVC
 rem flags as C4996. The suite and the harness are the same binary shape the other
 rem templates build, so the flag travels with them.
@@ -124,7 +124,7 @@ if not "%CL_STATUS%"=="0" (
 )
 
 echo.
-echo [5/5] running the OpenCL suite against %OFX_FILE%
+echo [5/6] running the OpenCL suite against %OFX_FILE%
 echo   loader : %OPENCL_LOADER_LIB% (default OpenCL.dll from the driver)
 "%SUITE%" "%OFX_FILE%"
 set "SUITE_STATUS=%ERRORLEVEL%"

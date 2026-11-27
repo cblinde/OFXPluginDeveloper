@@ -20,30 +20,33 @@ below is the checks, not the compiler.
 | docs: `check-docs.py` + its `--selftest`, `check-workflows.py`, `check-shell.sh` | 5 s | 33 documents, 4 workflows, 26 scripts | 0 problems |
 | provenance: `check-provenance.py --self-test`, then the scan | 8 s | 109 files with an SPDX line, every line of 45+ characters compared against the SDK, six allowlisted idioms re-checked against it | 0 problems |
 | `minimal-ofx`: build, artifact, contract ×5, install/load | 11 s | 562 | `all Windows checks passed` |
-| `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 25 s | 486 | `all Windows checks passed` |
+| `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 24 s | 486 | `all Windows checks passed` |
 | `minimal-opencl-ofx`: build, artifact, contract ×3, `opencl_suite` | 16 s | 354 + 38 | `OK: the OpenCL template passed on this machine` |
-| `minimal-vulkan-ofx`: build, path policy, artifact, contract ×6 + device label, install, `vulkan_suite` | 20 s | 656 + 29 + 26 + 94 | `all Windows checks passed` |
-| `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 22 s | 678 | `all checks passed` |
+| `minimal-vulkan-ofx`: build, path policy, artifact, contract ×6 + device label, install, `vulkan_suite` | 23 s | 656 + 29 + 26 + 94 | `all Windows checks passed` |
+| `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 18 s | 678 | `all checks passed` |
 | negative controls: `testkit/run-negative-controls.bat` | 14 s | 223 in 8 runs | 8 caught, every one expected |
-| **total** | **121.1 s** (one stopwatch; the rows add up to 120.9 s) | **2,923 passing + 223 deliberately failing** | - |
+| **total** | **119.5 s** (one stopwatch; the rows add up to 119.3 s) | **2,923 passing + 223 deliberately failing** | - |
 
 **Two numbers, and which one is which.** The eight rows are eight stages of one
-pass, each stopped on its own: they add up to **120.9 s**. One stopwatch around
-the same pass, from the first stage to the last, reads **121.1 s** - the 0.27 s
+pass, each stopped on its own: they add up to **119.3 s**. One stopwatch around
+the same pass, from the first stage to the last, reads **119.5 s** - the 0.26 s
 between them is the eight `date` calls and the shell that starts each stage, so
 the sum of the rows is the work and the stopwatch is the sitting. Both are
 recorded in
 [`../evidence/2026-11-27-windows/suite-timings.log`](../evidence/2026-11-27-windows/suite-timings.log),
-which keeps the earlier measurement beside them: eight separately stopped
-commands that summed to 116 s, with the negative controls in a second pass about
-a minute later, so that total left the minute of orchestration out. The table
-quotes the stopwatch number because it is elapsed wall clock for the whole set
+which keeps the earlier measurements beside them: a pass taken before the Vulkan
+device step grew its label run and with the inference bundle carrying the CUDA
+provider (120.9 s of rows, 121.1 s on the stopwatch - the provider copy was
+3.4 s of the difference and the label pass 3.1 s), and, before that, eight
+separately stopped commands that summed to 116 s with the negative controls in a
+second pass, so that total left the minute of orchestration out. The table quotes
+the stopwatch number because it is elapsed wall clock for the whole set
 (**V**).
 
 A cold checkout is a different number, and the difference is the compiler: this
 table was taken after the run that built all five templates, which is the larger
 cost and depends on the toolchain rather than on the tests. What the table is
-good for is the shape: the five template suites are 93 s of the 121, the two
+good for is the shape: the five template suites are 92 s of the 119.5, the two
 documentation gates 14 s, the negative controls 14 s - and no single suite needs
 long enough that a contributor would skip it.
 

@@ -109,7 +109,7 @@ nm -D --defined-only <bundle>/Contents/Linux-x86-64/<Name>.ofx | grep ' T '
 # OfxGetPlugin
 ```
 
-Measured in this repository: all three templates report exactly 2 `T` symbols.
+Measured in this repository: every one of the five templates reports exactly 2 `T` symbols.
 Removing the visibility block from `templates/minimal-cuda-ofx/CMakeLists.txt`
 and rebuilding CPU-only reported **663**, because the statically linked Support
 library's symbols become visible. That is the failure mode the rule exists to
@@ -184,20 +184,23 @@ testkit/build-contract-test.sh /tmp/contract_test <openfx-checkout>
   --concurrency-param gain
 ```
 
-Measured (CPU-only build of the CUDA template, this machine): **118 checks, 0
-failed** for `ReferenceGain`, **162 checks, 0 failed** for `MinimalCudaGain`,
-**168 checks, 0 failed** for `OnnxInference`, followed by **90 checks, 0 failed**
-in the tiled-context run (`tileSize=16`, `--roi-context-tolerance 0.02`). Each of
-those runs happens once per host profile (§5), and the counts are identical:
+Measured per host profile (§5), and different per route - §13's table has both
+rows. Linux `.sh` route, 2026-11-26: **118 checks, 0 failed** for `ReferenceGain`,
+**144** for `MinimalCudaGain`, **168** for `OnnxInference`, plus **90** for the
+tiled-context run (`tileSize=16`, `--roi-context-tolerance 0.02`). Windows `.bat`
+route, 2026-11-27: **118**, **162** and **148**, the last followed by a 150-check
+shipped-model pass and an 84-check tiled pass, because that runner splits them
+into steps of their own. Within a route the count is identical for every profile:
 the profile changes what the plug-in is told about the host, not what the harness
-asks it to do. Three profiles, so the totals are **354** (118 × 3), **486**
-(162 × 3) and **504 + 90** (168 × 3). The reference template's runner adds one
-more 118-check pass with both capability writes refused (the strict-host
-paragraph below), so that template reports **472**; the other three keep their
-three-profile totals because they have no strict pass yet. The 162 belong to the CUDA template's
-contract, which now also renders RGBA16F and RGBA8; with `nvcc` on `PATH` the
-same suite runs against a CUDA-enabled bundle and still passes 162 × 3, because
-the harness enables no device and the plug-in takes its CPU path. On a
+asks it to do. Three profiles give **354** (118 × 3), **432** (144 × 3) and
+**504** (168 × 3) on Linux, **354**, **486** (162 × 3) and **444** (148 × 3) on
+Windows; the reference template's Windows runner adds a fourth 118-check pass with
+both capability writes refused (the strict-host paragraph below), which is why its
+Windows total is **562** once the 90-check install run is counted - the row in
+[`runtime-comparison.md`](runtime-comparison.md) §1. The Windows 162 belong to the
+CUDA template's contract, which now also renders RGBA16F and RGBA8; with `nvcc` on
+`PATH` the same suite runs against a CUDA-enabled bundle and still passes 162 × 3
+there, because the harness enables no device and the plug-in takes its CPU path. On a
 `CPU_ONLY=1` build, whose launcher symbol and cubin are absent by construction (the build
 prints `CUDA launchers: none found (CPU-only build)`, the suite prints `PTX check
 skipped: nvcc not on PATH`): not one of those checks was computed by a CUDA
@@ -846,7 +849,7 @@ their coverage against `4290e68`, the tool self-tests and the shell syntax,
 a runner that still has no OpenCL device fails the run by name rather than
 leaving the step green), the sanitizers over the three whose scripts carry
 `SANITIZE`, and the glibc stage of every bundle,
-`windows.yml` builds all four templates with MSVC, installs a CUDA toolkit so that
+`windows.yml` builds all five templates with MSVC, installs a CUDA toolkit so that
 the CUDA template is also compiled by `nvcc` on a runner that has no GPU (the
 compile and the `cuobjdump` artifact check are gated; no kernel runs there), and
 runs the contract, ONNX CPU and negative-control steps, and `canary.yml` asks the
@@ -934,6 +937,25 @@ passed with on 2026-11-25. The gate itself only asks for
 `import numpy, onnx, onnxruntime`, so a newer set works until it does not - and
 the 2026-11-25 reason for pinning was that numpy 2.x against onnxruntime 1.14
 exited 139 instead of failing a test.
+
+### Counts, per route
+
+The two platform routes are different harnesses and print different counts for the
+same plug-in: the Windows runner loads through `LoadLibraryExW`, refuses the two
+capability writes in a pass of its own, and runs the inference template's
+shipped-model and tiled passes as separate steps. A count without its route is
+therefore a claim about the wrong harness, so quote the route with it:
+
+| Route | `ReferenceGain` | `MinimalCudaGain` | `OpenCLGain` | `OnnxInference` | `VulkanGain` |
+|---|---|---|---|---|---|
+| Windows `.bat` runners, 2026-11-27 | 118 × 4 + 90 = **562** | 162 × 3 = **486** | 118 × 3 + 38 = **392** | 148 × 3 + 150 + 84 = **678** | 118 × 4 + 94 + 90 + 94 + 29 + 26 = **805** |
+| Linux `.sh` runners, 2026-11-26 | 118 × 3 + 90 = **444** | 144 × 3 = **432** | not run | 168 × 3 + 90 = **594** | not run |
+
+The Windows row is [`run-tests-full.log`](../evidence/2026-11-27-windows/run-tests-full.log)
+and the Linux row [`v151-properties.log`](../evidence/2026-11-26-linux/v151-properties.log);
+`tools/check-docs.py` fails when `runtime-comparison.md`'s totals disagree with the
+Windows log, so that row cannot drift silently. The OpenCL and Vulkan templates
+have no Linux row because those suites have never run there.
 
 ### The tools on their own
 
@@ -1127,7 +1149,7 @@ ONNX Runtime 1.20.1 and then 1.32.0
 | Inference suite, Windows, CUDA provider (ORT 1.32.0, CUDA 13) | the same suite on the current runtime: provider shipped as an EP plugin, 16 files and 1540 MB beside the `.ofx`, same label, same `0 failed`, same `1e-5` retry, and no change to the template's source ([`onnx-inference-cuda-1.32.log`](../evidence/2026-11-25-windows/onnx-inference-cuda-1.32.log)) |
 | One-hole headline, Windows (ORT 1.20.1, `CPU_ONLY=1`) | `ONNXRUNTIME_ROOT` set but no CUDA path: the summary reads `all suites that ran passed, but the GPU step did not run:` with `NOT RUN: GPU kernels (CPU_ONLY)` under it - one hole, named, not rounded up. The inference template still ran on the GPU package's provider: label `… tf32 off, all nodes on CUDA`, **160 + 160 + 82 checks, 0 failed**, and the build against the older headers is what caught the C++-only option wrapper that 1.20.1 does not have ([`onnx-1.20.1-cpu-only.log`](../evidence/2026-11-25-windows/onnx-1.20.1-cpu-only.log)) |
 | Inference fallback probe, Windows (ORT 1.32.0, CUDA 13) | a throwaway session with `session.disable_cpu_ep_fallback=1` loads the graph, so the label reads `CUDA (device 0, 1 thread, bundled CUDA, tf32 off, all nodes on CUDA)` in both host profiles; the control - same model, same runtime, no provider appended - fails with the key and builds without it, so the key is doing the work ([`onnx-fallback-probe.log`](../evidence/2026-11-25-windows/onnx-fallback-probe.log)) |
-| Host profiles, the four templates with a `.bat` runner | the contract runs once per host shape (`--host-profile nuke`, `resolve` and `natron`, §5): **118 × 3** for `ReferenceGain`, **162 × 3** for `MinimalCudaGain`, **148 × 3 + 150 + 84** for `OnnxInference` (the 150 is the shipped-model pass and the 84 the tiled one), 0 failed in every pass, identical counts in all three shapes. `MinimalOpenclGain` has the same **118 × 3** on its CPU path, on Linux and since 2026-11-26 on Windows too, and its device-enabled checks are counted in the OpenCL rows below, not here |
+| Host profiles, the five templates with a `.bat` runner | the contract runs once per host shape (`--host-profile nuke`, `resolve` and `natron`, §5): **118 × 3** for `ReferenceGain`, **162 × 3** for `MinimalCudaGain`, **148 × 3 + 150 + 84** for `OnnxInference` (the 150 is the shipped-model pass and the 84 the tiled one), 0 failed in every pass, identical counts in all three shapes. `MinimalOpenclGain` has the same **118 × 3** on its CPU path, on Linux and since 2026-11-26 on Windows too, and its device-enabled checks are counted in the OpenCL rows below, not here |
 | Imported project route, Windows (2026-11-27) | `tests/resolve/poc.py --import-project .validation/drp/row19-final.drp --gui` on Resolve Studio 21.2.0.5 with the provider-only ONNX bundle rebuilt after be06bc4: `ImportProject` → `True`, `LoadProject('row19-final')` → the project, the timeline's one item carrying one OFX effect, one frame `Complete` in 808 ms at 1920×1080, `mae 94.872843` / `max_pixel 255` against the source, and `$ONNX_PROVIDER_LOG` = `CUDA (device 0, 1 thread, bundled CUDA, tf32 off, arena kSameAsRequested, all nodes on CUDA) \| …/Contents/Resources/model.onnx`. The host log for that session carries no `onnxinference` line at all, against dozens of `Create context … failed` when the same route ran on the pre-guard bundle. `timelineFrameWidth`/`Height` answer `''`, so the render keeps the project's format. `-nogui` did not reach a scriptable host in four attempts that hour; `--gui` did in 23 s (**[V]**, [`row19-imported-project.log`](../evidence/2026-11-27-windows/row19-imported-project.log)). The same route was re-run at 20:51 on the current bundle to answer what `mae 94.873` leaves open: `--project <path>` still ends in the host's refusal (absolute path included), the round trip renders, and the frame is **bit-identical** to `test_conv.onnx` computed outside the host on the CPU (`mae 0.000000`, `max_pixel 0`, all 6,220,800 RGB bytes), alpha bit-identical to the source, `$ONNX_PROVIDER_LOG` = `all nodes on CUDA \| …/Contents/Resources/model.onnx` (**[V]**, [`row19-project-roundtrip.log`](../evidence/2026-11-27-windows/row19-project-roundtrip.log)) |
 | OpenFX SDK commit in the build report, Windows (2026-11-27) | every template reads the fetched checkout's HEAD after `FetchContent` and prints it: `-- OpenFX SDK: ab779510b265 from 'Z:/…/.ofx-ref'`, and writes `<build>/openfx-sdk-commit.txt` = `ab779510b265 <dir>`; with `-DOFXPLUGIN_REQUIRE_SDK_COMMIT=ON` against a header copy that has no `.git`, the configure stops with `OFXPLUGIN_REQUIRE_SDK_COMMIT=ON but '…\.validation\ofx-nogit' has no .git to read a commit from` and exit 1. All five templates re-configured after the change (`minimal-ofx` also built, exit 0); the CUDA one only with `-DOFXPLUGIN_ENABLE_CUDA=OFF`, because MSVC 1950 is newer than the toolkit accepts - the pre-existing guard, not this change. |
 | Harness label assertion, Windows (2026-11-27) | the CPU-node step used to assert two phrases with `findstr` in `test.bat` and `grep` in `run-tests.sh`; `--label-contains NAME=TEXT` (repeatable, needs `--label-param`, and NAME must be that parameter) moves the assertion into `testkit/contract_main.cpp`, so both runners ask the harness and a failure prints the label it read. Positive run: `ok 32 - label parameter 'provider' contains "nodes left on CPU"`, `ok 33 - … contains "fallback: "`, **100 checks, 0 failed**. Negative control: asking the same label for `all nodes on CUDA` gives `FAIL label parameter 'provider' contains "all nodes on CUDA": the label reads "CUDA (device 0, 1 thread, …nodes left on CPU) - fallback: …"` and `contract_test: 32 checks, 1 failed`. Three argument errors are named rather than ignored: `--label-contains` without `--label-param`, a different NAME than the parameter read, and a value with no `=` (`wants NAME=TEXT`), each exit 2. |
@@ -1159,9 +1181,9 @@ throughput
 | CUDA suite, rebuild after the stream field (2026-11-27) | the same runner from a clean configure on the stream-logging build: 7 cubins, six GPU harness stages on the RTX 3060, `contract_test: 162 checks, 0 failed` three times, `execution_mode_test: 34 cases, 0 failed`, `all Windows checks passed`; throughput this time vec4 `0.218` / `0.885` / `3.504` ms at 1080p / 4K / 8K (303.9 / 299.9 / 303.0 GB/s), i.e. the run that agrees with the field test while the day's other transcript was measured on a busy card ([`cuda-suite-rebuild.log`](../evidence/2026-11-27-windows/cuda-suite-rebuild.log)) |
 | GPU throughput, 2026-11-27 | vec4 0.314 / 1.037 / 3.416 ms at 1080p / 4K / 8K (211 / 256 / 311 GB/s), CPU loop 12.5x / 14.3x / 20.7x the kernel, pageable copy 8.1-7.9 GB/s - measured in this checkout on CUDA 13.5, same conclusions as the field test and slower numbers (**[V]**, [`cuda-suite.log`](../evidence/2026-11-27-windows/cuda-suite.log)) |
 | GPU throughput, 2026-11-24 | 1080p/4K/8K, vec4 **0.209 / 0.850 / 3.479 ms** (317/312/305 GB/s), scalar within 5% — both forms bandwidth-bound, so the vec4 form's 4× instruction reduction buys no throughput. CPU loop 3.456/13.480/55.287 ms; pageable H2D+D2H copy 6.705/27.332/107.396 ms, i.e. **32× the 1080p kernel** **[V]** (table and method in `../README.md` §"What has actually been verified") |
-| Artifact + fake host (reference) | 118 checks per host profile (3 × 118 in a suite run), 0 failed, two load/unload cycles, two live instances with separate values |
+| Artifact + fake host (reference) | 118 checks per host profile, and a fourth 118-check pass with both capability writes refused (4 × 118 + 90 in the Windows suite run), 0 failed, two load/unload cycles, two live instances with separate values |
 | Artifact + fake host (CUDA) | 162 checks per host profile (3 × 162), 0 failed **on a `CPU_ONLY=1` build**: two load/unload cycles, four instances and three concurrent renders, all through the host protocol and the CPU path. The CUDA launcher and kernels are absent from that build, so this row says nothing about the GPU path, which the Windows rows above cover |
-| Artifact + fake host (inference) | 168 checks per host profile (3 × 168), 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 90 checks for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
+| Artifact + fake host (inference) | 168 checks per host profile on the Linux route (3 × 168) and 148 on Windows (3 × 148, plus a 150-check shipped-model pass), 0 failed, render matches the Python golden through the OFX API, source RoI checked against the declared halo and shown to carry pixels bit for bit, four instances × three concurrent renders; a second run with `tileSize=16` adds 90 checks on Linux and 84 on Windows for the same comparison on the tiled path, with a 0.02 bound instead of bit-equality |
 | ONNX Runtime pin, document and action (2026-11-26) | the pin rule inside `tools/check-docs.py` (it was its own script until 2026-11-26) reads the pin from the composite action (1.32.0) and finds one release path in the documentation that names a version - it agrees; the other mentions are measurements and are counted, not failed. The control moves the action default to 1.33.0 and exits 1 naming `onnx-and-tensorrt.md:268`; a second control puts a version-shaped default in another input above `version`, which an unscoped first-match read would have taken as the pin, and the pin still reads 1.32.0. Four shape controls fail with the part that is missing named - no `inputs:` block, no `version` entry, `version` without a default, a default of `latest` - and a moved action file fails on the read, so the check cannot pass by finding nothing ([`ort-pin.log`](../evidence/2026-11-26-linux/ort-pin.log)) |
 | 16F kernel, arithmetic and addressing (2026-11-26) | the shipped `GainKernelRGBA16FHalf4` compiled through `test/shim` and run on the CPU: 162 shapes - the frames the hardware run measured (1920x1080, 1919x1081 with and without a 64-byte pad, 63x1, 1x1), a negative pitch, and widths 1-33 around the block boundary - **0 halves wrong**, nothing written outside the window, no tolerance involved. `IsHalf2Addressable` decides the 4-byte rows this needs instead of the 16 the float4 path needs. `LaunchGainRGBA16F` now calls it and the descriptor advertises RGBA16F, and the contract harness renders that depth through the plug-in's CPU path (§ the depth row below). Device throughput: **not measured**, and the launcher was never compiled here - no nvcc ([`half-kernel.log`](../evidence/2026-11-26-linux/half-kernel.log), [`cuda-depths.log`](../evidence/2026-11-26-linux/cuda-depths.log)) |
 | OpenCL through PoCL, buffer and image kernels (2026-11-26) | `tools/opencl-spike.sh` against PoCL 5.0 (`OPENCL_LOADER_LIB` and `OCL_ICD_VENDORS` into `.validation/cl`): platform `Portable Computing Language`, device `cpu-haswell-AMD Ryzen 7 3800X` (OpenCL 3.0), **images supported**. Buffer kernel: 1024 floats scaled by 3, **0 wrong**; image kernel: a 32x24 RGBA float image written with `write_imagef` and read back, **3072 components, 0 wrong**. Controls: an empty `OCL_ICD_VENDORS` fails at `clGetPlatformIDs` with -1001, a bogus loader path exits 2. The first attempt failed on `pocl_types.h` - Ubuntu ships PoCL's kernel headers in `libpocl2-common`, which the hand-unpacked tree did not have ([`opencl-spike.log`](../evidence/2026-11-26-linux/opencl-spike.log)) |

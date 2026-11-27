@@ -69,6 +69,12 @@ fi
 # The CUDA bundle switches, forwarded the same way build.bat does: an exported
 # OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON that never reached CMake produced a bundle
 # with no provider, and the suite accepted the CPU fallback.
+# The CUDA EULA and the cuDNN SLA are not beside the libraries; a provider
+# bundle names the directory that holds them, and the artifact check refuses
+# the bundle without them.
+if [[ -n "${OFXPLUGIN_LICENCE_DIRS:-}" ]]; then
+  CMAKE_ARGS+=("-DOFXPLUGIN_LICENCE_DIRS=${OFXPLUGIN_LICENCE_DIRS}")
+fi
 if [[ -n "${OFXPLUGIN_BUNDLE_CUDA_PROVIDER:-}" ]]; then
   CMAKE_ARGS+=("-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=${OFXPLUGIN_BUNDLE_CUDA_PROVIDER}")
 fi

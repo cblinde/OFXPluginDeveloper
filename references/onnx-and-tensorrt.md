@@ -1166,7 +1166,8 @@ return. Measured on 1.32.0 with the provider beside the `.ofx` (**[V]**,
 registration, `GetEpDevices` and the append return in every session the suite
 creates, the labels read `CUDA (..., options requested (arena kSameAsRequested),
 all nodes on CUDA)`, and the suite passes - 168 checks in each of the three host
-profiles plus 90. No step reaches `0xC0000409`, so the abort is not in the append
+profiles plus 90 in that run; the same template prints 148 plus 150 and 84
+today, and `testing-layers.md` §13 has both rows. No step reaches `0xC0000409`, so the abort is not in the append
 sequence either; the remaining difference between the two processes is the host
 (§9).
 

@@ -272,8 +272,11 @@ Release` runs the artifact check, executes `test/gpu-kernel-test.cu` on the real
 GPU, and drives the built `.ofx` through the contract harness. It is the
 counterpart of `test/run-tests.sh` where `g++`, `nm -D`, `readelf`, `dlopen` and
 valgrind do not exist. The reference and CUDA templates each have one, and the
-same counts come out of either route: 118 checks for the reference plug-in, 144
-for the CUDA one and 168 for the inference one.
+counts are not the same on the two routes - a count without its route is a claim
+about the wrong harness: the Linux `.sh` route prints 118 checks per reference
+profile, 144 per CUDA profile and 168 per inference profile plus 90 on the tiled
+pass, the Windows `.bat` route 118, 162 and 148 plus a 150-check shipped-model
+pass and an 84-check tiled pass. `references/testing-layers.md` §13 has both rows.
 
 `./run-tests.sh` notices which platform it is on. On Windows it hands the work to
 those `.bat` runners instead of failing at the first missing `nm`, so one command

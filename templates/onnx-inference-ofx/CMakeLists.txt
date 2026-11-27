@@ -365,6 +365,9 @@ endif()
 # arrangements are a sidecar process for the GPU runtime, or a host that does not
 # preload ORT - not a rename. On Linux the core keeps its SONAME, so the copy
 # below is consistent and unaffected.
+set(OFXPLUGIN_LICENCE_DIRS "" CACHE STRING
+  "Directories to search for the licence texts the runtime packages do not keep beside their libraries - NVIDIA's CUDA EULA and the cuDNN SLA; semicolon-separated. Needed when OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON, because check-ofx-artifact refuses a bundle that ships onnxruntime_providers_cuda without one")
+
 option(OFXPLUGIN_BUNDLE_CUDA_PROVIDER
   "Copy onnxruntime_providers_cuda and the CUDA libraries it imports next to the .ofx (Linux and Windows; macOS warns and skips)" OFF)
 option(OFXPLUGIN_CUDA_FROM_HOST
@@ -700,6 +703,19 @@ foreach(_dir IN LISTS _cuda_dirs)
   get_filename_component(_parent "${_dir}" DIRECTORY)
   list(APPEND _licence_nvidia_dirs "${_dir}" "${_parent}")
 endforeach()
+# Where the terms are that no package ships: NVIDIA's CUDA EULA and the cuDNN
+# SLA come with the installer, not beside the libraries, so a bundle that ships
+# the provider has to be told where they are. Without this the configure warns
+# and the artifact check refuses the bundle - which is the gate working, but the
+# user needs a way to satisfy it that does not involve turning the gate off.
+if(OFXPLUGIN_LICENCE_DIRS)
+  foreach(_ld IN LISTS OFXPLUGIN_LICENCE_DIRS)
+    # A -D from build.bat arrives with Windows separators, and a glob built from
+    # them matches nothing: normalise before the search, not after it fails.
+    file(TO_CMAKE_PATH "${_ld}" _ld)
+    list(APPEND _licence_nvidia_dirs "${_ld}")
+  endforeach()
+endif()
 set(_licence_dirs ${_licence_onnx_dirs} ${_licence_nvidia_dirs})
 list(REMOVE_DUPLICATES _licence_dirs)
 set(_licence_log)
@@ -775,9 +791,11 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER AND NOT _licence_nvidia_count GREATER 0)
   message(WARNING
     "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON ships NVIDIA's runtime libraries and no "
     "LICENSE/NOTICE/ThirdParty/EULA file was found beside the CUDA directories "
-    "(${_licence_nvidia_dirs}). Put the CUDA Toolkit EULA and the cuDNN SLA in "
-    "Contents/Resources before shipping: the artifact check fails a bundle that "
-    "carries onnxruntime_providers_cuda without them "
+    "(${_licence_nvidia_dirs}). Name a directory that holds the CUDA Toolkit EULA "
+    "and the cuDNN SLA with -DOFXPLUGIN_LICENCE_DIRS=<dir> (semicolon-separated "
+    "for several); until then the build completes but "
+    "testkit/check-ofx-artifact.bat refuses the bundle, because it ships "
+    "onnxruntime_providers_cuda without their terms "
     "(packaging-and-install.md section 2).")
 endif()
 

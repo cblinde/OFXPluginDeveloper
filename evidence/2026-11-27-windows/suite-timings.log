@@ -111,3 +111,30 @@ negative-controls         13.9s    223 check(s)  every fault detected, the patte
   device-local   108.00 ms/frame total, dispatch 16.34, copies 91.60 (1 GB/s over both directions)
   CPU            4.59 ms/frame (the loop render() falls back to)
 vulkan_suite: 26 checks, 0 failed
+
+## Re-measured after the device-label pass and the notices gate, 2026-11-27
+
+# Same harness, same machine, hours later, two things changed in the tree: the
+# Vulkan device step now renders once more (the label pass, 94 checks) and the
+# inference template no longer bundles the CUDA provider in this run - the
+# artifact check refuses a provider bundle without NVIDIA's EULA, and EULA is not
+# something this repository has. So this is the default configuration; the run
+# above it bundled the provider and predates the label pass. That is visible in
+# the two rows that moved: vulkan 19.7s -> 22.8s (one more contract run) and
+# onnx 21.6s -> 18.2s (1.5 GB less to copy into the bundle). The other six rows
+# moved by at most 0.4s, which is what a re-measurement of the same work should
+# look like.
+
+docs                       5.3s       0 check(s)  check-docs: 33 documents, 0 problems
+provenance                 8.4s       0 check(s)  check-provenance: 0 problems
+minimal-ofx               10.9s    562 check(s)  all Windows checks passed
+minimal-cuda-ofx          24.0s    486 check(s)  all Windows checks passed
+minimal-opencl-ofx        15.6s    392 check(s)  OK: the OpenCL template passed on this machine
+minimal-vulkan-ofx        22.8s    805 check(s)  all Windows checks passed
+onnx-inference-ofx        18.2s    678 check(s)  all checks passed
+negative-controls         14.1s    223 check(s)  every fault detected, the pattern still passes
+# sum of the eight rows, each stopped on its own:      119.3s
+# one stopwatch around the block, from the first stage
+# to the last, including the time between them:        119.5s
+# difference: 0.26s - the eight `date` calls and the shell between them.
+# Counts are this run's: 2,923 passing in the tree, 805 of them Vulkan.

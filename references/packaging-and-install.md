@@ -322,7 +322,13 @@ repository may commit them, so the configure prints a warning naming the
 directories it searched and `testkit/check-ofx-artifact.bat --strict` **fails the
 bundle** that carries `onnxruntime_providers_cuda` without an `NVIDIA-` text. The
 build still completes for development; the artifact cannot leave without its
-notice. Measured both ways on the 1.32.0 provider bundle: without the text the
+notice. A provider bundle therefore needs the texts' location:
+`-DOFXPLUGIN_LICENCE_DIRS=<dir>` (or `OFXPLUGIN_LICENCE_DIRS` for `build.bat` and
+`build.sh`) names the directory that holds the CUDA EULA and the cuDNN SLA, and
+the configure copies every text it finds there under the `NVIDIA-` prefix -
+measured with a stand-in text in that directory: `Licence texts in
+Contents/Resources: 2 file(s)` and `notices: 1 ONNX Runtime text(s), 1 NVIDIA`,
+exit 0. Measured both ways on the 1.32.0 provider bundle: without the text the
 checker answers `FAIL: the bundle ships onnxruntime_providers_cuda but
 Contents/Resources has no NVIDIA licence text`, and with an `ONNXRuntime-` file
 removed it answers `FAIL: the bundle ships ONNX Runtime but Contents/Resources

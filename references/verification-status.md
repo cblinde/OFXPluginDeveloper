@@ -307,8 +307,8 @@ Every line below came out of that run; the logs are in
 | What | Command | Result |
 | --- | --- | --- |
 | Documentation | `python3 tools/check-docs.py` | 30 documents, 0 problems; includes the ONNX Runtime pin **[V]** |
-| Reference plug-in | `templates/minimal-ofx/test/run-tests.sh` | build, artifact and contract: 118 checks, 0 failed **[V]** |
-| CUDA template, CPU path | `CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | 162 checks, 0 failed; memcheck skipped, no valgrind **[V]** |
+| Reference plug-in | `templates/minimal-ofx/test/run-tests.sh` | build, artifact and contract: 118 checks × 3 profiles plus 90 on the tiled pass, 0 failed **[V]** |
+| CUDA template, CPU path | `CPU_ONLY=1 templates/minimal-cuda-ofx/test/run-tests.sh` | 144 checks × 3 profiles, 0 failed; memcheck skipped, no valgrind **[V]** |
 | Inference template | `ONNXRUNTIME_ROOT=… ./build.sh`, then `test/run-tests.sh` | 168 checks per host profile plus 90 on the tiled pass, 0 failed **[V]** |
 | ONNX Runtime pin | `python3 tools/check-docs.py` (the pin is one of its checks) | the pin is the `default:` of the `version` input in the composite action; the one release path in the documentation agrees, plain mentions are counted as measurements - and moving the default to 1.33.0 fails with the file and line ([`ort-pin.log`](../evidence/2026-11-26-linux/ort-pin.log)) **[V]** |
 | Ahead-of-time compile (IREE) | `tools/aot-compile-model.sh` | ONNX → 1808 B MLIR → 13.8 KB `llvm-cpu` artifact (runs, matches golden at 5.96e-08) and 15.1 KB Vulkan artifact with SPIR-V (compiled, not run: no Vulkan device) **[V]** for the compile half, **[I]** for anything about a device |
@@ -327,8 +327,10 @@ Every line below came out of that run; the logs are in
 | ORT inspection | `python3 tools/check-runtime.py .validation/ort-1.32.0` | `ORT_API_VERSION 32`, every entry point this repository uses is declared, no provider in a CPU package **[V]** |
 
 The ASan+UBSan and TSan rows are the 2026-11-26 measurement; they predate the
-OFX 1.5.1 checks, so a fresh sanitizer run prints 118 / 144 / 168 per profile
-instead of the counts written there. The suites themselves are the same.
+OFX 1.5.1 checks, so a fresh sanitizer run prints 118 / 144 / 168 per profile on
+that Linux route instead of the counts written there - the Windows route prints
+118 / 162 / 148, and [`testing-layers.md`](testing-layers.md) §13 carries both
+rows. The suites themselves are the same.
 
 Two consequences worth carrying forward:
 

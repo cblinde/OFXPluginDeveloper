@@ -6,9 +6,9 @@ through the scripting API, build a project, render one frame, decode it, check t
 pixels, quit, write a JSON report.
 
 **Status: the host path ran, on 2026-11-25.** DaVinci Resolve Studio 21.2.0.5 on
-Windows 11 with an RTX 3060: install, launch, connect, build the project through
-the API, apply the OFX effect, render one 1920×1080 PNG, decode it, check it,
-quit - seven steps, exit code 0. The log is
+Windows 11 with an RTX 3060: validate, install, launch, connect, build the project
+through the API, render one 1920×1080 PNG, check it, quit - eight steps, exit
+code 0. The log is
 [`evidence/2026-11-25-windows/resolve-poc.log`](../../evidence/2026-11-25-windows/resolve-poc.log).
 The `.drp` the design assumed turned out not to be necessary: the scripting API
 can import a still, cut a timeline and attach an OFX effect itself. A second run

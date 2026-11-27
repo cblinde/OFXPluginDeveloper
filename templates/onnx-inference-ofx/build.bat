@@ -44,6 +44,10 @@ rem                     ON copies onnxruntime_providers_cuda and the DLLs it
 rem                     imports beside the .ofx. Needs the -gpu package under
 rem                     ONNXRUNTIME_ROOT (the CPU package has no provider);
 rem                     off when unset, as in CMakeLists.txt.
+rem   OFXPLUGIN_LICENCE_DIRS
+rem                     where the CUDA EULA and the cuDNN SLA are, for a
+rem                     provider bundle: no package ships them, and the
+rem                     artifact check refuses the bundle without them.
 rem   OFXPLUGIN_CUDA_RUNTIME_DIRS
 rem                     where cuDNN 9, cuBLAS/cuBLASLt, cuFFT and cudart are
 rem                     found when they are not already under
@@ -136,6 +140,10 @@ rem line `set OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON` before build.bat built a bundle
 rem with no provider at all, and the suite still passed on the CPU fallback - a
 rem green run that proved nothing about the GPU path.
 if defined OFXPLUGIN_BUNDLE_CUDA_PROVIDER set "EXTRA=%EXTRA% "-DOFXPLUGIN_BUNDLE_CUDA_PROVIDER=%OFXPLUGIN_BUNDLE_CUDA_PROVIDER%""
+rem The CUDA EULA and the cuDNN SLA are not beside the libraries; a provider
+rem bundle names the directory that holds them, and the artifact check refuses
+rem the bundle without them.
+if defined OFXPLUGIN_LICENCE_DIRS set "EXTRA=%EXTRA% "-DOFXPLUGIN_LICENCE_DIRS=%OFXPLUGIN_LICENCE_DIRS%""
 if defined OFXPLUGIN_CUDA_RUNTIME_DIRS set "EXTRA=%EXTRA% "-DOFXPLUGIN_CUDA_RUNTIME_DIRS=%OFXPLUGIN_CUDA_RUNTIME_DIRS%""
 rem The third switch, and it was the same bug: FROM_HOST=ON with no forward built a
 rem bundle that ships its own cuDNN and still reports a green suite.
