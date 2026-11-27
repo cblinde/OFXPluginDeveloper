@@ -1,0 +1,135 @@
+# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-27 (excerpt of 3891 lines)
+#
+# Environment: ONNXRUNTIME_ROOT=.validation\ort-gpu-1.20.1 (GPU package, CUDA 12 /
+# cuDNN 9), OFX_SOURCE_DIR resolved to ./.ofx-ref, nvcc from CUDA 13.0 on PATH, no
+# CPU_ONLY, no SANITIZE, no RUN_VALGRIND. Windows route: the .bat runners.
+#
+# This file keeps the section headers, the per-suite counts, every skip line and
+# the summary block; the full log (3891 lines) stays in .validation/, which is not
+# tracked. Nothing below was edited by hand.
+
+== docs: check-docs ==
+== docs ==
+check-docs: 31 documents, 0 problems
+selftest: 7 faults reported, the clean tree accepted
+== shell syntax ==
+check-shell: 26 script(s) parse
+== reference plug-in: minimal-ofx (build, artifact, contract) ==
+== [1/4] build (Release) ==
+== [2/4] artifact (exports, dependents) ==
+== [3/4] host contract (LoadLibraryExW + fake host) ==
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+== [4/4] install and load the installed copy ==
+contract_test: 90 checks, 0 failed
+all Windows checks passed
+== test: minimal-cuda-ofx (build, artifact, contract) ==
+== [0/4] build (Release) ==
+  device code: 7 cubin(s)
+== [1/4] artifact (exports, dependents, device code) ==
+  device code: 7 cubin(s)
+== [2/4] GPU harness (real device code, not emulated) ==
+== the minimal-cuda-ofx kernels on real hardware ==
+[5/6] both kernels launched directly (bypassing the launcher)
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
+== [3/4] host contract (LoadLibraryExW + fake host) ==
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+== [4/4] execution-mode gates (no GPU needed) ==
+all Windows checks passed
+== test: minimal-opencl-ofx (build, artifact, contract, OpenCL suite) ==
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+  platform: NVIDIA CUDA
+  device  : NVIDIA GeForce RTX 3060 (OpenCL 3.0 CUDA)
+opencl_suite: 38 checks, 0 failed
+  skipped: no valgrind on Windows. The POSIX script runs both binaries under
+== build + test: onnx-inference-ofx ==
+== [1/6] build (Release) ==
+== [2/6] inference pipeline (ai_pipeline_test) ==
+== [3/6] host contract (LoadLibraryExW + fake host), exact golden ==
+contract_test: 148 checks, 0 failed
+contract_test: 148 checks, 0 failed
+contract_test: 148 checks, 0 failed
+== [4/6] the model the bundle ships (Contents\Resources, no ONNX_MODEL_PATH) ==
+contract_test: 150 checks, 0 failed
+== [5/6] host contract with the plug-in's own tiling (tileSize=16) ==
+contract_test: 84 checks, 0 failed
+== [6/6] fixtures and artifact ==
+all checks passed
+== negative controls: broken plug-ins must fail, the pattern must pass ==
+== [0/4] MSVC environment ==
+== [1/4] contract harness ==
+== [2/4] control plug-ins (cl /LD) ==
+== [3/4] varying source fixture ==
+== [4/4] fifteen controls ==
+contract_test: 15 checks, 1 failed
+  caught (exit 1) with: FAIL kOfxActionDescribe: kOfxStatReplyDefault
+contract_test: 20 checks, 1 failed
+  caught (exit 1) with: FAIL param 'gain' type: OfxParamTypeInteger (expected OfxParamTypeDouble)
+contract_test: 32 checks, 1 failed
+  caught (exit 1) with: FAIL roi context: the inset window matches the whole frame bit for bit
+contract_test: 74 checks, 0 failed
+  passed, as a plug-in following the pattern must
+contract_test: 72 checks, 0 failed
+contract_test: 32 checks, 1 failed
+  caught (exit 1) with: FAIL roi context: the inset window stays within the tolerance of the whole frame
+contract_test: 74 checks, 0 failed
+  passed, as a plug-in following the pattern must
+contract_test: 28 checks, 1 failed
+  caught (exit 1) with: FAIL label parameter 'provider' =
+contract_test: 64 checks, 0 failed
+  passed, as a plug-in following the pattern must
+contract_test: 72 checks, 0 failed
+  passed, as a plug-in following the pattern must
+contract_test: 32 checks, 1 failed
+  caught (exit 1) with: FAIL label parameter 'mediaId' follows the clip property
+contract_test: 72 checks, 0 failed
+  passed, as a plug-in following the pattern must
+contract_test: 72 checks, 0 failed
+  passed, as a plug-in following the pattern must
+contract_test: 32 checks, 1 failed
+  caught (exit 1) with: FAIL overlay mark at (24,8)
+contract_test: 32 checks, 1 failed
+  caught (exit 1) with: FAIL overlay mark at (24,8)
+negative controls: every fault detected, the pattern still passes, harness is not a rubber stamp
+== halo value: the stored overlap must still belong to this model ==
+== glibc bound self-test: the comparison must fail on a bound that is too low ==
+self-test: 0 case(s) failed
+== workflow pins: a tag-pinned or malformed workflow must be reported ==
+selftest: 10 faults reported, the clean file accepted, the empty root named
+== runtime inspection: a CUDA 13 provider must be named against a CUDA 12 host ==
+self-test: 37 checks, 0 failed
+== environment probe: a missing capability must block its suite ==
+self-test: 0 case(s) failed
+== resolve pixel checks: a uniform, black or wrong-sized frame must fail ==
+self-test: 0 case(s) failed
+== resolve stale-file test: a second run in one directory must not pass ==
+== test fixtures: synthetic models must load and match their shapes ==
+self-test: 4 model(s) x 2 sizes, 0 failure(s)
+== comparator self-test: the golden comparison must fail on a corrupt reference ==
+== comparator self-test (contract_test --selftest-compare)
+self-test: 0 case(s) failed
+==================================================================
+all suites passed, every template that was built:
+  docs drift check                (tools/check-docs.py, incl. the ONNX Runtime pin)
+  reference build + artifact      (minimal-ofx, dumpbin)
+  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)
+  OpenCL device suite             (minimal-opencl-ofx, contract_test + opencl_suite)
+  GPU kernels                     (as test/run-tests.bat reported above)
+  negative controls               (testkit/run-negative-controls.bat)
+  halo value check                (models/test_conv.onnx)
+  glibc bound self-test           (tools/check-glibc.sh --selftest)
+  environment probe self-test     (tools/probe-env.py --self-test)
+  runtime inspection self-test    (tools/check-runtime.py --self-test)
+  resolve pixel checks            (tests/resolve/checks.py)
+  resolve stale-file test         (tests/resolve/test_stale_file.py)
+  test fixtures                   (tools/make-testmodels.py)
+  comparator self-test            (testkit/selftest-compare.bat)
+RUN_VALGRIND, SANITIZE and the glibc bound are POSIX-only: no valgrind,
+==================================================================
+EXIT=0
