@@ -3,6 +3,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -21,8 +22,8 @@ namespace {
 // 256 pixels per workgroup, matching `layout(local_size_x = 256)` in
 // shaders/gain.comp. A mismatch is not a compile error anywhere: the shader
 // would simply cover the wrong slice of the frame and leave the tail untouched,
-// which is why the self-test dispatches an odd pixel count (a 61-pixel frame)
-// and compares every one of them.
+// which is why the suite dispatches an odd pixel count (a 61-pixel frame) and
+// compares every one of them.
 constexpr unsigned int kLocalSize = 256;
 
 // Push constants: the gain and the pixel count. 8 bytes, both 4-byte aligned.
@@ -81,6 +82,13 @@ void closeLoader(void *lib)
 #endif
 }
 
+double nowMs()
+{
+    using clock = std::chrono::steady_clock;
+    static const clock::time_point start = clock::now();
+    return std::chrono::duration<double, std::milli>(clock::now() - start).count();
+}
+
 } // namespace
 
 struct Engine::Impl {
@@ -96,6 +104,25 @@ struct Engine::Impl {
     VkDevice device = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
     unsigned int family = 0;
+
+    // Which arrangement the buffers below are in. Switching tears both down and
+    // builds the other one: the suite switches on purpose, a plug-in never does.
+    Memory mode = Memory::Auto;
+    bool buffersBuilt = false;
+
+    // Both modes: the buffer the shader reads and writes.
+    VkBuffer storage = VK_NULL_HANDLE;
+    VkDeviceMemory storageMemory = VK_NULL_HANDLE;
+    // Device-local mode only: the host-visible half of the transfer.
+    VkBuffer staging = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    VkDeviceSize size = 0;
+    void *mapped = nullptr; // staging in device-local mode, storage in host mode
+    bool stagingIsSharing = false; // host memory is the staging buffer, not the storage
+
+    unsigned int deviceLocalType = UINT32_MAX;
+    unsigned int hostType = UINT32_MAX;
+    unsigned int maxGroups = 0;
 
     PFN_vkDestroyInstance destroyInstance = nullptr;
     PFN_vkGetDeviceProcAddr gdpa = nullptr;
@@ -132,17 +159,14 @@ struct Engine::Impl {
     PFN_vkCmdBindDescriptorSets bindSet = nullptr;
     PFN_vkCmdPushConstants pushConstants = nullptr;
     PFN_vkCmdDispatch dispatch = nullptr;
+    PFN_vkCmdCopyBuffer copyBuffer = nullptr;
+    PFN_vkCmdPipelineBarrier pipelineBarrier = nullptr;
     PFN_vkEndCommandBuffer endCommand = nullptr;
     PFN_vkQueueSubmit submit = nullptr;
     PFN_vkCreateFence createFence = nullptr;
     PFN_vkDestroyFence destroyFence = nullptr;
     PFN_vkWaitForFences waitFences = nullptr;
     PFN_vkResetFences resetFences = nullptr;
-
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VkDeviceMemory bufferMemory = VK_NULL_HANDLE;
-    VkDeviceSize bufferSize = 0;
-    void *mapped = nullptr;
 
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
@@ -175,6 +199,14 @@ bool Engine::ready()
         return false; // a failed attempt is not retried every frame
     }
     return create();
+}
+
+unsigned int Engine::maxPixels()
+{
+    if (!ready()) {
+        return 0;
+    }
+    return _impl->maxGroups * kLocalSize;
 }
 
 bool Engine::create()
@@ -270,6 +302,7 @@ bool Engine::create()
 
     VkPhysicalDeviceProperties props{};
     properties(d.physical, &props);
+    d.maxGroups = props.limits.maxComputeWorkGroupCount[0];
 
     const float priority = 1.0f;
     VkDeviceQueueCreateInfo queueInfo{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -327,6 +360,8 @@ bool Engine::create()
         {"vkCmdBindDescriptorSets", (void **)&d.bindSet},
         {"vkCmdPushConstants", (void **)&d.pushConstants},
         {"vkCmdDispatch", (void **)&d.dispatch},
+        {"vkCmdCopyBuffer", (void **)&d.copyBuffer},
+        {"vkCmdPipelineBarrier", (void **)&d.pipelineBarrier},
         {"vkEndCommandBuffer", (void **)&d.endCommand},
         {"vkQueueSubmit", (void **)&d.submit},
         {"vkCreateFence", (void **)&d.createFence},
@@ -343,6 +378,35 @@ bool Engine::create()
     }
 
     d.getQueue(d.device, d.family, 0, &d.queue);
+
+    // Both memory types are resolved once, from the device's own table and the
+    // buffer's own requirements (asked again when a buffer is created, because
+    // requirements depend on size and usage).
+    VkPhysicalDeviceMemoryProperties memory{};
+    d.memoryProperties(d.physical, &memory);
+    for (unsigned int i = 0; i < memory.memoryTypeCount; ++i) {
+        const VkMemoryPropertyFlags flags = memory.memoryTypes[i].propertyFlags;
+        if (d.hostType == UINT32_MAX &&
+            (flags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
+                (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+            d.hostType = i;
+        }
+        if (d.deviceLocalType == UINT32_MAX && (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0 &&
+            (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+            d.deviceLocalType = i;
+        }
+    }
+    if (d.deviceLocalType == UINT32_MAX) {
+        // An integrated GPU often has one memory type that is both. It is still
+        // device-local in the sense that matters, but the staging copy then has
+        // nothing to do; `memory()` says which arrangement ran.
+        for (unsigned int i = 0; i < memory.memoryTypeCount; ++i) {
+            if ((memory.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
+                d.deviceLocalType = i;
+                break;
+            }
+        }
+    }
 
     // Descriptor set layout: one storage buffer, bound at 0, compute stage only.
     VkDescriptorSetLayoutBinding binding{};
@@ -438,14 +502,20 @@ bool Engine::create()
     }
 
     char label[256];
-    std::snprintf(label, sizeof(label), "%s (Vulkan %u.%u.%u, queue family %u)", props.deviceName,
-                  VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion),
-                  VK_VERSION_PATCH(props.apiVersion), d.family);
+    std::snprintf(label, sizeof(label), "%s (Vulkan %u.%u.%u, queue family %u, %u px per dispatch)",
+                  props.deviceName, VK_VERSION_MAJOR(props.apiVersion),
+                  VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion), d.family,
+                  d.maxGroups * kLocalSize);
     _device = label;
     return true;
 }
 
 bool Engine::apply(float *pixels, unsigned int count, float gain, std::string &error)
+{
+    return apply(pixels, count, gain, Memory::Auto, error);
+}
+
+bool Engine::apply(float *pixels, unsigned int count, float gain, Memory how, std::string &error)
 {
     if (!ready()) {
         error = _reason.empty() ? "no Vulkan device" : _reason;
@@ -455,80 +525,113 @@ bool Engine::apply(float *pixels, unsigned int count, float gain, std::string &e
         error = "nothing to dispatch";
         return false;
     }
+    if (count > maxPixels()) {
+        // Saying so beats dispatching a truncated frame: the shader's guard
+        // keeps the tail *it* sees correct, and nothing keeps the pixels past
+        // maxComputeWorkGroupCount from being untouched.
+        error = "frame needs more workgroups than this device allows; tile it";
+        return false;
+    }
 
     Impl &d = *_impl;
     const VkDeviceSize needed = (VkDeviceSize)count * sizeof(float) * 4;
 
-    if (needed > d.bufferSize) {
-        // Grow once per size: the host hands the same frame size every time, so
-        // this runs on the first frame of a new size and never again. Reusing a
-        // bigger buffer is cheaper than allocating per frame and is what makes
-        // the per-frame path a map, a submit and a wait.
-        if (d.buffer != VK_NULL_HANDLE) {
+    Memory chosen = how;
+    if (chosen == Memory::Auto) {
+        chosen = d.deviceLocalType != UINT32_MAX ? Memory::DeviceLocal : Memory::HostVisible;
+    }
+    if (chosen == Memory::DeviceLocal && d.deviceLocalType == UINT32_MAX) {
+        chosen = Memory::HostVisible; // no device-local memory on this device at all
+    }
+
+    const bool rebuild = !d.buffersBuilt || d.mode != chosen || needed > d.size;
+    if (rebuild) {
+        // Grow once per size and once per arrangement: the host hands the same
+        // frame size every time, so this runs on the first frame of a new size
+        // and never again. Reusing a bigger buffer is cheaper than allocating
+        // per frame and is what makes the per-frame path a copy, a submit and a
+        // wait.
+        if (d.buffersBuilt) {
             if (d.mapped != nullptr) {
-                d.unmapMemory(d.device, d.bufferMemory);
+                d.unmapMemory(d.device, d.stagingIsSharing ? d.storageMemory : d.stagingMemory);
                 d.mapped = nullptr;
             }
-            d.destroyBuffer(d.device, d.buffer, nullptr);
-            d.freeMemory(d.device, d.bufferMemory, nullptr);
-            d.buffer = VK_NULL_HANDLE;
-            d.bufferMemory = VK_NULL_HANDLE;
-            d.bufferSize = 0;
+            if (d.storage != VK_NULL_HANDLE) {
+                d.destroyBuffer(d.device, d.storage, nullptr);
+                d.freeMemory(d.device, d.storageMemory, nullptr);
+                d.storage = VK_NULL_HANDLE;
+                d.storageMemory = VK_NULL_HANDLE;
+            }
+            if (d.staging != VK_NULL_HANDLE) {
+                d.destroyBuffer(d.device, d.staging, nullptr);
+                d.freeMemory(d.device, d.stagingMemory, nullptr);
+                d.staging = VK_NULL_HANDLE;
+                d.stagingMemory = VK_NULL_HANDLE;
+            }
+            d.buffersBuilt = false;
+            d.size = 0;
         }
+        d.mode = chosen;
+        d.stagingIsSharing = chosen == Memory::HostVisible;
 
-        VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bufferInfo.size = needed;
-        bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        if (d.createBuffer(d.device, &bufferInfo, nullptr, &d.buffer) != VK_SUCCESS) {
-            error = "vkCreateBuffer failed";
-            return false;
-        }
-        VkMemoryRequirements requirements{};
-        d.bufferRequirements(d.device, d.buffer, &requirements);
+        auto createBuffer = [&](VkDeviceSize bytes, unsigned int typeIndex, VkBuffer *buffer,
+                                VkDeviceMemory *memory, const char *what) -> bool {
+            VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+            info.size = bytes;
+            info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+            info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            if (d.createBuffer(d.device, &info, nullptr, buffer) != VK_SUCCESS) {
+                error = std::string("vkCreateBuffer failed for the ") + what;
+                return false;
+            }
+            VkMemoryRequirements requirements{};
+            d.bufferRequirements(d.device, *buffer, &requirements);
+            if ((requirements.memoryTypeBits & (1u << typeIndex)) == 0) {
+                error = std::string("the ") + what + " cannot live in the chosen memory type";
+                return false;
+            }
+            VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            allocation.allocationSize = requirements.size;
+            allocation.memoryTypeIndex = typeIndex;
+            if (d.allocateMemory(d.device, &allocation, nullptr, memory) != VK_SUCCESS) {
+                error = std::string("vkAllocateMemory failed for the ") + what;
+                return false;
+            }
+            if (d.bindBuffer(d.device, *buffer, *memory, 0) != VK_SUCCESS) {
+                error = std::string("vkBindBufferMemory failed for the ") + what;
+                return false;
+            }
+            return true;
+        };
 
-        // Host-visible and coherent: the frame is written and read through the
-        // same memory, which is the smallest correct arrangement and the one a
-        // template should start from. On a discrete GPU that memory is system
-        // RAM over PCIe, so the next step for a real workload is a device-local
-        // buffer plus a staging copy - measurable, and not what this template
-        // claims.
-        VkPhysicalDeviceMemoryProperties memory{};
-        d.memoryProperties(d.physical, &memory);
-        unsigned int typeIndex = UINT32_MAX;
-        const VkMemoryPropertyFlags wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        for (unsigned int i = 0; i < memory.memoryTypeCount; ++i) {
-            if ((requirements.memoryTypeBits & (1u << i)) &&
-                (memory.memoryTypes[i].propertyFlags & wanted) == wanted) {
-                typeIndex = i;
-                break;
+        if (chosen == Memory::DeviceLocal) {
+            if (!createBuffer(needed, d.deviceLocalType, &d.storage, &d.storageMemory, "storage buffer")) {
+                return false;
+            }
+            if (!createBuffer(needed, d.hostType, &d.staging, &d.stagingMemory, "staging buffer")) {
+                return false;
+            }
+            if (d.mapMemory(d.device, d.stagingMemory, 0, VK_WHOLE_SIZE, 0, &d.mapped) != VK_SUCCESS) {
+                error = "vkMapMemory failed for the staging buffer";
+                return false;
+            }
+        } else {
+            if (!createBuffer(needed, d.hostType, &d.storage, &d.storageMemory, "host-visible buffer")) {
+                return false;
+            }
+            if (d.mapMemory(d.device, d.storageMemory, 0, VK_WHOLE_SIZE, 0, &d.mapped) != VK_SUCCESS) {
+                error = "vkMapMemory failed for the host-visible buffer";
+                return false;
             }
         }
-        if (typeIndex == UINT32_MAX) {
-            error = "no host-visible, coherent memory type for a storage buffer";
-            return false;
-        }
+        d.size = needed;
+        d.buffersBuilt = true;
 
-        VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        allocation.allocationSize = requirements.size;
-        allocation.memoryTypeIndex = typeIndex;
-        if (d.allocateMemory(d.device, &allocation, nullptr, &d.bufferMemory) != VK_SUCCESS) {
-            error = "vkAllocateMemory failed";
-            return false;
-        }
-        if (d.bindBuffer(d.device, d.buffer, d.bufferMemory, 0) != VK_SUCCESS) {
-            error = "vkBindBufferMemory failed";
-            return false;
-        }
-        if (d.mapMemory(d.device, d.bufferMemory, 0, VK_WHOLE_SIZE, 0, &d.mapped) != VK_SUCCESS) {
-            error = "vkMapMemory failed";
-            return false;
-        }
-        d.bufferSize = requirements.size;
-
+        // The descriptor points at the buffer the shader reads and writes - the
+        // device-local one in that mode, never the staging copy.
         VkDescriptorBufferInfo bufferDescriptor{};
-        bufferDescriptor.buffer = d.buffer;
+        bufferDescriptor.buffer = d.storage;
         bufferDescriptor.offset = 0;
         bufferDescriptor.range = VK_WHOLE_SIZE;
         VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
@@ -540,7 +643,27 @@ bool Engine::apply(float *pixels, unsigned int count, float gain, std::string &e
         d.updateSets(d.device, 1, &write, 0, nullptr);
     }
 
+    _memory = d.stagingIsSharing ? "host-visible coherent memory"
+                                 : "device-local storage + host-visible staging";
+
+    auto barrier = [&](VkBuffer buffer, VkAccessFlags from, VkAccessFlags to,
+                       VkPipelineStageFlags fromStage, VkPipelineStageFlags toStage) {
+        VkBufferMemoryBarrier range{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        range.srcAccessMask = from;
+        range.dstAccessMask = to;
+        range.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        range.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        range.buffer = buffer;
+        range.offset = 0;
+        range.size = VK_WHOLE_SIZE;
+        d.pipelineBarrier(d.commands, fromStage, toStage, 0, 0, nullptr, 1, &range, 0, nullptr);
+    };
+
+    // 1. the frame into memory the device can read
+    const double beforeUpload = nowMs();
     std::memcpy(d.mapped, pixels, (size_t)needed);
+    _stats.uploadMs = nowMs() - beforeUpload;
+    _stats.bytes = (unsigned long long)needed;
 
     VkResult result = d.resetFences(d.device, 1, &d.fence);
     if (result != VK_SUCCESS) {
@@ -558,12 +681,46 @@ bool Engine::apply(float *pixels, unsigned int count, float gain, std::string &e
         error = "vkBeginCommandBuffer failed";
         return false;
     }
+
+    // 2. the transfers and the dispatch, with the barriers between them: without
+    // them the shader may read the staging buffer before the copy lands and the
+    // CPU may read the frame before the dispatch writes it, which on coherent
+    // memory looks like "works most of the time" rather than like a failure.
+    if (!d.stagingIsSharing) {
+        barrier(d.staging, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkBufferCopy whole{};
+        whole.size = needed;
+        d.copyBuffer(d.commands, d.staging, d.storage, 1, &whole);
+        barrier(d.storage, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    } else {
+        barrier(d.storage, VK_ACCESS_HOST_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    }
+
     d.bindPipeline(d.commands, VK_PIPELINE_BIND_POINT_COMPUTE, d.pipeline);
     d.bindSet(d.commands, VK_PIPELINE_BIND_POINT_COMPUTE, d.pipelineLayout, 0, 1, &d.set, 0, nullptr);
     PushConstants push{gain, count};
     d.pushConstants(d.commands, d.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                     sizeof(push), &push);
     d.dispatch(d.commands, (count + kLocalSize - 1) / kLocalSize, 1, 1);
+
+    if (!d.stagingIsSharing) {
+        barrier(d.storage, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkBufferCopy whole{};
+        whole.size = needed;
+        d.copyBuffer(d.commands, d.storage, d.staging, 1, &whole);
+        barrier(d.staging, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT);
+    } else {
+        barrier(d.storage, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT);
+    }
+
     if (d.endCommand(d.commands) != VK_SUCCESS) {
         error = "vkEndCommandBuffer failed";
         return false;
@@ -572,6 +729,7 @@ bool Engine::apply(float *pixels, unsigned int count, float gain, std::string &e
     VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &d.commands;
+    const double beforeDispatch = nowMs();
     if (d.submit(d.queue, 1, &submitInfo, d.fence) != VK_SUCCESS) {
         error = "vkQueueSubmit failed";
         return false;
@@ -580,15 +738,18 @@ bool Engine::apply(float *pixels, unsigned int count, float gain, std::string &e
     // every other plug-in sharing the GPU (references/cuda-streams-and-memory.md
     // section 1, same rule for a Vulkan queue).
     result = d.waitFences(d.device, 1, &d.fence, VK_TRUE, UINT64_MAX);
+    _stats.dispatchMs = nowMs() - beforeDispatch;
     if (result != VK_SUCCESS) {
         error = std::string("vkWaitForFences failed: ") + vkName(result);
         return false;
     }
 
-    // Host-coherent memory needs no invalidate, which is why the memory type
-    // above asks for it: a non-coherent type would need a flush/invalidate pair
-    // and a decision about who owns the range.
+    // 3. and back out. Coherent memory needs no invalidate, which is why the
+    // memory type asks for it: a non-coherent type would need a flush/invalidate
+    // pair and a decision about who owns the range.
+    const double beforeDownload = nowMs();
     std::memcpy(pixels, d.mapped, (size_t)needed);
+    _stats.downloadMs = nowMs() - beforeDownload;
     return true;
 }
 
@@ -596,6 +757,20 @@ void Engine::destroy()
 {
     Impl &d = *_impl;
     if (d.device != VK_NULL_HANDLE) {
+        if (d.buffersBuilt && d.mapped != nullptr) {
+            d.unmapMemory(d.device, d.stagingIsSharing ? d.storageMemory : d.stagingMemory);
+            d.mapped = nullptr;
+        }
+        if (d.storage != VK_NULL_HANDLE) {
+            d.destroyBuffer(d.device, d.storage, nullptr);
+            d.freeMemory(d.device, d.storageMemory, nullptr);
+            d.storage = VK_NULL_HANDLE;
+        }
+        if (d.staging != VK_NULL_HANDLE) {
+            d.destroyBuffer(d.device, d.staging, nullptr);
+            d.freeMemory(d.device, d.stagingMemory, nullptr);
+            d.staging = VK_NULL_HANDLE;
+        }
         d.destroyFence(d.device, d.fence, nullptr);
         d.destroyCommandPool(d.device, d.commandPool, nullptr);
         d.destroyPool(d.device, d.pool, nullptr);
@@ -607,15 +782,6 @@ void Engine::destroy()
         }
         if (d.setLayout != VK_NULL_HANDLE) {
             d.destroySetLayout(d.device, d.setLayout, nullptr);
-        }
-        if (d.buffer != VK_NULL_HANDLE) {
-            if (d.mapped != nullptr) {
-                d.unmapMemory(d.device, d.bufferMemory);
-                d.mapped = nullptr;
-            }
-            d.destroyBuffer(d.device, d.buffer, nullptr);
-            d.freeMemory(d.device, d.bufferMemory, nullptr);
-            d.buffer = VK_NULL_HANDLE;
         }
         d.destroyDevice(d.device, nullptr);
         d.device = VK_NULL_HANDLE;

@@ -77,6 +77,31 @@ rem ---- configure + build ----------------------------------------------------
 rem The -D value is quoted: an OFX_SOURCE_DIR under "Program Files" is split at
 rem the first space otherwise, and CMake reports the tail as a stray argument.
 set "EXTRA="
+
+rem Discovered here and not after the flags below: those lines read
+rem %VULKAN_INCLUDE_DIR% as they run, so a directory found later would never reach
+rem the configure command.
+rem Vulkan discovery, the same as build.sh: the LunarG SDK sets VULKAN_SDK, its
+rem headers live under Include\ and glslc.exe under Bin\. A machine with the SDK
+rem installed should not have to be told again, and a machine without one gets
+rem CMake's message naming VULKAN_INCLUDE_DIR and VULKAN_SHADER_COMPILER.
+if /I not "%OFXPLUGIN_VULKAN%"=="OFF" (
+  if not defined VULKAN_INCLUDE_DIR if defined VULKAN_SDK (
+    if exist "%VULKAN_SDK%\Include\vulkan\vulkan.h" set "VULKAN_INCLUDE_DIR=%VULKAN_SDK%\Include"
+    if not defined VULKAN_INCLUDE_DIR if exist "%VULKAN_SDK%\include\vulkan\vulkan.h" set "VULKAN_INCLUDE_DIR=%VULKAN_SDK%\include"
+  )
+  if not defined VULKAN_SHADER_COMPILER if defined VULKAN_SDK (
+    if exist "%VULKAN_SDK%\Bin\glslc.exe" set "VULKAN_SHADER_COMPILER=%VULKAN_SDK%\Bin\glslc.exe"
+    if not defined VULKAN_SHADER_COMPILER if exist "%VULKAN_SDK%\bin\glslc.exe" set "VULKAN_SHADER_COMPILER=%VULKAN_SDK%\bin\glslc.exe"
+  )
+  if not defined VULKAN_SHADER_COMPILER (
+    for %%E in (glslang.exe glslc.exe) do (
+      if not defined VULKAN_SHADER_COMPILER for /f "delims=" %%P in ('where %%E 2^>nul') do set "VULKAN_SHADER_COMPILER=%%P"
+    )
+  )
+  echo       vulkan: headers "!VULKAN_INCLUDE_DIR!", shader compiler "!VULKAN_SHADER_COMPILER!"
+)
+
 if defined OFX_SOURCE_DIR set "EXTRA=%EXTRA% "-DOFX_SOURCE_DIR=%OFX_SOURCE_DIR%""
 rem The Vulkan headers and the shader compiler, when they are not where
 rem find_package(Vulkan) and PATH would look: the two cache variables the

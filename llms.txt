@@ -35,6 +35,7 @@
 - [Region of definition, region of interest and the 1.5.1 render hints](references/roi-tiling-and-render-hints.md)
 - [Testing: the layers, cheapest first](references/testing-layers.md)
 - [Verification status](references/verification-status.md)
+- [Vulkan compute from inside an OFX plug-in](references/vulkan-compute.md)
 
 ## Templates
 

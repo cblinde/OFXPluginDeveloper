@@ -67,6 +67,36 @@ fi
 # 2. Configure + build
 # ---------------------------------------------------------------------------
 echo "[2/4] configuring (${config})"
+
+# Vulkan is the one dependency this template can find by itself. The SDK puts
+# its headers under include/ and its shader compiler under bin/, and a machine
+# that has the SDK installed should not have to be told again on the command
+# line; a machine that has neither gets CMake's own message naming the two
+# variables. Nothing is guessed silently: what was picked (or that nothing was)
+# is printed before the configure runs.
+if [[ "${OFXPLUGIN_VULKAN:-ON}" != "OFF" ]]; then
+  if [[ -z "${VULKAN_INCLUDE_DIR:-}" && -n "${VULKAN_SDK:-}" ]]; then
+    for candidate in "${VULKAN_SDK}/include" "${VULKAN_SDK}/Include"; do
+      if [[ -f "${candidate}/vulkan/vulkan.h" ]]; then
+        VULKAN_INCLUDE_DIR="${candidate}"
+        break
+      fi
+    done
+  fi
+  if [[ -z "${VULKAN_SHADER_COMPILER:-}" ]]; then
+    for candidate in "${VULKAN_SDK:-/nonexistent}/bin/glslc" \
+                     "${VULKAN_SDK:-/nonexistent}/Bin/glslc.exe" \
+                     "$(command -v glslc 2>/dev/null || true)" \
+                     "$(command -v glslang 2>/dev/null || true)"; do
+      if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+        VULKAN_SHADER_COMPILER="${candidate}"
+        break
+      fi
+    done
+  fi
+  echo "      vulkan: headers ${VULKAN_INCLUDE_DIR:-<not found>}, shader compiler ${VULKAN_SHADER_COMPILER:-<not found>}"
+fi
+
 cmake -S "${here}" -B "${here}/build" \
   -DCMAKE_BUILD_TYPE="${config}" \
   -DOFX_SOURCE_DIR="${ofx_dir}" \

@@ -1,0 +1,44 @@
+== minimal-vulkan-ofx: SDK discovery, both memory arrangements, device suite (2026-11-27, Windows) ==
+# Machine: Windows, MSVC 14.50, NVIDIA GeForce RTX 3060, Vulkan 1.4.357 from the
+# installed driver. No LunarG SDK installed: a VULKAN_SDK-shaped directory was
+# put together from Vulkan-Headers and glslang 16.6.0 so the build scripts'
+# discovery path could be measured with the same two pieces the SDK ships.
+
+$ VULKAN_SDK=... build.bat Release          (VULKAN_INCLUDE_DIR/VULKAN_SHADER_COMPILER unset)
+      vulkan: headers "...\vk\sdk\Include", shader compiler "...\vk\sdk\Bin\glslc.exe"
+  -> configure and build exit 0, no compiler warnings
+
+$ test\run-tests.bat Release nobuild
+== [1/5] build skipped (nobuild)
+== [2/5] artifact (exports, dependents) ==
+== [3/5] host contract (LoadLibraryExW + fake host) ==
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+contract_test: 118 checks, 0 failed
+== [4/5] install and load the installed copy ==
+contract_test: 90 checks, 0 failed
+== [5/5] device suite (Vulkan vs CPU) ==
+device: NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per dispatch)
+  host-visible   98.90 ms/frame total, dispatch 6.64, copies 92.22 (1 GB/s over both directions)
+  device-local   113.10 ms/frame total, dispatch 20.33, copies 92.71 (1 GB/s over both directions)
+  CPU            3.56 ms/frame (the loop render() falls back to)
+vulkan_suite: 26 checks, 0 failed
+all Windows checks passed
+
+The device half, four runs (the first is a cold first-touch run and is kept to show
+why the table in references/vulkan-compute.md quotes the warm ones):
+    host-visible   100.54 ms/frame total, dispatch 6.34, copies 94.16 (1 GB/s over both directions)
+    device-local   110.02 ms/frame total, dispatch 17.65, copies 92.31 (1 GB/s over both directions)
+    CPU            3.93 ms/frame (the loop render() falls back to)
+    host-visible   102.35 ms/frame total, dispatch 6.70, copies 95.59 (1 GB/s over both directions)
+    device-local   112.09 ms/frame total, dispatch 18.01, copies 94.02 (1 GB/s over both directions)
+    CPU            3.97 ms/frame (the loop render() falls back to)
+    host-visible   99.76 ms/frame total, dispatch 6.76, copies 92.95 (1 GB/s over both directions)
+    device-local   110.77 ms/frame total, dispatch 17.07, copies 93.64 (1 GB/s over both directions)
+    CPU            3.93 ms/frame (the loop render() falls back to)
+
+# 26 device checks: workgroup edges (1, 61, 256, 257 px), gains 0.0/1.0/0.5/3.75,
+# 1080p, 4K, buffer reuse after 4K, five applies on one buffer, the same frame
+# through host-visible and device-local memory (bit-identical), and the two
+# refusals. Every check compares all channels against the CPU loop, alpha included.

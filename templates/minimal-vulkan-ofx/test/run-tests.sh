@@ -24,7 +24,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPL="$(cd "${HERE}/.." && pwd)"
 ROOT="$(cd "${TPL}/../.." && pwd)"
 
-echo "[1/5] building the reference plug-in (and verifying the artifact)"
+echo "[1/6] building the reference plug-in (and verifying the artifact)"
 "${TPL}/build.sh"
 
 OFX_FILE="$(find "${TPL}/build/bundle" -name '*.ofx' -type f | head -1)"
@@ -34,7 +34,7 @@ HARNESS="${TPL}/build/contract_test"
 # The sanitizer is named in the log, like the other two suites do: a run whose
 # header says "none" must not be mistaken for an instrumented one, and the CI
 # job greps this line to prove the build it credits was built that way.
-echo "[2/5] compiling the shared contract harness (sanitizer: ${SANITIZE:-none})"
+echo "[2/6] compiling the shared contract harness (sanitizer: ${SANITIZE:-none})"
 SANITIZE="${SANITIZE:-}" "${ROOT}/testkit/build-contract-test.sh" "${HARNESS}" "${OFX_DIR}"
 
 # One process holds one host - OfxSetHost ignores every call after the first -
@@ -94,7 +94,7 @@ echo
 # dependency that only ever resolved inside the build directory (an $ORIGIN RPATH
 # that pointed back at build/, a resource only the build wrote there). The harness
 # then renders one frame from the installed copy.
-echo "== [4/5] install and load the installed copy =="
+echo "== [4/6] install and load the installed copy =="
 INSTALL_PREFIX="$(mktemp -d)"
 cmake --install "${TPL}/build" --prefix "${INSTALL_PREFIX}" > "${INSTALL_PREFIX}/install.log" 2>&1 || {
   cat "${INSTALL_PREFIX}/install.log" >&2
@@ -112,7 +112,28 @@ echo "  ${INSTALLED}"
 rm -rf "${INSTALL_PREFIX}"
 
 echo
-echo "== [5/5] valgrind memcheck =="
+echo "== [5/6] device suite (Vulkan vs CPU) =="
+# The half a host run cannot prove cheaply: the shader, the descriptor set, the
+# dispatch, both memory arrangements and the two refusals. Guarded rather than
+# assumed - a machine with no Vulkan device, or a CPU-only configure, reports
+# NOT VERIFIED instead of a green step, because a pass on hardware that is not
+# there would be a lie. Exit 2 is the suite's "no device", per its header.
+SUITE="${TPL}/build/self-test/vulkan_suite"
+if [[ ! -x "${SUITE}" ]]; then
+  echo "  NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF"
+else
+  suite_status=0
+  "${SUITE}" || suite_status=$?
+  if [[ "${suite_status}" == 2 ]]; then
+    echo "  NOT VERIFIED the suite found no Vulkan device on this machine"
+  elif [[ "${suite_status}" != 0 ]]; then
+    echo "  FAIL: the device suite reported a failure (exit ${suite_status})" >&2
+    exit 1
+  fi
+fi
+
+echo
+echo "== [6/6] valgrind memcheck =="
 WANT="${RUN_VALGRIND:-auto}"
 if [[ "${WANT}" == "0" ]]; then
   echo "  skipped: RUN_VALGRIND=0"

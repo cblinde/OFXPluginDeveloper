@@ -163,8 +163,8 @@ rem ---- [5] device -----------------------------------------------------------
 rem The half no host run proves cheaply: the shader, the descriptor set and the
 rem dispatch. It is guarded rather than assumed - a machine with no Vulkan device
 rem (or a CPU-only configure) reports NOT VERIFIED instead of a green step.
-echo == [5/5] device self-test (Vulkan vs CPU) ==
-set "SELFTEST=%BUILD_DIR%\self-test\vulkan_selftest.exe"
+echo == [5/5] device suite (Vulkan vs CPU) ==
+set "SELFTEST=%BUILD_DIR%\self-test\vulkan_suite.exe"
 if not exist "%SELFTEST%" goto :selftest_absent
 "%SELFTEST%"
 set "SELFTEST_STATUS=%ERRORLEVEL%"
@@ -172,10 +172,10 @@ if "%SELFTEST_STATUS%"=="0" goto :selftest_done
 if "%SELFTEST_STATUS%"=="2" goto :selftest_nodevice
 goto :error
 :selftest_absent
-echo   NOT VERIFIED no self-test binary - configured with OFXPLUGIN_VULKAN=OFF
+echo   NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF
 goto :selftest_done
 :selftest_nodevice
-echo   NOT VERIFIED the self-test found no Vulkan device on this machine
+echo   NOT VERIFIED the suite found no Vulkan device on this machine
 :selftest_done
 
 echo.

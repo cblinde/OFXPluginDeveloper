@@ -171,7 +171,7 @@ probe is choosing between.
 | CPU-only pixel maths | `templates/minimal-ofx/` | smallest host-loadable module; no CUDA, no model |
 | CUDA path with CPU fallback | `templates/minimal-cuda-ofx/` | stream contract, pitch arithmetic and `DeviceGuard` already correct |
 | OpenCL path through the host's queue | `templates/minimal-opencl-ofx/` | `cl_mem`/image2d lifetime, queue ordering and the no-device fallback are written; the host hands over the queue, the plug-in never creates a context |
-| Vulkan compute with no host property | `templates/minimal-vulkan-ofx/` | own instance, device and queue; one host-visible buffer; the unload-safe device lifetime is written |
+| Vulkan compute with no host property | `templates/minimal-vulkan-ofx/` | own instance, device and queue; host-visible and device-local staging paths with their barriers; the unload-safe device lifetime is written; `vulkan-compute.md` says when a GPU round trip is the wrong tool |
 | ONNX model per frame | `templates/onnx-inference-ofx/` | session, packing, tiling, goldens; CUDA EP first, CPU fallback (`references/onnx-and-tensorrt.md` §4) |
 | Model whose output is not an image | `templates/onnx-inference-ofx/` for session and packaging only | `ModelRunner` requires out shape == in shape; the head decoder is yours |
 

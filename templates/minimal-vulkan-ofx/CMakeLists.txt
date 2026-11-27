@@ -178,6 +178,15 @@ set_target_properties(${PLUGIN_TARGET} PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CXX_EXTENSIONS OFF)
 
+# /EHsc, stated rather than inherited: the guards around the 1.5.1 capability
+# writes are try/catch, and the MSVC generators do not all put /EHsc in the
+# default flag set - without it the compiler warns C4530 ("handler used, but
+# unwind semantics are not enabled") on exactly those blocks, i.e. on the code
+# that makes Resolve 21.2 load this plug-in at all.
+if(MSVC)
+  target_compile_options(${PLUGIN_TARGET} PRIVATE /EHsc)
+endif()
+
 # Hide everything except the entry points. ofxsImageEffect.cpp:18 marks those two
 # with __attribute__((visibility("default"))); everything else - including this
 # plug-in's own Support copy - must stay hidden or two plug-ins in one host
@@ -233,30 +242,31 @@ message(STATUS "Bundle     : ${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}")
 
 
 # ---------------------------------------------------------------------------
-# 4. Device self-test
+# 4. Device suite
 # ---------------------------------------------------------------------------
 # The part of this template a host run cannot prove cheaply: that the shader,
-# the descriptor set and the dispatch are right. It runs the same code the
-# plug-in runs, on a 61-pixel frame (odd, so the last workgroup is partly
-# outside the buffer) and a 1920x1080 one, and compares every channel against
-# the CPU loop - alpha included, because the shader copies it and a kernel that
-# scaled it would still look plausible.
+# the descriptor set, the dispatch and both memory arrangements are right. It
+# runs the same `Engine` the plug-in runs - workgroup edges, the two gains a host
+# may short-circuit, 1080p and 4K, buffer reuse, five applies on one buffer, the
+# same frame through host-visible and device-local memory, the two refusals - and
+# compares every channel against the CPU loop, alpha included. It also prints
+# throughput for both arrangements and for the loop `render()` falls back to.
 if(OFXPLUGIN_VULKAN)
-  add_executable(vulkan_selftest
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/vulkan_selftest.cpp"
+  add_executable(vulkan_suite
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/vulkan_suite.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/VulkanGain.cpp"
     "${_spv_header}")
-  target_include_directories(vulkan_selftest PRIVATE
+  target_include_directories(vulkan_suite PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${VULKAN_INCLUDE_DIR}"
     "${CMAKE_BINARY_DIR}/generated")
-  target_compile_features(vulkan_selftest PRIVATE cxx_std_17)
-  set_target_properties(vulkan_selftest PROPERTIES
+  target_compile_features(vulkan_suite PRIVATE cxx_std_17)
+  set_target_properties(vulkan_suite PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/self-test>")
   if(NOT WIN32)
-    target_link_libraries(vulkan_selftest PRIVATE ${CMAKE_DL_LIBS})
+    target_link_libraries(vulkan_suite PRIVATE ${CMAKE_DL_LIBS})
   endif()
-  message(STATUS "Self-test  : ${CMAKE_BINARY_DIR}/self-test/vulkan_selftest")
+  message(STATUS "Device suite: ${CMAKE_BINARY_DIR}/self-test/vulkan_suite")
 endif()
 
 # An install rule, because a bundle that only exists in the build tree is not

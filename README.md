@@ -47,7 +47,7 @@ Nuke and SCRATCH have run nothing. See
 | Path | What it is |
 | --- | --- |
 | `SKILL.md` | The entry point: ground rules, the build workflow, and the routing table |
-| `references/` | 23 single-subject documents - constants, lifecycle, streams, pixels, RoI, colour, host quirks, CMake, packaging, debugging, performance, ONNX, AI architectures, pattern index, testing, verification status, field evidence, reference projects, checklists, Resolve automation |
+| `references/` | 24 single-subject documents - constants, lifecycle, streams, pixels, RoI, colour, host quirks, CMake, packaging, debugging, performance, ONNX, AI architectures, pattern index, testing, verification status, field evidence, reference projects, checklists, Resolve automation |
 | `templates/` | Five complete plug-ins: `minimal-ofx` (CPU), `minimal-cuda-ofx` (CUDA + fallback), `minimal-opencl-ofx` (OpenCL through the host's queue + fallback),
 `minimal-vulkan-ofx` (Vulkan compute the plug-in owns + fallback), `onnx-inference-ofx` (model per frame) |
 | `testkit/` | The host harness: `dlopen` + contract checks, the official OFX host, and the headless Natron render |
@@ -92,10 +92,10 @@ templates/minimal-opencl-ofx/
 templates/minimal-vulkan-ofx/
   CMakeLists.txt                     bundle build; Vulkan headers + one shader, no vulkan-1.lib
   src/Plugin.cpp                     RGBA gain: gather the window, dispatch, scatter back; CPU fallback
-  src/VulkanGain.h  src/VulkanGain.cpp  instance, device, pipeline, one host-visible buffer, fence wait
+  src/VulkanGain.h  src/VulkanGain.cpp  instance, device, pipeline, both memory arrangements, barriers, fence
   shaders/gain.comp                  the kernel: RGBA32F in place, alpha copied
   cmake/spv-header.cmake             SPIR-V to a generated header, so the bundle carries no .spv
-  test/vulkan_selftest.cpp           device vs CPU on 61 px and 1920x1080, every channel
+  test/vulkan_suite.cpp              26 checks: workgroup edges, 1080p/4K, both arrangements, throughput
 templates/onnx-inference-ofx/
   CMakeLists.txt                     bundle build, ONNX Runtime detection + bundling
   src/Plugin.h  src/Plugin.cpp       OFX wrapper: window addressing, alpha, render
