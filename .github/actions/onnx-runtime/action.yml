@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 name: ONNX Runtime from NuGet
 description: >-
   Unpack the ONNX Runtime NuGet package into the include/ + lib/ layout the

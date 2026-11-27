@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 name: windows
 
 # The MSVC half of this repository: build.bat, the .bat suites, the contract

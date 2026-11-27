@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /* Export list for the reference plug-in (GNU ld / gold / lld on Linux).
  *
  * -fvisibility=hidden already hides the Support library's strong symbols, but it

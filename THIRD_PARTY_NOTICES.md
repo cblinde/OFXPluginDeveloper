@@ -6,8 +6,9 @@ on the line after a shebang, after `@echo off` in a batch file (a `rem` above it
 would be printed on every run) and after `#version` in a GLSL shader. Two things
 hold that claim: `tools/check-provenance.py` fails on a tracked source file
 without the line, and it fails on a substantive line that also appears verbatim in
-the OpenFX SDK. The linker version scripts (`*.map`), `.gitignore` and the data
-fixtures carry no SPDX line and are the exceptions the tool names.
+the OpenFX SDK. The version scripts (`*.map`) and every workflow carry it too, in a `/* */` or
+a `#` comment; `.gitignore` and the data fixtures are the exceptions the tool
+names, because a committed `.onnx` or `.bin` cannot hold a comment at all.
 
 It also *uses* other people's code. Nothing below is vendored into this tree:
 each item is fetched by a build, linked at run time, or downloaded by an operator

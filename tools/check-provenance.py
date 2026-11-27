@@ -38,13 +38,16 @@ from pathlib import Path
 
 SPDX = "SPDX-License-Identifier: BSD-3-Clause"
 
-# Extensions that can hold a `#`/`//` comment, i.e. where the line belongs. Data,
-# documents and linker scripts are excluded by name or extension: a `.map` version
-# script has its own comment rules, and a `.md` file is not source.
+# Extensions that can hold a comment, i.e. where the line belongs. Data and
+# documents are excluded: a `.md` file is not source and a committed `.onnx` or
+# `.bin` cannot hold a comment at all. A `.map` version script takes `/* */` and a
+# workflow takes `#`, so both are source-shaped - they were the two omissions this
+# list used to hide (a workflow added later would have been missed again).
 SOURCE_SUFFIXES = {
     ".c", ".cc", ".cpp", ".h", ".hpp", ".cxx", ".mm", ".m",
     ".py", ".sh", ".bat", ".cmd", ".ps1", ".cmake", ".comp", ".glsl", ".vert",
     ".frag", ".rs", ".js", ".ts", ".html", ".css", ".txt.cmake",
+    ".map", ".yml", ".yaml",
 }
 
 # Files that are source-shaped but must not carry the line.
