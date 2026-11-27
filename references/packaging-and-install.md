@@ -292,20 +292,42 @@ copies only the licence text that lies beside what it copies:
 ```
 
 The build looks for `LICENSE*`, `LICENCE*`, `NOTICE*`, `ThirdParty*`,
-`THIRD_PARTY*` and `EULA*` in the ONNX Runtime root and in the directories
-`OFXPLUGIN_CUDA_RUNTIME_DIRS` and their parents, and copies what it finds into
-`Contents/Resources`. The `ONNXRuntime-` or `NVIDIA-` prefix records where the
-file was found, not what it covers - two files called `LICENSE` would otherwise
-overwrite each other, and the text inside decides what it covers. When nothing
-is found the line says so (`none found beside the runtime. Add ONNX Runtime's
-LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before shipping`) rather
-than leaving the bundle silent.
+`THIRD_PARTY*` and `EULA*` in three places: `templates/onnx-inference-ofx/licenses/`,
+the ONNX Runtime root and the package root above it, and each directory in
+`OFXPLUGIN_CUDA_RUNTIME_DIRS` with its parent. Only text-shaped names survive the
+glob (no extension, or `.txt`, `.md`, `.rst`, `.html`): globbing a package root
+once copied `licence-build.log` out of a scratch directory, because Windows
+matches `LICENCE*` without regard to case or extension. The `ONNXRuntime-` or
+`NVIDIA-` prefix records where the file was found, not what it covers - two files
+called `LICENSE` would otherwise overwrite each other, and the text inside decides
+what it covers.
 
-What the build cannot do is invent the text. An ONNX Runtime release zip
-unpacked into `include/` and `bin/` may keep its notices in the archive root
-rather than in the unpacked tree, and NVIDIA's EULA ships with the toolkit
-installer, not with the redistributable DLLs - both are still added by hand, and
-the configure line is what makes the omission visible instead of implicit. The
+ONNX Runtime's MIT text is committed as `licenses/LICENSE`, which is the fix for
+the case that used to end in silence: a bare runtime tree (only `bin/`, `include/`,
+`lib/`) carries no text at all, and a release zip keeps its notices in the archive
+root rather than in the unpacked directories. Measured on such a tree:
+
+```
+-- Licence texts in Contents/Resources: 1 file(s)
+--   ONNXRuntime-LICENSE (1095 bytes, from .../templates/onnx-inference-ofx/licenses)
+```
+
+Two gates hold that, and they differ on purpose. The configure **fails** when a
+build that links ONNX Runtime ends with no `ONNXRuntime-` text, because the
+committed file makes that impossible unless the tree lost it. NVIDIA's EULA and
+the cuDNN SLA come with the toolkit installer, not beside the libraries, and no
+repository may commit them, so the configure prints a warning naming the
+directories it searched and `testkit/check-ofx-artifact.bat --strict` **fails the
+bundle** that carries `onnxruntime_providers_cuda` without an `NVIDIA-` text. The
+build still completes for development; the artifact cannot leave without its
+notice. Measured both ways on the 1.32.0 provider bundle: without the text the
+checker answers `FAIL: the bundle ships onnxruntime_providers_cuda but
+Contents/Resources has no NVIDIA licence text`, and with an `ONNXRuntime-` file
+removed it answers `FAIL: the bundle ships ONNX Runtime but Contents/Resources
+carries no notice`.
+
+What the build cannot do is invent the text. NVIDIA's EULA is still added by hand,
+and the configure line is what makes the omission visible instead of implicit. The
 copy is a configure step, not a `POST_BUILD`: the texts do not depend on a
 successful compile, and a configure on a machine without a CUDA toolkit has to
 report the same bundle contents.

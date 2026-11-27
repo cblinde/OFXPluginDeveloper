@@ -303,6 +303,23 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
     echo "  FAIL: packaging regression" >&2
     exit 1
   fi
+  # The texts the bundle owes, counted rather than assumed: the configure copies
+  # them and refuses to finish without ONNX Runtime's, and this is the same claim
+  # made against the artifact instead of the log. NVIDIA's arm applies only when
+  # the provider DLLs are in the bundle, because that is when their EULA ships.
+  RESOURCES="$(find "${ROOT}/build/bundle" -type d -name Resources -print -quit || true)"
+  ONNX_TEXTS="$(find "${RESOURCES}" -maxdepth 1 -type f -name 'ONNXRuntime-*' 2>/dev/null | wc -l | tr -d ' ')"
+  NVIDIA_TEXTS="$(find "${RESOURCES}" -maxdepth 1 -type f -name 'NVIDIA-*' 2>/dev/null | wc -l | tr -d ' ')"
+  PROVIDED="$(find "${ROOT}/build/bundle" -type f \( -name 'onnxruntime_providers_cuda.dll' -o -name 'libonnxruntime_providers_cuda.so' \) -print -quit || true)"
+  echo "  licence texts:            ${ONNX_TEXTS} ONNX Runtime, ${NVIDIA_TEXTS} NVIDIA"
+  if [[ "${ONNX_TEXTS}" -lt 1 ]]; then
+    echo "  FAIL: Contents/Resources carries no ONNX Runtime notice" >&2
+    exit 1
+  fi
+  if [[ -n "${PROVIDED}" && "${NVIDIA_TEXTS}" -lt 1 ]]; then
+    echo "  FAIL: the bundle ships onnxruntime_providers_cuda but no NVIDIA licence text" >&2
+    exit 1
+  fi
 else
   echo "  FAIL: no .ofx under build/bundle; run ./build.sh first" >&2
   exit 1

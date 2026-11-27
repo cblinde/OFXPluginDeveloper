@@ -8,6 +8,7 @@ rem
 rem dumpbin /exports      ~ nm -D --defined-only : exactly the two entry points
 rem dumpbin /dependents   ~ readelf -d           : what must be found at load time
 rem cuobjdump -lelf       ~ readelf -S | grep nv_fatbin : device code is present
+rem Contents\Resources    ~ the same directory on Linux : one notice per runtime
 rem
 rem The tools are looked up, not assumed to be on PATH. A build with the Visual
 rem Studio generator never calls vcvars64.bat - MSBuild gets its environment
@@ -21,8 +22,8 @@ rem --strict makes a missing tool a failure, and build.bat passes it: a build
 rem that could not inspect its own artifact must not report success. Standalone
 rem use keeps the skip, so a bundle can be checked on a machine without VS.
 rem
-rem Exits 1 on a wrong export set or missing device code, 3 on a missing tool
-rem under --strict, 0 otherwise.
+rem Exits 1 on a wrong export set, missing device code or a runtime shipped
+rem without its notice, 3 on a missing tool under --strict, 0 otherwise.
 rem
 rem TOOL SHADOWING: nothing here may call the legacy `find` utility. Git-for-Windows
 rem ships a GNU find.exe and puts its usr\bin ahead of System32 on PATH, so
@@ -111,6 +112,41 @@ for /d /r "%BUNDLE_ROOT%\Contents" %%D in (*) do (
 )
 echo   layout: %BUNDLE%/Contents/%ARCH% ^(an architecture the spec names, no '@' directory^)
 :layout_done
+
+rem ---- the texts a bundled runtime owes --------------------------------------
+rem A bundle that carries ONNX Runtime carries its MIT notice obligation with it,
+rem and one that carries the CUDA provider owes NVIDIA's terms as well. Checked
+rem here rather than in a template's own test because it is a property of the
+rem artifact: the rule has to hold for a four-file provider-only bundle assembled
+rem by hand, not only for the bundle a build just made. The listing goes to a temp
+rem file and the counting is `set /a` over `for /f`, for the TOOL SHADOWING reason
+rem above.
+set "TMPART=%TEMP%\ofx-artifact-%RANDOM%%RANDOM%.txt"
+dir /b /s /a-d "%BUNDLE_ROOT%\Contents" > "%TMPART%" 2>nul
+set "N_RUNTIME=0"
+for /f "delims=" %%L in ('findstr /i /c:"onnxruntime" "%TMPART%"') do set /a N_RUNTIME+=1
+set "N_PROVIDER=0"
+for /f "delims=" %%L in ('findstr /i /c:"onnxruntime_providers_cuda" "%TMPART%"') do set /a N_PROVIDER+=1
+set "N_ORT_TEXT=0"
+for /f "delims=" %%L in ('findstr /i /c:"\Resources\ONNXRuntime-" "%TMPART%"') do set /a N_ORT_TEXT+=1
+set "N_NV_TEXT=0"
+for /f "delims=" %%L in ('findstr /i /c:"\Resources\NVIDIA-" "%TMPART%"') do set /a N_NV_TEXT+=1
+del "%TMPART%" >nul 2>&1
+if !N_RUNTIME! gtr 0 if !N_ORT_TEXT! equ 0 (
+  echo FAIL: the bundle ships ONNX Runtime but Contents\Resources carries no notice
+  echo   The configure copies templates\onnx-inference-ofx\licenses\ONNXRuntime-LICENSE.txt;
+  echo   a bundle without it redistributes MIT code with no notice at all
+  echo   ^(packaging-and-install.md section 2^).
+  exit /b 1
+)
+if !N_PROVIDER! gtr 0 if !N_NV_TEXT! equ 0 (
+  echo FAIL: the bundle ships onnxruntime_providers_cuda but Contents\Resources has no
+  echo   NVIDIA licence text. The CUDA Toolkit EULA and the cuDNN SLA belong there;
+  echo   the configure copies them when it finds them beside the toolkit
+  echo   ^(packaging-and-install.md section 2^).
+  exit /b 1
+)
+if !N_RUNTIME! gtr 0 echo   notices: !N_ORT_TEXT! ONNX Runtime text^(s^), !N_NV_TEXT! NVIDIA
 
 rem ---- resolve dumpbin -------------------------------------------------------
 set "DUMPBIN="

@@ -675,19 +675,36 @@ endif()
 #
 # A configure, not a POST_BUILD: the texts do not depend on a successful compile,
 # and a configure that is run on a machine without a CUDA toolkit still has to
-# say what its bundle would be missing. Missing texts are reported, not warned
-# about: a release zip unpacked into include/ and bin/ need not keep its LICENSE
-# beside them, and a build is the wrong place to fail for a file the shipper adds
-# last.
+# say what its bundle would be missing.
+#
+# ONNX Runtime's own MIT text is committed in `licenses/` and copied from there
+# first. That is the fix for a hole the first version of this block had: a release
+# zip unpacked into include/ and bin/ keeps its LICENSE in the package root, and a
+# bare tree such as a four-directory unpack has none at all - the log then read
+# "none found beside the runtime" and the bundle shipped MIT code with no notice.
+# The text is MIT, so committing it is allowed, and it makes the ONNX side of the
+# ledger independent of how the runtime was unpacked.
 set(_licence_resources
   "${CMAKE_BINARY_DIR}/bundle/${PLUGIN_BUNDLE}/Contents/Resources")
-set(_licence_dirs "${ONNXRUNTIME_ROOT}")
+set(_licence_onnx_dirs "${CMAKE_CURRENT_SOURCE_DIR}/licenses")
+if(ONNXRUNTIME_ROOT)
+  list(APPEND _licence_onnx_dirs "${ONNXRUNTIME_ROOT}")
+  # The package root above bin/: a release zip keeps its texts there.
+  get_filename_component(_onnx_parent "${ONNXRUNTIME_ROOT}" DIRECTORY)
+  if(_onnx_parent AND NOT _onnx_parent STREQUAL "${ONNXRUNTIME_ROOT}")
+    list(APPEND _licence_onnx_dirs "${_onnx_parent}")
+  endif()
+endif()
+set(_licence_nvidia_dirs)
 foreach(_dir IN LISTS _cuda_dirs)
   get_filename_component(_parent "${_dir}" DIRECTORY)
-  list(APPEND _licence_dirs "${_dir}" "${_parent}")
+  list(APPEND _licence_nvidia_dirs "${_dir}" "${_parent}")
 endforeach()
+set(_licence_dirs ${_licence_onnx_dirs} ${_licence_nvidia_dirs})
 list(REMOVE_DUPLICATES _licence_dirs)
 set(_licence_log)
+set(_licence_onnx_count 0)
+set(_licence_nvidia_count 0)
 foreach(_dir IN LISTS _licence_dirs)
   if(NOT IS_DIRECTORY "${_dir}")
     continue()
@@ -695,7 +712,7 @@ foreach(_dir IN LISTS _licence_dirs)
   # The prefix is a guess from where the file was found, not a statement about
   # its owner: two files called LICENSE would otherwise overwrite each other,
   # and the text inside is what decides what it covers.
-  if(_dir STREQUAL "${ONNXRUNTIME_ROOT}")
+  if(_dir IN_LIST _licence_onnx_dirs)
     set(_licence_prefix "ONNXRuntime-")
   else()
     set(_licence_prefix "NVIDIA-")
@@ -710,11 +727,23 @@ foreach(_dir IN LISTS _licence_dirs)
       continue()
     endif()
     get_filename_component(_name "${_hit}" NAME)
+    # A text, not merely a name that starts with LICENSE: globbing the package root
+    # above bin/ swept up `licence-build.log` from a scratch directory once, because
+    # Windows matches LICENCE* without regard to case or extension.
+    get_filename_component(_ext "${_hit}" EXT)
+    if(_ext AND NOT _ext MATCHES "^\.(txt|md|rst|html?)$")
+      continue()
+    endif()
     string(REGEX REPLACE "[^A-Za-z0-9._-]" "-" _name "${_name}")
     file(SIZE "${_hit}" _size)
     configure_file("${_hit}" "${_licence_resources}/${_licence_prefix}${_name}"
                    COPYONLY)
     list(APPEND _licence_log "${_licence_prefix}${_name} (${_size} bytes, from ${_dir})")
+    if(_dir IN_LIST _licence_onnx_dirs)
+      math(EXPR _licence_onnx_count "${_licence_onnx_count} + 1")
+    else()
+      math(EXPR _licence_nvidia_count "${_licence_nvidia_count} + 1")
+    endif()
   endforeach()
 endforeach()
 if(_licence_log)
@@ -723,11 +752,33 @@ if(_licence_log)
   foreach(_licence_line IN LISTS _licence_log)
     message(STATUS "  ${_licence_line}")
   endforeach()
-else()
-  message(STATUS
-    "Licence texts in Contents/Resources: none found beside the runtime. Add ONNX "
-    "Runtime's LICENSE and ThirdPartyNotices.txt, and NVIDIA's EULA, before "
-    "shipping (packaging-and-install.md section 2).")
+endif()
+
+# One text per bundled library, checked rather than hoped for. A shipper cannot
+# see a missing notice in a listing that looks complete, which is how eight builds
+# shipped without one; both conditions below can only be false when this build
+# puts the library in the bundle, so they stop the configure instead of printing a
+# line nobody reads. NVIDIA's EULA cannot be committed here - it comes with the
+# toolkit - so that arm only fires when the provider DLLs are actually bundled.
+if(NOT _licence_onnx_count GREATER 0)
+  message(FATAL_ERROR
+    "ONNX Runtime binaries are in this build but no licence text reached "
+    "Contents/Resources. templates/onnx-inference-ofx/licenses/ONNXRuntime-LICENSE.txt "
+    "is part of the source tree, so this means the file was removed or renamed "
+    "(packaging-and-install.md section 2).")
+endif()
+if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER AND NOT _licence_nvidia_count GREATER 0)
+  # A warning, not a failure: NVIDIA's EULA and the cuDNN SLA come with the
+  # installer, not beside the libraries, so no configure can find them and failing
+  # here would only teach people to pass a flag. The bundle is refused later, by
+  # testkit/check-ofx-artifact, which is the gate that stands in front of shipping.
+  message(WARNING
+    "OFXPLUGIN_BUNDLE_CUDA_PROVIDER=ON ships NVIDIA's runtime libraries and no "
+    "LICENSE/NOTICE/ThirdParty/EULA file was found beside the CUDA directories "
+    "(${_licence_nvidia_dirs}). Put the CUDA Toolkit EULA and the cuDNN SLA in "
+    "Contents/Resources before shipping: the artifact check fails a bundle that "
+    "carries onnxruntime_providers_cuda without them "
+    "(packaging-and-install.md section 2).")
 endif()
 
 # ---------------------------------------------------------------------------
