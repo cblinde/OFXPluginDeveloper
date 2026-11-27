@@ -21,7 +21,7 @@ in this repository once already (see references/improvement-backlog.md row 13).
 The third fact is the one a host reports as `Error 1114` and nothing else: which
 CUDA major a provider expects. Its import names carry it (`cublas64_13.dll`,
 `libcublas.so.12`), so `--require-cuda-major` answers it against a host that ships
-12 or 13 - a 1.32.0 provider in front of Resolve 21.2 is refused, a 1.20.1
+12 or 13 - a 1.20.1 provider needs CUDA 12, which Resolve 21.2 ships; a 1.32.0
 provider is not.
 
 No ONNX Runtime install, no numpy, no compiler: it reads the files. PE and ELF
@@ -80,7 +80,7 @@ CUDA_MAJOR_LABELS = ("cuBLAS", "cuBLASLt", "CUDA runtime")
 
 # Measured pairs, for the message only - the check itself reads the provider, not
 # a version table: 1.20.1's provider imports cuBLAS 12 and a host with CUDA 12
-# loads it; 1.32.0's imports cuBLAS 13 and the same host refuses the plug-in with
+# loads it; 1.32.0's imports cuBLAS 13, so it loads only where CUDA 13 is
 # error 1114 (evidence/2026-11-26-windows/resolve-provider-only.log).
 CUDA_MAJOR_PAIRS = "1.20.1 pairs with CUDA 12, 1.32.0 wants CUDA 13"
 

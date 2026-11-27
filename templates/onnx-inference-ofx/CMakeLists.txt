@@ -442,9 +442,12 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     # inside the binary (`cublas64_12.dll` / `libcublas.so.12`), so a string scan
     # answers it here: a host that ships CUDA 12 refuses a provider that imports
     # cuBLAS 13, and this line is the only place that says so before a render.
-    # Measured 2026-11-26: the 1.20.1 provider imports cuBLAS 12 and Resolve 21.2
-    # loads it; the 1.32.0 provider imports cuBLAS 13 and the same host refuses
-    # the plug-in outright.
+    # Measured 2026-11-26 and 2026-11-27: the 1.20.1 provider imports cuBLAS 12,
+    # which Resolve 21.2 ships and loads; the 1.32.0 provider imports cuBLAS 13,
+    # so it loads only in a process that can resolve that major. On a machine
+    # with the CUDA 13 toolkit on PATH it did load and run in Resolve, which is
+    # not Resolve's own stack accepting 13 - a Resolve-only install has no
+    # cublas64_13.dll and fails with 1114.
     set(_provider_cuda_major "")
     if(_cuda_provider)
       foreach(_cuda_major_pattern "cublas64_[0-9]+\\.dll" "libcublas\\.so\\.[0-9]+")
@@ -464,10 +467,11 @@ if(OFXPLUGIN_BUNDLE_CUDA_PROVIDER)
     if(_provider_cuda_major)
       message(STATUS
         "CUDA provider bundle: the provider imports cuBLAS ${_provider_cuda_major}. "
-        "A host must ship CUDA ${_provider_cuda_major} or it refuses the plug-in at "
-        "load (error 1114, the DLL initialisation routine failed). Pairs measured "
+        "A host must resolve CUDA ${_provider_cuda_major} or it refuses the plug-in "
+        "at load (error 1114, the DLL initialisation routine failed). Pairs measured "
         "here: 1.20.1 -> cuBLAS 12, which Resolve 21.2.0.5 ships; 1.32.0 -> cuBLAS 13, "
-        "which it does not. Check a built bundle with "
+        "which it does not - that one loads only if CUDA 13 is on the search path. "
+        "Check a built bundle with "
         "tools/check-runtime.py <root> --require-cuda-major <host major>.")
     endif()
 

@@ -2,7 +2,13 @@
 rem ---------------------------------------------------------------------------
 rem Out-of-source build for the ONNX inference plug-in (Windows / MSVC).
 rem
+rem   set ONNXRUNTIME_ROOT=C:\onnxruntime-win-x64-1.20.1
+rem                     the pairing for Resolve 21.2: the provider imports
+rem                     cuBLAS 12, which the host carries itself
 rem   set ONNXRUNTIME_ROOT=C:\onnxruntime-win-x64-1.32.0
+rem                     the current release; its provider imports cuBLAS 13 and
+rem                     needs a process that can resolve CUDA 13 (the suite uses
+rem                     it; a host bundle for Resolve should not)
 rem   .\build.bat                  Release
 rem   .\build.bat Debug            another configuration
 rem   .\build.bat Release install  build, then copy the bundle into

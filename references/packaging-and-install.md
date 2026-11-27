@@ -159,14 +159,24 @@ message. Two host-facing facts:
   `tasklist /M` names a runtime whether or not the plug-in ever created a session.
 
   **The provider's CUDA major is part of the bundle's contract, and it is checkable
-  before a render.** A host refuses a provider whose CUDA major differs, and the
-  refusal is `Error 1114` at load - indistinguishable from a broken plug-in. What
-  pairs, measured:
+  before a render.** The provider names its major in its imports, the Windows
+  loader resolves those by base name, and a major the process cannot find
+  surfaces as `Error 1114` - indistinguishable from a broken plug-in. What pairs:
 
-  | Provider built from | imports | loads in | refused by |
+  | Provider built from | imports (`dumpbin /dependents`) | loads where | fails where |
   |---|---|---|---|
-  | ONNX Runtime 1.20.1 GPU package | cuBLAS/cuBLASLt 12, cuFFT 11, cudart 12, cuDNN 9 | Resolve Studio 21.2.0.5, which ships CUDA 12 | a host on CUDA 13 |
-  | ONNX Runtime 1.32.0 GPU package | cuBLAS/cuBLASLt 13 | a host on CUDA 13 | Resolve Studio 21.2.0.5 (`Error 1114`) |
+  | ONNX Runtime 1.20.1 GPU package | cuBLAS/cuBLASLt 12, cuFFT 11, cudart 12, cuDNN 9 | Resolve Studio 21.2.0.5, which ships CUDA 12 | a process that offers only CUDA 13 |
+  | ONNX Runtime 1.32.0 GPU package | `cublasLt64_13.dll`, `cublas64_13.dll`, `onnxruntime_providers_shared.dll`, `dxgi` | a process that can resolve CUDA 13 | a host whose only CUDA is 12 (`Error 1114`) |
+
+  Measured 2026-11-27, and the second row is why the caveat matters: the 1.32.0
+  provider-only bundle **did** load and run in Resolve on the machine it was built
+  on, because the CUDA 13.0 toolkit sits on `PATH` and `cublas64_13.dll` resolves
+  from there - the label read `all nodes on CUDA`. That is a separate case and must
+  not be read as Resolve's own CUDA stack accepting 13: on an install with only
+  what Resolve ships, the same file has nothing to bind to
+  ([`onnx-provider-cuda13-deps.log`](../evidence/2026-11-27-windows/onnx-provider-cuda13-deps.log)).
+  The clean Resolve configuration stays 1.20.1, which needs nothing the host does
+  not already carry.
 
   Two places say so out loud, so a failed host load is no longer the first report.
   The configure step prints `CUDA provider bundle: the provider imports cuBLAS N`

@@ -1,0 +1,101 @@
+# The CUDA-13 ONNX Runtime provider, as a case of its own, 2026-11-27.
+#
+# Kept apart from resolve-onnx-provider.log on purpose: that one is the clean
+# CUDA-12 pairing (ONNX Runtime 1.20.1, provider imports cuBLAS 12, Resolve
+# 21.2's own stack) and must not be mixed with this. Nothing here changes the
+# CUDA-12 result.
+#
+# History, from git: before 4248953 (2026-11-25, "Move to ONNX Runtime 1.32.0")
+# the template's examples and the suite used 1.20.1; 4248953 moved them to
+# 1.32.0 for size and currency, and 4488806 added the host CUDA-major gate whose
+# build.bat default is 12, because the host this bundle is built for is Resolve
+# 21.2 with CUDA 12.
+#
+# The question here is only the dependency question: which *_13 DLLs does the
+# 1.32.0 provider require, and what does that mean for a host on CUDA 12?
+#
+# The provider is built with OFXPLUGIN_CUDA_FROM_HOST=ON and
+# OFXPLUGIN_HOST_CUDA_MAJOR=13 (the override, because the default 12 refuses it
+# at build time - see the gate at the end).
+
+== dumpbin /dependents, and the gate at both majors ==
+
+== dumpbin /dependents onnxruntime_providers_cuda.dll (ONNX Runtime 1.32.0 GPU package) ==
+  Image has the following dependencies:
+
+    cublasLt64_13.dll
+    cublas64_13.dll
+    onnxruntime_providers_shared.dll
+    KERNEL32.dll
+    dxgi.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-math-l1-1-0.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-filesystem-l1-1-0.dll
+    api-ms-win-crt-convert-l1-1-0.dll
+    api-ms-win-crt-locale-l1-1-0.dll
+
+  Summary
+
+      2C1000 .data
+        2000 .nvFatBi
+     80D4000 .nv_fatb
+       C1000 .pdata
+     1AA6000 .rdata
+        C000 .reloc
+        1000 .rsrc
+     1DFB000 .text
+
+== our own gate, host major 12 ==
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle
+header: none in this root (a bundle, or a package shipped without headers); the provider facts below still apply
+core: onnxruntime-ofx.dll
+provider onnxruntime_providers_cuda.dll: 3 exports, plugin EP
+        exports: CreateEpFactories, ReleaseEpFactory
+        imports: cuBLASLt 13, cuBLAS 13
+        imports the core by name: no
+        CUDA major: 13 (cuBLAS and the CUDA runtime agree; a host ships that major or refuses this provider)
+other providers: onnxruntime_providers_shared.dll
+FAIL: onnxruntime_providers_cuda.dll imports cuBLAS/CUDA runtime 13, but the host ships 12: a host refuses such a provider at load (error 1114, the DLL initialisation routine failed). Build the bundle against an ONNX Runtime whose CUDA provider targets 12 (1.20.1 pairs with CUDA 12, 1.32.0 wants CUDA 13), or bundle the CUDA 13 runtime as well and accept a second stack in the host's process.
+gate exit=1
+
+== same bundle, host major 13 ==
+root: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\onnx-inference-ofx\build\bundle\OnnxInference.ofx.bundle
+header: none in this root (a bundle, or a package shipped without headers); the provider facts below still apply
+core: onnxruntime-ofx.dll
+provider onnxruntime_providers_cuda.dll: 3 exports, plugin EP
+        exports: CreateEpFactories, ReleaseEpFactory
+        imports: cuBLASLt 13, cuBLAS 13
+        imports the core by name: no
+        CUDA major: 13 (cuBLAS and the CUDA runtime agree; a host ships that major or refuses this provider)
+other providers: onnxruntime_providers_shared.dll
+verdict: every gate asked for passed
+gate exit=0
+
+== What this means ==
+#
+# The 1.32.0 provider imports exactly two CUDA-major DLLs by base name:
+# cublasLt64_13.dll and cublas64_13.dll (plus onnxruntime_providers_shared.dll,
+# dxgi and the MSVC runtime). cuDNN, cuFFT and cudart are resolved at run time,
+# so dumpbin does not list them; the provider's own load does.
+#
+# Resolve 21.2 ships CUDA 12 beside Resolve.exe, so a plain install offers no
+# cublas64_13.dll: the load fails with error 1114 and the host reports nothing
+# more specific. On the machine this was measured on, the CUDA 13.0 toolkit is
+# on PATH, so cublas64_13.dll resolves from
+# C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin\x64 - and the
+# same bundle did load and run in Resolve (label "all nodes on CUDA"). That run
+# is a separate case, not evidence that Resolve's own CUDA stack accepts 13.
+#
+# Not measured: the 1114 path inside the host. The attempt to strip the toolkit
+# from the host's PATH ended in the host's script-server flakiness ("Failed to
+# connect to script server", ioctlsocket err 1), so the refusal is documented
+# from the import table and from our own gate, not from a host log. Loading the
+# provider DLL standalone cannot answer it either: its DllMain expects the ORT
+# core's mailbox and fails with 1114 regardless (onnx-and-tensorrt.md section 3).
