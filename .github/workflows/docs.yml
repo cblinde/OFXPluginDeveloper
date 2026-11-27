@@ -41,6 +41,16 @@ jobs:
           python3 tools/check-docs.py --selftest
           python3 tools/check-docs.py
 
+      - name: Licence and provenance gate
+        # The two claims in `THIRD_PARTY_NOTICES.md` that a reader cannot check by
+        # reading: every source file declares the SPDX line, and no substantive
+        # line was copied out of the OpenFX SDK. Without a fetched SDK (this job
+        # has none) the copy scan reports NOT VERIFIED and the gate still passes;
+        # the SPDX half needs no fetch and is the half a new file can break.
+        run: |
+          python3 tools/check-provenance.py --self-test
+          python3 tools/check-provenance.py
+
       - name: Documentation coverage gate
         # Every distinctive word of the corpus as it stood at 4290e68 - the last
         # commit before the move into references/ - must still occur somewhere in

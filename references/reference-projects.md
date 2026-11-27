@@ -719,7 +719,12 @@ informed design decisions only (see [Licensing](#licensing-and-provenance)).
   repository's [`LICENSE`](../LICENSE), so the header and the licence file agree.
 - The GPL-3.0 projects above were consulted as documentation and engineering
   evidence. No source, table or shader text was copied from them, so nothing here
-  inherits their licence.
+  inherits their licence. For the OpenFX SDK, which *is* copied line by line
+  wherever an API idiom is unavoidable, the check is mechanical:
+  `tools/check-provenance.py` compares every line of 45 characters or more
+  against `.ofx-ref/` and allows only the six documented idioms: 51 matches, six
+  distinct lines, 0 problems on 2026-11-27 (**[V]**), and the tool prints the
+  line count it read rather than a number this paragraph has to keep in step.
 - `templates/minimal-cuda-ofx` compiles the upstream OpenFX Support library
   sources directly into the plugin; those remain BSD-3-Clause and are fetched at
   configure time rather than vendored. Keep the copyright notice if you vendor

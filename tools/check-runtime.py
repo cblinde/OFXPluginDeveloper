@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Inspect an ONNX Runtime root: which API version its header declares, whether
 the entry points this repository uses are in that header, and what its provider
 libraries export and import.

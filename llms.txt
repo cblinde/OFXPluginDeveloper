@@ -54,6 +54,7 @@
 - `tools/check-docs.py`
 - `tools/check-glibc.sh`
 - `tools/check-model-canary.py`
+- `tools/check-provenance.py`
 - `tools/check-runtime.py`
 - `tools/check-shell.sh`
 - `tools/check-workflows.py`

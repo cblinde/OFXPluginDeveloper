@@ -347,8 +347,12 @@ change in the template's source:
 ## Licence
 
 BSD-3-Clause, in [`LICENSE`](LICENSE); every source file declares it with an SPDX
-identifier on its first line. Third-party code is fetched, not vendored, and what
-each component obliges you to do is in
+identifier on its first line - or after the shebang, after `@echo off` in a batch
+file and after `#version` in a shader, where a comment cannot go first.
+`python3 tools/check-provenance.py` fails a tracked source file without that line,
+and fails a substantive line that also appears verbatim in the OpenFX SDK, so "no
+code was copied" is a check rather than a promise. Third-party code is fetched,
+not vendored, and what each component obliges you to do is in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 Nothing here grants rights in OpenFX, NVIDIA CUDA, DaVinci Resolve, Nuke, SCRATCH

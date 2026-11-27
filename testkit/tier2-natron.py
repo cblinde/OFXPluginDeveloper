@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Tier 2: render a plug-in through NatronRenderer, headless, and check the pixels.
 
 Standard library only. One 256x256 frame, one Write node, a few seconds.

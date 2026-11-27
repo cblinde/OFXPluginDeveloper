@@ -1,4 +1,5 @@
 @echo off
+rem SPDX-License-Identifier: BSD-3-Clause
 rem ---------------------------------------------------------------------------
 rem Windows counterpart of test/run-tests.sh for this template.
 rem

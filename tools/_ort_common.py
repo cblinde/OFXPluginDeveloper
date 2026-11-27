@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """The three things `model_probe.py` and `bench_ep.py` otherwise copied.
 
 Not a command line tool: the two scripts import it and keep their own argument

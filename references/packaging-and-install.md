@@ -405,13 +405,21 @@ and does not do:
   section existed without it, the CUDA row there said the bundle never carries a
   CUDA runtime - true for the templates before the provider bundle, false for
   every `BUNDLE_CUDA_PROVIDER=ON` build. The row now states both cases.
-- **The build copies no licence file.** `_cuda_files` in
-  `templates/onnx-inference-ofx/CMakeLists.txt` is a list of DLLs and `.so` files;
-  nothing in it is a `LICENSE`, `EULA` or `THIRD_PARTY` text. If you ship this
-  bundle, add the two licence texts beside the binaries (a `Resources/`
-  subdirectory the host never loads is the natural place) and record the four
-  library versions in the release notes - the build log prints the file count and
-  size, not the versions.
+- **The build copies the licence texts it can find, and says which it could
+  not.** Section 3b of `templates/onnx-inference-ofx/CMakeLists.txt` globs
+  `LICENSE*`, `NOTICE*`, `ThirdParty*` and `EULA*` beside `ONNXRUNTIME_ROOT` and
+  beside every CUDA directory it searched, copies each hit into
+  `Contents/Resources` under an `ONNXRuntime-` or `NVIDIA-` prefix and prints the
+  count, the names and the sizes at configure time. When it finds none it prints
+  what to add by hand instead of failing the build. What it cannot supply is the
+  text no package ships - NVIDIA's EULA comes with the installer - so a release
+  still records the library versions in its notes: the configure prints the file
+  count and size, not the versions.
+- **The copied-line claim is checked, not asserted.** `tools/check-provenance.py`
+  compares every line of 45 characters or more in this tree against the fetched
+  OpenFX SDK and allows only a written-down list of API idioms; it also fails a
+  tracked source file without its `SPDX-License-Identifier`. Measured 2026-11-27:
+  51 matches, six distinct lines, all six on the list, 0 problems (**[V]**).
 - **Nothing here has been reviewed by a lawyer, and no NVIDIA redistribution
   agreement beyond the public EULA exists in this repository.** The table above is
   a summary of two public documents with links, not advice.

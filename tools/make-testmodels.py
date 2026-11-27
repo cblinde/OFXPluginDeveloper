@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Write synthetic ONNX models for the paths a real fixture does not reach.
 
     python3 tools/make-testmodels.py --out build/testmodels

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """The workflow files themselves: what floats, and what a YAML error breaks.
 
 Why this exists: `.github/workflows/*.yml` is the one part of the tree nothing

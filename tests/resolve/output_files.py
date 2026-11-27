@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """Which file did the render write? Decided without a render.
 
 A `Complete` job is a claim about the job, not about the file: a render that is

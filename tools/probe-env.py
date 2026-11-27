@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """What this machine can do, before a template is chosen.
 
 The skill routes on capability: a CUDA template needs a compiler and a device, the

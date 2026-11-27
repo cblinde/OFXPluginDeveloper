@@ -1,4 +1,5 @@
 @echo off
+rem SPDX-License-Identifier: BSD-3-Clause
 rem ---------------------------------------------------------------------------
 rem Windows counterpart of build-contract-test.sh: compiles the shared contract
 rem harness (fake_host.cpp + contract_main.cpp) into one binary with MSVC.

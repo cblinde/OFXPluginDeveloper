@@ -1,4 +1,5 @@
 @echo off
+rem SPDX-License-Identifier: BSD-3-Clause
 rem ---------------------------------------------------------------------------
 rem Out-of-source build for the OpenCL reference plug-in (Windows / MSVC).
 rem

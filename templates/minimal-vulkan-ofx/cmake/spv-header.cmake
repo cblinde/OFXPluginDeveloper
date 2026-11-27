@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 # Turns <input>.spv into a header with a byte array, so the bundle carries the
 # shader inside the .ofx and not as a file next to it.
 #

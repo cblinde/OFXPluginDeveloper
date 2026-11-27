@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """The frame that a committed model and the fixtures beside it agree on.
 
 A model file fixes some dimensions and leaves others symbolic - the shape this

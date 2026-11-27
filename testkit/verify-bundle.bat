@@ -1,4 +1,5 @@
 @echo off
+rem SPDX-License-Identifier: BSD-3-Clause
 rem ---------------------------------------------------------------------------
 rem Two-tier verification of a built OFX bundle (Windows).
 rem

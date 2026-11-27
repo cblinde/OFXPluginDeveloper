@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """Prove that moving the documentation into references/ lost no information.
 
 A restructure renames files, re-wraps paragraphs and re-points links, so

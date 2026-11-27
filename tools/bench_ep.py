@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Time a model on each execution provider this machine can offer.
 
     python3 tools/bench_ep.py model.onnx

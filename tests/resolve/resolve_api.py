@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """The part of the proof of concept that needs a running Resolve.
 
 Every call marked `# RUN` answered DaVinci Resolve Studio 21.2.0.5 on Windows on

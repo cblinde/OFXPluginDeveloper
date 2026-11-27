@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Answer, from the model file alone, what `references/onnx-and-tensorrt.md` §4 asks.
 
     python3 tools/model_probe.py model.onnx

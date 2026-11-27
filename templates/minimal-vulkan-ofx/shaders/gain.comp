@@ -1,4 +1,5 @@
 #version 450
+// SPDX-License-Identifier: BSD-3-Clause
 
 // A gain on RGBA32F pixels, in place.
 //

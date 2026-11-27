@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """Read a rendered frame without adding a dependency.
 
 Two decoders are tried, in this order: OpenImageIO if it is importable, then

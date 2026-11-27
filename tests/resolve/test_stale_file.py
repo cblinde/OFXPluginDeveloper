@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """Two renders in one directory: the second must not grade the first one's file.
 
 This is the check the Resolve POC would otherwise only have on a machine with

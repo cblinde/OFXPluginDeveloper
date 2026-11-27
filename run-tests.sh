@@ -68,6 +68,15 @@ echo "== docs =="
 echo
 "${documentation_python}" "${ROOT}/tools/check-docs.py" --selftest
 
+# The licence and provenance claims are documentation too: `LICENSE` grants
+# BSD-3-Clause, `THIRD_PARTY_NOTICES.md` says every source file declares it, and
+# both say nothing was copied from the OpenFX SDK. A claim in a notices file that
+# no command checks is the kind of sentence that quietly stops being true.
+echo
+echo "== licence and provenance =="
+"${documentation_python}" "${ROOT}/tools/check-provenance.py" --self-test
+"${documentation_python}" "${ROOT}/tools/check-provenance.py"
+
 # Every tracked shell script is parsed before anything is built, so a syntax
 # error in a script this run does not happen to call - a `run-analysis.sh`, the
 # OpenCL `build.sh` - fails here instead of on the machine that first runs it.

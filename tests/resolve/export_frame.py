@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """Measure `TimelineItem.ExportFrame` on a live host: file and encodedString.
 
 §15.6 of `references/resolve-automation.md` had this call from 21.2's `.pyi` and

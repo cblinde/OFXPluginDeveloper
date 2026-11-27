@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """Pixel assertions for the Resolve proof of concept.
 
 Pure Python on bytes: no numpy, no OpenImageIO, so this module runs and is

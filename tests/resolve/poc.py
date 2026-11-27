@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 """One frame through Resolve, end to end: the milestone, as a runnable script.
 
 The workflow is the one in `references/resolve-automation.md` section 9: validate

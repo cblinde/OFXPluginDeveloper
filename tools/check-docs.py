@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Check this repository's documentation for drift.
 
 Standard library only. Run from anywhere:

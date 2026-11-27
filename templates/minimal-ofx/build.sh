@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: BSD-3-Clause
 #
 # The reference build: one command, from a clean checkout, ending in proof.
 #
