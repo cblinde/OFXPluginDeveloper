@@ -188,6 +188,51 @@ work*, not about the runtime's quality: a per-frame 1080p filter is one forward
 pass with a frame-shaped tensor, and each of these three is optimised for
 something else.
 
+### A Vulkan execution provider for ONNX Runtime: possible, not adopted
+
+ONNX Runtime ships no Vulkan EP, and for a while the only GPU-without-CUDA route
+from ONNX was the WebGPU plugin EP (`improvement-backlog.md` row 63). There is
+now a third-party one, and it is worth knowing what it is rather than dismissing
+it: [`onnx-vulkan-rs`](https://github.com/automataIA/onnx-vulkan-rs) implements
+the **Plugin EP API** (ORT >= 1.23; the project pins and tests **1.29.0**) as a
+Rust `cdylib` (`onnxruntime_ep_vulkan`), budgets its kernels as WGSL compiled to
+SPIR-V at run time through naga, and ships a standalone engine with its own
+`.onnx` parser as well (**[B]**, the repository README and the crate page for
+`onnx-vulkan` 0.0.1, both read 2026-11-27).
+
+What it claims, and what that is worth here:
+
+- **All or nothing at load time.** `Session::load` refuses any graph it cannot
+  run end to end, naming every unsupported node; there is no per-node CPU
+  fallback (**[B]**). That contract is the opposite of this repository's
+  templates, which fall back and *say so* in the provider label - and it is the
+  more honest of the two when a silently half-CPU graph would turn a coverage
+  gap into a performance mystery.
+- **Linux, NVIDIA/AMD.** The repository states Linux and NVIDIA/AMD GPUs;
+  AMD validation is listed as parked for want of hardware, fp16 as parked, and
+  no Windows build is claimed anywhere (**[B]**). This repository's host work is
+  Windows-first (`host-resolve.md`), so today it is not a drop-in there.
+- **Toolchain.** Rust >= 1.85, clang for bindgen, a Vulkan 1.2+ loader at run
+  time, and WGSL-to-SPIR-V at first use (**[B]**). That is a second compiler in
+  the build of a C++ `.ofx` and a runtime shader compiler in the bundle - the
+  one thing the Vulkan template deliberately avoids by embedding SPIR-V
+  (`vulkan-compute.md` §6).
+- **Maturity.** One published crate version (0.0.1, ~29 downloads), one
+  organisation, 45 commits, Apache-2.0/MIT (**[B]**, crates.io). The engine is
+  real and tested against twelve models, but it is a single-maintainer project
+  four months old.
+
+What would turn it from a candidate into a measurement, in order: a Windows
+`onnxruntime_ep_vulkan.dll` built and loaded by an ORT >= 1.23 runtime next to a
+plugin-only bundle (the provider-only recipe already exists for CUDA,
+`packaging-and-install.md` §2), one model from this repository's matrix run at
+1080p tiles against the CPU EP with the same golden comparison
+(`onnx-and-tensorrt.md` §4), and a host render through `tests/resolve/poc.py`.
+Until those exist, the shipped path stays the CUDA EP with the CPU fallback, and
+this stays a row in the backlog rather than a promise. What it does change is the
+shape of the claim: "no Vulkan path to a model on this machine" was true of
+official providers, not of the ecosystem.
+
 ### Compiling the model ahead of time: measured, not adopted
 
 The alternative to shipping a runtime is compiling the graph before it ships: one
