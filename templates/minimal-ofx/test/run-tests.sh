@@ -96,7 +96,7 @@ echo
 # then renders one frame from the installed copy.
 echo "== [4/5] install and load the installed copy =="
 INSTALL_PREFIX="$(mktemp -d)"
-cmake --install "${ROOT}/build" --prefix "${INSTALL_PREFIX}" > "${INSTALL_PREFIX}/install.log" 2>&1 || {
+cmake --install "${TPL}/build" --prefix "${INSTALL_PREFIX}" > "${INSTALL_PREFIX}/install.log" 2>&1 || {
   cat "${INSTALL_PREFIX}/install.log" >&2
   exit 1
 }
