@@ -96,8 +96,14 @@ file(GLOB OFX_SUPPORT_SOURCES CONFIGURE_DEPENDS
 # ---------------------------------------------------------------------------
 add_library(${PLUGIN_TARGET} MODULE
   "${CMAKE_CURRENT_SOURCE_DIR}/src/Plugin.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/VulkanGain.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/VulkanMode.h"
   ${OFX_SUPPORT_SOURCES})
+
+# VulkanGain.cpp is added below, in the branch that has the headers: it includes
+# <vulkan/vulkan.h> and the generated SPIR-V header at its top, so a CPU-only
+# configure on a machine with no SDK could not even parse it. Plugin.cpp guards
+# every reference to it with the same OFXPLUGIN_VULKAN macro, which is what makes
+# -DOFXPLUGIN_VULKAN=OFF a build that works with nothing installed.
 
 # Two include directories are required, and only two: the C API headers and the
 # Support library's. `Support/Library` is listed in some projects; both this
@@ -197,7 +203,9 @@ if(OFXPLUGIN_VULKAN)
     COMMENT "Compiling shaders/gain.comp to SPIR-V and embedding it"
     VERBATIM)
 
-  target_sources(${PLUGIN_TARGET} PRIVATE "${_spv_header}")
+  target_sources(${PLUGIN_TARGET} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/VulkanGain.cpp"
+    "${_spv_header}")
   target_include_directories(${PLUGIN_TARGET} PRIVATE
     "${VULKAN_INCLUDE_DIR}"
     "${CMAKE_BINARY_DIR}/generated")
@@ -303,6 +311,24 @@ if(OFXPLUGIN_VULKAN)
   endif()
   message(STATUS "Device suite: ${CMAKE_BINARY_DIR}/self-test/vulkan_suite")
 endif()
+
+# ---------------------------------------------------------------------------
+# 5. Path-policy test: no device, no Vulkan headers, no SDK
+# ---------------------------------------------------------------------------
+# VulkanMode.h decides between the device and the CPU loop, and both callers
+# read it - the plug-in and this test. It is compiled unconditionally, including
+# on a configure with -DOFXPLUGIN_VULKAN=OFF, because the machine that has to
+# trust the gates most is the one without a device, and the forced-CPU switch has
+# to be testable where a device exists too. The same split minimal-cuda-ofx uses
+# for ExecutionMode.h.
+add_executable(vulkan_mode_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/test/vulkan_mode_test.cpp")
+target_include_directories(vulkan_mode_test PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(vulkan_mode_test PRIVATE cxx_std_17)
+set_target_properties(vulkan_mode_test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/self-test>")
+message(STATUS "Mode test  : ${CMAKE_BINARY_DIR}/self-test/vulkan_mode_test")
 
 # An install rule, because a bundle that only exists in the build tree is not
 # an installed plug-in: a host scans OFX/Plugins, and the move is what exposes a

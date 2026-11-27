@@ -113,9 +113,11 @@ VRAM budget, the barriers, the fence wait and both memory arrangements (one
 host-visible buffer, or device-local with a staging copy) are the plug-in's too -
 and both arrangements are measured on this machine, including the case where the
 second one is slower at 1080p
-([`references/vulkan-compute.md`](references/vulkan-compute.md) §3). Copy it when
-no host property exists or the effect needs a modern API; do not copy it for a
-pointwise multiply, which the CPU wins.
+([`references/vulkan-compute.md`](references/vulkan-compute.md) §3). The path is a
+table of six gates (`src/VulkanMode.h`, tested on a machine with no device), and
+`OFXPLUGIN_VULKAN_MODE=cpu` forces the fallback, so a run on a machine that has a
+GPU still proves the CPU half. Copy it when no host property exists or the effect
+needs a modern API; do not copy it for a pointwise multiply, which the CPU wins.
 
 **`templates/onnx-inference-ofx/` - a model, one inference per frame.** Four
 layers, each one a document: `ModelRunner` owns the ONNX Runtime session and the
@@ -171,9 +173,11 @@ templates/minimal-vulkan-ofx/
   CMakeLists.txt                     bundle build; Vulkan headers + one shader, no vulkan-1.lib
   src/Plugin.cpp                     RGBA gain: gather the window, dispatch, scatter back; CPU fallback
   src/VulkanGain.h  src/VulkanGain.cpp  instance, device, pipeline, both memory arrangements, barriers, fence
+  src/VulkanMode.h                   six gates choosing device vs CPU, no Vulkan headers
   shaders/gain.comp                  the kernel: RGBA32F in place, alpha copied
   cmake/spv-header.cmake             SPIR-V to a generated header, so the bundle carries no .spv
   test/vulkan_suite.cpp              26 checks: workgroup edges, 1080p/4K, both arrangements, throughput
+  test/vulkan_mode_test.cpp          29 checks: the path gates and the override, no device needed
 templates/onnx-inference-ofx/
   CMakeLists.txt                     bundle build, ONNX Runtime detection + bundling
   src/Plugin.h  src/Plugin.cpp       OFX wrapper: window addressing, alpha, render

@@ -1,0 +1,933 @@
+# The Vulkan template's six-step runner, with the path-policy step, 2026-11-27.
+#
+# Why this log exists: the template gained the two things the other templates
+# already had - a path decision that is a table instead of an `if` inside the
+# plug-in, and a way to force the CPU path on a machine that has a device, so
+# the fallback is testable instead of only reachable on hardware that lacks a
+# driver. This is the run that shows both, and the check counts the documents
+# quote.
+#
+# Command, from the repository root, with the SDK and the fetched headers named
+# the way build.bat discovers them:
+#
+#   VULKAN_SDK=<repo>/.validation/vk/sdk OFX_SOURCE_DIR=<repo>/.ofx-ref #       templates/minimal-vulkan-ofx/test/run-tests.bat Release
+#
+# Machine: Windows 11 10.0.26300, RTX 3060, Vulkan headers 1.4.369 and device
+# 1.4.357, glslc 16.6.0, MSVC 14.50.35717, CMake generator "Visual Studio 18
+# 2026". OpenFX SDK ab779510b265.
+#
+# What is new in this run, and what each line below is evidence for:
+#
+#   [2/6] path policy      build/self-test/vulkan_mode_test.exe - the six gates
+#                          of src/VulkanMode.h, 29 checks. No Vulkan headers, no
+#                          loader and no device are involved: the target is built
+#                          even with -DOFXPLUGIN_VULKAN=OFF.
+#   [4/6] host contract    four runs of 118 checks, plus the forced-CPU run: with
+#                          OFXPLUGIN_VULKAN_MODE=cpu the decision table answers
+#                          CPU, the plug-in writes that into its Device parameter
+#                          after a render, and --label-contains fails the run if
+#                          the label does not say it. The two `ok` lines that
+#                          show the label and the substring are the proof; before
+#                          the switch this assertion could only be made on a
+#                          machine with no Vulkan driver.
+#
+# Counts, read off the run: contract 118 x 4 + 94 (forced CPU) + 90 (install) =
+# 656, policy test 29, device suite 26 - 711 in the template, and the runner
+# exits 0 in 20 s on a warm build directory.
+#
+# The device suite's own throughput block is in this log too, and it is the same
+# measurement vulkan-compute.md §3 quotes at 20 frames: ~95-102 ms/frame
+# host-visible, ~115 ms device-local, ~3.2 ms for the CPU loop.
+== [1/6] build (Release) ==
+      vulkan: headers "Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\vk\sdk\Include", shader compiler "Z:\Tools-DEV\OFXPluginDeveloper_Local\.validation\vk\sdk\Bin\glslc.exe"
+[build] generator: Visual Studio 18 2026
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Vulkan     : Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/vk/sdk/Include, shader compiler Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/vk/sdk/Bin/glslc.exe
+-- Default gain: 1.0
+-- OFX plugin : VulkanGain
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/bundle/VulkanGain.ofx.bundle
+-- Device suite: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/self-test/vulkan_suite
+-- Mode test  : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/self-test/vulkan_mode_test
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build
+MSBuild-Version 18.4.0+6e61e96ac für .NET Framework
+
+  Checking File Globs
+  1>Checking Build System
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/CMakeLists.txt
+     Bibliothek "Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/Release/VulkanGain.lib" und Objekt "Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/Release/VulkanGain.exp" werden erstellt.
+  VulkanGain.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/CMakeLists.txt
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/CMakeLists.txt
+  vulkan_mode_test.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\self-test\vulkan_mode_test.exe
+  vulkan_suite.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\self-test\vulkan_suite.exe
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/CMakeLists.txt
+
+Bundle: Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle
+  Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx
+  CPU only: this plug-in has no CUDA path.
+  layout: VulkanGain.ofx.bundle/Contents/Win64 (an architecture the spec names, no '@' directory)
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    KERNEL32.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+
+== [2/6] path policy (six gates, no device needed) ==
+VulkanMode: the six gates, no device needed
+  OFXPLUGIN_VULKAN_MODE unset reads as auto      ok   AUTO
+  an empty string reads as auto                  ok   AUTO
+  "auto" reads as auto                           ok   AUTO
+  "cpu" reads as CPU_ONLY                        ok   CPU_ONLY
+  "gpu" reads as VULKAN_ONLY                     ok   VULKAN_ONLY
+  "vulkan" reads as VULKAN_ONLY                  ok   VULKAN_ONLY
+  an unknown word reads as auto, not recognised  ok   AUTO
+  the override is case-sensitive                 ok   AUTO
+  ModeName(auto)                                 ok   AUTO
+  ModeName(cpu)                                  ok   CPU_ONLY
+  ModeName(gpu)                                  ok   VULKAN_ONLY
+  cpu override beats a ready device              ok   CPU_ONLY
+  cpu override names itself in the reason        ok   OFXPLUGIN_VULKAN_MODE=cpu was set
+  a CPU-only build stays on the CPU              ok   CPU_ONLY
+  the reason names the configure                 ok   built with -DOFXPLUGIN_VULKAN=OFF
+  no device means the CPU loop                   ok   CPU_ONLY
+  the reason says no device answered             ok   no Vulkan device answered
+  gpu override is demoted without a device       ok   CPU_ONLY
+  the demotion gives the device reason, not the override ok   no Vulkan device answered
+  an empty window is not dispatched              ok   CPU_ONLY
+  the reason says empty                          ok   empty render window
+  a frame at maxPixels dispatches                ok   VULKAN_ONLY
+  maxPixels + 1 goes to the CPU                  ok   CPU_ONLY
+  the reason names the dispatch limit            ok   the frame needs more workgroups than one dispatch covers
+  gpu override cannot promote a truncated frame  ok   CPU_ONLY
+  gpu override with a device dispatches          ok   VULKAN_ONLY
+  the override names itself in the reason        ok   OFXPLUGIN_VULKAN_MODE=gpu was set
+  auto takes the device when it answers          ok   VULKAN_ONLY
+  auto gives the device as its reason            ok   a Vulkan device answered
+vulkan_mode_test: 29 checks, 0 failed
+
+== [3/6] artifact (exports, dependents) ==
+  layout: VulkanGain.ofx.bundle/Contents/Win64 (an architecture the spec names, no '@' directory)
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    KERNEL32.dll
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+
+== [4/6] host contract (LoadLibraryExW + fake host) ==
+Der Befehl "vswhere.exe" ist entweder falsch geschrieben oder
+konnte nicht gefunden werden.
+fake_host.cpp
+contract_main.cpp
+Code wird generiert...
+  host profile: nuke
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - descriptor declares CPURenderSupported
+ok 26 - descriptor declares NoSpatialAwareness
+ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 28 - thumbnail render produces the same frame as a full render
+ok 29 - a second instance can be created
+ok 30 - two instances are live at the same time
+ok 31 - instance 0 accepts its own gain
+ok 32 - instance 1 accepts a different gain
+ok 33 - render instance 0 while instance 1 is alive
+ok 34 - render instance 1 with its own settings
+ok 35 - instance 0 used its own value, not its neighbour's
+ok 36 - instance 1 used its own value, not its neighbour's
+ok 37 - instance for parallel worker 2
+ok 38 - instance for parallel worker 3
+ok 39 - set gain on the instance of parallel worker 0
+ok 40 - set gain on the instance of parallel worker 1
+ok 41 - set gain on the instance of parallel worker 2
+ok 42 - set gain on the instance of parallel worker 3
+ok 43 - concurrent renders produced every record
+ok 44 - every concurrent render returned kOfxStatOK
+ok 45 - every concurrent render produced a readable destination
+ok 46 - concurrent instances kept their own parameter values
+ok 47 - destroy instance 3
+ok 48 - destroy instance 2
+ok 49 - destroy instance 1
+ok 50 - render rejects a byte image
+ok 51 - baseline render before the rejected window
+ok 52 - render rejects a window outside the source bounds
+ok 53 - destination is unchanged after the rejected render
+ok 54 - baseline render inside the destination bounds
+ok 55 - render rejects a window outside the destination bounds
+ok 56 - destination is unchanged after the rejected render
+ok 57 - kOfxActionDestroyInstance
+ok 58 - kOfxActionUnload
+ok 59 - unload cycle completed
+ok 60 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 61 - OfxGetNumberOfPlugins is exported
+ok 62 - OfxGetPlugin is exported
+ok 63 - OfxGetNumberOfPlugins() >= 1
+ok 64 - OfxGetPlugin(0) returns a plug-in
+ok 65 - pluginApi
+ok 66 - apiVersion
+ok 67 - pluginIdentifier is non-empty
+ok 68 - pluginIdentifier
+ok 69 - pluginIdentifier stable across loads
+ok 70 - pluginVersion
+ok 71 - setHost is non-null
+ok 72 - mainEntry is non-null
+ok 73 - kOfxActionLoad
+ok 74 - kOfxActionDescribe
+ok 75 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 76 - descriptor lists the requested context
+ok 77 - descriptor sets a legal render thread safety
+ok 78 - param 'gain' declared
+ok 79 - param 'gain' type
+ok 80 - clip 'Source' declared
+ok 81 - clip 'Output' declared
+ok 82 - kOfxActionCreateInstance
+ok 83 - kOfxImageEffectActionRender
+ok 84 - descriptor declares CPURenderSupported
+ok 85 - descriptor declares NoSpatialAwareness
+ok 86 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 87 - thumbnail render produces the same frame as a full render
+ok 88 - a second instance can be created
+ok 89 - two instances are live at the same time
+ok 90 - instance 0 accepts its own gain
+ok 91 - instance 1 accepts a different gain
+ok 92 - render instance 0 while instance 1 is alive
+ok[stage] byte destination
+[stage] unload
+ 93 - render instance 1 with its own settings
+ok 94 - instance 0 used its own value, not its neighbour's
+ok 95 - instance 1 used its own value, not its neighbour's
+ok 96 - instance for parallel worker 2
+ok 97 - instance for parallel worker 3
+ok 98 - set gain on the instance of parallel worker 0
+ok 99 - set gain on the instance of parallel worker 1
+ok 100 - set gain on the instance of parallel worker 2
+ok 101 - set gain on the instance of parallel worker 3
+ok 102 - concurrent renders produced every record
+ok 103 - every concurrent render returned kOfxStatOK
+ok 104 - every concurrent render produced a readable destination
+ok 105 - concurrent instances kept their own parameter values
+ok 106 - destroy instance 3
+ok 107 - destroy instance 2
+ok 108 - destroy instance 1
+ok 109 - render rejects a byte image
+ok 110 - baseline render before the rejected window
+ok 111 - render rejects a window outside the source bounds
+ok 112 - destination is unchanged after the rejected render
+ok 113 - baseline render inside the destination bounds
+ok 114 - render rejects a window outside the destination bounds
+ok 115 - destination is unchanged after the rejected render
+ok 116 - kOfxActionDestroyInstance
+ok 117 - kOfxActionUnload
+ok 118 - unload cycle completed
+contract_test: 118 checks, 0 failed
+  host profile: resolve
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - descriptor declares CPURenderSupported
+ok 26 - descriptor declares NoSpatialAwareness
+ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 28 - thumbnail render produces the same frame as a full render
+ok 29 - a second instance can be created
+ok 30 - two instances are live at the same time
+ok 31 - instance 0 accepts its own gain
+ok 32 - instance 1 accepts a different gain
+ok 33 - render instance 0 while instance 1 is alive
+ok 34 - render instance 1 with its own settings
+ok 35 - instance 0 used its own value, not its neighbour's
+ok 36 - instance 1 used its own value, not its neighbour's
+ok 37 - instance for parallel worker 2
+ok 38 - instance for parallel worker 3
+ok 39 - set gain on the instance of parallel worker 0
+ok 40 - set gain on the instance of parallel worker 1
+ok 41 - set gain on the instance of parallel worker 2
+ok 42 - set gain on the instance of parallel worker 3
+ok 43 - concurrent renders produced every record
+ok 44 - every concurrent render returned kOfxStatOK
+ok 45 - every concurrent render produced a readable destination
+ok 46 - concurrent instances kept their own parameter values
+ok 47 - destroy instance 3
+ok 48 - destroy instance 2
+ok 49 - destroy instance 1
+ok 50 - render rejects a byte image
+ok 51 - baseline render before the rejected window
+ok 52 - render rejects a window outside the source bounds
+ok 53 - destination is unchanged after the rejected render
+ok 54 - baseline render inside the destination bounds
+ok 55 - render rejects a window outside the destination bounds
+ok 56 - destination is unchanged after the rejected render
+ok 57 - kOfxActionDestroyInstance
+ok 58 - kOfxActionUnload
+ok 59 - unload cycle completed
+ok 60 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 61 - OfxGetNumberOfPlugins is exported
+ok 62 - OfxGetPlugin is exported
+ok 63 - OfxGetNumberOfPlugins() >= 1
+ok 64 - OfxGetPlugin(0) returns a plug-in
+ok 65 - pluginApi
+ok 66 - apiVersion
+ok 67 - pluginIdentifier is non-empty
+ok 68 - pluginIdentifier
+ok 69 - pluginIdentifier stable across loads
+ok 70 - pluginVersion
+ok 71 - setHost is non-null
+ok 72 - mainEntry is non-null
+ok 73 - kOfxActionLoad
+ok 74 - kOfxActionDescribe
+ok 75 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 76 - descriptor lists the requested context
+ok 77 - descriptor sets a legal render thread safety
+ok 78 - param 'gain' declared
+ok 79 - param 'gain' type
+ok 80 - clip 'Source' declared
+ok 81 - clip 'Output' declared
+ok 82 - kOfxActionCreateInstance
+ok 83 - kOfxImageEffectActionRender
+ok 84 - descriptor declares CPURenderSupported
+ok 85 - descriptor declares NoSpatialAwareness
+ok 86 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 87 - thumbnail render produces the same frame as a full render
+ok 88 - a second instance can be created
+ok 89 - two instances are live at the same time
+ok 90 - instance 0 accepts its own gain
+ok 91 - instance 1 accepts a different gain
+ok 92 - render instance 0 while instance 1[stage] byte destination
+[stage] unload
+ is alive
+ok 93 - render instance 1 with its own settings
+ok 94 - instance 0 used its own value, not its neighbour's
+ok 95 - instance 1 used its own value, not its neighbour's
+ok 96 - instance for parallel worker 2
+ok 97 - instance for parallel worker 3
+ok 98 - set gain on the instance of parallel worker 0
+ok 99 - set gain on the instance of parallel worker 1
+ok 100 - set gain on the instance of parallel worker 2
+ok 101 - set gain on the instance of parallel worker 3
+ok 102 - concurrent renders produced every record
+ok 103 - every concurrent render returned kOfxStatOK
+ok 104 - every concurrent render produced a readable destination
+ok 105 - concurrent instances kept their own parameter values
+ok 106 - destroy instance 3
+ok 107 - destroy instance 2
+ok 108 - destroy instance 1
+ok 109 - render rejects a byte image
+ok 110 - baseline render before the rejected window
+ok 111 - render rejects a window outside the source bounds
+ok 112 - destination is unchanged after the rejected render
+ok 113 - baseline render inside the destination bounds
+ok 114 - render rejects a window outside the destination bounds
+ok 115 - destination is unchanged after the rejected render
+ok 116 - kOfxActionDestroyInstance
+ok 117 - kOfxActionUnload
+ok 118 - unload cycle completed
+contract_test: 118 checks, 0 failed
+  host profile: natron
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - descriptor declares CPURenderSupported
+ok 26 - descriptor declares NoSpatialAwareness
+ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 28 - thumbnail render produces the same frame as a full render
+ok 29 - a second instance can be created
+ok 30 - two instances are live at the same time
+ok 31 - instance 0 accepts its own gain
+ok 32 - instance 1 accepts a different gain
+ok 33 - render instance 0 while instance 1 is alive
+ok 34 - render instance 1 with its own settings
+ok 35 - instance 0 used its own value, not its neighbour's
+ok 36 - instance 1 used its own value, not its neighbour's
+ok 37 - instance for parallel worker 2
+ok 38 - instance for parallel worker 3
+ok 39 - set gain on the instance of parallel worker 0
+ok 40 - set gain on the instance of parallel worker 1
+ok 41 - set gain on the instance of parallel worker 2
+ok 42 - set gain on the instance of parallel worker 3
+ok 43 - concurrent renders produced every record
+ok 44 - every concurrent render returned kOfxStatOK
+ok 45 - every concurrent render produced a readable destination
+ok 46 - concurrent instances kept their own parameter values
+ok 47 - destroy instance 3
+ok 48 - destroy instance 2
+ok 49 - destroy instance 1
+ok 50 - render rejects a byte image
+ok 51 - baseline render before the rejected window
+ok 52 - render rejects a window outside the source bounds
+ok 53 - destination is unchanged after the rejected render
+ok 54 - baseline render inside the destination bounds
+ok 55 - render rejects a window outside the destination bounds
+ok 56 - destination is unchanged after the rejected render
+ok 57 - kOfxActionDestroyInstance
+ok 58 - kOfxActionUnload
+ok 59 - unload cycle completed
+ok 60 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 61 - OfxGetNumberOfPlugins is exported
+ok 62 - OfxGetPlugin is exported
+ok 63 - OfxGetNumberOfPlugins() >= 1
+ok 64 - OfxGetPlugin(0) returns a plug-in
+ok 65 - pluginApi
+ok 66 - apiVersion
+ok 67 - pluginIdentifier is non-empty
+ok 68 - pluginIdentifier
+ok 69 - pluginIdentifier stable across loads
+ok 70 - pluginVersion
+ok 71 - setHost is non-null
+ok 72 - mainEntry is non-null
+ok 73 - kOfxActionLoad
+ok 74 - kOfxActionDescribe
+ok 75 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 76 - descriptor lists the requested context
+ok 77 - descriptor sets a legal render thread safety
+ok 78 - param 'gain' declared
+ok 79 - param 'gain' type
+ok 80 - clip 'Source' declared
+ok 81 - clip 'Output' declared
+ok 82 - kOfxActionCreateInstance
+ok 83 - kOfxImageEffectActionRender
+ok 84 - descriptor declares CPURenderSupported
+ok 85 - descriptor declares NoSpatialAwareness
+ok 86 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 87 - thumbnail render produces the same frame as a full render
+ok 88 - a second instance can be created
+ok 89 - two instances are live at the same time
+ok 90 - instance 0 accepts its own gain
+ok 91 - instance 1 accepts a different gain
+ok 92 - render instance 0 while instance 1 is alive
+ok 9[stage] byte destination
+[stage] unload
+3 - render instance 1 with its own settings
+ok 94 - instance 0 used its own value, not its neighbour's
+ok 95 - instance 1 used its own value, not its neighbour's
+ok 96 - instance for parallel worker 2
+ok 97 - instance for parallel worker 3
+ok 98 - set gain on the instance of parallel worker 0
+ok 99 - set gain on the instance of parallel worker 1
+ok 100 - set gain on the instance of parallel worker 2
+ok 101 - set gain on the instance of parallel worker 3
+ok 102 - concurrent renders produced every record
+ok 103 - every concurrent render returned kOfxStatOK
+ok 104 - every concurrent render produced a readable destination
+ok 105 - concurrent instances kept their own parameter values
+ok 106 - destroy instance 3
+ok 107 - destroy instance 2
+ok 108 - destroy instance 1
+ok 109 - render rejects a byte image
+ok 110 - baseline render before the rejected window
+ok 111 - render rejects a window outside the source bounds
+ok 112 - destination is unchanged after the rejected render
+ok 113 - baseline render inside the destination bounds
+ok 114 - render rejects a window outside the destination bounds
+ok 115 - destination is unchanged after the rejected render
+ok 116 - kOfxActionDestroyInstance
+ok 117 - kOfxActionUnload
+ok 118 - unload cycle completed
+contract_test: 118 checks, 0 failed
+  host profile: resolve, refusing both capability writes
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+[stage] render
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+host refuses a write of kOfxImageEffectPropCPURenderSupported
+host refuses a write of kOfxImageEffectPropNoSpatialAwareness
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - descriptor: CPURenderSupported refused by this host, the plug-in still described
+ok 26 - descriptor: NoSpatialAwareness refused by this host, the plug-in still described
+ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 28 - thumbnail render produces the same frame as a full render
+ok 29 - a second instance can be created
+ok 30 - two instances are live at the same time
+ok 31 - instance 0 accepts its own gain
+ok 32 - instance 1 accepts a different gain
+ok 33 - render instance 0 while instance 1 is alive
+ok 34 - render instance 1 with its own settings
+ok 35 - instance 0 used its own value, not its neighbour's
+ok 36 - instance 1 used its own value, not its neighbour's
+ok 37 - instance for parallel worker 2
+ok 38 - instance for parallel worker 3
+ok 39 - set gain on the instance of parallel worker 0
+ok 40 - set gain on the instance of parallel worker 1
+ok 41 - set gain on the instance of parallel worker 2
+ok 42 - set gain on the instance of parallel worker 3
+ok 43 - concurrent renders produced every record
+ok 44 - every concurrent render returned kOfxStatOK
+ok 45 - every concurrent render produced a readable destination
+ok 46 - concurrent instances kept their own parameter values
+ok 47 - destroy instance 3
+ok 48 - destroy instance 2
+ok 49 - destroy instance 1
+ok 50 - render rejects a byte image
+ok 51 - baseline render before the rejected window
+ok 52 - render rejects a window outside the source bounds
+ok 53 - destination is unchanged after the rejected render
+ok 54 - baseline render inside the destination bounds
+ok 55 - render rejects a window outside the destination bounds
+ok 56 - destination is unchanged after the rejected render
+ok 57 - kOfxActionDestroyInstance
+ok 58 - kOfxActionUnload
+ok 59 - unload cycle completed
+host refuses a write of kOfxImageEffectPropCPURenderSupported
+host refuses a write of kOfxImageEffectPropNoSpatialAwareness
+ok 60 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 61 - OfxGetNumberOfPlugins is exported
+ok 62 - OfxGetPlugin is exported
+ok 63 - OfxGetNumberOfPlugins() >= 1
+ok 64 - OfxGetPlugin(0) returns a plug-in
+ok 65 - pluginApi
+ok 66 - apiVersion
+ok 67 - pluginIdentifier is non-empty
+ok 68 - pluginIdentifier
+ok 69 - pluginIdentifier stable across loads
+ok 70 - pluginVersion
+ok 71 - setHost is non-null
+ok 72 - mainEntry is non-null
+ok 73 - kOfxActionLoad
+ok 74 - kOfxActionDescribe
+ok 75 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 76 - descriptor lists the requested context
+ok 77 - descriptor sets a legal render thread safety
+ok 78 - param 'gain' declared
+ok 79 - param 'gain' type
+ok 80 - clip 'Source' declared
+ok 81 - clip 'Output' declared
+ok 82 - kOfxActionCreateInstance
+ok 83 - kOfxImageEffectActionRender
+ok 84 - descriptor: CPURenderSupported refused by this host, the plug-in still described
+ok 85 - descriptor: N[stage] thumbnail render
+[stage] concurrency
+[stage] byte destination
+[stage] unload
+oSpatialAwareness refused by this host, the plug-in still described
+ok 86 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 87 - thumbnail render produces the same frame as a full render
+ok 88 - a second instance can be created
+ok 89 - two instances are live at the same time
+ok 90 - instance 0 accepts its own gain
+ok 91 - instance 1 accepts a different gain
+ok 92 - render instance 0 while instance 1 is alive
+ok 93 - render instance 1 with its own settings
+ok 94 - instance 0 used its own value, not its neighbour's
+ok 95 - instance 1 used its own value, not its neighbour's
+ok 96 - instance for parallel worker 2
+ok 97 - instance for parallel worker 3
+ok 98 - set gain on the instance of parallel worker 0
+ok 99 - set gain on the instance of parallel worker 1
+ok 100 - set gain on the instance of parallel worker 2
+ok 101 - set gain on the instance of parallel worker 3
+ok 102 - concurrent renders produced every record
+ok 103 - every concurrent render returned kOfxStatOK
+ok 104 - every concurrent render produced a readable destination
+ok 105 - concurrent instances kept their own parameter values
+ok 106 - destroy instance 3
+ok 107 - destroy instance 2
+ok 108 - destroy instance 1
+ok 109 - render rejects a byte image
+ok 110 - baseline render before the rejected window
+ok 111 - render rejects a window outside the source bounds
+ok 112 - destination is unchanged after the rejected render
+ok 113 - baseline render inside the destination bounds
+ok 114 - render rejects a window outside the destination bounds
+ok 115 - destination is unchanged after the rejected render
+ok 116 - kOfxActionDestroyInstance
+ok 117 - kOfxActionUnload
+ok 118 - unload cycle completed
+contract_test: 118 checks, 0 failed
+  host profile: resolve, OFXPLUGIN_VULKAN_MODE=cpu (forced CPU path)
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] unload
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] unload
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+ok 1 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - descriptor declares CPURenderSupported
+ok 26 - descriptor declares NoSpatialAwareness
+ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 28 - thumbnail render produces the same frame as a full render
+ok 29 - label parameter 'device' = "CPU - OFXPLUGIN_VULKAN_MODE=cpu was set"
+ok 30 - label parameter 'device' contains "CPU"
+ok 31 - a second instance can be created
+ok 32 - two instances are live at the same time
+ok 33 - render instance 0 while instance 1 is alive
+ok 34 - render instance 1 with its own settings
+ok 35 - two instances with identical settings produce identical pixels
+ok 36 - instance for parallel worker 2
+ok 37 - instance for parallel worker 3
+ok 38 - concurrent renders produced every record
+ok 39 - every concurrent render returned kOfxStatOK
+ok 40 - every concurrent render produced a readable destination
+ok 41 - concurrent renders with identical settings are identical
+ok 42 - destroy instance 3
+ok 43 - destroy instance 2
+ok 44 - destroy instance 1
+ok 45 - kOfxActionDestroyInstance
+ok 46 - kOfxActionUnload
+ok 47 - unload cycle completed
+ok 48 - dlopen(Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-vulkan-ofx\build\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 49 - OfxGetNumberOfPlugins is exported
+ok 50 - OfxGetPlugin is exported
+ok 51 - OfxGetNumberOfPlugins() >= 1
+ok 52 - OfxGetPlugin(0) returns a plug-in
+ok 53 - pluginApi
+ok 54 - apiVersion
+ok 55 - pluginIdentifier is non-empty
+ok 56 - pluginIdentifier
+ok 57 - pluginIdentifier stable across loads
+ok 58 - pluginVersion
+ok 59 - setHost is non-null
+ok 60 - mainEntry is non-null
+ok 61 - kOfxActionLoad
+ok 62 - kOfxActionDescribe
+ok 63 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 64 - descriptor lists the requested context
+ok 65 - descriptor sets a legal render thread safety
+ok 66 - param 'gain' declared
+ok 67 - param 'gain' type
+ok 68 - clip 'Source' declared
+ok 69 - clip 'Output' declared
+ok 70 - kOfxActionCreateInstance
+ok 71 - kOfxImageEffectActionRender
+ok 72 - descriptor declares CPURenderSupported
+ok 73 - descriptor declares NoSpatialAwareness
+ok 74 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 75 - thumbnail render produces the same frame as a full render
+ok 76 - label parameter 'device' = "CPU - OFXPLUGIN_VULKAN_MODE=cpu was set"
+ok 77 - label parameter 'device' contains "CPU"
+ok 78 - a second instance can be created
+ok 79 - two instances are live at the same time
+ok 80 - render instance 0 while instance 1 is alive
+ok 81 - render instance 1 with its own settings
+ok 82 - two instances with identical settings produce identical pixels
+ok 83 - instance for parallel worker 2
+ok 84 - instance for parallel worker 3
+ok 85 - concurrent renders produced every record
+ok 86 - every concurrent render returned kOfxStatOK
+ok 87 - every concurrent render produced a readable destination
+ok 88 - concurrent renders with identical settings are identical
+ok 89 - destroy instance 3
+ok 90 - destroy instance 2
+ok 91 - destroy instance 1
+ok 92 - kOfxActionDestroyInstance
+ok 93 - kOfxActionUnload
+ok 94 - unload cycle completed
+contract_test: 94 checks, 0 failed
+
+== [5/6] install and load the installed copy ==
+  C:\Users\cblinde\AppData\Local\Temp\ofx-install-1464627028\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] unload
+[stage] render
+[stage] thumbnail render
+[stage] concurrency
+[stage] unload
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+ok 1 - dlopen(C:\Users\cblinde\AppData\Local\Temp\ofx-install-1464627028\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 2 - OfxGetNumberOfPlugins is exported
+ok 3 - OfxGetPlugin is exported
+ok 4 - OfxGetNumberOfPlugins() >= 1
+ok 5 - OfxGetPlugin(0) returns a plug-in
+ok 6 - pluginApi
+ok 7 - apiVersion
+ok 8 - pluginIdentifier is non-empty
+ok 9 - pluginIdentifier
+ok 10 - pluginIdentifier stable across loads
+ok 11 - pluginVersion
+ok 12 - setHost is non-null
+ok 13 - mainEntry is non-null
+ok 14 - kOfxActionLoad
+ok 15 - kOfxActionDescribe
+ok 16 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 17 - descriptor lists the requested context
+ok 18 - descriptor sets a legal render thread safety
+ok 19 - param 'gain' declared
+ok 20 - param 'gain' type
+ok 21 - clip 'Source' declared
+ok 22 - clip 'Output' declared
+ok 23 - kOfxActionCreateInstance
+ok 24 - kOfxImageEffectActionRender
+ok 25 - descriptor declares CPURenderSupported
+ok 26 - descriptor declares NoSpatialAwareness
+ok 27 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 28 - thumbnail render produces the same frame as a full render
+ok 29 - a second instance can be created
+ok 30 - two instances are live at the same time
+ok 31 - render instance 0 while instance 1 is alive
+ok 32 - render instance 1 with its own settings
+ok 33 - two instances with identical settings produce identical pixels
+ok 34 - instance for parallel worker 2
+ok 35 - instance for parallel worker 3
+ok 36 - concurrent renders produced every record
+ok 37 - every concurrent render returned kOfxStatOK
+ok 38 - every concurrent render produced a readable destination
+ok 39 - concurrent renders with identical settings are identical
+ok 40 - destroy instance 3
+ok 41 - destroy instance 2
+ok 42 - destroy instance 1
+ok 43 - kOfxActionDestroyInstance
+ok 44 - kOfxActionUnload
+ok 45 - unload cycle completed
+ok 46 - dlopen(C:\Users\cblinde\AppData\Local\Temp\ofx-install-1464627028\OFX\Plugins\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain.ofx)
+ok 47 - OfxGetNumberOfPlugins is exported
+ok 48 - OfxGetPlugin is exported
+ok 49 - OfxGetNumberOfPlugins() >= 1
+ok 50 - OfxGetPlugin(0) returns a plug-in
+ok 51 - pluginApi
+ok 52 - apiVersion
+ok 53 - pluginIdentifier is non-empty
+ok 54 - pluginIdentifier
+ok 55 - pluginIdentifier stable across loads
+ok 56 - pluginVersion
+ok 57 - setHost is non-null
+ok 58 - mainEntry is non-null
+ok 59 - kOfxActionLoad
+ok 60 - kOfxActionDescribe
+ok 61 - kOfxImageEffectActionDescribeInContext(OfxImageEffectContextFilter)
+ok 62 - descriptor lists the requested context
+ok 63 - descriptor sets a legal render thread safety
+ok 64 - param 'gain' declared
+ok 65 - param 'gain' type
+ok 66 - clip 'Source' declared
+ok 67 - clip 'Output' declared
+ok 68 - kOfxActionCreateInstance
+ok 69 - kOfxImageEffectActionRender
+ok 70 - descriptor declares CPURenderSupported
+ok 71 - descriptor declares NoSpatialAwareness
+ok 72 - kOfxImageEffectActionRender with the 1.5.1 thumbnail hints
+ok 73 - thumbnail render produces the same frame as a full render
+ok 74 - a second instance can be created
+ok 75 - two instances are live at the same time
+ok 76 - render instance 0 while instance 1 is alive
+ok 77 - render instance 1 with its own settings
+ok 78 - two instances with identical settings produce identical pixels
+ok 79 - instance for parallel worker 2
+ok 80 - instance for parallel worker 3
+ok 81 - concurrent renders produced every record
+ok 82 - every concurrent render returned kOfxStatOK
+ok 83 - every concurrent render produced a readable destination
+ok 84 - concurrent renders with identical settings are identical
+ok 85 - destroy instance 3
+ok 86 - destroy instance 2
+ok 87 - destroy instance 1
+ok 88 - kOfxActionDestroyInstance
+ok 89 - kOfxActionUnload
+ok 90 - unload cycle completed
+contract_test: 90 checks, 0 failed
+== [6/6] device suite (Vulkan vs CPU) ==
+device: NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per dispatch)
+memory: auto picks device-local storage + host-visible staging
+  maxPixels covers 3840x2160         ok   4294967040 px per dispatch
+ host-visible
+  host-visible 1 px gain 2.0         ok   4 channels, worst 0, alpha kept
+  host-visible 61 px gain 2.0 (tail) ok   244 channels, worst 0, alpha kept
+  host-visible 256 px gain 0.5       ok   1024 channels, worst 0, alpha kept
+  host-visible 257 px gain 0.5       ok   1028 channels, worst 0, alpha kept
+  host-visible 4096 px gain 0.0      ok   16384 channels, worst 0, alpha kept
+  host-visible 4096 px gain 1.0      ok   16384 channels, worst 0, alpha kept
+  host-visible 1920x1080 gain 0.5    ok   8294400 channels, worst 0, alpha kept
+  host-visible 1920x1080 gain 3.75   ok   8294400 channels, worst 0, alpha kept
+  host-visible 3840x2160 gain 0.25   ok   33177600 channels, worst 0, alpha kept
+  host-visible 61 px after 4K (reuse) ok   244 channels, worst 0, alpha kept
+  host-visible five applies on one buffer ok   5 dispatch(es), worst 0
+ device-local
+  device-local 1 px gain 2.0         ok   4 channels, worst 0, alpha kept
+  device-local 61 px gain 2.0 (tail) ok   244 channels, worst 0, alpha kept
+  device-local 256 px gain 0.5       ok   1024 channels, worst 0, alpha kept
+  device-local 257 px gain 0.5       ok   1028 channels, worst 0, alpha kept
+  device-local 4096 px gain 0.0      ok   16384 channels, worst 0, alpha kept
+  device-local 4096 px gain 1.0      ok   16384 channels, worst 0, alpha kept
+  device-local 1920x1080 gain 0.5    ok   8294400 channels, worst 0, alpha kept
+  device-local 1920x1080 gain 3.75   ok   8294400 channels, worst 0, alpha kept
+  device-local 3840x2160 gain 0.25   ok   33177600 channels, worst 0, alpha kept
+  device-local 61 px after 4K (reuse) ok   244 channels, worst 0, alpha kept
+  device-local five applies on one buffer ok   5 dispatch(es), worst 0
+  host-visible equals device-local   ok   0 of 8294400 channels bit-identical
+  a null frame is refused            ok   nothing to dispatch
+  a zero-pixel frame is refused      ok   nothing to dispatch
+ through 1920x1080, 20 frames each:
+  host-visible   99.67 ms/frame total, dispatch 6.62, copies 93.01 (1 GB/s over both directions)
+  device-local   107.99 ms/frame total, dispatch 16.98, copies 90.95 (1 GB/s over both directions)
+  CPU            3.59 ms/frame (the loop render() falls back to)
+vulkan_suite: 26 checks, 0 failed
+
+all Windows checks passed
+
+== CPU-only configure: -DOFXPLUGIN_VULKAN=OFF, headers not on the include path ==
+#
+# What gate 1 is for, and what the CMake change in this commit fixed: VulkanGain.cpp
+# includes <vulkan/vulkan.h> and the generated SPIR-V header at its top, so a
+# configure that says "CPU path only" on a machine without the SDK could not parse
+# it - the file is now added to the module only in the branch that has the headers.
+# Build: cmake -G "Visual Studio 18 2026" -A x64 -DOFXPLUGIN_VULKAN=OFF, then
+# --target VulkanGain vulkan_mode_test, from a build directory of its own:
+#   .validation/vk-off-build
+#   configure exit 0, bundle written to Contents/Win64, no Vulkan headers used
+#
+# ok 29 - label parameter 'device' = "CPU - built with -DOFXPLUGIN_VULKAN=OFF"
+# ok 30 - label parameter 'device' contains "OFXPLUGIN_VULKAN=OFF"
+# ok 76 - label parameter 'device' = "CPU - built with -DOFXPLUGIN_VULKAN=OFF"
+# ok 77 - label parameter 'device' contains "OFXPLUGIN_VULKAN=OFF"
+# contract_test: 94 checks, 0 failed
+#
+# The policy test passes in that configure too (29 checks, the same binary), and
+# the bundle's Device label names the configure: the contract harness renders once
+# and --label-contains fails the run if it does not read it.

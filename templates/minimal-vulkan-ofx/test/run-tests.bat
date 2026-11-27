@@ -11,15 +11,22 @@ rem Linux runs this through g++, nm -D, readelf, dlopen and valgrind. None of
 rem those exist in a Windows developer shell, so the same checks are expressed
 rem with the tools that do:
 rem
-rem   [1/5] build     build.bat, then the artifact check it already runs
-rem   [2/5] artifact  testkit\check-ofx-artifact.bat --strict (dumpbin, cuobjdump)
-rem   [3/5] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
+rem   [1/6] build     build.bat, then the artifact check it already runs
+rem   [2/6] mode      vulkan_mode_test.exe: the six gates that choose between
+rem                   the device and the CPU loop. No device, no Vulkan loader
+rem                   and no SDK - it runs on every machine, which is the
+rem                   point (the .sh runs the same binary)
+rem   [3/6] artifact  testkit\check-ofx-artifact.bat --strict (dumpbin, cuobjdump)
+rem   [4/6] contract  testkit\build-contract-test.bat + LoadLibraryExW, the same
 rem                   host protocol as dlopen: load, describe, create, render,
 rem                   destroy, unload, twice, with the negative cases; once
-rem                   per host shape plus one pass that refuses both
-rem                   capability writes
-rem   [4/5] install   cmake --install into a temp prefix, then load and
+rem                   per host shape, one pass that refuses both capability
+rem                   writes, and one with OFXPLUGIN_VULKAN_MODE=cpu that
+rem                   asserts the Device label says CPU
+rem   [5/6] install   cmake --install into a temp prefix, then load and
 rem                   render from the installed copy
+rem   [6/6] device    vulkan_suite.exe: shader, descriptor set, dispatch, both
+rem                   memory arrangements - NOT VERIFIED without a device
 rem
 rem What it does NOT do: valgrind and the sanitizer builds. A build that leaks is
 rem caught on Linux; on Windows the contract's unload cycle is what runs.
@@ -41,12 +48,12 @@ set "OFX_FILE=%BUILD_DIR%\bundle\VulkanGain.ofx.bundle\Contents\Win64\VulkanGain
 
 rem ---- [1] build ------------------------------------------------------------
 if "%NOBUILD%"=="0" (
-  echo == [1/5] build ^(%CONFIG%^) ==
+  echo == [1/6] build ^(%CONFIG%^) ==
   rem The .\ prefix is load-bearing: a bare build.bat is not found when
   rem NoDefaultCurrentDirectoryInExePath=1 is set.
   call "%ROOT%\build.bat" %CONFIG% || goto :error
 ) else (
-  echo == [1/5] build skipped ^(nobuild^)
+  echo == [1/6] build skipped ^(nobuild^)
 )
 
 if not exist "%OFX_FILE%" (
@@ -56,16 +63,31 @@ if not exist "%OFX_FILE%" (
   exit /b 1
 )
 
-rem ---- [2] artifact ----------------------------------------------------------
+rem ---- [2] path policy ------------------------------------------------------
+rem The one step in this file that needs nothing at all: VulkanMode.h is policy
+rem only (no Vulkan headers, no OFX headers), so the table that decides between
+rem the device and the CPU loop is compiled and executed on a machine with no
+rem driver. A build with -DOFXPLUGIN_VULKAN=OFF has to pass it too, which is why
+rem the target is built unconditionally.
+echo.
+echo == [2/6] path policy (six gates, no device needed) ==
+set "MODETEST=%BUILD_DIR%\self-test\vulkan_mode_test.exe"
+if not exist "%MODETEST%" (
+  echo   FAIL: no %MODETEST% - the configure did not build the policy test
+  goto :error
+)
+"%MODETEST%" || goto :error
+
+rem ---- [3] artifact ----------------------------------------------------------
 rem Same checker build.bat runs; here it is the point of the step, not a side
 rem effect, so a failure names which claim broke.
 echo.
-echo == [2/5] artifact (exports, dependents) ==
+echo == [3/6] artifact (exports, dependents) ==
 call "%ROOT%\..\..\testkit\check-ofx-artifact.bat" "%OFX_FILE%" --strict || goto :error
 
-rem ---- [3] host contract -----------------------------------------------------
+rem ---- [4] host contract -----------------------------------------------------
 echo.
-echo == [3/5] host contract (LoadLibraryExW + fake host) ==
+echo == [4/6] host contract (LoadLibraryExW + fake host) ==
 set "OFX_INC=%OFX_SOURCE_DIR%"
 if not defined OFX_INC if exist "%BUILD_DIR%\CMakeCache.txt" (
   for /f "usebackq tokens=1,* delims==" %%A in (`findstr /B /C:"OFX_SOURCE_DIR:PATH=" "%BUILD_DIR%\CMakeCache.txt"`) do set "OFX_INC=%%B"
@@ -131,13 +153,36 @@ echo   host profile: resolve, refusing both capability writes
     --concurrency-param gain ^
     --concurrency-threads %THREADS% || goto :error
 
-rem ---- [4] install ---------------------------------------------------------
+rem The one path a machine with a device cannot reach otherwise: the override
+rem makes VulkanMode.h's first gate say CPU, the plug-in writes that decision
+rem into the Device parameter after a real render, and --label-contains fails the
+rem run if the label does not carry it. Without the switch this assertion could
+rem only be made on a machine that has no Vulkan driver - and the value of the
+rem switch is exactly that the fallback is exercised where the device exists.
+rem On a machine with no device the same label comes from the second gate, so the
+rem run passes there too; only this run proves the override reaches the render.
+echo   host profile: resolve, OFXPLUGIN_VULKAN_MODE=cpu (forced CPU path)
+set "OFXPLUGIN_VULKAN_MODE=cpu"
+"%CONTRACT%" "%OFX_FILE%" ^
+    --host-profile resolve ^
+    --id com.ofxplugindeveloper.vulkaingain ^
+    --version 1.0 ^
+    --param gain:double ^
+    --clip Source ^
+    --clip Output ^
+    --label-param device ^
+    --label-contains device=CPU
+set "FORCED_STATUS=%ERRORLEVEL%"
+set "OFXPLUGIN_VULKAN_MODE="
+if not "%FORCED_STATUS%"=="0" goto :error
+
+rem ---- [5] install ---------------------------------------------------------
 rem The build tree is not an install: a host loads what is under OFX/Plugins, so
 rem `cmake --install` into a throwaway prefix is the move that exposes a path or a
 rem dependency that only ever resolved inside build\. The harness then renders one
 rem frame from the installed copy - the same contract run, one directory over.
 echo.
-echo == [4/5] install and load the installed copy ==
+echo == [5/6] install and load the installed copy ==
 set "PREFIX=%TEMP%\ofx-install-%RANDOM%%RANDOM%"
 cmake --install "%BUILD_DIR%" --prefix "%PREFIX%" --config %CONFIG% > "%PREFIX%.log" 2>&1
 if errorlevel 1 (
@@ -164,7 +209,7 @@ rem ---- [5] device -----------------------------------------------------------
 rem The half no host run proves cheaply: the shader, the descriptor set and the
 rem dispatch. It is guarded rather than assumed - a machine with no Vulkan device
 rem (or a CPU-only configure) reports NOT VERIFIED instead of a green step.
-echo == [5/5] device suite (Vulkan vs CPU) ==
+echo == [6/6] device suite (Vulkan vs CPU) ==
 set "SELFTEST=%BUILD_DIR%\self-test\vulkan_suite.exe"
 if not exist "%SELFTEST%" goto :selftest_absent
 "%SELFTEST%"

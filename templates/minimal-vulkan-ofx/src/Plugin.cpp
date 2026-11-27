@@ -17,6 +17,7 @@
 // time (no driver, no device, a failed dispatch): the CPU loop below is the same
 // arithmetic, so a fallback is a slower frame and never a different one.
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -29,6 +30,8 @@
 #include "ofxsProcessing.h"
 // kOfxImageEffectPropCPURenderSupported lives in the GPU header.
 #include "ofxGPURender.h"
+
+#include "VulkanMode.h"
 
 #ifdef OFXPLUGIN_VULKAN
 #include "VulkanGain.h"
@@ -83,18 +86,27 @@ std::mutex& engineMutex()
 }
 #endif
 
-/// The device label, or the reason the GPU path is not in use.
-std::string deviceLabel()
-{
+/// True when this build compiled the device path in. A constant, not a probe:
+/// the configure decided it and a bundle cannot change its mind.
+constexpr bool kBuiltWithVulkan =
 #ifdef OFXPLUGIN_VULKAN
-    vkgain::Engine& e = engine();
-    if (e.ready()) {
-        return e.device();
-    }
-    return std::string("CPU - no Vulkan device: ") + e.reason();
+    true;
 #else
-    return "CPU - built with -DOFXPLUGIN_VULKAN=OFF";
+    false;
 #endif
+
+/// OFXPLUGIN_VULKAN_MODE, read once per process. The word is one of auto, cpu,
+/// gpu (or vulkan); anything else reads as auto and is named in the label, so a
+/// typo is visible instead of quietly ignored (references/vulkan-compute.md §7).
+vkgain::Mode requestedMode()
+{
+    static const vkgain::Mode mode = [] {
+        bool recognised = true;
+        const vkgain::Mode parsed =
+            vkgain::ParseModeOverride(std::getenv("OFXPLUGIN_VULKAN_MODE"), &recognised);
+        return recognised ? parsed : vkgain::Mode::Auto;
+    }();
+    return mode;
 }
 
 bool gpuAvailable()
@@ -103,6 +115,92 @@ bool gpuAvailable()
     return engine().ready();
 #else
     return false;
+#endif
+}
+
+/// "" or the sentence a label appends when the override was not understood.
+std::string overrideProblem()
+{
+    const char* text = std::getenv("OFXPLUGIN_VULKAN_MODE");
+    if (text == nullptr || *text == '\0') {
+        return std::string();
+    }
+    bool recognised = true;
+    vkgain::ParseModeOverride(text, &recognised);
+    if (recognised) {
+        return std::string();
+    }
+    return std::string("OFXPLUGIN_VULKAN_MODE='") + text + "' is not auto, cpu or gpu";
+}
+
+/// The render window's pixel count, which is the number that reaches the
+/// dispatch - not the image's size. A window spanning a host's maximum is
+/// clamped instead of wrapping, so the policy never sees a small number for a
+/// huge frame.
+unsigned int renderPixels(const OfxRectI& window)
+{
+    const long long width = (long long)window.x2 - (long long)window.x1;
+    const long long height = (long long)window.y2 - (long long)window.y1;
+    if (width <= 0 || height <= 0) {
+        return 0;
+    }
+    const long long pixels = width * height;
+    return pixels > 0xffffffffLL ? 0xffffffffu : (unsigned int)pixels;
+}
+
+/// What the decision needs to know about this render.
+vkgain::FrameFacts frameFacts(unsigned int pixels)
+{
+    vkgain::FrameFacts facts;
+    facts.builtWithVulkan = kBuiltWithVulkan;
+    facts.deviceReady = gpuAvailable();
+    facts.pixels = pixels;
+#ifdef OFXPLUGIN_VULKAN
+    facts.maxPixels = facts.deviceReady ? engine().maxPixels() : 0;
+#endif
+    return facts;
+}
+
+/// The label for the CPU path: the gate's reason, the device's own reason when
+/// the gate was "no device" (that string names the loader, the instance step or
+/// the queue family that failed), and the override when it was not understood.
+std::string cpuLabel(const std::string& reason)
+{
+    std::string text = "CPU - " + reason;
+#ifdef OFXPLUGIN_VULKAN
+    if (!engine().ready()) {
+        const std::string& why = engine().reason();
+        if (!why.empty()) {
+            text += ": ";
+            text += why;
+        }
+    }
+#endif
+    if (!overrideProblem().empty()) {
+        text += "; ";
+        text += overrideProblem();
+    }
+    return text;
+}
+
+/// The device label, or the reason the GPU path is not in use. Written at
+/// construction and again whenever a render's decision differs, so a host that
+/// shows the parameter never reads a stale claim.
+std::string deviceLabel(unsigned int pixels)
+{
+    const vkgain::ModeDecision decision = vkgain::DecideMode(requestedMode(), frameFacts(pixels));
+    if (decision.mode == vkgain::Mode::CpuOnly) {
+        return cpuLabel(decision.reason);
+    }
+#ifdef OFXPLUGIN_VULKAN
+    std::string text = engine().device();
+    if (!overrideProblem().empty()) {
+        text += "; ";
+        text += overrideProblem();
+    }
+    return text;
+#else
+    return cpuLabel(decision.reason);
 #endif
 }
 
@@ -223,16 +321,11 @@ public:
         if (_dstClip == nullptr || _srcClip == nullptr || _gain == nullptr || _device == nullptr) {
             OFX::throwSuiteStatusException(kOfxStatErrMissingHostFeature);
         }
-        // Written once, at construction: the device does not change while the
-        // instance lives, and a read-only parameter the host can show is the
-        // only way this plug-in can say "the frames went through the GPU" -
-        // Resolve offers no other channel (references/resolve-automation.md §15.5).
-        try {
-            _device->setValue(deviceLabel());
-        } catch (const OFX::Exception::Suite&) {
-            // A host may refuse a write to a read-only parameter during create;
-            // the label is a diagnostic, not a contract.
-        }
+        // Written at construction, and again whenever a render's decision differs:
+        // a read-only parameter the host can show is the only way this plug-in can
+        // say "the frames went through the GPU" - Resolve offers no other channel
+        // (references/resolve-automation.md §15.5).
+        setLabel(deviceLabel(1));
     }
 
     void render(const OFX::RenderArguments& args) override
@@ -282,20 +375,28 @@ public:
 
         const float gain = static_cast<float>(_gain->getValueAtTime(args.time));
 
+        // The path decision is a table, not an `if` in here: VulkanMode.h holds
+        // the gates and test/vulkan_mode_test.cpp executes them on a machine with
+        // no device. An override can only demote, so `gpu` without a driver still
+        // renders on the CPU - and says why.
+        const unsigned int pixels = renderPixels(args.renderWindow);
+        const vkgain::ModeDecision decision = vkgain::DecideMode(requestedMode(), frameFacts(pixels));
 #ifdef OFXPLUGIN_VULKAN
-        if (gpuAvailable()) {
+        if (decision.mode == vkgain::Mode::VulkanOnly) {
             std::string error;
             if (vulkanGain(src.get(), dst.get(), args.renderWindow, gain, error)) {
+                setLabel(deviceLabel(pixels));
                 return;
             }
             // A dispatch that fails mid-session is reported, not hidden: the
             // label says why the frame came off the CPU, and the frame is still
             // correct because the fallback is the same arithmetic.
-            try {
-                _device->setValue(std::string("CPU - Vulkan dispatch failed: ") + error);
-            } catch (const OFX::Exception::Suite&) {
-            }
+            setLabel(cpuLabel(std::string("Vulkan dispatch failed: ") + error));
+        } else {
+            setLabel(cpuLabel(decision.reason));
         }
+#else
+        (void)decision;
 #endif
 
         RefGainProcessor processor(*this);
@@ -318,10 +419,26 @@ public:
     }
 
 private:
+    /// Writes the Device label when it changed. A host may refuse a write to a
+    /// read-only parameter during create; the label is a diagnostic, not a
+    /// contract, and a refused write is remembered so the next render retries.
+    void setLabel(const std::string& text)
+    {
+        if (text == _label) {
+            return;
+        }
+        try {
+            _device->setValue(text);
+            _label = text;
+        } catch (const OFX::Exception::Suite&) {
+        }
+    }
+
     OFX::Clip* _dstClip;
     OFX::Clip* _srcClip;
     OFX::DoubleParam* _gain;
     OFX::StringParam* _device;
+    std::string _label;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -44,8 +44,9 @@ in and out, and no attempt to make the host agree.
 `Engine::maxPixels()` exists because `maxComputeWorkGroupCount[0]` is a real
 limit: 4 294 967 040 pixels per dispatch on the RTX 3060 measured here (**[V]**,
 `vulkan_suite`), which is far above any frame, but a device with a small limit
-would otherwise dispatch a silently truncated frame. The template refuses the
-frame instead.
+would otherwise dispatch a silently truncated frame. The fourth gate in
+`VulkanMode.h` turns that into a CPU frame with the reason in the label (§7),
+and `Engine::apply()` still refuses a count it is handed directly.
 
 ## 3. Two memory arrangements, and what they cost
 
@@ -149,11 +150,60 @@ SPIR-V is produced at build time by `glslc`/`glslang` and embedded as a header
 (`cmake/spv-header.cmake`), so the bundle carries no `.spv`, nothing resolves a
 shader path at run time, and the shader compiler is a build dependency only.
 
-## 7. The two runners, and the one step that decides the template
+## 7. Choosing the path: six gates, one environment override
 
-`test/run-tests.bat` and `test/run-tests.sh` run the same five steps in the same
-order - build and artifact, the host contract through the fake host, the install
-round trip, and the device self-test - and they decide the last one the same way:
+`src/VulkanMode.h` holds the decision between the device and the CPU loop and
+nothing else - no Vulkan headers, no OFX headers - so the same table is compiled
+into the plug-in and into `test/vulkan_mode_test.cpp`, which executes it on a
+machine with no device, no loader and no SDK (**[V]**,
+[`../evidence/2026-11-27-windows/vulkan-mode-policy.log`](../evidence/2026-11-27-windows/vulkan-mode-policy.log)).
+That is the split `minimal-cuda-ofx`'s `ExecutionMode.h` uses, for the same
+reason: the machine that has to trust the gates is the one without the hardware.
+
+| # | Gate | Result |
+|---|---|---|
+| 0 | `OFXPLUGIN_VULKAN_MODE=cpu` | CPU - the switch that makes the fallback testable where a device exists |
+| 1 | built with `-DOFXPLUGIN_VULKAN=OFF` | CPU |
+| 2 | no instance, device or compute queue | CPU, with the engine's own reason appended to the label |
+| 3 | an empty render window | CPU |
+| 4 | more pixels than `maxPixels()` | CPU; the dispatch would be truncated |
+| 5 | `OFXPLUGIN_VULKAN_MODE=gpu` | the device, if gates 1-4 passed |
+| 6 | auto | the device, if gates 1-4 passed |
+
+**Every gate can only demote.** `gpu` on a machine without a driver renders on
+the CPU and the label says why, which is the rule the CUDA template states for
+its own override; `cpu` is the one gate no fact can override. A word that is not
+`auto`, `cpu` or `gpu` reads as auto and is named in the label - an override that
+silently does nothing is how a "the CPU path was tested" claim gets made about a
+run that never left the device.
+
+**A CPU-only configure is the same gate, not a separate build.** With
+`-DOFXPLUGIN_VULKAN=OFF` the plug-in and this test compile without
+`vulkan/vulkan.h` at all - the device translation unit is only added in the
+branch that found the headers, which is a fix this template needed: it used to be
+listed unconditionally and the CPU-only configure could not parse it on a machine
+without the SDK. That bundle's label reads
+`CPU - built with -DOFXPLUGIN_VULKAN=OFF`, and the contract harness asserts the
+string in the same log (**[V]**,
+[`../evidence/2026-11-27-windows/vulkan-mode-policy.log`](../evidence/2026-11-27-windows/vulkan-mode-policy.log)).
+
+**The override is what made the CPU path testable.** Before it, a machine with a
+device always took the device and a machine without one always took the loop, so
+no single run could assert both. Both runners now render once with
+`OFXPLUGIN_VULKAN_MODE=cpu` and require the `Device` parameter to read `CPU - ...`
+after the render: one named check in the contract suite, on a machine whose
+device is present and working. The policy test prints **29 checks**, and they are
+the gates rather than the pixels - parsing including the typo and the
+case-sensitivity, the empty window, `maxPixels` exactly and one past it, and that
+neither override can promote past a gate. That the dispatch agrees with the CPU
+loop is still `vulkan_suite`'s question, and it still needs the hardware.
+
+## 8. The two runners, and the steps that decide the template
+
+`test/run-tests.bat` and `test/run-tests.sh` run the same six steps in the same
+order - build, the path-policy test, artifact, the host contract through the fake
+host (which includes one render with the CPU override), the install round trip,
+and the device self-test - and they decide the last one the same way:
 **exit 0 is a pass, exit 2 is the suite's "no Vulkan device on this machine" and
 reports `NOT VERIFIED`, anything else fails the run**. `NOT VERIFIED` is the
 answer for a CPU-only configure as well (`OFXPLUGIN_VULKAN=OFF`, which the shell
@@ -169,7 +219,7 @@ The shell runner's device branch is exercised without a device - stubs that exit
 machine has Windows, and the repo's `run-tests.sh` sends the Windows path to the
 `.bat`.
 
-## 8. What has not been measured here
+## 9. What has not been measured here
 
 - **No host render.** No host has loaded the Vulkan template and rendered a
   frame; the device suite and the host contract suite are the two halves that

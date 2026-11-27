@@ -5,22 +5,27 @@
 # Both run the same five steps in the same order, and both decide the device
 # step the same way:
 #
-#   [1/5] build     build.sh, which inspects the artifact as it goes (nm,
-#                   readelf) - the same inspection the .bat runs as its step 2
-#   [2/5] artifact  the two claims read again, here as the point of the step
+#   [1/6] build     build.sh, which inspects the artifact as it goes (nm,
+#                   readelf) - the same inspection the .bat runs as its step 3
+#   [2/6] mode      vulkan_mode_test: the six gates that choose between the
+#                   device and the CPU loop. Policy only, so it needs no Vulkan
+#                   headers, no loader and no device - the same binary and the
+#                   same cases as the .bat's step 2
+#   [3/6] artifact  the two claims read again, here as the point of the step
 #                   rather than as a side effect: exactly the two OFX exports
 #                   and no undefined OFX symbol. The .bat gets the same answer
 #                   from testkit/check-ofx-artifact.bat; the tools differ, the
 #                   claims do not.
-#   [3/5] contract  build-contract-test.sh, then the host protocol - load,
+#   [4/6] contract  build-contract-test.sh, then the host protocol - load,
 #                   describe, describeInContext, createInstance, render,
-#                   destroy, unload - once per host shape, and once more with
-#                   both capability writes refused, which is the only run that
-#                   executes the guard around them
-#   [4/5] install   cmake --install into a temporary prefix and the same
+#                   destroy, unload - once per host shape, once more with both
+#                   capability writes refused (the only run that executes the
+#                   guard around them), and once with OFXPLUGIN_VULKAN_MODE=cpu
+#                   so the label has to say the frame came off the CPU
+#   [5/6] install   cmake --install into a temporary prefix and the same
 #                   contract against the installed copy, because the build tree
 #                   is not an install
-#   [5/5] device    the device self-test: the shader, the descriptor set, the
+#   [6/6] device    the device self-test: the shader, the descriptor set, the
 #                   dispatch, both memory arrangements and the two refusals.
 #                   Exit 0 is a pass, exit 2 is the suite's "no Vulkan device on
 #                   this machine" and reports NOT VERIFIED, anything else is a
@@ -63,9 +68,9 @@ for argument in "$@"; do
 done
 
 if [[ "${NOBUILD}" == "1" ]]; then
-  echo "== [1/5] build skipped (nobuild; OFXPLUGIN_VULKAN=${VULKAN}) =="
+  echo "== [1/6] build skipped (nobuild; OFXPLUGIN_VULKAN=${VULKAN}) =="
 else
-  echo "== [1/5] build (artifact checks run inside build.sh; OFXPLUGIN_VULKAN=${VULKAN}) =="
+  echo "== [1/6] build (artifact checks run inside build.sh; OFXPLUGIN_VULKAN=${VULKAN}) =="
   OFXPLUGIN_VULKAN="${VULKAN}" "${TPL}/build.sh"
 fi
 
@@ -78,11 +83,24 @@ fi
 OFX_DIR="${OFX_SOURCE_DIR:-${ROOT}/.ofx-ref}"
 HARNESS="${TPL}/build/contract_test"
 
+# The one step that needs nothing at all: VulkanMode.h is policy only (no Vulkan
+# headers, no OFX headers), so the table that decides between the device and the
+# CPU loop is compiled and executed on a machine with no driver. Built
+# unconditionally, so a -DOFXPLUGIN_VULKAN=OFF configure has to pass it too.
+echo
+echo "== [2/6] path policy (six gates, no device needed) =="
+MODETEST="${TPL}/build/self-test/vulkan_mode_test"
+if [[ ! -x "${MODETEST}" ]]; then
+  echo "error: no ${MODETEST} - the configure did not build the policy test" >&2
+  exit 1
+fi
+"${MODETEST}"
+
 echo
 # The build already read these two claims; a pass there and a failure here would
 # mean the artifact changed between the two reads, which is worth a step of its
-# own - and it is the step the .bat has (its [2/5]) with a different reader.
-echo "== [2/5] artifact (exports, undefined OFX symbols) =="
+# own - and it is the step the .bat has (its [3/6]) with a different reader.
+echo "== [3/6] artifact (exports, undefined OFX symbols) =="
 if ! command -v nm >/dev/null 2>&1; then
   echo "  FAIL: nm is not on PATH, so the artifact cannot be read here" >&2
   exit 1
@@ -111,7 +129,7 @@ echo "  undefined OFX symbols: none"
 # header says "none" must not be mistaken for an instrumented one, and the CI
 # job greps this line to prove the build it credits was built that way.
 echo
-echo "== [3/5] host contract (dlopen + fake host; sanitizer: ${SANITIZE:-none}) =="
+echo "== [4/6] host contract (dlopen + fake host; sanitizer: ${SANITIZE:-none}) =="
 SANITIZE="${SANITIZE:-}" "${ROOT}/testkit/build-contract-test.sh" "${HARNESS}" "${OFX_DIR}"
 
 # One process holds one host - OfxSetHost ignores every call after the first -
@@ -164,13 +182,27 @@ echo "  host profile: resolve, refusing both capability writes"
   --reject-property kOfxImageEffectPropNoSpatialAwareness \
   "${HARNESS_ARGS[@]}"
 
+# The one path a machine with a device cannot reach otherwise: the override makes
+# VulkanMode.h's first gate say CPU, the plug-in writes that decision into the
+# Device parameter after a real render, and --label-contains fails the run if the
+# label does not carry it. Without the switch this assertion could only be made
+# on a machine that has no Vulkan driver - and the value of the switch is exactly
+# that the fallback is exercised where the device exists. On a machine with no
+# device the same label comes from the second gate, so the run passes there too;
+# only this run proves the override reaches the render.
+echo "  host profile: resolve, OFXPLUGIN_VULKAN_MODE=cpu (forced CPU path)"
+OFXPLUGIN_VULKAN_MODE=cpu "${HARNESS}" "${OFX_FILE}" --host-profile resolve \
+  --id com.ofxplugindeveloper.vulkaingain --version 1.0 --param gain:double \
+  --clip Source --clip Output \
+  --label-param device --label-contains device=CPU
+
 echo
 # The build tree is not an install: a host loads what is under OFX/Plugins, so
 # `cmake --install` into a throwaway prefix is the move that exposes a path or a
 # dependency that only ever resolved inside the build directory (an $ORIGIN RPATH
 # that pointed back at build/, a resource only the build wrote there). The harness
 # then renders one frame from the installed copy.
-echo "== [4/5] install and load the installed copy =="
+echo "== [5/6] install and load the installed copy =="
 INSTALL_PREFIX="$(mktemp -d)"
 cmake --install "${TPL}/build" --prefix "${INSTALL_PREFIX}" > "${INSTALL_PREFIX}/install.log" 2>&1 || {
   cat "${INSTALL_PREFIX}/install.log" >&2
@@ -188,7 +220,7 @@ echo "  ${INSTALLED}"
 rm -rf "${INSTALL_PREFIX}"
 
 echo
-echo "== [5/5] device suite (Vulkan vs CPU) =="
+echo "== [6/6] device suite (Vulkan vs CPU) =="
 # The half a host run cannot prove cheaply: the shader, the descriptor set, the
 # dispatch, both memory arrangements and the two refusals. Guarded rather than
 # assumed - a machine with no Vulkan device, or a CPU-only configure, reports

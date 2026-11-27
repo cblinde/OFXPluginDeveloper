@@ -22,13 +22,13 @@ below is the checks, not the compiler.
 | `minimal-ofx`: build, artifact, contract ×5, install/load | 10 s | 562 | `all Windows checks passed` |
 | `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 23 s | 486 | `all Windows checks passed` |
 | `minimal-opencl-ofx`: build, artifact, contract ×3, `opencl_suite` | 15 s | 354 + 38 | `OK: the OpenCL template passed on this machine` |
-| `minimal-vulkan-ofx`: build, artifact, contract ×5, `vulkan_suite` | 18 s | 562 + 26 | `all Windows checks passed` |
+| `minimal-vulkan-ofx`: build, path policy, artifact, contract ×6, install, `vulkan_suite` | 20 s | 656 + 29 + 26 | `all Windows checks passed` |
 | `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 26 s | 778 | `all checks passed` |
 | negative controls: `testkit/run-negative-controls.bat` | 12 s | 223 in 8 runs | 8 caught, every one expected |
-| **total** | **116 s** | **2,806 passing + 223 deliberately failing** | - |
+| **total** | **118 s** | **2,929 passing + 223 deliberately failing** | - |
 
 **The total is a sum, not one stopwatch.** The eight rows are eight separately
-timed commands, and 116 s is what they add up to. Seven of them - the two
+timed commands, and 118 s is what they add up to. Seven of them - the two
 documentation gates and the five template suites - ran in one pass; the
 negative controls ran in a second pass about a minute later, which is where the
 223 checks of the eight deliberately failing runs come from. The minute of
@@ -40,13 +40,14 @@ says the same).
 A cold checkout is a different number, and the difference is the compiler: this
 table was taken after the run that built all five templates, which is the larger
 cost and depends on the toolchain rather than on the tests. What the table is
-good for is the shape: the five template suites are 92 s of the 116, the two
+good for is the shape: the five template suites are 94 s of the 118, the two
 documentation gates 12 s, the negative controls 12 s - and no single suite needs
 long enough that a contributor would skip it.
 
 ## 2. How the counters add up
 
-**2,806** is 562 + 486 + (354 + 38) + (562 + 26) + 778, every one printed by the
+**2,929** is 562 + 486 + (354 + 38) + (656 + 29 + 26) + 778, every one
+printed by the
 suite that ran it as `contract_test: N checks, 0 failed` or `opencl_suite:` /
 `vulkan_suite: N checks, 0 failed`. A check is one assertion: one struct field,
 one action answer, one pixel comparison, one label.
@@ -176,7 +177,7 @@ asserts outputs, provider labels and fallbacks, not throughput.
 - **One GPU, one driver, one toolkit.** RTX 3060, CUDA 13.5 UMD, toolkit 13.0.48,
   desktop Windows. A workstation card with more PCIe lanes moves the copy column,
   and a tiled host removes the round trip entirely - neither was measured
-  ([`vulkan-compute.md`](vulkan-compute.md) §8 lists the same gap from its side).
+  ([`vulkan-compute.md`](vulkan-compute.md) §9 lists the same gap from its side).
 - **Pageable copies only.** Neither path used pinned memory for the timing loop;
   a pinned host buffer is the one change most likely to move the Vulkan copy
   column, and it was not tried.
