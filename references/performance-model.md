@@ -414,6 +414,41 @@ half the traffic for the same frame **[A]** - and the only honest statement abou
 it is that it has not been measured. The 32F numbers in §3.1 are not this
 kernel's.
 
+### 3.8 The two OpenCL handovers, measured
+
+A host that renders with OpenCL can hand a plug-in its pixels two ways, and
+`ofxGPURender.h` defines both: a `cl_mem` buffer addressed with
+`kOfxImagePropRowBytes`, and an `image2d_t` addressed by coordinates. Whether the
+second is a fast path or a hidden copy is a driver question, and until 2026-11-28
+nothing here measured it. The template's suite now ends with a timed section
+(`opencl_suite <bundle> --frames N`, default 120) that renders the same 1080p
+frame through both and prints milliseconds per frame **[V]**
+([evidence](../evidence/2026-11-28-windows/opencl-handover-timing.log)):
+
+| Handover, 1080p | ms/frame, 300 frames (min / median / max of 10 runs) | GB/s |
+|---|---|---|
+| Buffers, `cl_mem` + `rowBytes` | **12.17 / 12.50 / 14.12** | 4.7 - 5.5 |
+| Images, `image2d_t` | **13.25 / 13.61 / 15.75** | 4.2 - 5.0 |
+
+Images was slower in every one of the sixteen paired runs kept in the log, at 120
+frames as well (+8.0%) as at 300 (+8.9%). That answers the row both ways: there is
+no hidden full-frame copy behind `image2d_t` - a copy would cost a multiple, not a
+tenth - and it is not the fast path either; on this driver the plain buffer is the
+better transport, by a margin worth knowing and not worth architecting around.
+
+**What the number contains, and what it is not.** `FakeHost::render()` finishes
+the host's queue and reads the frame back every time, so the timed span is a full
+round trip: the plug-in's enqueue, `clFinish`, and a blocking readback of 33.2 MB.
+That is why these sit at 12-15 ms while the CUDA rows of
+[`runtime-comparison.md`](runtime-comparison.md) §3 report 0.20-0.31 ms for a
+frame of the same size - those are kernel only, with the pixels already resident -
+and the two must not be subtracted from each other. Inside a round trip the
+transport is a tenth of the cost, which is also the limit of this measurement: to
+price the kernel alone the timing would have to come from OpenCL events around the
+enqueue rather than from a wall clock around the host's readback. Nothing here
+says anything about a host that keeps the frame on the device, and nothing about
+another driver.
+
 ---
 
 ## 4. Prove what you built (10 seconds, catches the worst class of bug)

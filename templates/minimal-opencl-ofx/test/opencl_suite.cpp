@@ -37,7 +37,9 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -178,12 +180,21 @@ bool sameBits(const std::vector<float>& a, const std::vector<float>& b)
 int main(int argc, char** argv)
 {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: %s <plugin.ofx>\n", argv[0]);
+        std::fprintf(stderr, "usage: %s <plugin.ofx> [--frames N]\n", argv[0]);
         return 2;
     }
     const char* path = argv[1];
+    // The timed section at the end renders 1080p frames; 120 of them cost a
+    // fraction of a second on any device this suite runs on, and the argument
+    // exists so a machine can ask for more without a rebuild.
+    int benchFrames = 120;
+    for (int i = 2; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            benchFrames = std::atoi(argv[++i]);
+        }
+    }
 
-    std::printf("[1/8] loading %s\n", path);
+    std::printf("[1/9] loading %s\n", path);
     void* lib = loadModule(path);
     if (lib == nullptr) {
         std::fprintf(stderr, "FAIL: %s\n", moduleError(path).c_str());
@@ -202,7 +213,7 @@ int main(int argc, char** argv)
           "the module identifies itself as com.ofxplugindeveloper.openclgain");
 
     testkit::FakeHost host;
-    std::printf("[2/8] opening an OpenCL device for the host to hand over\n");
+    std::printf("[2/9] opening an OpenCL device for the host to hand over\n");
     if (!host.setOpenCL(true)) {
         std::fprintf(stderr,
                      "no OpenCL device: nothing to test (set OPENCL_LOADER_LIB / OCL_ICD_VENDORS)\n");
@@ -234,14 +245,14 @@ int main(int argc, char** argv)
     host.setSourcePixels(src, kWidth, kHeight);
     const OfxRectI full{0, 0, kWidth, kHeight};
 
-    std::printf("[3/8] the CPU path, with the host offering no device\n");
+    std::printf("[3/9] the CPU path, with the host offering no device\n");
     host.setOpenCL(false);
     check(host.render(0.0, full) == kOfxStatOK, "render answered kOfxStatOK without OpenCL");
     const std::vector<float> cpu = host.destination();
     check(sameBits(cpu, scale(src, 2.0f)), "the CPU frame is the source times two, bit for bit");
     check(!host.openclDestinationWritten(), "no device buffer was written while OpenCL was off");
 
-    std::printf("[4/8] the same render with the device enabled\n");
+    std::printf("[4/9] the same render with the device enabled\n");
     check(host.setOpenCL(true), "the host re-opened the device");
     check(host.render(0.0, full) == kOfxStatOK, "render answered kOfxStatOK with OpenCL enabled");
     check(host.openclDestinationWritten(),
@@ -253,7 +264,7 @@ int main(int argc, char** argv)
               std::to_string(fullDelta.inside) + ")");
     check(alphaUnchanged(device, src), "alpha is untouched by the gain (Buffers handover)");
 
-    std::printf("[5/8] a render window smaller than the frame\n");
+    std::printf("[5/9] a render window smaller than the frame\n");
     check(host.setParam("gain", "3.0"), "the host set gain to 3.0");
     const OfxRectI window{5, 7, 29, 31};
     check(host.render(0.0, window) == kOfxStatOK, "render answered kOfxStatOK for the window");
@@ -264,7 +275,7 @@ int main(int argc, char** argv)
     check(outWindow.outside == 0.0,
           "outside the window the previous frame is untouched (the kernel wrote no padding)");
 
-    std::printf("[6/8] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage\n");
+    std::printf("[6/9] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage\n");
     if (!host.openclImageSupport()) {
         std::printf("  NOT RUN: the device reports no image support (nothing to test)\n");
     } else {
@@ -308,18 +319,66 @@ int main(int argc, char** argv)
               "the buffers handover still renders after the image one");
     }
 
-    std::printf("[7/8] a negative row pitch is refused, not walked backwards\n");
+    std::printf("[7/9] a negative row pitch is refused, not walked backwards\n");
     host.setNegativePitch(true);
     host.setParam("gain", "2.0");
     const OfxStatus refused = host.render(0.0, full);
     check(refused != kOfxStatOK, "render refused a negative row pitch on an OpenCL buffer");
     check(!host.openclDestinationWritten(), "the refusal wrote nothing into the device buffer");
 
+    std::printf("[8/9] the two handovers at 1080p, timed\n");
+    // The row this closes asked whether image2d_t is the fast path or a hidden
+    // copy. Same pixels, same gain, same bytes to move; the only difference is
+    // which kernel and which cl_mem the plug-in is handed. What is timed is the
+    // round trip FakeHost::render() makes - the plug-in's enqueue, the host's
+    // clFinish and the blocking readback - because the kernel alone is not
+    // separable through that door. Both handovers pay that readback, so the
+    // difference between the two lines is the transport; these are not the CUDA
+    // rows' kernel-only figures and must not be read against them.
+    {
+        constexpr int kBenchWidth = 1920;
+        constexpr int kBenchHeight = 1080;
+        const OfxRectI benchRect{0, 0, kBenchWidth, kBenchHeight};
+        // The refusal check above left the host offering a backwards row pitch.
+        host.setNegativePitch(false);
+        const double moved =
+            2.0 * kBenchWidth * kBenchHeight * 4 * static_cast<double>(sizeof(float));
+        host.setParam("gain", "2.0");
+        host.setSourcePixels(gradient(kBenchWidth, kBenchHeight), kBenchWidth, kBenchHeight);
+
+        auto bench = [&](testkit::OpenCLHandover handover, const char* label) {
+            host.setOpenCLHandover(handover);
+            // One frame before the clock: the program compile, the allocation and
+            // the driver's first touch are setup, not transport.
+            if (host.render(0.0, benchRect) != kOfxStatOK) {
+                std::printf("  NOT RUN: the %s handover refused a %dx%d frame\n", label,
+                            kBenchWidth, kBenchHeight);
+                return;
+            }
+            const auto start = std::chrono::steady_clock::now();
+            for (int i = 0; i < benchFrames; ++i) host.render(static_cast<double>(i), benchRect);
+            const auto stop = std::chrono::steady_clock::now();
+            const double ms =
+                std::chrono::duration<double, std::milli>(stop - start).count() / benchFrames;
+            const double gbs = moved / (ms * 1e6);
+            std::printf("  %-8s %d frames, %.3f ms/frame, %.1f GB/s "
+                        "(%.1f MB read + %.1f MB written)\n",
+                        label, benchFrames, ms, gbs, moved / 2e6, moved / 2e6);
+        };
+
+        bench(testkit::OpenCLHandover::Buffers, "buffers");
+        if (host.openclImageSupport()) {
+            bench(testkit::OpenCLHandover::Images, "images");
+        } else {
+            std::printf("  images   NOT RUN: the device reports no image support\n");
+        }
+    }
+
     // A host that loads the plug-in also lets it go: destroy the instance (so
     // the runtime releases the programs and kernels it built) and unload (so the
     // factory map goes). Without this the suite leaves several megabytes behind,
     // which is a leak in the test, not in the plug-in.
-    std::printf("[8/8] the host destroys the instance and unloads the plug-in\n");
+    std::printf("[9/9] the host destroys the instance and unloads the plug-in\n");
     check(host.destroyInstance() == kOfxStatOK,
           "kOfxActionDestroyInstance answered kOfxStatOK");
     check(host.unload() == kOfxStatOK, "kOfxActionUnload answered kOfxStatOK");

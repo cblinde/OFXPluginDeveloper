@@ -1,0 +1,80 @@
+OpenCL handover timing - the two handovers of ofxGPURender.h on one 1080p frame
+
+Machine : Windows 10.0.19045, NVIDIA GeForce RTX 3060, OpenCL 3.0 CUDA (NVIDIA platform)
+Build   : templates/minimal-opencl-ofx/test/run-tests.bat, MSVC Release, bundle rebuilt from
+          an empty build/ directory in this session; the timed section is in
+          templates/minimal-opencl-ofx/test/opencl_suite.cpp ("[8/9] the two handovers at
+          1080p, timed"), reached through the suite's --frames argument
+Command : opencl_suite <bundle>/Contents/Win64/OpenCLGain.ofx --frames N
+
+Result  : images (image2d_t) is slower than buffers (cl_mem) in every one of the 16 paired
+          runs kept here - median 12.50 vs 13.61 ms/frame at 300 frames (+8.9%) and 13.66
+          vs 14.75 at 120 frames (+8.0%). A hidden full-frame copy would cost a multiple,
+          not a tenth, so image2d_t is neither the fast path nor a disguised copy on this
+          driver: it is the slightly slower of the two.
+          What the span contains: the whole FakeHost::render() round trip - the plug-in's
+          enqueue, the host's clFinish, and the blocking readback of 33.2 MB - so these are
+          not kernel-only figures and must not be read against the CUDA rows in
+          references/runtime-comparison.md section 3 (0.20-0.31 ms, frame resident).
+
+=== ten paired runs, 300 frames each ===
+  buffers  300 frames, 12.631 ms/frame, 5.3 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 13.430 ms/frame, 4.9 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 12.256 ms/frame, 5.4 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 13.260 ms/frame, 5.0 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 12.234 ms/frame, 5.4 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 13.294 ms/frame, 5.0 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 12.592 ms/frame, 5.3 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 13.785 ms/frame, 4.8 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 12.234 ms/frame, 5.4 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 13.251 ms/frame, 5.0 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 12.172 ms/frame, 5.5 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 13.246 ms/frame, 5.0 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 12.401 ms/frame, 5.4 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 14.865 ms/frame, 4.5 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 13.486 ms/frame, 4.9 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 14.911 ms/frame, 4.4 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 14.121 ms/frame, 4.7 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 15.752 ms/frame, 4.2 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+  buffers  300 frames, 14.079 ms/frame, 4.7 GB/s (33.2 MB read + 33.2 MB written)
+  images   300 frames, 15.456 ms/frame, 4.3 GB/s (33.2 MB read + 33.2 MB written)
+opencl_suite: 38 checks, 0 failed
+
+=== six paired runs, 120 frames each (the suite's default) ===
+  buffers  120 frames, 13.615 ms/frame, 4.9 GB/s (33.2 MB read + 33.2 MB written)
+  images   120 frames, 14.585 ms/frame, 4.5 GB/s (33.2 MB read + 33.2 MB written)
+  buffers  120 frames, 13.693 ms/frame, 4.8 GB/s (33.2 MB read + 33.2 MB written)
+  images   120 frames, 14.420 ms/frame, 4.6 GB/s (33.2 MB read + 33.2 MB written)
+  buffers  120 frames, 13.628 ms/frame, 4.9 GB/s (33.2 MB read + 33.2 MB written)
+  images   120 frames, 15.921 ms/frame, 4.2 GB/s (33.2 MB read + 33.2 MB written)
+  buffers  120 frames, 14.308 ms/frame, 4.6 GB/s (33.2 MB read + 33.2 MB written)
+  images   120 frames, 15.653 ms/frame, 4.2 GB/s (33.2 MB read + 33.2 MB written)
+  buffers  120 frames, 13.800 ms/frame, 4.8 GB/s (33.2 MB read + 33.2 MB written)
+  images   120 frames, 14.811 ms/frame, 4.5 GB/s (33.2 MB read + 33.2 MB written)
+  buffers  120 frames, 13.585 ms/frame, 4.9 GB/s (33.2 MB read + 33.2 MB written)
+  images   120 frames, 14.699 ms/frame, 4.5 GB/s (33.2 MB read + 33.2 MB written)
+
+=== the suite as run-tests.bat invokes it, device and section output ===
+[2/9] opening an OpenCL device for the host to hand over
+  platform: NVIDIA CUDA
+  device  : NVIDIA GeForce RTX 3060 (OpenCL 3.0 CUDA)
+[8/9] the two handovers at 1080p, timed
+  buffers  120 frames, 13.172 ms/frame, 5.0 GB/s (33.2 MB read + 33.2 MB written)
+  images   120 frames, 14.215 ms/frame, 4.7 GB/s (33.2 MB read + 33.2 MB written)
+[9/9] the host destroys the instance and unloads the plug-in
+
+=== statistics ===
+300 frames: buffers min 12.17 median 12.50 max 14.12 (4.7-5.5 GB/s)
+            images  min 13.25 median 13.61 max 15.75 (4.2-5.0 GB/s)   ratio 1.089
+120 frames: buffers min 13.59 median 13.66 max 14.31 (4.6-4.9 GB/s)
+            images  min 14.42 median 14.75 max 15.92 (4.2-4.6 GB/s)   ratio 1.080
+checks    : opencl_suite 38 checks, 0 failed in every run (the timed section adds no checks)
