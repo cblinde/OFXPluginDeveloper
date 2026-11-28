@@ -111,48 +111,6 @@ ExecutionMode RequestedMode()
     return requested;
 }
 
-/// "" or the sentence a label appends when the override was not understood.
-///
-/// The log line below reports the same thing, and the log is not a channel a host
-/// keeps: Resolve writes its own OFX lines and none of what the plug-in prints
-/// (measured 2026-11-26). A typo therefore reaches the Device parameter, which is
-/// the one place a user or a harness can read it back.
-std::string overrideProblem()
-{
-    const char* text = std::getenv("OFXPLUGIN_GPU_MODE");
-    if (text == nullptr || *text == '\0') {
-        return std::string();
-    }
-    bool recognised = true;
-    ParseModeOverride(text, &recognised);
-    if (recognised) {
-        return std::string();
-    }
-    return std::string("OFXPLUGIN_GPU_MODE='") + text + "' is not auto|cpu|cuda|hybrid";
-}
-
-/// Any label text with the override sentence appended when the word was not
-/// understood. One place, because the label has two authors - the gates in the
-/// device path and the CPU loop the Support library calls directly - and a second
-/// copy is how one of them ends up without it (this happened: the plain CPU path
-/// wrote its reason and no sentence, and the contract check caught it).
-std::string withOverride(std::string text)
-{
-    const std::string problem = overrideProblem();
-    if (!problem.empty()) {
-        text += "; ";
-        text += problem;
-    }
-    return text;
-}
-
-/// The Device label for a decision: the mode, the reason, and the override when
-/// it was not understood.
-std::string pathLabel(const ModeDecision& decision)
-{
-    return withOverride(std::string(ModeName(decision.mode)) + " - " + decision.reason);
-}
-
 /// One line per render into $MCOFX_PATH_LOG, so a host run can be read back
 /// afterwards. Pixels cannot answer two questions a host run is asked: which
 /// path produced the frame, and whether the host supplied
@@ -352,7 +310,7 @@ void GainProcessor::processImagesCuda()
         width, height, static_cast<std::int64_t>(bytesPerPixel)));
     if (decision.mode == ExecutionMode::CpuOnly) {
         OFX::Log::print("Minimal CUDA Gain: CPU_ONLY (%s)", decision.reason);
-        static_cast<GainPlugin&>(_effect).setDeviceLabel(pathLabel(decision));
+        static_cast<GainPlugin&>(_effect).setDeviceLabel(PathLabel(decision));
         multiThreadProcessImages(_renderWindow);
         return;
     }
@@ -402,7 +360,7 @@ void GainProcessor::processImagesCuda()
                     _pCudaStream == nullptr ? "not supplied by the host" : "supplied by the host",
                     decision.reason);
     recordPath("CUDA", width, height, _pCudaStream, true);
-    static_cast<GainPlugin&>(_effect).setDeviceLabel(pathLabel(decision));
+    static_cast<GainPlugin&>(_effect).setDeviceLabel(PathLabel(decision));
 
     // The OFX contract is asymmetric and this branch is the whole contract:
     //   * host supplied kOfxImageEffectPropCudaStream -> return immediately,
@@ -429,7 +387,7 @@ void GainProcessor::multiThreadProcessImages(OfxRectI window)
     // OFX::Log::print here - a tiled or multithreaded host would call this once
     // per window, and the file is the channel the harness can read.
     recordPath("CPU", window.x2 - window.x1, window.y2 - window.y1, nullptr, false);
-    static_cast<GainPlugin&>(_effect).setDeviceLabelOnce(withOverride(
+    static_cast<GainPlugin&>(_effect).setDeviceLabelOnce(WithOverride(
         "CPU_ONLY - the host did not set kOfxImageEffectPropCudaEnabled, so the pixels are host pointers"));
 
     for (int y = window.y1; y < window.y2; ++y) {

@@ -1,0 +1,57 @@
+# The Device label, branch by branch - minimal-cuda-ofx, Windows 11 + RTX 3060, 2026-11-28
+#
+# The contract suite can only render the CPU branch: FakeHost::render() sets
+# kOfxImageEffectPropCudaEnabled=0 at all three call sites, so the plug-in's own
+# PathLabel() is exercised with the host-pointer facts and the label reads
+# "CPU_ONLY - ...". The CUDA_ONLY wording is reached in processImagesCuda(), which
+# needs a host that hands device pointers - no host on this machine does (Resolve's
+# script server refuses, Natron is not installed, the fake host does not hand CUDA).
+#
+# So the label moved into src/ExecutionMode.h, where the plug-in and the mode test call
+# one PathLabel(), and the mode test now asserts the CUDA_ONLY side and prints every
+# label it sees. What that proves: the string, for both branches, through the function
+# the plug-in uses. What it does not prove: the property write on a CUDA render - that
+# still needs a host or a fake host that hands a device pointer, and it is named as
+# unproven in references/cuda-streams-and-memory.md section 4.
+#
+# Command: templates/minimal-cuda-ofx/test/run-tests.bat Release (which builds the
+# plug-in, runs the contract suite three times plus the gpux pass, then the mode test).
+
+## The run
+
+== [0/4] build (Release) ==
+[0/2] Re-checking globbed directories...
+[1/2] Building CXX object CMakeFiles\execution_mode_test.dir\test\execution_mode_test.cpp.obj
+[2/2] Linking CXX executable execution_mode_test.exe
+== [1/4] artifact (exports, dependents, device code) ==
+== [2/4] GPU harness (real device code, not emulated) ==
+== the minimal-cuda-ofx kernels on real hardware ==
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+[3/6] concurrent launches from host threads
+[4/6] zero-copy on host-mapped memory
+[5/6] both kernels launched directly (bypassing the launcher)
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
+== [3/4] host contract (LoadLibraryExW + fake host) ==
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 98 checks, 0 failed
+== [4/4] execution-mode gates (no GPU needed) ==
+  label: CUDA_ONLY - CUDA_ONLY requested
+  label: CUDA_ONLY - no independent CPU work to overlap
+  label: CPU_ONLY - the host did not set kOfxImageEffectPropCudaEnabled, so the pixels are host pointers
+  label: CUDA_ONLY - CUDA_ONLY requested; OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid
+execution_mode_test: 38 cases, 0 failed
+all Windows checks passed
+
+## What the four labels read, verbatim
+
+  CUDA_ONLY - CUDA_ONLY requested
+  CUDA_ONLY - no independent CPU work to overlap
+  CPU_ONLY - the host did not set kOfxImageEffectPropCudaEnabled, so the pixels are host pointers
+  CUDA_ONLY - CUDA_ONLY requested; OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid
+
+# The first, second and fourth are new here; the third was already asserted by the
+# contract run (evidence/2026-11-28-windows/cuda-typo-label.log) and is repeated by
+# the mode test so a change to the wording breaks one place, not two.

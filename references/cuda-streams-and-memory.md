@@ -164,11 +164,29 @@ gates, one function, and a test that runs without a GPU.
 | Piece | Where it lives | Status |
 |---|---|---|
 | The four gates, override parser, decision reasons | `templates/minimal-cuda-ofx/src/ExecutionMode.h` | **[V]** - no CUDA headers, compiled into the plug-in and into the test |
-| The gate truth table, 34 cases | `templates/minimal-cuda-ofx/test/execution_mode_test.cpp`, run by both template runners | **[V]** 34 cases, 0 failed | - log: [`execution-modes.log`](../evidence/2026-11-27-windows/execution-modes.log), and at the end of a full suite run [`cuda-suite.log`](../evidence/2026-11-27-windows/cuda-suite.log) and [`cuda-suite-rebuild.log`](../evidence/2026-11-27-windows/cuda-suite-rebuild.log)
+| The gate truth table and the Device label, 38 cases | `templates/minimal-cuda-ofx/test/execution_mode_test.cpp`, run by both template runners | **[V]** 38 cases, 0 failed - four of them the label, which print what they read | - log: [`cuda-label-branches.log`](../evidence/2026-11-28-windows/cuda-label-branches.log), and [`execution-modes.log`](../evidence/2026-11-27-windows/execution-modes.log) for the gates before the label cases |
 | Device memory query | `DeviceMemoryFreeBytes()` in `Kernel.cu`, `cudaMemGetInfo` under the hood | **[V]** compiled and linked; the value is read at render time |
-| The decision at render time | `Plugin.cpp`, `processImagesCuda()`, logged once per render with its reason **and** written into the read-only `device` parameter | **[V]** the log line names mode, depth, size, stream and reason; the label carries the mode and reason a host can show |
+| The decision at render time | `Plugin.cpp`, `processImagesCuda()`, logged once per render with its reason **and** written into the read-only `device` parameter | **[V]** for the string: `PathLabel()` in `ExecutionMode.h` gives the mode and reason, asserted for both branches; the **property write during a CUDA render is unproven** - see 4.0 |
 | Override | `OFXPLUGIN_GPU_MODE=auto|cpu|cuda|hybrid`; an unknown word is reported, not silently ignored | **[V]** - the parser in the 34-case test, and the word itself on the `device` label, asserted by a contract run in both template runners (2026-11-28, [`../evidence/2026-11-28-windows/cuda-typo-label.log`](../evidence/2026-11-28-windows/cuda-typo-label.log)) |
 | Overlapping CPU work with the kernel | no template has independent CPU work to overlap | **not implemented**; see below |
+
+### 4.0 Which side of the label has been seen
+
+The label a host reads is one string, but it is written from two places and only
+one of them has ever been observed:
+
+| What | Proven | How |
+|---|---|---|
+| `CPU_ONLY - ...` reaches the `device` parameter | **yes** | a contract run whose fake host hands host pointers - the only host on this machine that renders - asserts the parameter; the typo sentence on it is in [`cuda-typo-label.log`](../evidence/2026-11-28-windows/cuda-typo-label.log) |
+| `CUDA_ONLY - ...` as a string, both reasons, with and without the typo sentence | **yes** | `execution_mode_test`, four cases, through the same `PathLabel()` the plug-in calls; it prints each label, and they read `CUDA_ONLY - CUDA_ONLY requested`, `CUDA_ONLY - no independent CPU work to overlap`, and the same two with `; OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid` appended ([`cuda-label-branches.log`](../evidence/2026-11-28-windows/cuda-label-branches.log)) |
+| `CUDA_ONLY - ...` reaching the `device` parameter during a **render on the GPU** | **no** | the branch runs only when a host sets `kOfxImageEffectPropCudaEnabled` and hands device pointers. `FakeHost::render()` sets that property to 0 at all three call sites, so the contract suite cannot reach it; Resolve's script server refused every connection on 2026-11-28 (§`resolve-automation.md` 14.4) and Natron is not installed here. The string is proven; the property write is not |
+
+That third row is the honest hole. Closing it needs one of two things: a fake host
+that allocates with `cudaMalloc`, hands the pointers and the stream, and reads the
+frame back - which is a real change to `testkit/fake_host.cpp` and is backlog row
+91 - or a host run on a machine whose script server answers. Until then a reader
+should treat the CUDA-side label as "the text is right, the delivery is untested",
+not as "the host shows CUDA_ONLY".
 
 ### 4.1 The gates
 

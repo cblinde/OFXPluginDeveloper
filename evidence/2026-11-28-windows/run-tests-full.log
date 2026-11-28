@@ -1,4 +1,4 @@
-# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-28 (excerpt of 5250 lines)
+# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-28 (excerpt of 5228 lines)
 #
 # Environment: ONNXRUNTIME_ROOT=.validation\ort-1.32.0 (the version the pin in
 # .github/actions/onnx-runtime names), VULKAN_SDK=.validation\vk\sdk,
@@ -18,6 +18,12 @@
 # lines, every skip line, the summary block and the exit status; the full log
 # (5137 lines) stays in .validation/, which is not tracked. Nothing below was
 # edited by hand.
+#
+# Re-run after the Device label moved into src/ExecutionMode.h and the mode test grew
+# four label cases: the CUDA_ONLY wording is now asserted by the same PathLabel() the
+# plug-in calls, on the branch no host here can render (execution_mode_test: 38 cases).
+# The tree total is unchanged at 3,238 - that test is not part of it.
+
 == docs: check-docs ==
 == docs ==
 check-docs: 33 documents, 0 problems
@@ -61,7 +67,7 @@ all Windows checks passed
 -- Default gain: 1.0
 -- OFX plugin : MinimalCudaGain (CUDA ON)
 -- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle
--- Configuring done (3.2s)
+-- Configuring done (2.9s)
 -- Generating done (0.2s)
 -- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build
 [0/2] Re-checking globbed directories...
@@ -88,7 +94,11 @@ contract_test: 162 checks, 0 failed
 - host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
 contract_test: 98 checks, 0 failed
 == [4/4] execution-mode gates (no GPU needed) ==
-execution_mode_test: 34 cases, 0 failed
+  label: CUDA_ONLY - CUDA_ONLY requested
+  label: CUDA_ONLY - no independent CPU work to overlap
+  label: CPU_ONLY - the host did not set kOfxImageEffectPropCudaEnabled, so the pixels are host pointers
+  label: CUDA_ONLY - CUDA_ONLY requested; OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid
+execution_mode_test: 38 cases, 0 failed
 all Windows checks passed
 == test: minimal-opencl-ofx (build, artifact, contract, OpenCL suite) ==
 [1/7] building the OpenCL plug-in (and verifying the artifact)
@@ -117,14 +127,15 @@ contract_test: 118 checks, 0 failed
 contract_test: 94 checks, 0 failed
 [5/7] compiling the suite against the shared fake host
 [6/7] running the OpenCL suite against Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
-[1/8] loading Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
-[2/8] opening an OpenCL device for the host to hand over
-[3/8] the CPU path, with the host offering no device
-[4/8] the same render with the device enabled
-[5/8] a render window smaller than the frame
-[6/8] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage
-[7/8] a negative row pitch is refused, not walked backwards
-[8/8] the host destroys the instance and unloads the plug-in
+[1/9] loading Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
+[2/9] opening an OpenCL device for the host to hand over
+[3/9] the CPU path, with the host offering no device
+[4/9] the same render with the device enabled
+[5/9] a render window smaller than the frame
+[6/9] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage
+[7/9] a negative row pitch is refused, not walked backwards
+[8/9] the two handovers at 1080p, timed
+[9/9] the host destroys the instance and unloads the plug-in
 opencl_suite: 38 checks, 0 failed
 [7/7] valgrind memcheck
   skipped: no valgrind on Windows. The POSIX script runs both binaries under

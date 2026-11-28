@@ -36,7 +36,9 @@
 #define MCOFX_EXECUTION_MODE_H
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace mcofx {
 
@@ -137,6 +139,51 @@ inline ModeDecision DecideMode(ExecutionMode requested, const FrameFacts& facts)
                  "a kernel of 1 ms or more with independent CPU work to overlap" };
     }
     return { ExecutionMode::CudaOnly, "no independent CPU work to overlap" };
+}
+
+/// "" or the sentence a label appends when the override was not understood.
+///
+/// A host keeps no log the plug-in can write to (Resolve writes its own OFX
+/// lines and none of what the plug-in prints, measured 2026-11-26), so a typo'd
+/// override reaches the read-only Device parameter instead - the one place a
+/// user or a harness reads it back.
+inline std::string OverrideProblem()
+{
+    const char* text = std::getenv("OFXPLUGIN_GPU_MODE");
+    if (text == nullptr || *text == '\0') {
+        return std::string();
+    }
+    bool recognised = true;
+    ParseModeOverride(text, &recognised);
+    if (recognised) {
+        return std::string();
+    }
+    return std::string("OFXPLUGIN_GPU_MODE='") + text + "' is not auto|cpu|cuda|hybrid";
+}
+
+/// Any label text with the override sentence appended when the word was not
+/// understood. One place, because the label has two authors - the gates in the
+/// device path and the CPU loop the Support library calls directly - and a second
+/// copy is how one of them ends up without it (this happened: the plain CPU path
+/// wrote its reason and no sentence, and the contract check caught it).
+inline std::string WithOverride(std::string text)
+{
+    const std::string problem = OverrideProblem();
+    if (!problem.empty()) {
+        text += "; ";
+        text += problem;
+    }
+    return text;
+}
+
+/// The Device label for a decision: the mode, the reason, and the override when
+/// it was not understood. Here rather than in Plugin.cpp so the label the
+/// plug-in writes and the label the test reads are the same function - the
+/// device path is the one a machine without a host cannot reach, and a string
+/// proven only by the branch that renders is how a second wording appears.
+inline std::string PathLabel(const ModeDecision& decision)
+{
+    return WithOverride(std::string(ModeName(decision.mode)) + " - " + decision.reason);
 }
 
 } // namespace mcofx

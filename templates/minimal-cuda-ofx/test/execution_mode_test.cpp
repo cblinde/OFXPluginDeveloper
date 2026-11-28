@@ -12,7 +12,9 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "ExecutionMode.h"
 
@@ -57,6 +59,36 @@ mcofx::FrameFacts Viable4k()
 }
 
 } // namespace
+
+void setModeEnv(const char* value)
+{
+#if defined(_WIN32)
+    _putenv_s("OFXPLUGIN_GPU_MODE", value == nullptr ? "" : value);
+#else
+    if (value == nullptr) {
+        unsetenv("OFXPLUGIN_GPU_MODE");
+    } else {
+        setenv("OFXPLUGIN_GPU_MODE", value, 1);
+    }
+#endif
+}
+
+void expectLabel(const char* what, const std::string& expected, const std::string& actual)
+{
+    ++g_checks;
+    if (expected != actual) {
+        ++g_failures;
+        if (g_failures <= 20) {
+            std::printf("FAIL %s: expected \"%s\", got \"%s\"\n", what, expected.c_str(),
+                        actual.c_str());
+        }
+        return;
+    }
+    // Printed even when it matches: the point of this pass is to record what the
+    // label reads on the branch no host here can render, and a check that only
+    // speaks when it fails leaves that sentence in nobody's log.
+    std::printf("  label: %s\n", actual.c_str());
+}
 
 int main()
 {
@@ -200,6 +232,43 @@ int main()
         if (d.reason == nullptr || *d.reason == '\0') {
             fail("decision always carries a reason", "non-empty", "empty");
         }
+    }
+
+    // The Device label, branch by branch. The contract suite can only render the
+    // CPU branch (the fake host never sets kOfxImageEffectPropCudaEnabled), so
+    // the CUDA_ONLY wording is asserted here, through the same PathLabel() the
+    // plug-in calls in processImagesCuda().
+    {
+        using namespace mcofx;
+        FrameFacts device;
+        device.hostHandedDevicePointers = true;
+        device.inputOnDevice = true;
+        device.deviceQueryable = true;
+        device.frameBytes = 1920LL * 1080LL * 16LL;
+        device.deviceFreeBytes = 8LL * 1024 * 1024 * 1024;
+
+        expectLabel("label: CUDA_ONLY requested", "CUDA_ONLY - CUDA_ONLY requested",
+                    PathLabel(DecideMode(ExecutionMode::CudaOnly, device)));
+        expectLabel("label: CUDA_ONLY by gate 4", "CUDA_ONLY - no independent CPU work to overlap",
+                    PathLabel(DecideMode(ExecutionMode::Auto, device)));
+
+        FrameFacts hostPointers;
+        hostPointers.deviceQueryable = true;
+        hostPointers.deviceFreeBytes = device.deviceFreeBytes;
+        hostPointers.frameBytes = device.frameBytes;
+        expectLabel("label: CPU_ONLY because the host did not enable CUDA",
+                    "CPU_ONLY - the host did not set kOfxImageEffectPropCudaEnabled, so the "
+                    "pixels are host pointers",
+                    PathLabel(DecideMode(ExecutionMode::Auto, hostPointers)));
+
+        // With the override unreadable, both branches carry the same sentence -
+        // the property the contract run proves for the CPU side only.
+        setModeEnv("gpux");
+        expectLabel("label: the typo reaches the CUDA_ONLY label",
+                    "CUDA_ONLY - CUDA_ONLY requested; "
+                    "OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid",
+                    PathLabel(DecideMode(ExecutionMode::CudaOnly, device)));
+        setModeEnv(nullptr);
     }
 
     std::printf("execution_mode_test: %d cases, %d failed\n", g_checks, g_failures);
