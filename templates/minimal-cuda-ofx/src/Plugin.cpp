@@ -70,9 +70,16 @@ const char* const kParamDevice = "device";
 // render than the pixels. An unknown word is reported, not silently treated as
 // auto - a typo'd override is how a run gets reported as hybrid while it never
 // left CUDA_ONLY.
+#ifdef OFXPLUGIN_WITH_CUDA
 // The facts the gates read, gathered once per render. inputOnDevice is true by
 // construction: kOfxImageEffectPropCudaEnabled is the host saying the image
 // pointers are device pointers, so this path never copies a frame.
+//
+// Compiled only with the CUDA path: DeviceMemoryFreeBytes() is declared inside
+// Kernel.cuh's OFXPLUGIN_WITH_CUDA block, and this function is called from
+// processImagesCuda(), which is in the same block. A CPU-only build (CPU_ONLY=1,
+// which windows.yml's CPU step and both runners use) has no device to query, and
+// calling the declaration there is what broke that build until 2026-11-28.
 FrameFacts RenderFacts(int width, int height, std::int64_t bytesPerPixel)
 {
     FrameFacts facts;
@@ -86,6 +93,7 @@ FrameFacts RenderFacts(int width, int height, std::int64_t bytesPerPixel)
     facts.deviceFreeBytes = freeBytes;
     return facts;
 }
+#endif // OFXPLUGIN_WITH_CUDA
 
 ExecutionMode RequestedMode()
 {

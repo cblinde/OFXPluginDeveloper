@@ -1,0 +1,95 @@
+# Every step of .github/workflows/windows.yml, replayed on this machine, 2026-11-28.
+#
+# The workflow has never run on a runner, and the Vulkan step only failed there
+# because its own commands had not been run here. This pass runs each step as
+# written, with the runner's conditions where they differ from this machine:
+#
+#   CPU_ONLY=1              the job's own env, applied to every step
+#   no CUDA on PATH         for the steps that run before the toolkit is installed
+#                           (the reference and CPU-shim steps), emulated by dropping
+#                           every CUDA directory from PATH and clearing CUDACXX
+#   a clean build directory  a runner has no build/ tree; the ONNX step was run
+#                           twice for that reason, once against the stale tree and
+#                           once from scratch
+#   CUDA 13.0 / Vulkan SDK   this machine has both, so the toolkit preflight and the
+#                           nvcc step ran against 13.0 rather than the action's
+#                           12.9.1, and the Vulkan step was forced OFF as written
+#
+# What it found: the CUDA template did not compile with CPU_ONLY=1 at all -
+# RenderFacts() called DeviceMemoryFreeBytes(), whose declaration lives inside
+# Kernel.cuh's OFXPLUGIN_WITH_CUDA block, so the CPU-shim build stopped at
+# "error C3861: DeviceMemoryFreeBytes: identifier not found" and the step after it
+# failed for want of a bundle. That step is the fourth one in the job, so the first
+# CI run would have stopped there. Fixed by compiling the fact-gathering with the
+# path it serves; the counts and the suite are then as below.
+#
+# Not covered by this replay: setup-python 3.12 (this machine has 3.10), the two
+# actions themselves (checkout, onnx-runtime), and the OpenCL step's "no device"
+# branch, because this machine has an OpenCL device - its exit-2 mapping stays the
+# stub measurement it was.
+
+== Documentation and tool self-checks ==
+check-docs: 33 documents, 0 problems
+docs_exit=0
+verdict: every gate asked for passed
+runtime_exit=0
+self-test: 44 checks, 0 failed
+runtime_selftest_exit=0
+
+== The CUDA sub-packages arrived ==
+CUDA sub-packages ok: nvcc, cudart, cuobjdump
+preflight=0
+
+== Reference template (CPU_ONLY=1 from the job env) ==
+ref_build=0
+ref_suite=0
+
+== CUDA template through its CPU path, BEFORE the fix ==
+Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\src\Plugin.cpp(85,29): error C3861: "DeviceMemoryFreeBytes": Bezeichner wurde nicht gefunden. [Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\build\MinimalCudaGain.vcxproj]
+cuda_build=1
+error: no .ofx at Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\build\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx
+cuda_suite=1
+
+== CUDA template through its CPU path, after the fix ==
+[build] CPU_ONLY=1: building without the CUDA path
+cuda_build=0
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 98 checks, 0 failed
+all Windows checks passed
+cuda_suite=0
+
+== CUDA template compiled with nvcc ==
+  device code: 7 cubin(s)
+nvcc_build=0
+artifact=0
+
+== ONNX template, CPU session, from a clean build directory ==
+  no CUDA provider in this bundle, so the CUDA-major gate does not apply
+  NOT VERIFIED: no CUDA provider beside the .ofx, so the CPU-node half of
+all checks passed
+onnx_fresh=0
+no CUDA provider in templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle, so the CUDA-major gate does not apply
+
+== The CUDA provider matches the host's CUDA major ==
+no CUDA provider in templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle, so the CUDA-major gate does not apply
+
+== OpenCL template, CPU path and the device suite ==
+OK: the OpenCL template passed on this machine
+opencl_exit=0
+
+== Vulkan template, CPU path ==
+vk_build=0
+all Windows checks passed
+vk_suite=0
+
+== Negative controls ==
+negatives_exit=0
+
+== The pre-toolkit steps with no CUDA on PATH ==
+=== CPU_ONLY=1, no toolkit: the fallback path builds and its suite passes ===
+all Windows checks passed
+SUITE_EXIT=0
+=== CPU_ONLY empty, no toolkit: build.bat has to stop by name ===
+GUARD_EXIT=1

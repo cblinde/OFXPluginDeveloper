@@ -18,14 +18,24 @@ name: windows
 # evidence/2026-11-26-windows/windows-job-local.log, and it says where this
 # machine differs from a runner (MSVC 14.50, Python 3.10.6, no 3.12).
 #
-# The job has grown since that run: it builds all five templates (the CUDA one
-# twice, once through the shim and once under nvcc) and runs four suites. Two
-# steps were added afterwards and were not part of that transcript. The OpenCL
-# step's suite ran on this machine
-# (evidence/2026-11-26-windows/opencl-suite.log) and its `call`/errorlevel shape
-# was measured with a stub that exits 0/1/2/3, but the step itself has not been
-# replayed as a workflow step; the nvcc step on 2026-11-27 has its own re-run
-# record, evidence/2026-11-27-windows/windows-nvcc-step-local.log.
+# Every step below was replayed on this machine on 2026-11-28, with the runner's
+# own conditions where they differ from this one: the job's CPU_ONLY=1, no CUDA on
+# PATH for the steps that run before the toolkit is installed, a clean build
+# directory for the inference step, the Vulkan template forced OFF as written.
+# The log is evidence/2026-11-28-windows/windows-job-local.log.
+#
+# That replay found what the 2026-11-26 transcript could not: the CUDA template
+# did not compile at all with CPU_ONLY=1 - RenderFacts() called
+# DeviceMemoryFreeBytes(), whose declaration sits inside Kernel.cuh's
+# OFXPLUGIN_WITH_CUDA block - so the CPU-path step failed at the compiler and the
+# next step found no bundle. It is the fourth step in the job, so the first CI run
+# would have stopped there. Fixed in Plugin.cpp by compiling the fact-gathering
+# with the path it serves.
+#
+# What the replay cannot cover: setup-python 3.12 (this machine has 3.10), the two
+# actions themselves, and the OpenCL step's "no device" branch, because this
+# machine has an OpenCL device - that exit-2 mapping stays the stub measurement it
+# was (evidence/2026-11-26-windows/opencl-suite.log).
 
 on:
   push:

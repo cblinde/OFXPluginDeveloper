@@ -216,6 +216,18 @@ process asserts the sentence with `--label-contains` (**[V]**, 2026-11-28,
 nowhere else: `execution_mode_test` reads the return value, and no contract run had
 ever asked the label.
 
+**The facts are gathered only where a device path exists.** `RenderFacts()` lives
+inside `#ifdef OFXPLUGIN_WITH_CUDA`, because `DeviceMemoryFreeBytes()` is declared
+in that same block of `Kernel.cuh` and nothing else calls it. Every build the
+runners make there is the CUDA one, so a `CPU_ONLY=1` build - the fallback path
+`windows.yml` compiles before it installs a toolkit - went uncompiled until
+2026-11-28, when that step's own commands were run here and the compiler named it
+(`error C3861: "DeviceMemoryFreeBytes"`) (**[V]**, 2026-11-28,
+[`../evidence/2026-11-28-windows/windows-job-local.log`](../evidence/2026-11-28-windows/windows-job-local.log)).
+With the guard the CPU-only build compiles, its suite passes the same 584 checks,
+and a build with no toolkit and no `CPU_ONLY` still stops by name instead of
+quietly making the shim.
+
 ### 4.2 What hybrid means here, and what it does not
 
 It never means splitting one frame between CPU and GPU. OFX hands a render
