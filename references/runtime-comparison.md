@@ -5,8 +5,9 @@ answered by `./run-tests.sh` and recorded in [`testing-layers.md`](testing-layer
 §13. *What that costs, and how the four GPU paths compare on identical work* is a
 different measurement, and it had no home: the check counts were in §13, the
 per-frame numbers were wherever the argument that needed them lived, and nothing
-put them side by side. This document does, on one machine on 2026-11-27
-(**[V]**, [`../evidence/2026-11-27-windows/suite-timings.log`](../evidence/2026-11-27-windows/suite-timings.log)).
+put them side by side. This document does, on one machine on 2026-11-28, and every
+number in §1 - the counts and the wall clock - comes from the same pass
+(**[V]**, [`../evidence/2026-11-28-windows/suite-timings.log`](../evidence/2026-11-28-windows/suite-timings.log)).
 Where a number is another section's, the row says so and repeats it only to make
 the comparison possible.
 
@@ -17,39 +18,38 @@ below is the checks, not the compiler.
 
 | Suite | Wall clock | Assertions | Verdict |
 |---|---|---|---|
-| docs: `check-docs.py` + its `--selftest`, `check-workflows.py`, `check-shell.sh` | 6 s | 33 documents, 4 workflows, 27 scripts | 0 problems |
-| provenance: `check-provenance.py --self-test`, then the scan | 9 s | 109 files with an SPDX line, every line of 45+ characters compared against the SDK, six allowlisted idioms re-checked against it | 0 problems |
-| `minimal-ofx`: build, artifact, contract ×5, install/load | 12 s | 562 | `all Windows checks passed` |
-| `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, the typo run, mode gates | 27 s | 486 + 98 | `all Windows checks passed` |
-| `minimal-opencl-ofx`: build, path policy, artifact, contract ×3 + the forced-CPU pass, `opencl_suite` | 18 s | 354 + 29 + 94 + 38 | `OK: the OpenCL template passed on this machine` |
-| `minimal-vulkan-ofx`: build, path policy, artifact, contract ×7 + device label, `vulkan_suite` | 21 s | 750 + 29 + 26 + 94 | `all Windows checks passed` |
-| `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 19 s | 678 | `all checks passed` |
-| negative controls: `testkit/run-negative-controls.bat` | 15 s | 223 in 8 runs | 8 caught, every one expected |
-| **total** | **127.3 s** (one stopwatch; the rows add up to 127.0 s) | **3,238 passing + 223 deliberately failing** | - |
+| docs: `check-docs.py` + its `--selftest`, `check-workflows.py`, `check-shell.sh` | 5.4 s | 33 documents, 4 workflows, 27 scripts | 0 problems |
+| provenance: `check-provenance.py --self-test`, then the scan | 9.3 s | 109 files with an SPDX line, every line of 45+ characters compared against the SDK, six allowlisted idioms re-checked against it | 0 problems |
+| `minimal-ofx`: build, artifact, contract ×5, install/load | 11.4 s | 562 | `all Windows checks passed` |
+| `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, the `gpux` run, mode gates | 24.8 s | 486 + 98 | `all Windows checks passed` |
+| `minimal-opencl-ofx`: build, path policy, artifact, contract ×3 + the forced-CPU pass, `opencl_suite` | 20.8 s | 354 + 29 + 94 + 38 | `OK: the OpenCL template passed on this machine` |
+| `minimal-vulkan-ofx`: build, path policy, artifact, contract ×7 + device label, `vulkan_suite` | 20.6 s | 750 + 29 + 26 + 94 | `all Windows checks passed` |
+| `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 15.8 s | 678 | `all checks passed` |
+| negative controls: `testkit/run-negative-controls.bat` | 15.2 s | 723 in 8 controls, 15 profile lines | every fault detected, the pattern still passes |
+| **total** | **124.2 s** (one stopwatch; the rows add up to 123.3 s) | **3,238 passing + 723 in the eight deliberately broken runs** | - |
 
 **Two numbers, and which one is which.** The eight rows are eight stages of one
-pass, each stopped on its own: they add up to **127.0 s**. One stopwatch around
-the same pass, from the first stage to the last, reads **127.3 s** - the 0.29 s
+pass, each stopped on its own: they add up to **123.3 s**. One stopwatch around
+the same pass, from the first stage to the last, reads **124.2 s** - the 0.9 s
 between them is the eight `date` calls and the shell that starts each stage, so
 the sum of the rows is the work and the stopwatch is the sitting. Both are
 recorded in
-[`../evidence/2026-11-27-windows/suite-timings.log`](../evidence/2026-11-27-windows/suite-timings.log),
-which keeps the earlier measurements beside them: a quieter pass taken before the
-OpenCL template grew its path test and forced-CPU run (119.3 s of rows, 119.5 s on
-the stopwatch), one before the Vulkan device step grew its label run and with the
-inference bundle carrying the CUDA provider (120.9 s of rows, 121.1 s), and,
-before that, eight separately stopped commands that summed to 116 s with the
-negative controls in a second pass, so that total left the minute of orchestration
-out. The rows move with the machine as much as with the code: in this pass every
-row is 0.3-2.5 s above its quieter reading, including the two that only read
-files. The table quotes
-the stopwatch number because it is elapsed wall clock for the whole set
-(**V**).
+[`../evidence/2026-11-28-windows/suite-timings.log`](../evidence/2026-11-28-windows/suite-timings.log),
+and the counts printed in the same pass are the counts this table shows, the
+CUDA row included: 162 × 3 + 98 = 584, which is the suite that grew its `gpux`
+contract run on 2026-11-28. The earlier readings live in
+[`../evidence/2026-11-27-windows/suite-timings.log`](../evidence/2026-11-27-windows/suite-timings.log)
+and are not rows of this table: that file's last pass read 127.3 s on its
+stopwatch with the CUDA suite at **486** checks, so adding its seconds to these
+counts would mix two trees. The rows move with the machine as much as with the
+code - that pass is 3.1 s slower than this one on 98 fewer CUDA checks, which is
+the machine's load and not the work. The table quotes the stopwatch number
+because it is elapsed wall clock for the whole set (**V**).
 
 A cold checkout is a different number, and the difference is the compiler: this
 table was taken after the run that built all five templates, which is the larger
 cost and depends on the toolchain rather than on the tests. What the table is
-good for is the shape: the five template suites are 97 s of the 127.3, the two
+good for is the shape: the five template suites are 93 s of the 124.2, the two
 documentation gates 15 s, the negative controls 15 s - and no single suite needs
 long enough that a contributor would skip it.
 
@@ -62,12 +62,16 @@ inference row is 148 x 3 + 150 + 84: three host profiles, the step that renders
 the model the bundle ships, and the tiled pass. A check is one assertion: one
 struct field, one action answer, one pixel comparison, one label.
 
-**223** is the negative-control suite, which is not a count of passes: each of its
-eight runs drives a deliberately broken plug-in and asserts that the harness
-prints a `FAIL` and exits non-zero. Eight runs, eight `caught (exit 1)`, one
-intended failure inside each. It exists because a suite that has never been seen
-failing is a suite nobody has tested ([`testing-layers.md`](testing-layers.md)
-§5.3, "Proof that it can fail").
+**723 in the eight broken runs** is the negative-control suite, which is not a
+count of passes: each of its eight runs drives a deliberately broken plug-in and
+asserts that the harness prints a `FAIL` and exits non-zero. The 723 are the
+assertions those runs reach across fifteen `contract_test` lines - a control that
+drives several host profiles prints one line per profile - and eight of them are
+the intended failures, one per control, each confirmed by a `caught (exit 1)`.
+It exists because a suite that has never been seen failing is a suite nobody has
+tested ([`testing-layers.md`](testing-layers.md) §5.3, "Proof that it can fail").
+The count was 223 before the overlay and mirror controls were added; it is not a
+number to compare with 3,238.
 
 ## 3. The same 1080p gain pass, through each runtime
 

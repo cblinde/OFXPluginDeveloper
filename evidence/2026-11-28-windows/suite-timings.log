@@ -1,0 +1,52 @@
+# What the exhaustive run costs: one pass, eight stages, and the counts that
+# pass printed. Windows 11 10.0.26300, RTX 3060, warm build directories
+# (every template had been built already), 2026-11-28.
+#
+# One pass, in this order. Each stage was stopped on its own with
+# `date +%s%N` around it, and one stopwatch ran from the first stage to the
+# last, so the rows and the total describe the same sitting - the earlier file
+# evidence/2026-11-27-windows/suite-timings.log holds four passes whose rows
+# were sometimes separated by a minute of orchestration; this one does not.
+#
+# The counts are the ones this pass printed, which is why the CUDA row is now
+# the 584-check suite (162 x 3 + 98, the gpux run included) and not the 486 of
+# the 2026-11-27 reading. That pass read 127.3 s on its stopwatch; this one reads
+# 124.2 s, and the difference is the machine's load, not the 98 extra checks.
+#
+## Wall clock, and what each stage printed
+
+docs                      5.4 s      0 check(s)  check-docs: 33 documents, 0 problems; check-workflows: 4 workflow(s) and 1 action(s), every remote action pinned; check-shell: 27 script(s) parse
+provenance                9.3 s      0 check(s)  check-provenance: 0 problems
+minimal-ofx              11.4 s    562 check(s)  all Windows checks passed
+minimal-cuda-ofx         24.8 s    584 check(s)  all Windows checks passed
+minimal-opencl-ofx       20.8 s    515 check(s)  OK: the OpenCL template passed on this machine
+minimal-vulkan-ofx       20.6 s    899 check(s)  all Windows checks passed
+onnx-inference-ofx       15.8 s    678 check(s)  all checks passed
+negative-controls        15.2 s    723 in 15    every fault detected, the pattern still passes,
+                                          lines       harness is not a rubber stamp (8 controls,
+                                                      one intended failure each)
+# sum of the eight rows, each stopped on its own:      123.3 s
+# one stopwatch around the block:                    124.2 s
+# the 0.9 s between them is the eight `date` calls and the shell that starts
+# each stage.
+
+## The commands, as the stages were run
+
+Environment: OFX_SOURCE_DIR=./.ofx-ref, ONNXRUNTIME_ROOT=.validation/ort-1.32.0,
+VULKAN_SDK=.validation/vk/sdk, no CPU_ONLY, no SANITIZE, no RUN_VALGRIND. Windows
+route: the .bat runners, one per template. Stage commands:
+
+  docs                   check-docs.py, its --selftest, check-workflows.py, check-shell.sh
+  provenance             check-provenance.py --self-test, then the scan
+  minimal-ofx            build, artifact, contract x5, install/load
+  minimal-cuda-ofx       build, artifact, GPU harness, contract x3, the gpux run, mode gates
+  minimal-opencl-ofx     build, path policy, artifact, contract x3 + the forced-CPU pass, opencl_suite
+  minimal-vulkan-ofx     build, path policy, artifact, contract x7 + device label, vulkan_suite
+  onnx-inference-ofx     build.bat, then test/test.bat
+  negative-controls      testkit/run-negative-controls.bat
+
+## What this pass does not say
+
+# A cold checkout additionally compiles four templates and the inference
+# plug-in, which is the larger cost and depends on the toolchain. Nothing was
+# measured inside a host or on a second GPU here.
