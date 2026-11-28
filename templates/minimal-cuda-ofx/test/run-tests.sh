@@ -9,6 +9,9 @@
 #   2. PTX instruction counts, when nvcc is on PATH - a compile-time check, so
 #      it is unaffected by any runtime sanitizer
 #   3. bundle hygiene (exports, launcher, fatbin), when a build/ tree exists
+#
+# OFXPLUGIN_BUILD_DIR points the checks at a tree other than build/ - the same
+# override build.sh honours, used by the repository's CPU-only compile check.
 #   4. host contract: dlopen the built .ofx and drive it through a fake host
 #      (testkit/), twice, in one process - describe, describeInContext,
 #      createInstance, isIdentity, render, destroyInstance, unload
@@ -30,6 +33,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
+BUILD_DIR="${OFXPLUGIN_BUILD_DIR:-${ROOT}/build}"
 SRC="${ROOT}/src"
 CXX_BIN="${CXX:-g++}"
 ARCH="${PTX_ARCH:-sm_89}"
@@ -143,7 +147,7 @@ fi
 
 echo
 echo "== [3/5] bundle hygiene =="
-BUNDLE_OFX="$(find "${ROOT}/build/bundle" -type f -name '*.ofx' 2>/dev/null | head -1 || true)"
+BUNDLE_OFX="$(find "${BUILD_DIR}/bundle" -type f -name '*.ofx' 2>/dev/null | head -1 || true)"
 if [[ -n "${BUNDLE_OFX}" ]]; then
   EXPORTS="$(nm -D --defined-only "${BUNDLE_OFX}" | grep -c ' T ' || true)"
   LAUNCHER="$(nm "${BUNDLE_OFX}" | grep -c 'LaunchGainRGBA32F' || true)"
@@ -162,9 +166,9 @@ fi
 
 echo
 echo "== [4/5] host contract (dlopen + fake host) =="
-BUNDLE_OFX="$(find "${ROOT}/build/bundle" -type f -name '*.ofx' 2>/dev/null | head -1 || true)"
+BUNDLE_OFX="$(find "${BUILD_DIR}/bundle" -type f -name '*.ofx' 2>/dev/null | head -1 || true)"
 if [[ -n "${BUNDLE_OFX}" ]]; then
-  OFX_CHECKOUT="$(sed -n 's/^OFX_SOURCE_DIR:PATH=//p' "${ROOT}/build/CMakeCache.txt" 2>/dev/null | head -1 || true)"
+  OFX_CHECKOUT="$(sed -n 's/^OFX_SOURCE_DIR:PATH=//p' "${BUILD_DIR}/CMakeCache.txt" 2>/dev/null | head -1 || true)"
   "${ROOT}/../../testkit/build-contract-test.sh" "${TMP}/contract_test" ${OFX_CHECKOUT:+"${OFX_CHECKOUT}"}
   echo "  ${BUNDLE_OFX#"${ROOT}"/}"
 

@@ -21,7 +21,11 @@
 #                      otherwise each template fetches OFX_Release_1.5.1)
 #   ONNXRUNTIME_ROOT   optional: without it the ONNX template is skipped by
 #                      name, not silently (see its build.sh --help)
-#   CPU_ONLY=1         force the CUDA template to build its CPU path only
+#   CPU_ONLY=1         force the CUDA template to build its CPU path only.
+#                      Independently of that, every run compiles the CPU path once
+#                      into build-cpu-only and runs its checks - that configure is
+#                      what windows.yml's CPU step does, and it was the one thing
+#                      no local run compiled until 2026-11-28 (error C3861).
 #   RUN_VALGRIND       auto | 1 | 0 (forwarded to both suites)
 #   SANITIZE           e.g. address,undefined (forwarded; skips memcheck)
 #   GLIBC_MAX_*        per-bundle glibc bound (defaults below; see
@@ -91,6 +95,7 @@ if [[ "${DRY_RUN}" == "1" ]]; then
   echo "  docs drift, provenance, shell, workflows   check-docs.py, check-provenance.py, check-shell.sh, check-workflows.py"
   echo "  minimal-ofx                                build, artifact, contract, install"
   echo "  minimal-cuda-ofx                           build, artifact, contract ($(plan_gpu))"
+  echo "  minimal-cuda-ofx, CPU_ONLY=1               compile + artifact + contract, no device"
   echo "  minimal-opencl-ofx                         build, artifact, contract, opencl_suite (a device, or NOT RUN)"
   if [[ "$(plan_onnx)" == "1" ]]; then
     echo "  onnx-inference-ofx                         build, contract x3, shipped model, tiling"
@@ -441,6 +446,20 @@ if [[ "${windows}" == "1" ]]; then
   cmd //c "$(cygpath -w "${ROOT}/templates/minimal-cuda-ofx/test/run-tests.bat")" Release
 
   echo
+  echo "== compile check: minimal-cuda-ofx with CPU_ONLY=1 =="
+  # The build windows.yml does before it installs a toolkit, and the one nothing
+  # local compiled until 2026-11-28: the CPU path called DeviceMemoryFreeBytes(),
+  # whose declaration sits inside Kernel.cuh's OFXPLUGIN_WITH_CUDA block, so the
+  # configure stopped at error C3861 while every local run - which builds the CUDA
+  # path - stayed green. Its own tree (OFXPLUGIN_BUILD_DIR), because CPU_ONLY flips
+  # the cache of the build beside it. What it proves: the fallback path compiles,
+  # its bundle passes the artifact check without device code, and its contract
+  # suite passes. What it does not: no kernel runs, no cubin is demanded, and the
+  # CUDA branch of the Device label stays unproven.
+  CPU_ONLY=1 OFXPLUGIN_BUILD_DIR="${ROOT}/templates/minimal-cuda-ofx/build-cpu-only" \
+    cmd //c "$(cygpath -w "${ROOT}/templates/minimal-cuda-ofx/test/run-tests.bat")" Release
+
+  echo
   echo "== test: minimal-opencl-ofx (build, artifact, contract, OpenCL suite) =="
   # Exit 2 means "no OpenCL device on this machine", which the runner prints as
   # NOT A PASS. It is not a build failure, so the run continues and the summary
@@ -483,6 +502,7 @@ if [[ "${windows}" == "1" ]]; then
   echo "  docs drift check                (tools/check-docs.py, incl. the ONNX Runtime pin)"
   echo "  reference build + artifact      (minimal-ofx, dumpbin)"
   echo "  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)"
+  echo "  CPU-only compile check          (minimal-cuda-ofx with CPU_ONLY=1: compiles, no device)"
   # All four templates now have a .bat runner: the OpenCL one loads its module
   # with LoadLibraryA and the driver's OpenCL.dll where the POSIX script uses
   # dlopen and libOpenCL.so.1, so the suite that used to be named "POSIX-only"
@@ -556,6 +576,16 @@ echo "== reference plug-in: minimal-ofx (build, artifact, contract) =="
 echo
 echo "== test: minimal-cuda-ofx =="
 "${ROOT}/templates/minimal-cuda-ofx/test/run-tests.sh"
+
+echo
+echo "== compile check: minimal-cuda-ofx with CPU_ONLY=1 =="
+# The same check as the Windows route: the fallback path must compile and its
+# checks must pass, in a tree of its own so the CUDA build beside it keeps its
+# cache. A device is not involved either way - see the Windows route's comment.
+( cd "${ROOT}/templates/minimal-cuda-ofx" \
+    && CPU_ONLY=1 OFXPLUGIN_BUILD_DIR="${ROOT}/templates/minimal-cuda-ofx/build-cpu-only" ./build.sh )
+OFXPLUGIN_BUILD_DIR="${ROOT}/templates/minimal-cuda-ofx/build-cpu-only" \
+  "${ROOT}/templates/minimal-cuda-ofx/test/run-tests.sh"
 
 # The OpenCL template asks the machine for a device, and a machine without one
 # has not failed - it has not run the suite. Exit 2 is the suite's word for that,

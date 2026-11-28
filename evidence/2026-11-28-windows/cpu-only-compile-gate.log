@@ -1,0 +1,101 @@
+# The CPU_ONLY=1 compile gate, Windows 11 + RTX 3060, 2026-11-28
+#
+# Why it exists: the CPU path called DeviceMemoryFreeBytes(), whose declaration sits
+# inside Kernel.cuh's OFXPLUGIN_WITH_CUDA block. Every local run built the CUDA path,
+# where the declaration exists, so nothing local could see the break; windows.yml's
+# CPU step hit it as error C3861 and would have stopped the first CI run there.
+#
+# The gate is now the step "== compile check: minimal-cuda-ofx with CPU_ONLY=1 ==" in
+# ./run-tests.sh, on both routes: it configures and builds in
+# templates/minimal-cuda-ofx/build-cpu-only (OFXPLUGIN_BUILD_DIR, so the CPU_ONLY
+# configure cannot flip the cache of the CUDA build beside it), runs the artifact
+# check without --cuda, and runs the contract suite on the fallback path.
+
+## The step inside a full ./run-tests.sh pass (exit 0)
+
+== compile check: minimal-cuda-ofx with CPU_ONLY=1 ==
+== [0/4] build (Release) ==
+[build] CPU_ONLY=1: building without the CUDA path
+[build] generator: Visual Studio 18 2026
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Default gain: 1.0
+-- OFX plugin : MinimalCudaGain (CUDA OFF)
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build-cpu-only/bundle/MinimalCudaGain.ofx.bundle
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build-cpu-only
+MSBuild-Version 18.4.0+6e61e96ac für .NET Framework
+
+  Checking File Globs
+  1>Checking Build System
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/CMakeLists.txt
+  MinimalCudaGain.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\build-cpu-only\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/CMakeLists.txt
+  execution_mode_test.vcxproj -> Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\build-cpu-only\Release\execution_mode_test.exe
+  Building Custom Rule Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/CMakeLists.txt
+
+Bundle: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build-cpu-only\bundle\MinimalCudaGain.ofx.bundle
+MinimalCudaGain.ofx
+  CUDA path: not compiled (CPU-only build)
+  layout: MinimalCudaGain.ofx.bundle/Contents/Win64 (an architecture the spec names, no '@' directory)
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-filesystem-l1-1-0.dll
+    api-ms-win-crt-math-l1-1-0.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+    KERNEL32.dll
+
+== [1/4] artifact (exports, dependents, device code) ==
+  layout: MinimalCudaGain.ofx.bundle/Contents/Win64 (an architecture the spec names, no '@' directory)
+  dumpbin: C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\dumpbin.exe
+  exports: 2 (OfxGetNumberOfPlugins, OfxGetPlugin)
+  dependents:
+    MSVCP140.dll
+    VCRUNTIME140.dll
+    VCRUNTIME140_1.dll
+    api-ms-win-crt-stdio-l1-1-0.dll
+    api-ms-win-crt-filesystem-l1-1-0.dll
+    api-ms-win-crt-math-l1-1-0.dll
+    api-ms-win-crt-environment-l1-1-0.dll
+    api-ms-win-crt-string-l1-1-0.dll
+    api-ms-win-crt-heap-l1-1-0.dll
+    api-ms-win-crt-runtime-l1-1-0.dll
+    KERNEL32.dll
+
+== [2/4] GPU harness skipped (CPU_ONLY=1) ==
+
+== [3/4] host contract (LoadLibraryExW + fake host) ==
+Der Befehl "vswhere.exe" ist entweder falsch geschrieben oder
+
+## Proof that it can fail: the 2026-11-28 break put back on purpose
+
+# src/Plugin.cpp edited to call DeviceMemoryFreeBytes() outside the guard again, the
+# gate command run unchanged, then the file restored from a copy.
+
+[build] CPU_ONLY=1: building without the CUDA path
+Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\src\Plugin.cpp(91,29): error C3861: "DeviceMemoryFreeBytes": Bezeichner wurde nicht gefunden. [Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-cuda-ofx\build-cpu-only\MinimalCudaGain.vcxproj]
+BUILD FAILED (see the cmake output above)
+  exit 1
+
+## The same command after restoring the file
+
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 98 checks, 0 failed
+all Windows checks passed
+  exit 0
+
+# What this gate does not prove: no CUDA device is used. It does not compile the
+# device path in this configuration, demands no cubin, launches no kernel, and cannot
+# reach the CUDA branch of the Device label. It answers one question - does the
+# fallback still compile and pass its checks - and that is the question that broke.

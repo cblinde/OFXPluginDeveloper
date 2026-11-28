@@ -237,14 +237,21 @@ ever asked the label.
 **The facts are gathered only where a device path exists.** `RenderFacts()` lives
 inside `#ifdef OFXPLUGIN_WITH_CUDA`, because `DeviceMemoryFreeBytes()` is declared
 in that same block of `Kernel.cuh` and nothing else calls it. Every build the
-runners make there is the CUDA one, so a `CPU_ONLY=1` build - the fallback path
-`windows.yml` compiles before it installs a toolkit - went uncompiled until
-2026-11-28, when that step's own commands were run here and the compiler named it
+runners made until 2026-11-28 was the CUDA one, so the `CPU_ONLY=1` build - the
+fallback path `windows.yml` compiles before it installs a toolkit - went
+uncompiled until that step's own commands were run here and the compiler named it
 (`error C3861: "DeviceMemoryFreeBytes"`) (**[V]**, 2026-11-28,
 [`../evidence/2026-11-28-windows/windows-job-local.log`](../evidence/2026-11-28-windows/windows-job-local.log)).
-With the guard the CPU-only build compiles, its suite passes the same 584 checks,
-and a build with no toolkit and no `CPU_ONLY` still stops by name instead of
-quietly making the shim.
+The guard is in place and the gap that hid it is closed: `./run-tests.sh` now runs
+that configure as its own step on both routes - `CPU_ONLY=1` into
+`build-cpu-only`, artifact check without `--cuda`, then the contract suite - and
+the step has been shown failing on the break it was written for (exit 1,
+`error C3861`) and passing when the guard is back (**[V]**,
+[`../evidence/2026-11-28-windows/cpu-only-compile-gate.log`](../evidence/2026-11-28-windows/cpu-only-compile-gate.log)).
+**What that gate does not prove:** it uses no device. It does not compile the
+device path, demands no cubin, launches no kernel and cannot reach the `CUDA_ONLY`
+side of the Device label (§4.0). It answers one question - does the fallback still
+compile and pass its checks - because that is the question that broke.
 
 ### 4.2 What hybrid means here, and what it does not
 

@@ -29,6 +29,7 @@ rem   OFX_SOURCE_DIR  openfx checkout; else read from build\CMakeCache.txt
 rem   CUDA_ARCHS      e.g. 86, or 86;89 for several; else the GPU's own
 rem                   compute capability, else 75
 rem   CPU_ONLY=1      skip the GPU step and do not demand cubins
+rem   OFXPLUGIN_BUILD_DIR  run against a tree other than build\
 rem ---------------------------------------------------------------------------
 setlocal EnableExtensions EnableDelayedExpansion
 
@@ -42,7 +43,8 @@ if not "%~1"=="" set "CONFIG=%~1"
 set "NOBUILD=0"
 if /I "%~2"=="nobuild" set "NOBUILD=1"
 
-set "BUILD_DIR=%ROOT%\build"
+rem The same override build.bat honours, so a CPU-only run can use its own tree.
+if defined OFXPLUGIN_BUILD_DIR (set "BUILD_DIR=%OFXPLUGIN_BUILD_DIR%") else (set "BUILD_DIR=%ROOT%\build")
 set "OFX_FILE=%BUILD_DIR%\bundle\MinimalCudaGain.ofx.bundle\Contents\Win64\MinimalCudaGain.ofx"
 
 rem ---- [0] build -----------------------------------------------------------

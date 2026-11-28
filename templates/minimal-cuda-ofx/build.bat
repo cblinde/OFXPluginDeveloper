@@ -19,6 +19,7 @@ rem   CUDA_ARCHS       e.g. 86;89  (default: 75;80;86;89;90[;100;120])
 rem   GAIN_DEFAULT     default gain baked in (default 1.0); set 2.0 so a host
 rem                    cannot skip render()
 rem   CPU_ONLY=1       build without CUDA to prove the fallback path
+rem   OFXPLUGIN_BUILD_DIR  build somewhere other than build\ (a second configuration)
 rem   CMAKE_GENERATOR  force a generator (default: newest VS with the C++ toolset,
 rem                    or Ninja when that VS has no NVIDIA CUDA customisations)
 rem
@@ -30,7 +31,10 @@ rem ---------------------------------------------------------------------------
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "HERE=%~dp0"
-set "BUILD_DIR=%HERE%build"
+rem OFXPLUGIN_BUILD_DIR keeps a second configuration out of build/ - the CPU-only
+rem compile check in the repository's run-tests.sh uses it so a CPU_ONLY=1
+rem configure cannot flip the cache of the CUDA build beside it.
+if defined OFXPLUGIN_BUILD_DIR (set "BUILD_DIR=%OFXPLUGIN_BUILD_DIR%") else (set "BUILD_DIR=%HERE%build")
 if "%~1"=="" (set "CONFIG=Release") else (set "CONFIG=%~1")
 
 rem ---- CUDA discovery -------------------------------------------------------

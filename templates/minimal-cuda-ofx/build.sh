@@ -9,6 +9,7 @@
 #                                     host's OFX plugin directory
 #   ./build.sh --bootstrap-cuda       fetch a real nvcc WITHOUT root, then build
 #   CPU_ONLY=1 ./build.sh             build only the CPU path (no CUDA)
+#   OFXPLUGIN_BUILD_DIR=... ./build.sh  build somewhere other than build/
 #
 # Common overrides (environment):
 #   OFX_SOURCE_DIR         existing openfx checkout (skips the network fetch);
@@ -25,7 +26,10 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-build_dir="${here}/build"
+# OFXPLUGIN_BUILD_DIR keeps a second configuration out of build/ - the repository's
+# run-tests.sh uses it so a CPU_ONLY=1 configure cannot flip the cache of the CUDA
+# build beside it.
+build_dir="${OFXPLUGIN_BUILD_DIR:-${here}/build}"
 
 config="Release"
 do_install=0
