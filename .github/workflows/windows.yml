@@ -18,7 +18,7 @@ name: windows
 # evidence/2026-11-26-windows/windows-job-local.log, and it says where this
 # machine differs from a runner (MSVC 14.50, Python 3.10.6, no 3.12).
 #
-# The job has grown since that run: it builds all four templates (the CUDA one
+# The job has grown since that run: it builds all five templates (the CUDA one
 # twice, once through the shim and once under nvcc) and runs four suites. Two
 # steps were added afterwards and were not part of that transcript. The OpenCL
 # step's suite ran on this machine

@@ -110,7 +110,10 @@ rounding `__hmul2` applies. The harness compares the kernel against a float
 reference with **no tolerance** and gets bit equality; against a true float result
 the error is at most one half-precision ulp.
 
-**A gain does not scale alpha. Decided, and now true of all three templates.** The
+**A gain does not scale alpha. Decided, and now true of four of the five templates:**
+the reference, OpenCL, Vulkan and inference templates multiply R, G and B and copy A. The
+CUDA template adds `gainAlpha` as the separate control for the case where moving coverage
+is what you meant. The
 arithmetic settles it once the composite is written out. On premultiplied data the
 stored colour is a·C; a gain of k that scales the stored RGB produces k·a·C, and the
 un-premultiplied colour that a viewer sees is (k·a·C)/a = k·C with the coverage

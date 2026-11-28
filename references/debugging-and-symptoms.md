@@ -222,7 +222,7 @@ These are the places where building disagreed with prose that already existed.
    through `OfxPlugin::setHost` (`../SKILL.md` §3). The docs now say two exports plus the
    `setHost` field.
 2. **`Support/Library` is not an include directory you need.** It was listed in
-   all three templates; both this plug-in's TU and the Support TUs compile
+   all three templates that existed then; both this plug-in's TU and the Support TUs compile
    without it [V]. Only `include/` and `Support/include/` are required.
 3. **The API string is `OfxImageEffectPluginAPI`.** The first version of this
    build's own assertion used `OfxImageEffectPlugin` and failed against the
