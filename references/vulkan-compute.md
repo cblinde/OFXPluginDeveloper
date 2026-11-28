@@ -215,7 +215,20 @@ that as auto, and the label carries the raw word back - measured
 dispatch); OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu`, with
 `--label-contains` asserting the sentence (**[V]**,
 [`../evidence/2026-11-27-windows/vulkan-typo-label.log`](../evidence/2026-11-27-windows/vulkan-typo-label.log)).
-That half of the rule - a typo is *visible*, not merely noticed - was unproven
+**The device-less half of the same rule was inferred until it was run.** Both machines
+without a device print the sentence as well, and each label carries the gate that
+answered it (**[V]**, 2026-11-28,
+[`../evidence/2026-11-28-windows/vulkan-typo-cpu-label.log`](../evidence/2026-11-28-windows/vulkan-typo-cpu-label.log)): a bundle configured with
+`-DOFXPLUGIN_VULKAN=OFF` labels it `CPU - built with -DOFXPLUGIN_VULKAN=OFF;
+OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu`, and a device build on a loader
+that finds no driver labels it `CPU - no Vulkan device answered: vkCreateInstance
+failed: VK_ERROR_INCOMPATIBLE_DRIVER; OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or
+gpu`. The second run hid every ICD by pointing `VK_DRIVER_FILES` at a path that does
+not exist, and `vulkan_suite` answered `NOT VERIFIED no Vulkan device: vkCreateInstance
+failed: VK_ERROR_INCOMPATIBLE_DRIVER`, so the label is not a claim the suite contradicted.
+In both cases the whole runner finished with `all Windows checks passed`, the gpux
+assertion running inside step 4 of §8 - which it could not do before the fix recorded
+there. That half of the rule - a typo is *visible*, not merely noticed - was unproven
 before it: the policy test reads the parser's return value, and the CPU run
 only ever set a word the parser accepts. The `.bat` run is the one in the logs;
 the `.sh` has not been executed here (§8), so what is verified about it is that
@@ -237,7 +250,18 @@ and the device self-test - and they decide the last one the same way:
 reports `NOT VERIFIED`, anything else fails the run**. `NOT VERIFIED` is the
 answer for a CPU-only configure as well (`OFXPLUGIN_VULKAN=OFF`, which the shell
 runner passes to `build.sh` explicitly), so a machine without the SDK never sees
-a green step it did not earn. The .sh additionally runs valgrind memcheck per host
+a green step it did not earn.
+
+**That last sentence was wrong until 2026-11-28.** The label check at the start of
+step 6 asked every build for `device=Vulkan`, so an `OFXPLUGIN_VULKAN=OFF` run failed
+there - after the self-test had passed on the CPU loop - and never reached the device
+step at all; `windows.yml` builds its Vulkan bundle exactly that way, so its step would
+have failed on the first CI run. Both runners now expect the compile-time reason on
+such a build (`OFXPLUGIN_VULKAN=OFF` in the environment is what they read, and the
+shell runner uses the `VULKAN` it already resolved), the run then finishes with
+`NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF` and
+`all Windows checks passed` (**[V]**, 2026-11-28,
+[`../evidence/2026-11-28-windows/vulkan-typo-cpu-label.log`](../evidence/2026-11-28-windows/vulkan-typo-cpu-label.log)). The .sh additionally runs valgrind memcheck per host
 profile, which the .bat cannot and does not claim.
 
 The shell runner's device branch is exercised without a device - stubs that exit

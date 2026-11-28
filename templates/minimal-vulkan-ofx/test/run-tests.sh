@@ -273,8 +273,14 @@ run_device_suite() {
       # the parameter a host reads. This is the only step that knows a device
       # answered, which is why the assertion lives here and not in the contract
       # step, where a machine without one would fail it.
+      # A CPU-only build has no device to name, so the expected text follows
+      # the build: the compile-time reason is what a host reads there.
+      local label=Vulkan
+      if [[ "${VULKAN}" == "OFF" ]]; then
+        label="built with -DOFXPLUGIN_VULKAN=OFF"
+      fi
       if ! "${HARNESS}" "${OFX_FILE}" "${HARNESS_ARGS[@]}" \
-             --label-param device --label-contains device=Vulkan; then
+             --label-param device --label-contains "device=${label}"; then
         echo "  FAIL: the device path did not name its device in the label" >&2
         return 1
       fi

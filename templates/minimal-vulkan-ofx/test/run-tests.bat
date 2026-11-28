@@ -246,6 +246,14 @@ rem The device path's own label - the direction the forced run in [4/6] cannot
 rem cover. A machine whose device answered has to name that device in the
 rem parameter a host reads; until this ran, only the CPU side of the decision
 rem was asserted anywhere.
+rem
+rem A CPU-only configure has no device to name, and its bundle is still built on
+rem purpose (windows.yml builds it that way), so the assertion follows the build
+rem rather than the machine: the compile-time reason has to reach the label.
+rem Demanding "Vulkan" there failed every OFXPLUGIN_VULKAN=OFF run at this check,
+rem after the suite had already passed on the CPU loop.
+set "DEVICE_LABEL=Vulkan"
+if /I "%OFXPLUGIN_VULKAN%"=="OFF" set "DEVICE_LABEL=built with -DOFXPLUGIN_VULKAN=OFF"
 echo   device label
 "%CONTRACT%" "%OFX_FILE%" ^
     --host-profile resolve ^
@@ -255,7 +263,7 @@ echo   device label
     --clip Source ^
     --clip Output ^
     --label-param device ^
-    --label-contains device=Vulkan || goto :error
+    --label-contains "device=%DEVICE_LABEL%" || goto :error
 goto :selftest_done
 :selftest_absent
 echo   NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF

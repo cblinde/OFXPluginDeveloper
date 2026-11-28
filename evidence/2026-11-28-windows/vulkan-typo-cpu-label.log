@@ -1,0 +1,30 @@
+# The gpux sentence on a machine with no device, Windows 2026-11-28.
+#
+# The typo run of 2026-11-27 asserted the sentence on a Device label that named the
+# RTX 3060. Whether the same sentence reaches the label when no device answers was
+# inferred, so the same --label-contains assertion was run against the two builds
+# that have no device to name:
+#
+#   A. -DOFXPLUGIN_VULKAN=OFF: no device code compiled in at all.
+#   B. the device path compiled in, on a loader that finds no driver - every ICD
+#      hidden by pointing VK_DRIVER_FILES/VK_ICD_FILENAMES at a file that does not
+#      exist, which is the state a machine without a Vulkan install is in.
+#
+# Each block is the lines that decide the claim; the full logs stay in .validation/.
+# The runner's own step 6 asserted device=Vulkan on both of them and failed there,
+# after the self-test had passed on the CPU loop - that is the fix that came with
+# this run, and why A ended with "all Windows checks passed" instead of a failure.
+
+== A: -DOFXPLUGIN_VULKAN=OFF, whole runner ==
+ok 29 - label parameter 'device' = "CPU - built with -DOFXPLUGIN_VULKAN=OFF; OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 76 - label parameter 'device' = "CPU - built with -DOFXPLUGIN_VULKAN=OFF; OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+  NOT VERIFIED no device suite binary - configured with OFXPLUGIN_VULKAN=OFF
+all Windows checks passed
+
+== B: device path in, no driver: the device build ==
+      vulkan: headers "Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/vk/sdk\Include", shader compiler "Z:/Tools-DEV/OFXPluginDeveloper_Local/.validation/vk/sdk\Bin\glslc.exe"
+ok 29 - label parameter 'device' = "CPU - no Vulkan device answered: vkCreateInstance failed: VK_ERROR_INCOMPATIBLE_DRIVER; OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 76 - label parameter 'device' = "CPU - no Vulkan device answered: vkCreateInstance failed: VK_ERROR_INCOMPATIBLE_DRIVER; OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+NOT VERIFIED no Vulkan device: vkCreateInstance failed: VK_ERROR_INCOMPATIBLE_DRIVER
+  NOT VERIFIED the suite found no Vulkan device on this machine
+all Windows checks passed
