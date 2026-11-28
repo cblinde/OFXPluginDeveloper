@@ -54,6 +54,7 @@ const char* const kPluginDescription =
 
 const char* const kParamGain = "gain";
 const char* const kParamGainAlpha = "gainAlpha";
+const char* const kParamDevice = "device";
 
 /// Records which pixel path a render took, for a harness that cannot ask the host.
 ///
@@ -100,6 +101,48 @@ ExecutionMode RequestedMode()
         return mode;
     }();
     return requested;
+}
+
+/// "" or the sentence a label appends when the override was not understood.
+///
+/// The log line below reports the same thing, and the log is not a channel a host
+/// keeps: Resolve writes its own OFX lines and none of what the plug-in prints
+/// (measured 2026-11-26). A typo therefore reaches the Device parameter, which is
+/// the one place a user or a harness can read it back.
+std::string overrideProblem()
+{
+    const char* text = std::getenv("OFXPLUGIN_GPU_MODE");
+    if (text == nullptr || *text == '\0') {
+        return std::string();
+    }
+    bool recognised = true;
+    ParseModeOverride(text, &recognised);
+    if (recognised) {
+        return std::string();
+    }
+    return std::string("OFXPLUGIN_GPU_MODE='") + text + "' is not auto|cpu|cuda|hybrid";
+}
+
+/// Any label text with the override sentence appended when the word was not
+/// understood. One place, because the label has two authors - the gates in the
+/// device path and the CPU loop the Support library calls directly - and a second
+/// copy is how one of them ends up without it (this happened: the plain CPU path
+/// wrote its reason and no sentence, and the contract check caught it).
+std::string withOverride(std::string text)
+{
+    const std::string problem = overrideProblem();
+    if (!problem.empty()) {
+        text += "; ";
+        text += problem;
+    }
+    return text;
+}
+
+/// The Device label for a decision: the mode, the reason, and the override when
+/// it was not understood.
+std::string pathLabel(const ModeDecision& decision)
+{
+    return withOverride(std::string(ModeName(decision.mode)) + " - " + decision.reason);
 }
 
 /// One line per render into $MCOFX_PATH_LOG, so a host run can be read back
@@ -301,6 +344,7 @@ void GainProcessor::processImagesCuda()
         width, height, static_cast<std::int64_t>(bytesPerPixel)));
     if (decision.mode == ExecutionMode::CpuOnly) {
         OFX::Log::print("Minimal CUDA Gain: CPU_ONLY (%s)", decision.reason);
+        static_cast<GainPlugin&>(_effect).setDeviceLabel(pathLabel(decision));
         multiThreadProcessImages(_renderWindow);
         return;
     }
@@ -350,6 +394,7 @@ void GainProcessor::processImagesCuda()
                     _pCudaStream == nullptr ? "not supplied by the host" : "supplied by the host",
                     decision.reason);
     recordPath("CUDA", width, height, _pCudaStream, true);
+    static_cast<GainPlugin&>(_effect).setDeviceLabel(pathLabel(decision));
 
     // The OFX contract is asymmetric and this branch is the whole contract:
     //   * host supplied kOfxImageEffectPropCudaStream -> return immediately,
@@ -376,6 +421,8 @@ void GainProcessor::multiThreadProcessImages(OfxRectI window)
     // OFX::Log::print here - a tiled or multithreaded host would call this once
     // per window, and the file is the channel the harness can read.
     recordPath("CPU", window.x2 - window.x1, window.y2 - window.y1, nullptr, false);
+    static_cast<GainPlugin&>(_effect).setDeviceLabelOnce(withOverride(
+        "CPU_ONLY - the host did not set kOfxImageEffectPropCudaEnabled, so the pixels are host pointers"));
 
     for (int y = window.y1; y < window.y2; ++y) {
         if (_effect.abort()) {
@@ -458,13 +505,16 @@ GainPlugin::GainPlugin(OfxImageEffectHandle handle)
     , _srcClip(nullptr)
     , _gain(nullptr)
     , _gainAlpha(nullptr)
+    , _device(nullptr)
 {
     _dstClip = fetchClip(kOfxImageEffectOutputClipName);
     _srcClip = fetchClip(kOfxImageEffectSimpleSourceClipName);
     _gain = fetchDoubleParam(kParamGain);
     _gainAlpha = fetchDoubleParam(kParamGainAlpha);
+    _device = fetchStringParam(kParamDevice);
 
-    if (_dstClip == nullptr || _srcClip == nullptr || _gain == nullptr || _gainAlpha == nullptr) {
+    if (_dstClip == nullptr || _srcClip == nullptr || _gain == nullptr || _gainAlpha == nullptr ||
+        _device == nullptr) {
         OFX::throwSuiteStatusException(kOfxStatErrMissingHostFeature);
     }
 }
@@ -481,8 +531,33 @@ void GainPlugin::render(const OFX::RenderArguments& args)
         OFX::throwSuiteStatusException(kOfxStatErrUnsupported);
     }
 
+    _labelWritten = false;
     GainProcessor processor(*this);
     setupAndProcess(processor, args);
+}
+
+/// A host may refuse a write to a read-only parameter during create; the label is
+/// a diagnostic, not a contract, and a refused write is remembered so the next
+/// render retries.
+void GainPlugin::setDeviceLabel(const std::string& text)
+{
+    _labelWritten = true;
+    if (text == _label) {
+        return;
+    }
+    try {
+        _device->setValue(text);
+        _label = text;
+    } catch (const OFX::Exception::Suite&) {
+    }
+}
+
+void GainPlugin::setDeviceLabelOnce(const std::string& text)
+{
+    if (_labelWritten) {
+        return;
+    }
+    setDeviceLabel(text);
 }
 
 bool GainPlugin::isIdentity(const OFX::IsIdentityArguments& args,
@@ -700,6 +775,19 @@ void GainPluginFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX:
     alphaParam->setDoubleType(OFX::eDoubleTypeScale);
     alphaParam->setParent(*group);
     page->addChild(*alphaParam);
+
+    // Which path the last render took, or why the CPU loop ran instead. Read-only,
+    // and the only channel a host keeps: OFX::Log::print does not survive Resolve's
+    // own log, so an unrecognised OFXPLUGIN_GPU_MODE would otherwise be reported to
+    // nobody (references/cuda-streams-and-memory.md section 4).
+    OFX::StringParamDescriptor* device = desc.defineStringParam(kParamDevice);
+    device->setLabels("Device", "Device", "Device");
+    device->setScriptName(kParamDevice);
+    device->setHint("Which CUDA path rendered, or why the CPU loop ran instead");
+    device->setStringType(OFX::eStringTypeLabel);
+    device->setDefault("");
+    device->setEnabled(false);
+    page->addChild(*device);
 }
 
 OFX::ImageEffect* GainPluginFactory::createInstance(OfxImageEffectHandle handle, OFX::ContextEnum context)

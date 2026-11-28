@@ -4,6 +4,8 @@
 #ifndef MCOFX_PLUGIN_H
 #define MCOFX_PLUGIN_H
 
+#include <string>
+
 #include "ofxsImageEffect.h"
 #include "ofxsProcessing.h"
 
@@ -51,6 +53,16 @@ public:
                     OFX::Clip*& identityClip,
                     double& identityTime) override;
 
+    /// The Device label: which path this render took and why, plus an override
+    /// word the parser rejected. Public because the processor holds the instance
+    /// as OFX::ImageEffect& and is the only code that knows the decision.
+    void setDeviceLabel(const std::string& text);
+    /// The same, only when this render has not written a label yet: the plain CPU
+    /// path never reaches the gates (the Support library calls the CPU loop
+    /// directly when the host did not enable a CUDA render), and a tiled host
+    /// calls that loop once per window.
+    void setDeviceLabelOnce(const std::string& text);
+
 private:
     void setupAndProcess(GainProcessor& processor, const OFX::RenderArguments& args);
 
@@ -59,6 +71,9 @@ private:
     OFX::Clip* _srcClip;
     OFX::DoubleParam* _gain;
     OFX::DoubleParam* _gainAlpha;
+    OFX::StringParam* _device;
+    std::string _label;
+    bool _labelWritten = false;
 };
 
 class GainPluginFactory : public OFX::PluginFactoryHelper<GainPluginFactory>

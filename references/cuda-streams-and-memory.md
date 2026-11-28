@@ -166,8 +166,8 @@ gates, one function, and a test that runs without a GPU.
 | The four gates, override parser, decision reasons | `templates/minimal-cuda-ofx/src/ExecutionMode.h` | **[V]** - no CUDA headers, compiled into the plug-in and into the test |
 | The gate truth table, 34 cases | `templates/minimal-cuda-ofx/test/execution_mode_test.cpp`, run by both template runners | **[V]** 34 cases, 0 failed | - log: [`execution-modes.log`](../evidence/2026-11-27-windows/execution-modes.log), and at the end of a full suite run [`cuda-suite.log`](../evidence/2026-11-27-windows/cuda-suite.log) and [`cuda-suite-rebuild.log`](../evidence/2026-11-27-windows/cuda-suite-rebuild.log)
 | Device memory query | `DeviceMemoryFreeBytes()` in `Kernel.cu`, `cudaMemGetInfo` under the hood | **[V]** compiled and linked; the value is read at render time |
-| The decision at render time | `Plugin.cpp`, `processImagesCuda()`, logged once per render with its reason | **[V]** the log line names mode, depth, size, stream and reason |
-| Override | `OFXPLUGIN_GPU_MODE=auto|cpu|cuda|hybrid`; an unknown word is reported, not silently ignored | **[V]** |
+| The decision at render time | `Plugin.cpp`, `processImagesCuda()`, logged once per render with its reason **and** written into the read-only `device` parameter | **[V]** the log line names mode, depth, size, stream and reason; the label carries the mode and reason a host can show |
+| Override | `OFXPLUGIN_GPU_MODE=auto|cpu|cuda|hybrid`; an unknown word is reported, not silently ignored | **[V]** - the parser in the 34-case test, and the word itself on the `device` label, asserted by a contract run in both template runners (2026-11-28, [`../evidence/2026-11-28-windows/cuda-typo-label.log`](../evidence/2026-11-28-windows/cuda-typo-label.log)) |
 | Overlapping CPU work with the kernel | no template has independent CPU work to overlap | **not implemented**; see below |
 
 ### 4.1 The gates
@@ -199,6 +199,22 @@ The thresholds are policy, not measurement: 256 MiB and 1.25x are stated so a
 reader can disagree with a number instead of with an adjective. The 1 ms floor
 comes from the same place as §2's stream rules - below that, launch and
 synchronisation overhead is the work.
+
+**The override has a channel a host keeps.** The gates log their decision through
+`OFX::Log::print`, and Resolve keeps none of what a plug-in prints (measured
+2026-11-26), so the same decision is written into a read-only `device` string
+parameter after every render: `CPU_ONLY - the host did not set
+kOfxImageEffectPropCudaEnabled, so the pixels are host pointers`, with
+`; OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid` appended when the word was
+not understood. The plain CPU path - the one the Support library runs when the host
+never enabled a CUDA render, which never reaches the gates - writes the gate-1
+reason through the same helper, because a second copy of the text is how one author
+of the label ends up without the sentence (that happened on the first attempt, and
+the check described here caught it). A contract run with `OFXPLUGIN_GPU_MODE=gpux` in its own
+process asserts the sentence with `--label-contains` (**[V]**, 2026-11-28,
+[`../evidence/2026-11-28-windows/cuda-typo-label.log`](../evidence/2026-11-28-windows/cuda-typo-label.log)). Before it, the typo was proven at the parser and
+nowhere else: `execution_mode_test` reads the return value, and no contract run had
+ever asked the label.
 
 ### 4.2 What hybrid means here, and what it does not
 

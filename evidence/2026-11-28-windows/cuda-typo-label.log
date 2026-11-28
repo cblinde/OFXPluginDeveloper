@@ -1,0 +1,24 @@
+# The CUDA template's unrecognised override word on the Device label, Windows 2026-11-28.
+#
+# The Vulkan template got this treatment on 2026-11-27 (vulkan-typo-label.log). The
+# CUDA template reported an unrecognised OFXPLUGIN_GPU_MODE only through
+# OFX::Log::print, which Resolve does not keep, and had no label parameter at all -
+# so the typo was proven at the parser (execution_mode_test) and nowhere else.
+#
+# This run adds the channel and the assertion: a read-only `device` string parameter,
+# written after every render with the mode, the reason, and the sentence a rejected
+# word earns; and a contract run with OFXPLUGIN_GPU_MODE=gpux in its own process,
+# one per template runner. The first attempt at the label wrote the plain CPU path's
+# reason without the sentence - the check below failed with the label quoted back,
+# which is what it is for.
+
+== templates/minimal-cuda-ofx/test/run-tests.bat Release ==
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+contract_test: 162 checks, 0 failed
+  host profile: resolve, OFXPLUGIN_GPU_MODE=gpux (unrecognised)
+ok 31 - label parameter 'device' = "CPU_ONLY - the host did not set kOfxImageEffectPropCudaEnabled, so the pixels are host pointers; OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid"
+ok 32 - label parameter 'device' contains "OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid"
+contract_test: 98 checks, 0 failed
+execution_mode_test: 34 cases, 0 failed
+all Windows checks passed

@@ -20,12 +20,12 @@ below is the checks, not the compiler.
 | docs: `check-docs.py` + its `--selftest`, `check-workflows.py`, `check-shell.sh` | 6 s | 33 documents, 4 workflows, 27 scripts | 0 problems |
 | provenance: `check-provenance.py --self-test`, then the scan | 9 s | 109 files with an SPDX line, every line of 45+ characters compared against the SDK, six allowlisted idioms re-checked against it | 0 problems |
 | `minimal-ofx`: build, artifact, contract ×5, install/load | 12 s | 562 | `all Windows checks passed` |
-| `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, mode gates | 27 s | 486 | `all Windows checks passed` |
+| `minimal-cuda-ofx`: build, artifact, GPU harness, contract ×3, the typo run, mode gates | 27 s | 486 + 98 | `all Windows checks passed` |
 | `minimal-opencl-ofx`: build, path policy, artifact, contract ×3 + the forced-CPU pass, `opencl_suite` | 18 s | 354 + 29 + 94 + 38 | `OK: the OpenCL template passed on this machine` |
 | `minimal-vulkan-ofx`: build, path policy, artifact, contract ×7 + device label, `vulkan_suite` | 21 s | 750 + 29 + 26 + 94 | `all Windows checks passed` |
 | `onnx-inference-ofx`: `build.bat`, then `test/test.bat` | 19 s | 678 | `all checks passed` |
 | negative controls: `testkit/run-negative-controls.bat` | 15 s | 223 in 8 runs | 8 caught, every one expected |
-| **total** | **127.3 s** (one stopwatch; the rows add up to 127.0 s) | **3,140 passing + 223 deliberately failing** | - |
+| **total** | **127.3 s** (one stopwatch; the rows add up to 127.0 s) | **3,238 passing + 223 deliberately failing** | - |
 
 **Two numbers, and which one is which.** The eight rows are eight stages of one
 pass, each stopped on its own: they add up to **127.0 s**. One stopwatch around
@@ -55,7 +55,7 @@ long enough that a contributor would skip it.
 
 ## 2. How the counters add up
 
-**3,140** is 562 + 486 + (354 + 29 + 94 + 38) + (750 + 29 + 26 + 94) + 678, every one printed
+**3,238** is 562 + (486 + 98) + (354 + 29 + 94 + 38) + (750 + 29 + 26 + 94) + 678, every one printed
 by the suite that ran it as `contract_test: N checks, 0 failed` or
 `opencl_suite:` / `vulkan_suite:` / `vulkan_mode_test: N checks, 0 failed`. The
 inference row is 148 x 3 + 150 + 84: three host profiles, the step that renders

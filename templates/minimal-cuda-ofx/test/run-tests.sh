@@ -195,6 +195,18 @@ if [[ -n "${BUNDLE_OFX}" ]]; then
       --concurrency-param gain \
       --concurrency-threads "${THREADS}"
   done
+
+  # A word the parser does not know must not vanish: ExecutionMode.h reports it as
+  # unrecognised, the plug-in reads that as auto, and the Device label carries the
+  # raw word back. The log line says the same and does not survive a host's own log
+  # (measured 2026-11-26). Own process, because the mode is read once per process.
+  echo "  host profile: resolve, OFXPLUGIN_GPU_MODE=gpux (unrecognised)"
+  OFXPLUGIN_GPU_MODE=gpux "${TMP}/contract_test" "${BUNDLE_OFX}" \
+    --host-profile resolve \
+    --id com.ofxplugindeveloper.minimalcudagain \
+    --param gain:double --param gainAlpha:double --clip Source --clip Output \
+    --label-param device \
+    --label-contains "device=OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid"
 else
   echo "  skipped: no build/ tree yet (run ./build.sh first)"
 fi

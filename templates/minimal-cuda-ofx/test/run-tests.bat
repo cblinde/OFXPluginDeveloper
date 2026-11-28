@@ -201,6 +201,29 @@ for %%P in (nuke resolve natron) do (
     --concurrency-threads %THREADS% || goto :error
 )
 
+rem A word the parser does not know must not vanish. ExecutionMode.h reports it as
+rem unrecognised and the plug-in reads that as auto, and the Device label carries
+rem the raw word back so a typo is visible in the host instead of quietly doing
+rem nothing - which is how a run that never left CUDA_ONLY gets documented as a
+rem hybrid test. The log line reports the same word and does not survive a host's
+rem own log (measured 2026-11-26). The policy test proves the parser's half; this
+rem is the only run that proves the label's half, and it needs a process of its own
+rem because the mode is read once per process. What it asserts is the parameter, not
+rem a path: on this harness the render is the CPU loop, so the label reads
+rem "CPU_ONLY - ..." with the sentence after it.
+echo   host profile: resolve, OFXPLUGIN_GPU_MODE=gpux (unrecognised)
+set "OFXPLUGIN_GPU_MODE=gpux"
+"%CONTRACT%" "%OFX_FILE%" ^
+    --host-profile resolve ^
+    --id com.ofxplugindeveloper.minimalcudagain ^
+    --param gain:double --param gainAlpha:double ^
+    --clip Source --clip Output ^
+    --label-param device ^
+    --label-contains "device=OFXPLUGIN_GPU_MODE='gpux' is not auto|cpu|cuda|hybrid"
+set "TYPO_STATUS=%ERRORLEVEL%"
+set "OFXPLUGIN_GPU_MODE="
+if not "%TYPO_STATUS%"=="0" goto :error
+
 echo.rem ---- [4] execution mode --------------------------------------------------
 rem The four gates in src/ExecutionMode.h are a pure function over facts, so they
 rem are tested without a GPU, a host or a kernel: build.bat builds the target with

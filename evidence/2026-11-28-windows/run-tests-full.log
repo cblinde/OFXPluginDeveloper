@@ -1,0 +1,287 @@
+# ./run-tests.sh end to end, Windows 11 + RTX 3060, 2026-11-28 (excerpt of 5250 lines)
+#
+# Environment: ONNXRUNTIME_ROOT=.validation\ort-1.32.0 (the version the pin in
+# .github/actions/onnx-runtime names), VULKAN_SDK=.validation\vk\sdk,
+# OFX_SOURCE_DIR resolved to ./.ofx-ref, nvcc from CUDA 13.0 on PATH, no
+# CPU_ONLY, no SANITIZE, no RUN_VALGRIND. Windows route: the .bat runners, one per
+# template - all five of them, minimal-vulkan-ofx included.
+#
+# This is the run after the OpenCL template gained the Vulkan treatment: a path
+# decision in src/PathDecision.h that a machine without a device can execute
+# (build/self-test/opencl_path_test, 29 checks), OFXPLUGIN_OPENCL_MODE=cpu, and a
+# contract pass that renders once with it and asserts the Device label says so
+# (94 checks). The OpenCL template is 515 checks (118 x 3 + 29 + 94 + 38) and the
+# tree is 3,140. The Vulkan template keeps its misspelt-override pass from the
+# run before this one: 899 checks.
+#
+# This file keeps the section headers, the per-suite counts, the host-profile
+# lines, every skip line, the summary block and the exit status; the full log
+# (5137 lines) stays in .validation/, which is not tracked. Nothing below was
+# edited by hand.
+== docs: check-docs ==
+== docs ==
+check-docs: 33 documents, 0 problems
+selftest: 7 faults reported, the clean tree accepted
+== licence and provenance ==
+check-provenance: 114 source file(s) with an SPDX line
+check-provenance: 0 problems
+== shell syntax ==
+check-shell: 27 script(s) parse
+== reference plug-in: minimal-ofx (build, artifact, contract) ==
+== [1/4] build (Release) ==
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Default gain: 2.0
+-- OFX plugin : ReferenceGain
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-ofx/build/bundle/ReferenceGain.ofx.bundle
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-ofx/build
+== [2/4] artifact (exports, dependents) ==
+== [3/4] host contract (LoadLibraryExW + fake host) ==
+  host profile: nuke
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 118 checks, 0 failed
+  host profile: resolve
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 118 checks, 0 failed
+  host profile: natron
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+contract_test: 118 checks, 0 failed
+  host profile: resolve, refusing both capability writes
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 118 checks, 0 failed
+== [4/4] install and load the installed copy ==
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 90 checks, 0 failed
+all Windows checks passed
+== test: minimal-cuda-ofx (build, artifact, contract) ==
+== [0/4] build (Release) ==
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- CUDA architectures: 75;80;86;89;90;100;120 (default list)
+-- Default gain: 1.0
+-- OFX plugin : MinimalCudaGain (CUDA ON)
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build/bundle/MinimalCudaGain.ofx.bundle
+-- Configuring done (3.2s)
+-- Generating done (0.2s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-cuda-ofx/build
+[0/2] Re-checking globbed directories...
+== [1/4] artifact (exports, dependents, device code) ==
+== [2/4] GPU harness (real device code, not emulated) ==
+== the minimal-cuda-ofx kernels on real hardware ==
+[1/6] geometry, pitch and routing through the launcher
+[2/6] stream semantics
+[3/6] concurrent launches from host threads
+[4/6] zero-copy on host-mapped memory
+[5/6] both kernels launched directly (bypassing the launcher)
+[6/6] throughput: the kernel, the CPU loop it replaces, and a copy
+== [3/4] host contract (LoadLibraryExW + fake host) ==
+  host profile: nuke
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 162 checks, 0 failed
+  host profile: resolve
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 162 checks, 0 failed
+  host profile: natron
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+contract_test: 162 checks, 0 failed
+  host profile: resolve, OFXPLUGIN_GPU_MODE=gpux (unrecognised)
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 98 checks, 0 failed
+== [4/4] execution-mode gates (no GPU needed) ==
+execution_mode_test: 34 cases, 0 failed
+all Windows checks passed
+== test: minimal-opencl-ofx (build, artifact, contract, OpenCL suite) ==
+[1/7] building the OpenCL plug-in (and verifying the artifact)
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Default gain: 1.0
+-- OFX plugin : OpenCLGain
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-opencl-ofx/build/bundle/OpenCLGain.ofx.bundle
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-opencl-ofx/build
+[3/7] compiling the shared contract harness
+[2/7] the path decision (six gates, no device needed)
+opencl_path_test: 29 checks, 0 failed
+[4/7] the host protocol, on the CPU path (3 profiles)
+  host profile: nuke
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 118 checks, 0 failed
+  host profile: resolve
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 118 checks, 0 failed
+  host profile: natron
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+contract_test: 118 checks, 0 failed
+  host profile: resolve, OFXPLUGIN_OPENCL_MODE=cpu (forced CPU path)
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 94 checks, 0 failed
+[5/7] compiling the suite against the shared fake host
+[6/7] running the OpenCL suite against Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
+[1/8] loading Z:\Tools-DEV\OFXPluginDeveloper_Local\templates\minimal-opencl-ofx\build\bundle\OpenCLGain.ofx.bundle\Contents\Win64\OpenCLGain.ofx
+[2/8] opening an OpenCL device for the host to hand over
+[3/8] the CPU path, with the host offering no device
+[4/8] the same render with the device enabled
+[5/8] a render window smaller than the frame
+[6/8] the Images handover: image2d_t in kOfxImageEffectPropOpenCLImage
+[7/8] a negative row pitch is refused, not walked backwards
+[8/8] the host destroys the instance and unloads the plug-in
+opencl_suite: 38 checks, 0 failed
+[7/7] valgrind memcheck
+  skipped: no valgrind on Windows. The POSIX script runs both binaries under
+OK: the OpenCL template passed on this machine
+== build + test: onnx-inference-ofx ==
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- OFX plugin : OnnxInference
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
+== [1/6] build (Release) ==
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- OFX plugin : OnnxInference
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build/bundle/OnnxInference.ofx.bundle
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/onnx-inference-ofx/build
+== [2/6] inference pipeline (ai_pipeline_test) ==
+[1/4] PackRGB / UnpackRGB round-trip
+[2/4] whole-frame inference vs Python golden
+[3/4] tiled inference vs whole-frame inference
+[4/4] negative controls: wrong blending, negative halo, bad rect
+== [3/6] host contract (LoadLibraryExW + fake host), exact golden ==
+  host profile: nuke
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 148 checks, 0 failed
+  host profile: resolve
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 148 checks, 0 failed
+  host profile: natron
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+contract_test: 148 checks, 0 failed
+== [4/6] the model the bundle ships (Contents\Resources, no ONNX_MODEL_PATH) ==
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 150 checks, 0 failed
+== [5/6] host contract with the plug-in's own tiling (tileSize=16) ==
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 33 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 75 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 84 checks, 0 failed
+== [6/6] fixtures and artifact ==
+all checks passed
+== test: minimal-vulkan-ofx (build, path policy, artifact, contract, device) ==
+== [1/6] build (Release) ==
+-- OpenFX SDK: ab779510b265 from 'Z:/Tools-DEV/OFXPluginDeveloper_Local/.ofx-ref'
+-- Default gain: 1.0
+-- OFX plugin : VulkanGain
+-- Bundle     : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/bundle/VulkanGain.ofx.bundle
+-- Device suite: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/self-test/vulkan_suite
+-- Mode test  : Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build/self-test/vulkan_mode_test
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: Z:/Tools-DEV/OFXPluginDeveloper_Local/templates/minimal-vulkan-ofx/build
+== [2/6] path policy (six gates, no device needed) ==
+  OFXPLUGIN_VULKAN_MODE unset reads as auto      ok   AUTO
+  cpu override names itself in the reason        ok   OFXPLUGIN_VULKAN_MODE=cpu was set
+  the override names itself in the reason        ok   OFXPLUGIN_VULKAN_MODE=gpu (or vulkan) was set
+vulkan_mode_test: 29 checks, 0 failed
+== [3/6] artifact (exports, dependents) ==
+== [4/6] host contract (LoadLibraryExW + fake host) ==
+  host profile: nuke
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 118 checks, 0 failed
+  host profile: resolve
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 118 checks, 0 failed
+  host profile: natron
+- host profile: Testkit Fake Host (natron: tiles, background renderer) (natron)
+contract_test: 118 checks, 0 failed
+  host profile: resolve, refusing both capability writes
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 118 checks, 0 failed
+  host profile: resolve, OFXPLUGIN_VULKAN_MODE=cpu (forced CPU path)
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+ok 29 - label parameter 'device' = "CPU - OFXPLUGIN_VULKAN_MODE=cpu was set"
+ok 76 - label parameter 'device' = "CPU - OFXPLUGIN_VULKAN_MODE=cpu was set"
+contract_test: 94 checks, 0 failed
+  host profile: resolve, OFXPLUGIN_VULKAN_MODE=gpux (unrecognised)
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+ok 29 - label parameter 'device' = "NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per dispatch); OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 30 - label parameter 'device' contains "OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 76 - label parameter 'device' = "NVIDIA GeForce RTX 3060 (Vulkan 1.4.357, queue family 0, 4294967040 px per dispatch); OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+ok 77 - label parameter 'device' contains "OFXPLUGIN_VULKAN_MODE='gpux' is not auto, cpu or gpu"
+contract_test: 94 checks, 0 failed
+== [5/6] install and load the installed copy ==
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 90 checks, 0 failed
+== [6/6] device suite (Vulkan vs CPU) ==
+vulkan_suite: 26 checks, 0 failed
+- host profile: Testkit Fake Host (resolve: no tiles, no multi-resolution, API 1.4) (resolve)
+contract_test: 94 checks, 0 failed
+all Windows checks passed
+== negative controls: broken plug-ins must fail, the pattern must pass ==
+== [0/4] MSVC environment ==
+== [1/4] contract harness ==
+== [2/4] control plug-ins (cl /LD) ==
+== [3/4] varying source fixture ==
+== [4/4] fifteen controls ==
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 15 checks, 1 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 20 checks, 1 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 28 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 32 checks, 1 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 28 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 65 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 74 checks, 0 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 28 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 33 - roi context: second half skipped - the plug-in declares no context region (it answers with the region it was asked about)
+ok 64 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 69 - roi context: second half skipped - the plug-in declares no context region (it answers with the region it was asked about)
+contract_test: 72 checks, 0 failed
+  passed and named: second half skipped - the plug-in declares no context region
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 28 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 32 checks, 1 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 28 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 65 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 74 checks, 0 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 28 checks, 1 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 29 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 61 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 64 checks, 0 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 33 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 69 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 72 checks, 0 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 32 checks, 1 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 33 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 69 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 72 checks, 0 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+ok 33 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+ok 69 - multi-instance and thread-safety checks skipped (--concurrency-threads 0)
+contract_test: 72 checks, 0 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 32 checks, 1 failed
+- host profile: Testkit Fake Host (nuke: tiles, multi-resolution, API 1.2) (nuke)
+contract_test: 32 checks, 1 failed
+== halo value: the stored overlap must still belong to this model ==
+== glibc bound self-test: the comparison must fail on a bound that is too low ==
+== workflow pins: a tag-pinned or malformed workflow must be reported ==
+selftest: 10 faults reported, the clean file accepted, the empty root named
+check-workflows: 4 workflow(s) and 1 action(s), every remote action pinned
+== runtime inspection: a CUDA 13 provider must be named against a CUDA 12 host ==
+== environment probe: a missing capability must block its suite ==
+== resolve pixel checks: a uniform, black or wrong-sized frame must fail ==
+== resolve stale-file test: a second run in one directory must not pass ==
+== test fixtures: synthetic models must load and match their shapes ==
+== comparator self-test: the golden comparison must fail on a corrupt reference ==
+== comparator self-test (contract_test --selftest-compare)
