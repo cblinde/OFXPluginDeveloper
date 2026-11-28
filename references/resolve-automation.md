@@ -944,6 +944,20 @@ process = subprocess.Popen([exe, "-nogui"], cwd=str(Path(exe).parent))
 - `-nogui` ran here in an interactive desktop session with a display attached to
   the GPU. Whether it works from a service session, a scheduled task with no
   desktop, or a machine without a display is **not** measured.
+- **The host can be up and still not answer.** On 2026-11-28, on this machine
+  (Resolve on `E:`, the layout §14.2 describes), a run reached
+  `Launching main loop` in the host log, Fusion started its script server three
+  times, and every connection died inside the host: `HostApp create`,
+  `RemoteApp::Connect (...) - ioctlsocket(block) err 1`, `HostApp destroy`,
+  `Script Server Terminated: done: 1`; the client saw the process gone and
+  reported "the host exited (code 0) and nothing answered the scripting API".
+  A second start with `-nogui` and a 240 s deadline was gone in 4.4 s. Nothing
+  in the plug-in or in the harness is implicated - but the attempt is **not**
+  coverage, and the last green host runs remain 2026-11-25/26
+  (**[V]**, [`../evidence/2026-11-28-windows/resolve-host-attempt.log`](../evidence/2026-11-28-windows/resolve-host-attempt.log)).
+  What a rerun has to change is the machine, not the code: a desktop session the
+  host accepts, a firewall or winsock provider that lets the local script server
+  accept its own client, or another machine.
 
 ### 14.5 Install the bundle before the host starts, then prove the host saw it
 
@@ -1035,6 +1049,8 @@ asserts that no process is left.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `ImportError: DLL load failed while importing fusionscript` | module fell back to `C:\Program Files\...` | set `RESOLVE_SCRIPT_LIB`, or derive it from the executable |
+| `ImportError: DLL load failed` with `RESOLVE_SCRIPT_LIB` correct | `imp.load_dynamic` resolves imports through `PATH`, not the DLL's own directory | put the host directory on `PATH` before Python starts (§14.4, measured 2026-11-28) |
+| host reaches `Launching main loop`, every connect still fails | the host's own script server refuses: `ioctlsocket(block) err 1`, `HostApp destroy` | nothing in the harness fixes it; the machine does (§14.4) |
 | `connect` times out, `scriptapp` stays `None` | host not up, or a **free** install (no listener), or External scripting is `None` | wait for the host; use Studio; set the preference to `Local` |
 | `GetEffectsList()` has no entry for the bundle | bundle copied after startup, or the plugin is blacklisted | install first; clear the cache with the host closed |
 | `AddEffect` returns `None` | wrong id (OFX identifier instead of the listed id), or not scanned | take `id` from `GetEffectsList()` |

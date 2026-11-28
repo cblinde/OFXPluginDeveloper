@@ -1,0 +1,55 @@
+Resolve host run attempt - 2026-11-28, this machine (Resolve on E:, the layout
+references/resolve-automation.md section 14.2 describes)
+
+Result: the host-free half passes and the host half does not run. validate, install
+and launch pass; the scripting API never answers. Nothing here is a plug-in
+finding - the last green host runs remain 2026-11-25/26.
+
+=== host-free plan, all five bundles (bundle path, --resolve supplied) ===
+  ReferenceGain    validate pass  1 .ofx, decoders ['ffmpeg']
+  MinimalCudaGain  validate pass  1 .ofx, decoders ['ffmpeg']
+  OpenCLGain       validate pass  1 .ofx, decoders ['ffmpeg']
+  VulkanGain       validate pass  1 .ofx, decoders ['ffmpeg']
+  OnnxInference    validate pass  1 .ofx, decoders ['ffmpeg']
+
+=== attempt 1: --gui, PATH carrying the Resolve directory, gain 2.0 bundle ===
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\ReferenceGain.ofx.bundle
+  launch    pass     pid 22980
+  error     fail     RuntimeError: the host exited (code 0) and nothing answered the
+                     scripting API; last error: None
+  quit      pass     API quit, then the recorded PID
+
+=== attempt 2: -nogui, --timeout 240, after the first instance had quit ===
+  validate  pass     1 .ofx, decoders ['ffmpeg']
+  install   pass     C:\Program Files\Common Files\OFX\Plugins\ReferenceGain.ofx.bundle
+  launch    pass     pid 26272
+  error     fail     RuntimeError: the host exited (code 0) and nothing answered the
+                     scripting API; last error: None
+  quit      pass     API quit, then the recorded PID
+  (4.4 s from command to report: the host process was gone almost immediately)
+
+=== the host's own log for attempt 1, %APPDATA%\Blackmagic Design\DaVinci Resolve
+    \Support\logs\ResolveDebug.txt ===
+[0x00006240] | Main                 | INFO  | 2026-11-28 01:45:33,731 | Launching main loop
+[0x00006240] | Fusion               | INFO  | 2026-11-28 01:46:06,978 | Started script server: 26924
+Failed to connect to script server, retrying
+Started script server: 15852
+Failed to connect to script server, retrying
+Started script server: 21080
+Failed to connect to script server
+918.281 [ 5964] Script Server Started
+918.328 [ 5964] HostApp create
+918.328 [ 5964] RemoteApp::Connect (00000000000002A0) - ioctlsocket(block) err 1
+918.328 [ 27964] HostApp::AppThreadFunc()
+918.437 [ 5964] HostApp destroy
+918.437 [ 5964] Script Server Terminated: done: 1, err: 0
+
+What the log says, in its own words: the application reached its main loop, then
+Fusion started a script server three times, and every connection the client made
+died inside the host - 'HostApp create', 'RemoteApp::Connect ... ioctlsocket(block)
+err 1', 'HostApp destroy', 'Script Server Terminated: done: 1'. The client side saw
+the executable gone before an API object existed.
+
+Not attempted: touching the host's preferences, the firewall or winsock, and any
+GUI interaction - all outside what a test run may change on this machine.

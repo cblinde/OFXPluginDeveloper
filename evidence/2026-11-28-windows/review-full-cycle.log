@@ -1,0 +1,81 @@
+# ./run-tests.sh, Windows 11 + RTX 3060, 2026-11-28 - the review pass
+#
+# Same environment as evidence/2026-11-28-windows/suite-timings.log: OFX_SOURCE_DIR,
+# ONNXRUNTIME_ROOT=.validation/ort-1.32.0, VULKAN_SDK=.validation/vk/sdk, no CPU_ONLY.
+# The script runs under set -euo pipefail, so reaching its summary block is itself the
+# exit-0 evidence: a failing suite aborts the run before it. Header lines and the
+# summary are kept; the full 2,300-line log stayed in .validation/, untracked.
+
+## Section headers, in order
+  == docs: check-docs ==
+  == docs ==
+  == licence and provenance ==
+  == shell syntax ==
+  == reference plug-in: minimal-ofx (build, artifact, contract) ==
+  == [1/4] build (Release) ==
+  == [2/4] artifact (exports, dependents) ==
+  == [3/4] host contract (LoadLibraryExW + fake host) ==
+  == [4/4] install and load the installed copy ==
+  == test: minimal-cuda-ofx (build, artifact, contract) ==
+  == [0/4] build (Release) ==
+  == [1/4] artifact (exports, dependents, device code) ==
+  == [2/4] GPU harness (real device code, not emulated) ==
+  == the minimal-cuda-ofx kernels on real hardware ==
+  == [3/4] host contract (LoadLibraryExW + fake host) ==
+  == [4/4] execution-mode gates (no GPU needed) ==
+  == test: minimal-opencl-ofx (build, artifact, contract, OpenCL suite) ==
+  == build + test: onnx-inference-ofx ==
+  == [1/6] build (Release) ==
+  == [2/6] inference pipeline (ai_pipeline_test) ==
+  == [3/6] host contract (LoadLibraryExW + fake host), exact golden ==
+  == [4/6] the model the bundle ships (Contents\Resources, no ONNX_MODEL_PATH) ==
+  == [5/6] host contract with the plug-in's own tiling (tileSize=16) ==
+  == [6/6] fixtures and artifact ==
+  == test: minimal-vulkan-ofx (build, path policy, artifact, contract, device) ==
+  == [1/6] build (Release) ==
+  == [2/6] path policy (six gates, no device needed) ==
+  == [3/6] artifact (exports, dependents) ==
+  == [4/6] host contract (LoadLibraryExW + fake host) ==
+  == [5/6] install and load the installed copy ==
+  == [6/6] device suite (Vulkan vs CPU) ==
+  == negative controls: broken plug-ins must fail, the pattern must pass ==
+  == [0/4] MSVC environment ==
+  == [1/4] contract harness ==
+  == [2/4] control plug-ins (cl /LD) ==
+  == [3/4] varying source fixture ==
+  == [4/4] fifteen controls ==
+  == halo value: the stored overlap must still belong to this model ==
+  == glibc bound self-test: the comparison must fail on a bound that is too low ==
+  == workflow pins: a tag-pinned or malformed workflow must be reported ==
+  == runtime inspection: a CUDA 13 provider must be named against a CUDA 12 host ==
+  == environment probe: a missing capability must block its suite ==
+  == resolve pixel checks: a uniform, black or wrong-sized frame must fail ==
+  == resolve stale-file test: a second run in one directory must not pass ==
+  == test fixtures: synthetic models must load and match their shapes ==
+  == comparator self-test: the golden comparison must fail on a corrupt reference ==
+  == comparator self-test (contract_test --selftest-compare)
+
+## The summary block
+==================================================================
+all suites passed, every template that was built:
+  docs drift check                (tools/check-docs.py, incl. the ONNX Runtime pin)
+  reference build + artifact      (minimal-ofx, dumpbin)
+  artifact + fake host            (minimal-ofx, minimal-cuda-ofx)
+  OpenCL device suite             (minimal-opencl-ofx, contract_test + opencl_suite)
+  GPU kernels                     (as test/run-tests.bat reported above)
+  Vulkan path + device suite      (minimal-vulkan-ofx, path policy + vulkan_suite)
+  negative controls               (testkit/run-negative-controls.bat)
+  halo value check                (models/test_conv.onnx)
+  glibc bound self-test           (tools/check-glibc.sh --selftest)
+  environment probe self-test     (tools/probe-env.py --self-test)
+  runtime inspection self-test    (tools/check-runtime.py --self-test)
+  resolve pixel checks            (tests/resolve/checks.py)
+  resolve stale-file test         (tests/resolve/test_stale_file.py)
+  test fixtures                   (tools/make-testmodels.py)
+  comparator self-test            (testkit/selftest-compare.bat)
+RUN_VALGRIND, SANITIZE and the glibc bound are POSIX-only: no valgrind,
+no readelf, and a PE image has no GLIBC_ version table
+==================================================================
+
+## Compiler warnings in the whole cycle
+  warning C[0-9]+ / other warning lines: 0
